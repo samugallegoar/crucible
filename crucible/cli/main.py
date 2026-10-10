@@ -1,8 +1,9 @@
 """Crucible CLI entry point.
 
-Implemented: ``run`` (with ``--runtime backtest|paper|live``), ``run-vectorized``,
-``report``, ``debug``, ``optimize``, ``validate``, ``compare``, ``schema``,
-``data check|list|build``. ``--json`` and ``--override`` are described in ADR-0059.
+Implemented: ``backtest`` (the one-step product command, ADR-0068), ``spec``, ``config``,
+``run`` (with ``--runtime backtest|paper|live``), ``run-vectorized``, ``report``, ``debug``,
+``optimize``, ``validate``, ``compare``, ``schema``, ``data check|list|build|fetch``.
+``--json`` and ``--override`` are described in ADR-0059.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from crucible import __version__
-from crucible.cli import machine
+from crucible.cli import machine, product_commands
 from crucible.core.errors import ConfigurationError, CrucibleError
 from crucible.experiments.optimize import DEFAULT_PBO_GROUPS
 
@@ -210,11 +211,18 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(compare)
 
     schema = subparsers.add_parser(
-        "schema", help="Print the JSON Schema of the experiment config (every valid field)"
+        "schema",
+        help="Print a JSON Schema: the experiment config (default) or a strategy spec",
     )
     schema.add_argument("--out", default=None, help="Write the schema here (default: stdout)")
+    schema.add_argument(
+        "--kind",
+        choices=["experiment", "strategy-spec"],
+        default="experiment",
+        help="which schema: the experiment config, or the no-code strategy spec (ADR-0067)",
+    )
 
-    data = subparsers.add_parser("data", help="Dataset tooling: check | build | list")
+    data = subparsers.add_parser("data", help="Dataset tooling: check | build | fetch | list")
     data_sub = data.add_subparsers(dest="data_command", required=True)
     check = data_sub.add_parser("check", help="Run quality checks on a dataset")
     check.add_argument("--store", required=True, help="Data store root")
@@ -280,8 +288,10 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument(
         "--ohlc-repair",
         default="refuse",
-        choices=["refuse", "clamp"],
-        help="what to do with a bar whose high/low do not bound its open/close",
+        choices=["refuse", "clamp", "clamp_rounding"],
+        help="what to do with a bar whose high/low do not bound its open/close: refuse, clamp "
+        "every such bar, or clamp_rounding (only float-rounding-sized violations; real ones "
+        "are still refused)",
     )
     fetch.add_argument(
         "--max-rows",
@@ -291,6 +301,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(fetch)
 
+    product_commands.add_parsers(subparsers)
     return parser
 
 
@@ -802,9 +813,15 @@ def _manifest_row(manifest: DatasetManifest) -> dict[str, object]:
 
 def _cmd_schema(args: argparse.Namespace) -> int:
     """Prints the experiment config's JSON Schema: what a valid config may contain."""
-    from crucible.experiments.config import config_json_schema
+    if args.kind == "strategy-spec":
+        from crucible.strategy_spec import spec_json_schema
 
-    text = machine.render(config_json_schema())
+        schema = spec_json_schema()
+    else:
+        from crucible.experiments.config import config_json_schema
+
+        schema = config_json_schema()
+    text = machine.render(schema)
     if args.out:
         if not Path(args.out).parent.is_dir():
             msg = f"--out directory {Path(args.out).parent} does not exist; create it first"
@@ -956,7 +973,17 @@ def _cmd_data_fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _use_utf8_console() -> None:
+    """Prints never crash on a legacy Windows code page (cp1252 cannot encode a table's box
+    characters, or a ticker's accent): stdout and stderr are UTF-8, unencodable text is replaced."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    _use_utf8_console()
     args = build_parser().parse_args(argv)
 
     if args.command is None:
@@ -964,6 +991,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     try:
+        product_exit = product_commands.dispatch(args.command, args)
+        if product_exit is not None:
+            return product_exit
         if args.command == "run":
             return _cmd_run(args)
         if args.command == "run-vectorized":
