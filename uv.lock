@@ -461,11 +461,13 @@ dependencies = [
     { name = "duckdb" },
     { name = "exchange-calendars" },
     { name = "matplotlib" },
+    { name = "mcp" },
     { name = "numpy" },
     { name = "polars" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "yfinance" },
 ]
 
 [package.optional-dependencies]
@@ -493,12 +495,14 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.0" },
     { name = "exchange-calendars", specifier = ">=4.5" },
     { name = "matplotlib", specifier = ">=3.11.2" },
+    { name = "mcp", specifier = ">=2.3,<3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.3,<3" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "polars", specifier = ">=1.0" },
     { name = "pyarrow", specifier = ">=17.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "yfinance", specifier = ">=0.2.40" },
     { name = "yfinance", marker = "extra == 'yfinance'", specifier = ">=0.2.40" },
 ]
 provides-extras = ["yfinance", "mcp"]

@@ -37,6 +37,12 @@ EXPECTED_TOOLS = {
     "crucible_data_check",
     "crucible_data_build",
     "crucible_data_fetch",
+    "crucible_backtest",
+    "crucible_check_strategy",
+    "crucible_strategy_templates",
+    "crucible_strategy_schema",
+    "crucible_results",
+    "crucible_status",
 }
 
 
@@ -153,14 +159,14 @@ def _captured_calls() -> list[list[str]]:
     """Calls every tool with all its optional arguments set and records the argv it builds."""
     calls: list[list[str]] = []
 
-    def fake(argv: Any) -> dict[str, object]:
+    async def fake(argv: Any, **_: Any) -> dict[str, object]:
         calls.append(list(argv))
         return {}
 
     import crucible.mcp_server.server as server_module
 
-    original = server_module.invoke
-    server_module.invoke = fake  # type: ignore[assignment]
+    original = server_module.ainvoke
+    server_module.ainvoke = fake  # type: ignore[assignment]
     try:
         everything: dict[str, dict[str, Any]] = {
             "crucible_run": {
@@ -187,6 +193,8 @@ def _captured_calls() -> list[list[str]]:
                 "artifacts": "a",
                 "metric": "sharpe",
                 "vectorized": True,
+                "pbo_groups": 6,
+                "workers": 2,
                 "overrides": ["x.y=1"],
             },
             "crucible_promote": {
@@ -215,7 +223,14 @@ def _captured_calls() -> list[list[str]]:
                 "skip": ["calendar_coverage"],
                 "skip_reason": "why",
             },
-            "crucible_data_build": {"spec": "spec.yaml", "store": "s"},
+            "crucible_data_build": {
+                "spec": "spec.yaml",
+                "store": "s",
+                "start": "2024-01-01",
+                "end": "2024-02-01",
+                "max_contracts": 3,
+                "max_rows": 100,
+            },
             "crucible_data_fetch": {
                 "store": "s",
                 "dataset": "d",
@@ -228,12 +243,34 @@ def _captured_calls() -> list[list[str]]:
                 "calendar": "XNYS",
                 "allow_partial": True,
                 "cache_dir": "c",
+                "refresh": True,
+                "ohlc_repair": "clamp_rounding",
+                "max_rows": 1000,
             },
+            "crucible_backtest": {
+                "symbols": "SPY",
+                "start": "2015-01-01",
+                "end": "2024-12-31",
+                "entry": "sma(10) crosses_above sma(30)",
+                "exit": "sma(10) crosses_below sma(30)",
+                "capital": 50000,
+                "costs": "conservative",
+                "stop_loss_pct": 5,
+                "offline": True,
+                "null_iterations": 10,
+                "name": "x",
+            },
+            "crucible_check_strategy": {
+                "spec": {"entry": {"long": "always"}},
+            },
+            "crucible_strategy_templates": {"name": "sma_crossover"},
+            "crucible_results": {"limit": 5},
+            "crucible_status": {},
         }
         for name, arguments in everything.items():
             _call(name, arguments)
     finally:
-        server_module.invoke = original  # type: ignore[assignment]
+        server_module.ainvoke = original  # type: ignore[assignment]
     return calls
 
 
@@ -241,7 +278,7 @@ def test_every_tool_builds_an_argv_the_real_parser_accepts() -> None:
     from crucible.cli.main import build_parser
 
     calls = _captured_calls()
-    assert len(calls) == 12
+    assert len(calls) == 17
     for argv in calls:
         build_parser().parse_args(argv)  # a mistyped flag would exit(2) here
 
@@ -291,3 +328,70 @@ def test_debug_replays_a_finished_run_through_the_tool(store: Path, tmp_path: Pa
     doc = json.loads(text)
     assert doc["events_total"] > 0
     assert doc["state"]["cash"]["currency"] == "USD"
+
+
+def test_the_agent_guide_is_a_resource_and_a_prompt() -> None:
+    async def go() -> tuple[str, str]:
+        async with Client(build_server()) as client:
+            resource = await client.read_resource("crucible://guide")
+            text = "".join(getattr(c, "text", "") for c in resource.contents)
+            prompt = await client.get_prompt("backtest_a_strategy", {"idea": "buy SPY dips"})
+            body = "".join(getattr(m.content, "text", "") for m in prompt.messages)
+            return text, body
+
+    guide, prompt = asyncio.run(go())
+    assert "crucible_backtest" in guide
+    assert "buy SPY dips" in prompt
+    assert Path("AGENT_GUIDE.md").read_text(encoding="utf-8") == guide
+
+
+def test_relative_paths_become_absolute_against_the_workdir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from crucible.mcp_server.server import absolute
+
+    monkeypatch.setenv("CRUCIBLE_WORKDIR", str(tmp_path))
+    assert absolute("cfg.yaml") == str(tmp_path / "cfg.yaml")
+    assert absolute(str(tmp_path / "x")) == str(tmp_path / "x")
+    assert absolute(None) is None
+
+
+def test_cancelling_a_call_kills_the_child_process() -> None:
+    import time
+
+    from crucible.mcp_server import invoke as invoke_module
+
+    started: list[int] = []
+
+    async def go() -> None:
+        original = asyncio.create_subprocess_exec
+
+        async def spy(*args: Any, **kwargs: Any) -> Any:
+            kwargs["stdin"] = asyncio.subprocess.DEVNULL
+            process = await original(
+                sys.executable,
+                "-c",
+                "import time; time.sleep(60)",
+                *(),
+                **{k: v for k, v in kwargs.items() if k in ("stdin", "stdout", "stderr", "env")},
+            )
+            started.append(process.pid)
+            return process
+
+        invoke_module.asyncio.create_subprocess_exec = spy  # type: ignore[assignment]
+        try:
+            task = asyncio.create_task(invoke_module.ainvoke(["schema"], timeout=120))
+            await asyncio.sleep(1.0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        finally:
+            invoke_module.asyncio.create_subprocess_exec = original  # type: ignore[assignment]
+
+    began = time.monotonic()
+    asyncio.run(go())
+    assert time.monotonic() - began < 30
+    assert started
+    import psutil
+
+    assert not psutil.pid_exists(started[0]) or psutil.Process(started[0]).status() == "zombie"

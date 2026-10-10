@@ -10,6 +10,7 @@ stdout out of the MCP protocol stream, needs no lock, and cannot be left half-ru
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -18,13 +19,24 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
+
+
+def _child_env() -> dict[str, str]:
+    """The child's environment: UTF-8 I/O, and no inherited virtualenv (a stale ``VIRTUAL_ENV``
+    makes uv-launched tools print a warning on every call)."""
+    env = {**os.environ, "PYTHONUTF8": "1"}
+    env.pop("VIRTUAL_ENV", None)
+    return env
 
 
 class ToolRefusal(Exception):
     """The command refused or failed; the message is the CLI's own, actionable one."""
 
 
-def invoke(argv: Sequence[str], *, timeout: float | None = None) -> dict[str, object]:
+def invoke(
+    argv: Sequence[str], *, timeout: float | None = None, cwd: Path | None = None
+) -> dict[str, object]:
     """Runs ``python -m crucible.cli.main <argv>`` and returns the JSON object it printed.
 
     Raises ``ToolRefusal`` with the command's message when it exits non-zero (a refusal prints
@@ -38,22 +50,63 @@ def invoke(argv: Sequence[str], *, timeout: float | None = None) -> dict[str, ob
             capture_output=True,
             text=True,
             encoding="utf-8",
-            env={**os.environ, "PYTHONUTF8": "1"},
+            env=_child_env(),
             timeout=timeout,
+            cwd=cwd,
             check=False,
         )
     except subprocess.TimeoutExpired:
         msg = f"crucible {argv[0]} did not finish within {timeout} seconds and was stopped"
         raise ToolRefusal(msg) from None
+    return _document(argv, done.returncode, done.stdout, done.stderr)
+
+
+async def ainvoke(
+    argv: Sequence[str], *, timeout: float | None = None, cwd: Path | None = None
+) -> dict[str, object]:
+    """Like :func:`invoke`, but cancellable: when the awaiting task is cancelled (the client
+    cancelled the call, or the server is shutting down) or ``timeout`` passes, the child process
+    is killed instead of being left to run on."""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "crucible.cli.main",
+        *argv,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=_child_env(),
+        cwd=cwd,
+    )
+    try:
+        out, err = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        msg = f"crucible {argv[0]} did not finish within {timeout} seconds and was stopped"
+        raise ToolRefusal(msg) from None
+    except BaseException:  # includes CancelledError: never leave the child running
+        process.kill()
+        await asyncio.shield(process.wait())
+        raise
+    return _document(
+        argv,
+        process.returncode if process.returncode is not None else -1,
+        out.decode("utf-8", errors="replace"),
+        err.decode("utf-8", errors="replace"),
+    )
+
+
+def _document(argv: Sequence[str], returncode: int, stdout: str, stderr: str) -> dict[str, object]:
     payload: object = None
     try:
-        payload = json.loads(done.stdout) if done.stdout.strip() else None
+        payload = json.loads(stdout) if stdout.strip() else None
     except ValueError:
         payload = None
-    if done.returncode != 0:
-        raise ToolRefusal(_message(payload, done.stderr, done.stdout, done.returncode))
+    if returncode != 0:
+        raise ToolRefusal(_message(payload, stderr, stdout, returncode))
     if not isinstance(payload, dict):
-        msg = f"crucible {argv[0]} printed no JSON document (stdout: {done.stdout[:200]!r})"
+        msg = f"crucible {argv[0]} printed no JSON document (stdout: {stdout[:200]!r})"
         raise ToolRefusal(msg)
     return payload
 

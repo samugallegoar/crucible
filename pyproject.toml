@@ -24,12 +24,15 @@ dependencies = [
     "exchange-calendars>=4.5",
     "pyyaml>=6.0",
     "matplotlib>=3.11.2",
+    # the product flow (`crucible backtest`, the MCP server) needs both out of the box (ADR-0068)
+    "yfinance>=0.2.40",
+    "mcp>=2.3,<3",
 ]
 
 [project.optional-dependencies]
-# Optional so the core install stays small (ADR-0063): `uv sync --extra yfinance`.
+# Kept so `uv sync --extra yfinance` / `--extra mcp` keep working; both are core dependencies
+# since ADR-0068 (a user who installs the product gets the data provider and the MCP server).
 yfinance = ["yfinance>=0.2.40"]
-# MCP server over the --json CLI (ADR-0066): `uv sync --extra mcp`.
 mcp = ["mcp>=2.3,<3"]
 
 [project.urls]
@@ -131,9 +134,10 @@ type = "layers"
 layers = [
     "crucible.mcp_server",
     "crucible.cli",
+    "crucible.product",
     "crucible.live.runtime",
     "crucible.experiments",
-    "crucible.core.engine | crucible.validation | crucible.vectorized | crucible.analytics",
+    "crucible.core.engine | crucible.validation | crucible.vectorized | crucible.analytics | crucible.strategy_spec",
     "crucible.risk | crucible.strategy | crucible.live.venue | crucible.live.execution | crucible.live.interfaces | crucible.live.feed | crucible.live.paper | crucible.live.replay | crucible.live.venue_feed",
     "crucible.execution | crucible.portfolio",
     "crucible.accounting | crucible.data | crucible.orders | crucible.live.rows",
