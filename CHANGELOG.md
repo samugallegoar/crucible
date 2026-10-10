@@ -27,6 +27,9 @@ kind of change is recorded).
   adjusted SPY was refused on a 3e-14 gap). The CLI console is UTF-8 on Windows; the MCP child no
   longer inherits `VIRTUAL_ENV`.
 - `yfinance` and `mcp` are core dependencies (their extras remain as aliases).
+- `examples/sma_cross` now carries the hand-written vectorized signal and `config_vectorized.yaml`
+  from the SMA example branch next to the spec; both agree bar for bar on real SPY data and differ
+  only on exact fast == slow ties.
 - Docs: README rewritten as a product page; user pages under `docs/guide/`; a contributor hub at
   `docs/contributing/README.md`. No engine, config-hash, artifact or existing golden change.
 

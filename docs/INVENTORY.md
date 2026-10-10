@@ -237,6 +237,7 @@ Runnable with `uv run crucible run <file>` (`run-vectorized` for the vectorized 
 | `examples/momentum/config.yaml` | `examples.momentum.strategy:Momentum` | 1 | evaluation | no |
 | `examples/momentum/config_level4.yaml` | `examples.momentum.strategy:Momentum` | 4 | evaluation | no |
 | `examples/overfit_demo/config.yaml` | `examples.overfit_demo.strategy:RandomSignal` | 1 | optimization | no |
+| `examples/sma_cross/config_vectorized.yaml` | `examples.sma_cross.signal:sma_cross_signal` | 1 | evaluation | no |
 | `examples/trend_demo/config.yaml` | `examples.trend_demo.strategy:TrendFollower` | 1 | evaluation | no |
 | `examples/trend_demo/config_live.yaml` | `examples.trend_demo.strategy:TrendFollower` | 1 | evaluation | yes |
 | `examples/trend_demo/config_random.yaml` | `examples.trend_demo.strategy:RandomDirection` | 1 | evaluation | no |

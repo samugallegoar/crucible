@@ -1,59 +1,44 @@
-"""A hand-written vectorized SMA crossover: the reference ``spec.yaml`` must reproduce.
+"""Long-only SMA crossover signal for the vectorized engine.
 
-Long-only: enter when the fast simple moving average of the close crosses above the slow one,
-exit when it crosses back below, hold in between. The score is the target weight (1.0 long, 0.0
-flat) **decided at bar t's close**; the vectorized engine adds the single mandatory one-bar lag,
-so this function adds none of its own (ADR-0067: the lag convention is stated once, in
-``crucible/strategy_spec/compile.py``).
+Enter long when the fast SMA crosses above the slow SMA; exit (go flat) when it
+crosses below. Never short. The position starts flat and only opens after a
+genuine upward cross, so a series that begins with ``fast > slow`` stays flat
+until the next crossover.
 
-``tests/integration/test_sma_cross_spec.py`` asserts that compiling ``spec.yaml`` gives exactly
-these scores, bar for bar.
+Params: ``fast`` (default 10), ``slow`` (default 30). Timing: the score for bar
+``t`` uses closes up to and including ``t``; the engine's mandatory
+``lag_bars`` shift means the position is held from the following bar.
 """
 
 from __future__ import annotations
 
-import numpy as np
 import polars as pl
 
 
 def sma_cross_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
-    """``params``: ``fast`` (default 10) and ``slow`` (default 30), whole numbers, fast < slow."""
     fast = int(str(params.get("fast", 10)))
     slow = int(str(params.get("slow", 30)))
     if not 1 <= fast < slow:
         msg = f"need 1 <= fast < slow, got fast={fast}, slow={slow}"
         raise ValueError(msg)
-    frame = (
+
+    return (
         bars.select(["symbol", "event_time", "close"])
-        .sort(["symbol", "event_time"])
+        .rename({"event_time": "ts"})
+        .sort(["symbol", "ts"])
         .with_columns(
-            fast_ma=pl.col("close").rolling_mean(window_size=fast).over("symbol"),
-            slow_ma=pl.col("close").rolling_mean(window_size=slow).over("symbol"),
+            fast_sma=pl.col("close").rolling_mean(window_size=fast).over("symbol"),
+            slow_sma=pl.col("close").rolling_mean(window_size=slow).over("symbol"),
         )
-        .collect()
+        .with_columns(above=pl.col("fast_sma") > pl.col("slow_sma"))
+        .with_columns(prev_above=pl.col("above").shift(1).over("symbol"))
+        .with_columns(
+            event=pl.when(pl.col("above") & (pl.col("prev_above") == False))  # noqa: E712
+            .then(1.0)
+            .when((~pl.col("above")) & (pl.col("prev_above") == True))  # noqa: E712
+            .then(0.0)
+            .otherwise(None)
+        )
+        .with_columns(score=pl.col("event").forward_fill().over("symbol").fill_null(0.0))
+        .select(["ts", "symbol", "score"])
     )
-    parts: list[pl.DataFrame] = []
-    for symbol, group in frame.group_by("symbol", maintain_order=True):
-        f = group.get_column("fast_ma").to_numpy()
-        s = group.get_column("slow_ma").to_numpy()
-        held = np.zeros(len(f))
-        state = 0.0
-        for i in range(1, len(f)):
-            if np.isnan(f[i]) or np.isnan(s[i]) or np.isnan(f[i - 1]) or np.isnan(s[i - 1]):
-                held[i] = state
-                continue
-            if f[i - 1] <= s[i - 1] and f[i] > s[i]:
-                state = 1.0
-            elif f[i - 1] >= s[i - 1] and f[i] < s[i]:
-                state = 0.0
-            held[i] = state
-        parts.append(
-            pl.DataFrame(
-                {
-                    "ts": group.get_column("event_time"),
-                    "symbol": [str(symbol[0])] * len(f),
-                    "score": held,
-                }
-            )
-        )
-    return pl.concat(parts).lazy()

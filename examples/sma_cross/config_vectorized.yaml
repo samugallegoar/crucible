@@ -1,0 +1,31 @@
+# Long-only SMA(10)/SMA(30) crossover on SPY daily (adjusted). Build the data first:
+#   uv run crucible data fetch --provider yfinance --store data/processed --dataset spy_daily \
+#       --symbols SPY --start 2015-01-01 --end 2025-12-31
+#   uv run crucible run-vectorized examples/sma_cross/config_vectorized.yaml
+experiment:
+  name: sma_cross_10_30
+  family: sma_cross
+  mode: evaluation
+  seed: 1
+  realism_level: 1
+
+data:
+  store: data/processed
+  bars: spy_daily
+  calendar: XNYS
+  base_currency: USD
+
+strategy:
+  entrypoint: examples.sma_cross.signal:sma_cross_signal
+  params:
+    fast: 10
+    slow: 30
+
+execution:
+  slippage_bps: 1.0
+  commission_bps: 0.5
+
+initial_cash: "100000"
+start: "2015-01-01"
+end: "2025-12-31"
+periods_per_year: 252.0

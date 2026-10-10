@@ -3,7 +3,10 @@
 #   crucible backtest --spec examples/sma_cross/spec.yaml --symbols SPY \
 #       --start 2015-01-01 --end 2025-12-30 --capital 100000
 #
-# The same rule written by hand is examples/sma_cross/signal.py; the tests prove they agree.
+# The same rule written by hand is examples/sma_cross/signal.py (run by config_vectorized.yaml);
+# the tests prove they agree bar for bar on continuous prices. They differ only when the fast
+# and slow averages are exactly equal: the hand-written signal exits on fast <= slow, the spec's
+# `crosses_below` needs fast < slow.
 spec_version: 1
 name: SMA 10/30 crossover
 direction: long_only

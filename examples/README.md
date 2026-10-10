@@ -36,7 +36,9 @@ uv run crucible backtest --spec examples/sma_cross/spec.yaml --symbols SPY \
 ```
 
 `spec.yaml` is the no-code strategy; `signal.py` is the hand-written vectorized signal it must
-reproduce. `tests/integration/test_product_backtest.py` asserts the two give identical equity and
+reproduce, run on a stored dataset by `config_vectorized.yaml`
+(`crucible run-vectorized examples/sma_cross/config_vectorized.yaml` after the `data fetch` in its
+header). Both give identical scores on real SPY data; they differ only on exact fast == slow ties. `tests/integration/test_product_backtest.py` asserts the two give identical equity and
 weights, `tests/golden/test_product_golden.py` pins a run on seeded synthetic data and
 `tests/lookahead/test_strategy_spec_poisoned_future.py` covers every template.
 
