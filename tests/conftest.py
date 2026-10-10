@@ -36,8 +36,32 @@ def pytest_addoption(parser: object) -> None:
     )
 
 
+def _slow_modules() -> frozenset[str]:
+    """Test modules measured slow (``tests/slow_modules.txt``, ``python -m tools.slow_report``)."""
+    path = Path(__file__).resolve().parent / "slow_modules.txt"
+    if not path.is_file():
+        return frozenset()
+    return frozenset(
+        line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    )
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Benchmarks run only with ``-m bench``; they never gate correctness (AGENTS.md section 7)."""
+    """Marks slow modules ``slow`` and skips benchmarks unless ``-m bench``.
+
+    The ``slow`` marker only *selects*: a plain ``pytest`` still runs every test, and the fast
+    tier is the opt-in ``-m "not slow"``. Benchmarks never gate correctness (AGENTS.md section 7).
+    """
+    slow = _slow_modules()
+    root = Path(__file__).resolve().parent.parent
+    for item in items:
+        module = Path(str(item.path)).resolve()
+        try:
+            relative = module.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        if relative in slow:
+            item.add_marker(pytest.mark.slow)
     if "bench" in (config.getoption("-m") or ""):
         return
     skip = pytest.mark.skip(reason="benchmark: run with -m bench")

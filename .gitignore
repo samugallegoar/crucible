@@ -27,6 +27,7 @@ experiments/*
 examples/*/data/
 
 # Tool caches
+.check_logs/
 .import_linter_cache/
 
 # Agent tooling: local state only (shared config: .claude/settings.json, .gemini/settings.json)
