@@ -99,6 +99,11 @@ The response is one JSON document. The parts you use:
 | `report` | absolute path of the HTML report to point the person to |
 | `data.warnings`, `data.repaired_rows` | data caveats; mention them if non-empty |
 
+When a result looks promising (`not_conclusive` with `realism_not_checked` as the only blocker, or
+`some_evidence`-class numbers), run it again with `realism_check: true` (about 30 seconds more): the
+strongest verdict is not given until the rules have been tested with next-bar fills, a spread and
+latency. Do not skip it and then describe the result as stronger than `not_conclusive`.
+
 Always quote a headline number together with its range (`sharpe_low`..`sharpe_high`), the trial
 count (`validation.trial_count`) and the realism level. Never quote a Sharpe alone.
 

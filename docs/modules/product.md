@@ -15,7 +15,9 @@ The one-step layer (ADR-0068) between a person's request and the engine.
 - `nulltest.py` — the seeded shuffled-returns null test on the vectorized engine.
 - `summary.py` — `build_summary(SummaryInputs) -> Summary`, the deterministic plain-language reading.
 - `report.py` — `render_html(doc, charts)`, the self-contained HTML report (inline SVG, no scripts).
-- `AGENT_GUIDE.md` — the agent guide (a copy sits at the repository root; a test keeps them equal).
+- the agent guide is `AGENT_GUIDE.md` at the repository root, the only source: the wheel build ships it
+  as `crucible/product/AGENT_GUIDE.md` (a hatch force-include) and `mcp_server.guide_text()` reads the
+  packaged file, else the root file of a source checkout.
 
 CLI: `crucible backtest`, `crucible results`, `crucible config show|set-home`, `crucible spec ...`
 (`docs/modules/cli.md`). MCP: `crucible_backtest`, `crucible_results`, `crucible_status`,
@@ -57,8 +59,10 @@ the run-location keys and `data.fetched_now`: the same request and data give the
 
 `summary.verdict_level` is `no_edge_detected` (a non-positive return or Sharpe), `some_evidence`
 (only if every guard passes: Sharpe interval above zero, at least 100 trades, at least 5 years, DSR
-at least 0.95, shuffled test beaten at 5 %, no contamination, more than one instrument) or
-`not_conclusive`. The flags (`ci_includes_zero`, `wide_interval`, `very_few_trades`, `few_trades`,
+at least 0.95, shuffled test beaten at 5 %, no contamination, more than one instrument, **and the
+realism check ran and the result is not `fragile_to_execution`**) or `not_conclusive`. A result that
+clears every statistical guard but has no realism check is `not_conclusive` with the blocker
+`realism_not_checked`, a flag of the same name and a first next step to re-run with the check. The flags (`ci_includes_zero`, `wide_interval`, `very_few_trades`, `few_trades`,
 `single_instrument`, `short_sample`, `very_short_sample`, `multiple_trials`, `dsr_low`,
 `null_not_beaten`, `contaminated`, `no_better_than_buy_and_hold`, `fragile_to_execution`) each carry
 their sentence. Thresholds are constants at the top of `summary.py`.

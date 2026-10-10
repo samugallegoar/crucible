@@ -77,3 +77,12 @@ honest, understandable answer without touching Python or YAML.
   the same data raises the trial count and deflates the DSR (the honest price of looking).
 - A not-in-the-past `end` is refused instead of truncated.
 - The result document has its own `schema_version` (1); `docs/COMPATIBILITY.md` lists the rule.
+
+**Amendment (2026-10-10): the realism cap.** Section 4 admits the headline run uses the
+optimistic fill timing of the vectorized engine. Consequence added: `some_evidence` additionally
+requires that `realism_check` ran and that no `fragile_to_execution` flag was raised. A result that
+clears every other guard without the check is `not_conclusive` with the blocker
+`realism_not_checked` (a flag and a first next step to re-run with the check); one that fails it is
+`not_conclusive` with `fragile_to_execution`. Outputs that were already `not_conclusive` or
+`no_edge_detected` are unchanged. This restores prime directive 4 at the verdict, the only place
+the product default was not the more pessimistic option.

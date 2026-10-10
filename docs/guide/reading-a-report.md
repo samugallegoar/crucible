@@ -16,7 +16,10 @@ same instrument(s) would have done. The **verdict** is one of three, generated f
 
 "Some evidence" needs all of: the 95% range of the Sharpe ratio above zero, at least 100 trades, at
 least 5 years, a deflated Sharpe of 0.95 or more, the random re-ordering test beaten at the 5% level,
-no earlier optimisation on the same data, and **more than one instrument**. Most single-instrument,
+no earlier optimisation on the same data, **more than one instrument**, and a **realism check**: the
+rules re-run with next-bar fills, a spread and latency, which must not cut the result materially. The
+main run fills at the signal bar's close, which is optimistic, so a result that passes every other
+guard but was never re-run with realistic fills says "not conclusive yet" and asks for that check. Most single-instrument,
 few-dozen-trade backtests will say "not conclusive", and that is the honest answer.
 
 ## Strategy vs buy and hold
@@ -52,9 +55,9 @@ weight. Both curves are drawn together, then both drawdowns.
 
 Each warning has a code and a sentence. They are not decoration: any of `ci_includes_zero`,
 `very_few_trades`, `few_trades`, `single_instrument`, `short_sample`, `dsr_low`, `null_not_beaten` or
-`contaminated` stops the verdict from being "some evidence". Others
-(`wide_interval`, `multiple_trials`, `no_better_than_buy_and_hold`, `fragile_to_execution`) are
-context that belongs in your decision.
+`contaminated`, `fragile_to_execution` or `realism_not_checked` stops the verdict from being "some
+evidence". Others (`wide_interval`, `multiple_trials`, `no_better_than_buy_and_hold`) are context
+that belongs in your decision.
 
 ## What to try next
 

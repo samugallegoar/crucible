@@ -49,6 +49,7 @@ def inputs(**overrides: object) -> SummaryInputs:
         contamination=False,
         null_iterations=100,
         null_p_value=0.01,
+        realism=side(final_equity=147_000.0, cagr_pct=7.6, max_drawdown_pct=-16.0, sharpe=0.85),
     )
     return dataclasses.replace(base, **overrides)  # type: ignore[arg-type]
 
@@ -136,3 +137,28 @@ def test_next_steps_always_include_another_period_and_fragility() -> None:
     assert "different period" in steps
     assert "10 -> 8 and 12" in steps
     assert "other liquid instruments" in steps
+
+
+def test_without_the_realism_check_the_strongest_verdict_is_capped() -> None:
+    summary = build_summary(inputs(realism=None))
+    assert summary.verdict_level == "not_conclusive"
+    assert summary.blockers == ["realism_not_checked"]
+    assert "realism_not_checked" in codes(summary)
+    assert "Not conclusive yet" in summary.verdict
+    assert "realism check" in " ".join(summary.next_steps)
+
+
+def test_a_fragile_result_under_realistic_fills_is_not_some_evidence() -> None:
+    summary = build_summary(inputs(realism=side(cagr_pct=3.0, final_equity=120_000.0)))
+    assert summary.verdict_level == "not_conclusive"
+    assert summary.blockers == ["fragile_to_execution"]
+    assert "optimistic fills" in summary.verdict
+
+
+def test_the_realism_cap_only_names_itself_when_it_is_the_deciding_guard() -> None:
+    # other guards already block the verdict: the output is what it was before the cap existed
+    summary = build_summary(inputs(realism=None, n_trades=50))
+    assert summary.verdict_level == "not_conclusive"
+    assert "realism_not_checked" not in codes(summary)
+    assert "realism_not_checked" not in summary.blockers
+    assert "realism check" not in " ".join(summary.next_steps)

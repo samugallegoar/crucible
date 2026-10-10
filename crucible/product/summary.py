@@ -3,9 +3,11 @@
 Everything here is a pure function of :class:`SummaryInputs`: the same numbers always give the
 same words, in the same order, with no randomness and no free text. The module never says a
 strategy "works". Its strongest verdict is ``some_evidence``, and it is reachable only when every
-guard below passes; with a single instrument it is unreachable by construction, because one
-instrument is one history. The thresholds are named constants so the docs and the tests can cite
-them.
+guard below passes, including the realism check: the headline engine fills at the signal bar's
+close, which is optimistic, so a result never re-run with realistic fills is capped at
+``not_conclusive``. With a single instrument ``some_evidence`` is unreachable by construction,
+because one instrument is one history. The thresholds are named constants so the docs and the tests
+can cite them.
 """
 
 from __future__ import annotations
@@ -268,16 +270,37 @@ def _verdict(i: SummaryInputs, flags: list[Flag]) -> tuple[str, str, list[str]]:
             "dsr_low",
             "null_not_beaten",
             "contaminated",
+            "fragile_to_execution",
         }
     )
     if low is None:
         blockers.append("no_interval")
+    if not blockers and i.realism is None:
+        # the headline engine fills at the signal bar's close (ADR-0068 section 4): the strongest
+        # verdict is not given on that timing alone
+        return (
+            "not_conclusive",
+            "Not conclusive yet: the result clears every statistical guard, but it has not been "
+            "tested with realistic fills (next-bar prices, spread and latency). Run the realism "
+            "check before reading anything into it.",
+            ["realism_not_checked"],
+        )
     if not blockers:
         return (
             "some_evidence",
             "Some evidence of a real edge: the result clears every statistical guard this "
-            "report applies. That is a reason to test further, not proof that it will work.",
+            "report applies and held up under realistic fills. That is a reason to test "
+            "further, not proof that it will work.",
             [],
+        )
+    if blockers == ["fragile_to_execution"]:
+        return (
+            "not_conclusive",
+            "Not conclusive: the result clears the statistical guards but depends on optimistic "
+            "fills; with realistic fills (next-bar prices, spread and latency) it earns "
+            "materially less. Treat it as an idea worth testing further, not a basis for real "
+            "money.",
+            blockers,
         )
     if i.strategy.cagr_pct >= i.benchmark.cagr_pct:
         lead = "it made money and beat buy-and-hold in this one backtest"
@@ -296,6 +319,15 @@ def build_summary(i: SummaryInputs) -> Summary:
     s, b = i.strategy, i.benchmark
     flags = _flags(i)
     level, verdict, blockers = _verdict(i, flags)
+    if "realism_not_checked" in blockers:
+        flags.append(
+            Flag(
+                "realism_not_checked",
+                "The result has not been re-run with realistic fills (orders at the next bar's "
+                "price, with a spread and latency); the headline run fills at the signal bar's "
+                "close, which is optimistic. Re-run with the realism check.",
+            )
+        )
     names = _names(i.symbols)
     label = i.spec_name or "The strategy"
 
@@ -404,6 +436,12 @@ def build_summary(i: SummaryInputs) -> Summary:
 def _next_steps(i: SummaryInputs, flags: list[Flag]) -> list[str]:
     codes = {f.code for f in flags}
     steps: list[str] = []
+    if "realism_not_checked" in codes:
+        steps.append(
+            "Re-run with the realism check (`realism_check` / `--realism-check`): it replays the "
+            "same rules with next-bar fills, a spread and latency and shows how much of the "
+            'result survives. This is the one step between this result and "some evidence".'
+        )
     steps.append(
         "Try a different period (for example the ten years before the start date, or one that "
         "includes a crash) and see whether the behaviour holds. A rule that only works in one "
