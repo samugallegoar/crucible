@@ -37,6 +37,12 @@ class Normalized:
     repaired: dict[str, int] = field(default_factory=dict)
 
 
+ROUNDING_TOLERANCE = 1e-6
+"""Relative size (of the close) up to which ``ohlc_repair="clamp_rounding"`` treats an OHLC
+violation as float rounding of an adjusted series (Yahoo's adjusted SPY has bars whose high is
+3e-14 below the close) rather than bad data."""
+
+
 def parse_interval(interval: str) -> tuple[int, str]:
     """``'5m'`` -> ``(5, 'm')``. Minutes, hours and days only: weekly and monthly bars have no
     single close instant without a rule this layer does not invent (ADR-0063)."""
@@ -57,13 +63,15 @@ def normalize_raw(
     interval: str,
     calendar: str,
     feed_latency_s: int = 0,
-    ohlc_repair: Literal["refuse", "clamp"] = "refuse",
+    ohlc_repair: Literal["refuse", "clamp", "clamp_rounding"] = "refuse",
     now_ns: int | None = None,
 ) -> Normalized:
     """The raw frame as sorted, de-duplicated ``BAR_SCHEMA`` bars plus counts of what was dropped
     (``incomplete``, ``not_a_session``, ``duplicate``, ``not_closed``) or repaired
     (``ohlc_clamped``). An OHLC violation is left for the quality battery to refuse unless
-    ``ohlc_repair="clamp"``.
+    ``ohlc_repair="clamp"`` (every violation) or ``"clamp_rounding"`` (only a violation within
+    ``ROUNDING_TOLERANCE`` of the bar's close, the float noise of an adjusted series; a larger one
+    is left for the battery to refuse).
 
     An intraday bar on an exchange calendar never closes after its session's close (Yahoo's hourly
     bars start at 09:30, so the last one is a half hour long). With ``now_ns`` (UTC ns, supplied by
@@ -154,8 +162,19 @@ def normalize_raw(
         dropped["duplicate"] = before - frame.height
 
     violation = ohlc_violation()
+    if ohlc_repair == "clamp_rounding":
+        # how far outside [low, high] the open/close sit, relative to the close
+        excess = (
+            pl.max_horizontal(
+                pl.max_horizontal("open", "close") - pl.col("high"),
+                pl.col("low") - pl.min_horizontal("open", "close"),
+                pl.col("low") - pl.col("high"),
+            )
+            / pl.col("close").abs()
+        )
+        violation = violation & (excess <= ROUNDING_TOLERANCE)
     n_violations = frame.filter(violation).height
-    if n_violations and ohlc_repair == "clamp":
+    if n_violations and ohlc_repair in ("clamp", "clamp_rounding"):
         repaired["ohlc_clamped"] = n_violations
         frame = clamp_ohlc(frame, violation)
 

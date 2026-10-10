@@ -92,7 +92,7 @@ class BarsProvider(ABC):
         *,
         calendar: str = "XNYS",
         feed_latency_s: int = 0,
-        ohlc_repair: Literal["refuse", "clamp"] = "refuse",
+        ohlc_repair: Literal["refuse", "clamp", "clamp_rounding"] = "refuse",
         cache: RawCache | None = None,
         now_ns: Callable[[], int] = time.time_ns,
     ) -> None:
