@@ -382,7 +382,13 @@ def test_cancelling_a_call_kills_the_child_process() -> None:
         invoke_module.asyncio.create_subprocess_exec = spy  # type: ignore[assignment]
         try:
             task = asyncio.create_task(invoke_module.ainvoke(["schema"], timeout=120))
-            await asyncio.sleep(1.0)
+            # cancel only once the child exists (a fixed sleep raced with process start-up
+            # when the machine was busy)
+            for _ in range(400):
+                if started:
+                    break
+                await asyncio.sleep(0.05)
+            assert started, "the child process was never started"
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
