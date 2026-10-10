@@ -8,6 +8,28 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Product layer: a no-code, one-step backtest (ADR-0067, ADR-0068, ADR-0069)
+- Declarative **strategy specs** (`crucible/strategy_spec/`): moving-average crossovers, threshold
+  rules on `rsi`, `roc`, `highest`/`lowest`, Bollinger bands, long-only or long/short, `all_in` or
+  fixed-fraction sizing, stop-loss, take-profit and maximum holding; validated with actionable
+  refusals, compiled to the vectorized signal path (and promotable). `crucible schema --kind
+  strategy-spec`, `crucible spec check|templates`, `examples/sma_cross`.
+- **`crucible backtest`** and the `crucible_backtest` MCP tool: fetch if missing, quality gates,
+  vectorized run (one trial with DSR), buy-and-hold benchmark, seeded shuffled-returns null test,
+  optional `--realism-check` (Level 2 event-driven re-run, not a trial), a deterministic
+  plain-language summary and a self-contained HTML report. `crucible results`, `crucible config
+  show|set-home`; results live in an absolute home folder (`CRUCIBLE_HOME`).
+- **MCP server**: async tools whose cancelled or timed-out calls kill the child process
+  (`CRUCIBLE_MCP_TIMEOUT`), path arguments resolved to absolute (`CRUCIBLE_WORKDIR`), the missing
+  flags exposed, new product tools, the `crucible://guide` resource and the `backtest_a_strategy`
+  prompt; `AGENT_GUIDE.md` for agents.
+- Data: `--ohlc-repair clamp_rounding` repairs only float-rounding-sized OHLC violations (Yahoo's
+  adjusted SPY was refused on a 3e-14 gap). The CLI console is UTF-8 on Windows; the MCP child no
+  longer inherits `VIRTUAL_ENV`.
+- `yfinance` and `mcp` are core dependencies (their extras remain as aliases).
+- Docs: README rewritten as a product page; user pages under `docs/guide/`; a contributor hub at
+  `docs/contributing/README.md`. No engine, config-hash, artifact or existing golden change.
+
 ## 0.1.0 - 2026-10-09
 
 First release.

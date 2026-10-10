@@ -303,5 +303,18 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   sweep's results byte-identical to running the same configs
   sequentially (E1), not just crash-free.
 
+**Strategy spec** — a versioned YAML/JSON description of a trading rule (entry, exit, sizing, stops)
+that Crucible compiles to a vectorized signal, so no code is written (ADR-0067).
+`docs/guide/strategy-spec.md`.
+
+**Buy-and-hold benchmark** — the same symbols, window, capital and costs held from the first bar; every
+one-step result is shown next to it (ADR-0068). With several symbols: equal weight.
+
+**Verdict level** — the product's honest conclusion: `no_edge_detected`, `not_conclusive` or
+`some_evidence`; never a claim that a strategy works. `docs/guide/reading-a-report.md`.
+
+**Home folder** — where `crucible backtest` keeps fetched data, runs and the provider cache
+(`CRUCIBLE_HOME`, `crucible config set-home`).
+
 **MCP (Model Context Protocol)** — a protocol that lets an agent call tools on a server. `crucible-mcp`
 (ADR-0066) exposes the `--json` CLI commands as tools, each run in a fresh process.

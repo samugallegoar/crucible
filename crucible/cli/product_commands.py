@@ -72,7 +72,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     backtest.add_argument("--slippage-bps", type=float, default=None)
     backtest.add_argument("--commission-bps", type=float, default=None)
     backtest.add_argument("--provider", default=None, help="yfinance (default) or tiingo")
-    backtest.add_argument("--price-basis", choices=["adjusted", "raw"], default="adjusted")
+    backtest.add_argument(
+        "--price-basis",
+        default="adjusted",
+        help="only 'adjusted' (splits and dividends included) is available in one step",
+    )
     backtest.add_argument("--calendar", default="XNYS", help="exchange_calendars name or '24/7'")
     backtest.add_argument(
         "--offline", action="store_true", help="never download; use stored data or refuse"
@@ -84,6 +88,11 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
         help="shuffled-returns test size (0 turns it off)",
     )
     backtest.add_argument("--family", default=None, help="trial-counting family (default: auto)")
+    backtest.add_argument(
+        "--realism-check",
+        action="store_true",
+        help="also re-run on the event-driven engine with a spread and latency (about 30 s)",
+    )
     backtest.add_argument(
         "--home",
         default=None,
@@ -230,6 +239,7 @@ def run_backtest_command(args: argparse.Namespace) -> int:
             offline=args.offline,
             null_iterations=args.null_iterations,
             family=args.family,
+            realism_check=args.realism_check,
             home=args.home,
         )
     )

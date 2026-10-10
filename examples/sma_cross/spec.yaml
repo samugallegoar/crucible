@@ -1,0 +1,15 @@
+# Long-only SMA 10/30 crossover. Run it with no code:
+#
+#   crucible backtest --spec examples/sma_cross/spec.yaml --symbols SPY \
+#       --start 2015-01-01 --end 2025-12-30 --capital 100000
+#
+# The same rule written by hand is examples/sma_cross/signal.py; the tests prove they agree.
+spec_version: 1
+name: SMA 10/30 crossover
+direction: long_only
+entry:
+  long: "sma(10) crosses_above sma(30)"
+exit:
+  long: "sma(10) crosses_below sma(30)"
+sizing:
+  type: all_in

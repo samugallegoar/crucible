@@ -119,7 +119,7 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
   `volume`) becomes `BAR_SCHEMA`: UTC ns, `event_time` = bar close (an exchange-calendar daily bar closes
   at the session close, a `24/7` daily bar a day after its open, an intraday bar at start + interval),
   `available_at = event_time + feed_latency_s`, sorted, de-duplicated; unusable rows are dropped and
-  counted (a bar still forming at fetch time is `not_closed`; an intraday bar never ends after its session's close), an OHLC violation is left to the quality battery unless `ohlc_repair="clamp"`.
+  counted (a bar still forming at fetch time is `not_closed`; an intraday bar never ends after its session's close), an OHLC violation is left to the quality battery unless `ohlc_repair="clamp"` (every violation) or `"clamp_rounding"` (only a violation within `ROUNDING_TOLERANCE` = 1e-6 of the close, which is float noise of an adjusted series; a larger one is still refused; ADR-0068).
 - `settings.py` — API keys and the default provider from the environment and `.env` (the environment
   wins); `ApiKey` is masked in every `repr`/`str`. `http.py` — GET with bounded retry and backoff and typed
   errors over stdlib `urllib`; credentials go in headers only. `cache.py` — raw responses for ranges that

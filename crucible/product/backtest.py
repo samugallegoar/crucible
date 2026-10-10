@@ -22,6 +22,7 @@ code only: same spec + same data = same bytes.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 from dataclasses import dataclass
 from decimal import Decimal
@@ -87,6 +88,7 @@ class BacktestRequest:
     offline: bool = False
     null_iterations: int = nulltest.DEFAULT_ITERATIONS
     family: str | None = None
+    realism_check: bool = False
     home: str | Path | None = None
     seed: int = DEFAULT_SEED
 
@@ -196,6 +198,65 @@ def _monthly(dates: list[str], strategy: list[float], benchmark: list[float]) ->
     return out
 
 
+def _realism_check(
+    config: ExperimentConfig,
+    n_bars: int,
+    slippage_bps: float,
+    commission_bps: float,
+    home: Home,
+    capital: float,
+) -> tuple[Side, dict[str, object]]:
+    """Re-runs the spec through the event-driven engine at Level 2 (``promote``): market orders
+    fill at the next bar's open with a static half spread equal to the preset's slippage, 100 ms
+    of latency and the preset's commission. Not a trial: it re-tests the same idea, so counting it
+    would deflate the DSR of the headline run for no new information."""
+    from crucible.core.types import RealismLevel as Level
+    from crucible.experiments.config import ExecutionConfig
+    from crucible.experiments.promotion import promote_config
+    from crucible.experiments.runner import run_experiment
+
+    execution = ExecutionConfig.model_validate(
+        {
+            "spread": {"type": "static", "half_spread_bps": slippage_bps},
+            "latency": {"type": "constant", "ms": 100.0},
+            "commission": {"type": "bps", "bps": commission_bps},
+        }
+    )
+    # the rules' state (stops, exits) depends on the entry bar, so the signal sees every bar
+    promoted = promote_config(
+        config,
+        target_realism_level=Level.SPREAD_LATENCY,
+        execution=execution,
+        promotion_lookback=max(n_bars, 2),
+    )
+    run = run_experiment(promoted, home.experiments, record_trial=False)
+    metrics = run.metrics
+    final = float(pl.read_parquet(run.path / "equity.parquet").sort("ts").get_column("equity")[-1])
+    side = Side(
+        final_equity=final,
+        total_return_pct=(final / capital - 1.0) * 100.0,
+        cagr_pct=metrics["cagr"].value * 100.0,
+        volatility_pct=metrics["volatility"].value * 100.0,
+        max_drawdown_pct=metrics["max_drawdown"].value * 100.0,
+        sharpe=metrics["sharpe"].value,
+        sharpe_low=metrics["sharpe"].ci_low,
+        sharpe_high=metrics["sharpe"].ci_high,
+    )
+    block: dict[str, object] = {
+        "engine": "event-driven",
+        "realism_level": "SPREAD_LATENCY",
+        "model": f"static half spread {slippage_bps:g} bps, 100 ms latency, "
+        f"{commission_bps:g} bps commission, fills at the next bar",
+        "experiment_id": str(run.experiment_id),
+        "final_equity": round(side.final_equity, 2),
+        "cagr_pct": round(side.cagr_pct, 4),
+        "max_drawdown_pct": round(side.max_drawdown_pct, 4),
+        "sharpe": round(side.sharpe, 4),
+        "n_trades": int(metrics["n_trades"].value),
+    }
+    return side, block
+
+
 def run_backtest(request: BacktestRequest) -> dict[str, Any]:
     """Runs the whole flow and returns the result document (see the module docstring)."""
     home = resolve_home(request.home)
@@ -206,6 +267,15 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     symbols = normalize_symbols(request.symbols)
     start = parse_day(request.start, "start")
     end = parse_day(request.end, "end")
+    if request.price_basis != "adjusted":
+        msg = (
+            f"price_basis={request.price_basis!r} is not available in the one-step backtest: it "
+            "has "
+            "no dividend events, so raw prices would silently drop dividends from the returns. "
+            "Use adjusted prices (the default), or the event-driven engine with a "
+            "corporate-actions dataset (docs/modules/data.md)"
+        )
+        raise ConfigurationError(msg)
     if request.capital <= 0:
         msg = f"capital must be greater than 0, got {request.capital}"
         raise ConfigurationError(msg)
@@ -245,11 +315,17 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     start_iso = f"{start.isoformat()}"
     end_iso = f"{end.isoformat()}T23:59:59+00:00"
     name = spec.name or "Strategy"
-    canonical = canonical_spec(spec)
+    full_spec = canonical_spec(spec)
+    # the label is for people: it stays out of the config, so renaming a strategy is neither a new
+    # experiment nor a new trial (the rules are what the trial count is about)
+    canonical = {k: v for k, v in full_spec.items() if k != "name"}
+    rules_id = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:10]
     config = ExperimentConfig.model_validate(
         {
             "experiment": {
-                "name": name,
+                "name": f"backtest-{rules_id}",
                 "family": family,
                 "mode": "evaluation",
                 "seed": request.seed,
@@ -354,6 +430,13 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             iterations=request.null_iterations,
         )
 
+    realism_side: Side | None = None
+    realism_block: dict[str, object] | None = None
+    if request.realism_check:
+        realism_side, realism_block = _realism_check(
+            config, int(bars.height), slippage, commission, home, request.capital
+        )
+
     n_trades = int(strategy_metrics["n_trades"].value)
     hit = strategy_metrics.get("hit_rate")
     strat_side = _side(eq, strategy_metrics, request.capital)
@@ -383,6 +466,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             spec_name=spec.name,
             parameter_hints=_parameter_hints(spec),
             cost_preset=cost_label,
+            realism=realism_side,
         )
     )
 
@@ -426,7 +510,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             "calendar": request.calendar,
             "seed": request.seed,
         },
-        "strategy_spec": canonical,
+        "strategy_spec": full_spec,
         "strategy_explained": describe_spec(spec),
         "data": {
             "dataset": data.dataset,
@@ -454,6 +538,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             "dsr_error": manifest["dsr_error"],
             "pbo": None,
             "pbo_note": "not computed for a single run; a parameter sweep reports it",
+            "realism_check": realism_block,
             "contamination": manifest["contamination"],
             "null_test": None
             if null_result is None
@@ -499,7 +584,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
         {"ts": ts_list, "strategy": strategy_curve, "benchmark": bench_curve}
     ).write_parquet(out_dir / "benchmark_equity.parquet", compression="uncompressed")
     (out_dir / "strategy_spec.json").write_text(
-        json.dumps(canonical, sort_keys=True, indent=2) + "\n", encoding="utf-8", newline="\n"
+        json.dumps(full_spec, sort_keys=True, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
 
     doc_out = dict(doc)

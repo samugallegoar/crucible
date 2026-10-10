@@ -28,7 +28,8 @@ Core libraries: Polars, NumPy, DuckDB, PyArrow, Pydantic v2, `exchange_calendars
 ## 3. Repository map
 
 ```
-crucible/          library code (one page per module in docs/modules/)
+crucible/          library code (one page per module in docs/modules/); `strategy_spec/` and
+                   `product/` are the no-code path and the one-step backtest users meet first
 docs/
   ARCHITECTURE.md  the system as actually built + the layering rule — keep it truthful
   WHERE_THINGS_GO.md  kind of change -> owning module, with anti-examples

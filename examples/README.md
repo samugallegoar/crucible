@@ -27,6 +27,19 @@ Tests that pin this example: `tests/integration/test_momentum_example.py`,
 `tests/integration/test_scenario_fanout.py`,
 `tests/lookahead/test_poisoned_future.py`, `tests/golden/test_determinism.py`.
 
+## sma_cross — the same SMA 10/30 rule as a spec and by hand
+
+```bash
+uv run crucible spec check --spec examples/sma_cross/spec.yaml
+uv run crucible backtest --spec examples/sma_cross/spec.yaml --symbols SPY \
+    --start 2015-01-01 --end 2025-12-30        # downloads SPY once, then runs
+```
+
+`spec.yaml` is the no-code strategy; `signal.py` is the hand-written vectorized signal it must
+reproduce. `tests/integration/test_product_backtest.py` asserts the two give identical equity and
+weights, `tests/golden/test_product_golden.py` pins a run on seeded synthetic data and
+`tests/lookahead/test_strategy_spec_poisoned_future.py` covers every template.
+
 ## trend_demo — single-symbol trend following with genuine AR(1) edge
 
 ```bash

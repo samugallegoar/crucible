@@ -93,5 +93,8 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0064](0064-promotion-rebalance-timing.md) | Promotion rebalances on the last bar of a timestamp | accepted | The strategy rebalances once per timestamp, on the last of that timestamp's bars |
 | [0065](0065-vectorized-futures.md) | Futures multipliers in the vectorized engine | accepted | `data.futures_multipliers` is accepted. In a fraction-of-equity model the multiplier cancels: holding `w * E / (P * m)` contracts earns `w * E * (P1 / P0 - 1)` whatever `m` is |
 | [0066](0066-mcp-server.md) | An MCP server over the machine-readable CLI | accepted | A thin server, built on the CLI. `crucible/mcp_server/` exposes one tool per command and each tool builds the argv of the existing command and runs it as `python -m crucible.cli.main <argv>` in a … |
+| [0067](0067-strategy-spec.md) | A declarative strategy spec that compiles to the vectorized signal path | accepted | The spec is data. A versioned (`spec_version: 1`), Pydantic-validated YAML/JSON document (`crucible/strategy_spec/`): `direction` (`long_only`, `long_short`), `entry`/`exit` conditions per side, … |
+| [0068](0068-product-layer.md) | A one-step product layer on top of the engine | accepted | `crucible/product/` sits above `experiments` and below `cli` in the layering contract |
+| [0069](0069-documentation-by-audience.md) | Documentation split by audience, reference pages stay where they are | accepted | Front door for users: `README.md` is a product page; `docs/guide/` holds user pages (install and connect an agent, the strategy spec, reading a report, an example session, FAQ and troubleshooting, … |
 
 <!-- END GENERATED: adr-index -->

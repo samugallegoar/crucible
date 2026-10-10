@@ -25,6 +25,8 @@ Anti-examples are real temptations, each of which breaks a rule stated in `AGENT
 |----------------|------|------------|---------|--------------|
 | A trading strategy | `examples/<name>/strategy.py` (+ `config.yaml`, `build_data.py`) | a `tests/lookahead/` file, the resume matrix if stateful, `examples/README.md` | `examples/momentum` (`Momentum`) | Putting it under `crucible/` (the library ships mechanisms, not alpha), or keeping state on `self` instead of `ctx.state` |
 | A strategy that composes others | `crucible/strategy/multi.py` | attribution in `analytics/attribution.py`, resume matrix | `MultiStrategy` | A second run loop; a strategy that reaches into another's context |
+| A new indicator or condition for the no-code spec | `strategy_spec/indicators.py` (`IndicatorDef`) | the poisoned-future harness (`tests/lookahead/test_strategy_spec_poisoned_future.py`), `docs/guide/strategy-spec.md`, `AGENT_GUIDE.md` | `rsi` | An indicator that reads bar `t+1`, or one that is only in a Python strategy |
+| What a non-coder's run reports or how a result is worded | `product/` (`summary.py`, `report.py`, `backtest.py`) | `docs/guide/reading-a-report.md`, a unit test of the new flag | `single_instrument` flag | Free text written by a model; a new headline number without its interval |
 | A vectorized signal | `examples/<name>/vectorized_signal.py` (`SignalFunction`) | vectorized agreement/poison tests | `trend_follower_signal` | Lagging the score yourself (the engine applies the mandatory shift) |
 | Read data inside a strategy | through `ctx.data` (`PITAccessor`) with `as_of` | lookahead test | `ctx.data.history(...)` | Importing `data.store` from strategy code, or reading a Parquet file (import-linter forbids the former; the harness catches the latter) |
 | A spread / latency / slippage / commission model | `execution/models.py` + key in `execution/registry.py` | config model in `experiments/config.py`, `docs/modules/execution.md`, unit + property + golden at its level, ADR if defaults change | `FixedBpsSlippage` | Hard-coding bps in `ladder.py`; importing `experiments` from `execution`; a model that helps the strategy |
@@ -60,10 +62,11 @@ Allowed imports point **down** this list (the full contract, with the exact modu
 
 | Layer (top to bottom) | Packages / modules | May import |
 |-----------------------|--------------------|-----------|
-| 1. Entry | `cli` | everything below |
+| 1. Entry | `mcp_server`, `cli` | everything below |
+| 1b. Product | `product` | 2 and below |
 | 2. Runtimes | `live.runtime` | 3 and below |
 | 3. Orchestration | `experiments` | 4 and below |
-| 4. Engine and gates | `core.engine`, `validation`, `vectorized`, `analytics` | 5 and below (siblings do not import each other) |
+| 4. Engine and gates | `core.engine`, `validation`, `vectorized`, `analytics`, `strategy_spec` | 5 and below (siblings do not import each other) |
 | 5. Domain services | `risk`, `strategy`, `live.*` (venue, feeds, paper) | 6 and below |
 | 6. Execution and portfolio | `execution`, `portfolio` | 7 and below |
 | 7. Ledger, data, orders | `accounting`, `data`, `orders`, `live.rows` | 8 and below |

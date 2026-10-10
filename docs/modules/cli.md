@@ -3,9 +3,33 @@
 ## What exists
 
 The `crucible` command (`crucible/cli/main.py`: `build_parser`, `main`). Every command, with its
-options, is listed in `docs/INVENTORY.md`: `run`, `run-vectorized`, `promote`, `report`, `debug`,
-`optimize`, `validate`, `compare`, `data build`, `data fetch`, `data check`, `data list`. Handlers are thin and
-import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1.
+options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `spec check`, `spec templates`,
+`config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`,
+`validate`, `compare`, `schema`, `data build`, `data fetch`, `data check`, `data list`. Handlers are
+thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1. stdout and
+stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
+`UnicodeEncodeError` on a legacy Windows code page.
+
+## Product commands (ADR-0067, ADR-0068; implemented in `cli/product_commands.py`)
+
+- `crucible backtest (--spec FILE | --entry RULE [--exit RULE] [--short-entry RULE --short-exit RULE]
+  [--direction long_only|long_short] [--fraction F] [--stop-loss-pct P] [--take-profit-pct P]
+  [--max-holding-bars N] [--name TEXT]) --symbols A,B --start YYYY-MM-DD --end YYYY-MM-DD
+  [--capital N] [--costs none|standard|conservative] [--slippage-bps X] [--commission-bps X]
+  [--provider yfinance|tiingo] [--price-basis adjusted|raw] [--calendar XNYS]
+  [--offline] [--null-iterations N] [--family NAME] [--realism-check] [--home DIR] [--json]` — the
+  one-step backtest (`docs/modules/product.md`). Prints the headline, the verdict, strategy against
+  buy-and-hold, the warnings and the report path; `--json` prints the result document. `--spec`
+  also accepts a YAML/JSON text.
+- `crucible results [--home DIR] [--limit N] [--json]` — earlier one-step backtests, newest first.
+- `crucible spec check` (the same strategy options) validates a spec and prints it back in plain
+  language; `crucible spec templates [--name NAME]` lists ready-made specs or prints one.
+- `crucible config show [--home DIR]` prints the resolved home folder, its subfolders, the settings
+  file, the version and provider availability; `crucible config set-home PATH` remembers a home.
+- `crucible schema --kind strategy-spec` prints the spec's JSON Schema (default: the experiment
+  config's).
+- `crucible data fetch --ohlc-repair clamp_rounding` repairs only float-rounding-sized OHLC
+  violations (<= 1e-6 of the close) and still refuses larger ones.
 
 ## Responsibility
 The `crucible` command.

@@ -23,6 +23,9 @@ WIDE_SHARPE_INTERVAL = 1.0
 """A 95 % Sharpe interval wider than this says the data cannot pin the ratio down."""
 DSR_CONFIDENT = 0.95
 NULL_P_VALUE = 0.05
+REALISM_DROP_PP = 1.5
+"""A drop in annual return (percentage points) under realistic fills that is flagged, if it is
+also more than a quarter of the headline return."""
 BEAT_MARGIN_PP = 0.5
 """Annual-return gap (percentage points) under which strategy and benchmark are "similar"."""
 
@@ -72,6 +75,8 @@ class SummaryInputs:
     spec_name: str | None = None
     parameter_hints: tuple[str, ...] = ()
     cost_preset: str = "standard"
+    realism: Side | None = None
+    """The same rules re-run on the event-driven engine at Level 2 (``realism_check``)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,8 +185,8 @@ def _flags(i: SummaryInputs) -> list[Flag]:
         flags.append(
             Flag(
                 "short_sample",
-                f"The test covers {i.years:.1f} years. Less than {MIN_YEARS:g} years may miss "
-                "a full market cycle.",
+                f"The test covers {i.years:.2f} years; this report asks for {MIN_YEARS:g} or "
+                "more, because a shorter test may miss a full market cycle.",
             )
         )
     if i.trial_count > 1:
@@ -211,6 +216,17 @@ def _flags(i: SummaryInputs) -> list[Flag]:
                 "luck produces, so the timing of the rules has not been shown to matter.",
             )
         )
+    if i.realism is not None:
+        drop = i.strategy.cagr_pct - i.realism.cagr_pct
+        if drop > max(REALISM_DROP_PP, 0.25 * abs(i.strategy.cagr_pct)):
+            flags.append(
+                Flag(
+                    "fragile_to_execution",
+                    f"With realistic fills (next-bar prices, spread and latency) the return "
+                    f"falls from {i.strategy.cagr_pct:.1f}% to {i.realism.cagr_pct:.1f}% a year: "
+                    "the result leans on optimistic execution.",
+                )
+            )
     if i.contamination:
         flags.append(
             Flag(
@@ -266,10 +282,10 @@ def _verdict(i: SummaryInputs, flags: list[Flag]) -> tuple[str, str, list[str]]:
     if i.strategy.cagr_pct >= i.benchmark.cagr_pct:
         lead = "it made money and beat buy-and-hold in this one backtest"
     else:
-        lead = "it made money in this one backtest but earned less than buy-and-hold"
+        lead = "it made money in this one backtest and earned less than buy-and-hold"
     return (
         "not_conclusive",
-        f"Not conclusive: {lead}, but the evidence is too thin to tell skill from luck "
+        f"Not conclusive: {lead}; the evidence is too thin to tell skill from luck "
         "(see the warnings). Treat it as an idea worth testing further, not a basis for "
         "real money.",
         blockers,
@@ -365,6 +381,12 @@ def build_summary(i: SummaryInputs) -> Summary:
             "by itself show the edge will continue."
         )
 
+    if i.realism is not None:
+        what.append(
+            f"With realistic fills (event-driven engine, orders filled at the next bar with a "
+            f"spread and latency) it would have ended at {money(i.realism.final_equity)} "
+            f"({pct(i.realism.cagr_pct)} a year, worst fall {pct(i.realism.max_drawdown_pct)})."
+        )
     steps = _next_steps(i, flags)
     return Summary(
         verdict_level=level,

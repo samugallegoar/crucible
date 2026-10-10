@@ -64,7 +64,8 @@ config -> event-driven config at Level >= 2), `optimize` (1-D sweep counted as t
 `validate` (run plus an optional factor regression), `report <EXP-ID>` (re-render), `debug
 <EXP-ID> --at <time>` (deterministic replay with reason trails for unfilled orders), `compare
 <family>` (every trial in a family), `data build|check|fetch|list`. The same commands are available to MCP clients through `crucible-mcp`
-(`uv sync --extra mcp`, `docs/modules/mcp_server.md`). Options and help text:
+(installed with Crucible, `docs/modules/mcp_server.md`). For a one-step backtest from a strategy
+spec, with no config or dataset to prepare, see `crucible backtest` (`docs/guide/`). Options and help text:
 `uv run crucible <command> --help` and `docs/INVENTORY.md`.
 
 ## 3. Running from Python

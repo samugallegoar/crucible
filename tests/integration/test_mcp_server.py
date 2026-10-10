@@ -258,6 +258,7 @@ def _captured_calls() -> list[list[str]]:
                 "stop_loss_pct": 5,
                 "offline": True,
                 "null_iterations": 10,
+                "realism_check": True,
                 "name": "x",
             },
             "crucible_check_strategy": {

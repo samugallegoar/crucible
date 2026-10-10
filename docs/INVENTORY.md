@@ -17,7 +17,10 @@
 
 | Command | Arguments and options | Help |
 |---|---|---|
+| `crucible backtest` | `--calendar --capital --commission-bps --costs --direction --end --entry --exit --family --fraction --home --json --max-holding-bars --name --null-iterations --offline --price-basis --provider --realism-check --short-entry --short-exit --slippage-bps --spec --start --stop-loss-pct --symbols --take-profit-pct` | One step: fetch data if needed, run a strategy spec, compare with buy-and-hold |
 | `crucible compare` | `<family> --artifacts --json` | Compare every recorded trial in a family from the trial registry |
+| `crucible config set-home` | `<path> --json` | Remember a home folder for every run |
+| `crucible config show` | `--home --json` | Print the resolved home folder and its subfolders |
 | `crucible data build` | `<spec> --end --json --max-contracts --max-rows --start --store` | Build datasets from an import spec (ADR-0052) |
 | `crucible data check` | `--calendar --dataset --json --skip --skip-reason --store` | Run quality checks on a dataset |
 | `crucible data fetch` | `--allow-partial --cache-dir --calendar --dataset --end --interval --json --max-rows --no-cache --ohlc-repair --price-basis --provider --refresh --start --store --symbols` | Fetch prices from a data provider into a dataset (ADR-0063) |
@@ -26,9 +29,12 @@
 | `crucible optimize` | `<config> --artifacts --json --metric --override --param --pbo-groups --values --vectorized --workers` | 1D parameter sweep, tagged as trials, assembling a PBO panel (R4.3/R4.9) |
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
 | `crucible report` | `<experiment_id> --artifacts --json` | Re-render the report for a finished experiment |
+| `crucible results` | `--home --json --limit` | List earlier one-step backtests, newest first |
 | `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --json --override --resume --runtime --stop-at` | Run an experiment from a YAML config |
 | `crucible run-vectorized` | `<config> --artifacts --json --override` | Run an experiment on the vectorized engine (Levels 0-1) |
-| `crucible schema` | `--out` | Print the JSON Schema of the experiment config (every valid field) |
+| `crucible schema` | `--kind --out` | Print a JSON Schema: the experiment config (default) or a strategy spec |
+| `crucible spec check` | `--direction --entry --exit --fraction --json --max-holding-bars --name --short-entry --short-exit --spec --stop-loss-pct --take-profit-pct` | Validate a spec and read it back in plain language |
+| `crucible spec templates` | `--json --name` | List ready-made specs to start from |
 | `crucible validate` | `<config> --artifacts --factors --json --override` | Run an experiment, optionally with a factor regression (R4.7) |
 
 ## Execution models

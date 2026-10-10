@@ -147,12 +147,17 @@ crucible/
                scenario fan-out, sweeps, perturbation, null tests, promotion, vectorized runner
   live/        DataFeed/Broker Protocols, ReplayDataFeed, PaperBroker/PaperRuntime, SimulatedVenue,
                VenueDataFeed, VenueExecution, LiveRuntime (behind `live.enabled`)
-  cli/         run, run-vectorized, promote, report, debug, optimize, validate, compare,
-               data check|build|fetch|list
-  mcp_server/  MCP tools over the --json CLI (optional extra `mcp`, ADR-0066)
+  strategy_spec/ declarative strategy specs (YAML/JSON) compiled to a vectorized SignalFunction
+               (ADR-0067)
+  product/     the one-step backtest: data acquisition, buy-and-hold benchmark, null test,
+               plain-language summary, readable report, home folder (ADR-0068)
+  cli/         backtest, results, spec, config, run, run-vectorized, promote, report, debug,
+               optimize, validate, compare, schema, data check|build|fetch|list
+  mcp_server/  MCP tools (async, cancellable) over the --json CLI, a guide resource and prompt
+               (ADR-0066, ADR-0068)
 examples/      momentum (8-symbol GBM universe with a delisting), trend_demo (AR(1) edge; also the
-               vectorized and live configs), overfit_demo (known-overfit RandomSignal); every
-               example is also a test
+               vectorized and live configs), overfit_demo (known-overfit RandomSignal), sma_cross
+               (a strategy spec and the same rule by hand); every example is also a test
 tools/         docgen.py: regenerates docs/INVENTORY.md, docs/SCHEMAS.md, docs/adr/README.md;
                lint_imports.py: runs import-linter with UTF-8 output on every platform
 ```

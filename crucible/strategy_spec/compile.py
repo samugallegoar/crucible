@@ -77,8 +77,9 @@ def _node_expr(node: Node) -> pl.Expr:
     elif node.op == "<=":
         result = left <= right
     else:
-        previous_left = left.shift(1).over("symbol")
-        previous_right = right.shift(1).over("symbol")
+        # a constant is the same on the previous bar; only a series is shifted
+        previous_left = left if isinstance(node.left, Num) else left.shift(1).over("symbol")
+        previous_right = right if isinstance(node.right, Num) else right.shift(1).over("symbol")
         if node.op == "crosses_above":
             result = (previous_left <= previous_right) & (left > right)
         else:

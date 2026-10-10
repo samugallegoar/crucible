@@ -10,6 +10,7 @@ Never regenerate silently.
 | Fixture | Produced by |
 |---|---|
 | `momentum_example_hashes.json` | `uv run pytest tests/golden --regen-golden`. SHA-256 of the momentum example's deterministic artifacts (config.yaml, ledger/orders/fills/trades/equity parquet, metrics.json). Data: `examples.momentum.build_data.build_all(seed=20260916)`; config: `examples/momentum/config.yaml` (seed 182736, Level 1). Excluded from the golden surface: `manifest.json` (embeds commit/env provenance) and `report.html`/`equity.svg` (renderer presentation, covered by content assertions in the integration tests instead). |
+| `sma_cross_spec_golden.json` | `uv run pytest tests/golden/test_product_golden.py --regen-golden`. The one-step backtest (ADR-0068) of `examples/sma_cross/spec.yaml` on the seeded synthetic `trend_demo` bars (`build_all(seed=20260918)`, symbol TRENDY, 2020-01-01 to 2021-12-30, standard costs, 20 null shuffles, seed 1): the SHA-256 of the canonical JSON of `results`, `validation`, `summary`, `trades`, `strategy_spec` and `strategy_explained`, plus final equity, benchmark equity, trade count, verdict level and the dataset hash. The experiment id and paths are excluded (they depend on the home folder). |
 
 2026-09-24: regenerated when ExperimentConfig.live was added ( every simulation artifact verified byte-identical, only config.yaml and experiment_id changed).
 
@@ -20,3 +21,5 @@ Never regenerate silently.
 2026-09-25: regenerated for batch 2 task 4 (DataConfig.futures_margins added; every simulation artifact byte-identical, only config.yaml and experiment_id changed).
 
 2026-09-27: regenerated for ADR-0055 (the canonical config serializes `data.store` with forward slashes so it is identical on Windows and Linux; every simulation artifact and `metrics.json` verified byte-identical, only config.yaml and experiment_id changed; the new values equal what the Ubuntu CI run computed).
+
+2026-10-10: `sma_cross_spec_golden.json` created with the product layer (ADR-0068); its summary wording was adjusted before release (the verdict sentence), numbers unchanged.

@@ -175,11 +175,12 @@ def build_server() -> MCPServer:
         slippage_bps: float | None = None,
         commission_bps: float | None = None,
         provider: Literal["yfinance", "tiingo"] | None = None,
-        price_basis: Literal["adjusted", "raw"] = "adjusted",
+        price_basis: Literal["adjusted"] = "adjusted",
         calendar: str = "XNYS",
         offline: bool = False,
         null_iterations: int = 100,
         family: str | None = None,
+        realism_check: bool = False,
     ) -> dict[str, object]:
         """Backtest a strategy in one step and compare it with buy-and-hold. No files or code
         needed: give the instrument(s), the period and the rule. Downloads prices if they are not
@@ -190,6 +191,8 @@ def build_server() -> MCPServer:
         `entry` / `exit`, e.g. entry="sma(10) crosses_above sma(30)", exit="sma(10) crosses_below
         sma(30)". `symbols` is comma-separated (SPY or SPY,QQQ); `start`/`end` are YYYY-MM-DD and
         `end` must be in the past. `costs`: standard (default), conservative or none.
+        `realism_check` (about 30 s extra) also re-runs the rules with realistic fills
+        (next-bar prices, spread, latency) and reports how much of the result survives.
 
         Returns one document: `summary` (headline, verdict, flags in words, next steps),
         `results.strategy` and `results.benchmark` (every Sharpe with its 95% range), `validation`
@@ -222,6 +225,7 @@ def build_server() -> MCPServer:
             "offline": offline,
             "null_iterations": _text(null_iterations),
             "family": family,
+            "realism_check": realism_check,
             "json": True,
         }
         return await run_cli(build_argv("backtest", [], options))
