@@ -28,14 +28,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from crucible.core.errors import ConfigurationError
-from crucible.mcp_server.invoke import ToolRefusal, ainvoke, invoke
+from crucible.mcp_server.invoke import ToolRefusal, ainvoke
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from mcp.server.mcpserver import MCPServer
 
-__all__ = ["INSTRUCTIONS", "build_argv", "build_server", "invoke", "main"]
+__all__ = ["INSTRUCTIONS", "build_argv", "build_server", "main"]
 
 INSTRUCTIONS = (
     "Crucible backtests a trading idea honestly: it compares it with buy-and-hold, attaches "
@@ -99,6 +99,38 @@ def _timeout() -> float:
 
 def _text(value: float | int | None) -> str | None:
     return None if value is None else str(value)
+
+
+def _rule_options(
+    spec: dict[str, Any] | str | None,
+    *,
+    entry: str | None,
+    exit: str | None,
+    short_entry: str | None,
+    short_exit: str | None,
+    direction: str,
+    fraction: float | None,
+    stop_loss_pct: float | None,
+    take_profit_pct: float | None,
+    max_holding_bars: int | None,
+    name: str | None,
+) -> dict[str, Option]:
+    """The strategy part of ``backtest`` / ``spec check``: a spec (object or text) or the inline
+    rule options; ``direction`` only applies to an inline rule."""
+    spec_text = json.dumps(spec, sort_keys=True) if isinstance(spec, dict) else spec
+    return {
+        "spec": spec_text,
+        "entry": entry,
+        "exit": exit,
+        "short_entry": short_entry,
+        "short_exit": short_exit,
+        "direction": direction if spec_text is None else None,
+        "fraction": _text(fraction),
+        "stop_loss_pct": _text(stop_loss_pct),
+        "take_profit_pct": _text(take_profit_pct),
+        "max_holding_bars": _text(max_holding_bars),
+        "name": name,
+    }
 
 
 def guide_text() -> str:
@@ -199,19 +231,20 @@ def build_server() -> MCPServer:
         (trial count, deflated Sharpe, null test, realism level), `trades`, `strategy_explained`
         and the absolute `report` path. Tell the person `summary.verdict` and its flags; never say
         the strategy works."""
-        spec_text = json.dumps(spec, sort_keys=True) if isinstance(spec, dict) else spec
         options: dict[str, Option] = {
-            "spec": spec_text,
-            "entry": entry,
-            "exit": exit,
-            "short_entry": short_entry,
-            "short_exit": short_exit,
-            "direction": direction if spec_text is None else None,
-            "fraction": _text(fraction),
-            "stop_loss_pct": _text(stop_loss_pct),
-            "take_profit_pct": _text(take_profit_pct),
-            "max_holding_bars": _text(max_holding_bars),
-            "name": name,
+            **_rule_options(
+                spec,
+                entry=entry,
+                exit=exit,
+                short_entry=short_entry,
+                short_exit=short_exit,
+                direction=direction,
+                fraction=fraction,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+                max_holding_bars=max_holding_bars,
+                name=name,
+            ),
             "symbols": symbols,
             "start": start,
             "end": end,
@@ -247,19 +280,20 @@ def build_server() -> MCPServer:
         """Validate a strategy spec (or inline rule) without running anything and read it back in
         plain language (`explained`). Use it to confirm you understood the person's idea. A bad
         spec is refused with where the problem is and how to fix it."""
-        spec_text = json.dumps(spec, sort_keys=True) if isinstance(spec, dict) else spec
         options: dict[str, Option] = {
-            "spec": spec_text,
-            "entry": entry,
-            "exit": exit,
-            "short_entry": short_entry,
-            "short_exit": short_exit,
-            "direction": direction if spec_text is None else None,
-            "fraction": _text(fraction),
-            "stop_loss_pct": _text(stop_loss_pct),
-            "take_profit_pct": _text(take_profit_pct),
-            "max_holding_bars": _text(max_holding_bars),
-            "name": name,
+            **_rule_options(
+                spec,
+                entry=entry,
+                exit=exit,
+                short_entry=short_entry,
+                short_exit=short_exit,
+                direction=direction,
+                fraction=fraction,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+                max_holding_bars=max_holding_bars,
+                name=name,
+            ),
             "json": True,
         }
         return await run_cli(build_argv(["spec", "check"], [], options))

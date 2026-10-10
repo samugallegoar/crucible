@@ -124,7 +124,7 @@ def _drawdown_pct(values: list[float]) -> list[float]:
 def _parameter_hints(spec: StrategySpec) -> tuple[str, ...]:
     """Neighbouring values (-25 % / +25 %) of every numeric period the rules use, as plain
     text, so 'is it fragile?' has a concrete first experiment."""
-    from crucible.strategy_spec.compile import _operands  # local: not part of the public API
+    from crucible.strategy_spec.compile import condition_operands
     from crucible.strategy_spec.models import Call, parse_condition
 
     periods: set[int] = set()
@@ -133,7 +133,7 @@ def _parameter_hints(spec: StrategySpec) -> tuple[str, ...]:
             condition = getattr(rules, side)
             if condition is None:
                 continue
-            for operand in _operands(parse_condition(condition, side)):
+            for operand in condition_operands(parse_condition(condition, side)):
                 if isinstance(operand, Call):
                     periods.add(operand.period)
     hints = []

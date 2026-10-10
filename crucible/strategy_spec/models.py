@@ -360,11 +360,8 @@ def parse_spec(raw: object) -> StrategySpec:
     try:
         return StrategySpec.model_validate(raw)
     except ValidationError as exc:
-        # a ConfigurationError raised inside a validator is wrapped by pydantic as a value error
-        for error in exc.errors():
-            original = error.get("ctx", {}).get("error")
-            if isinstance(original, ConfigurationError):
-                raise original from None
+        # (a ConfigurationError raised inside a validator is not a ValueError, so pydantic lets
+        # it through unchanged; only field-level problems arrive here)
         msg = f"the strategy spec is invalid:\n{_format_validation_error(exc)}"
         raise ConfigurationError(msg) from exc
 

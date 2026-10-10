@@ -87,11 +87,11 @@ def _node_expr(node: Node) -> pl.Expr:
     return result.fill_null(False)
 
 
-def _operands(node: Node) -> list[Operand]:
+def condition_operands(node: Node) -> list[Operand]:
     if isinstance(node, Always):
         return []
     if isinstance(node, Group):
-        return [o for item in node.items for o in _operands(item)]
+        return [o for item in node.items for o in condition_operands(item)]
     return [node.left, node.right]
 
 
@@ -103,7 +103,7 @@ def warmup_bars(spec: StrategySpec) -> int:
             condition = getattr(rules, side)
             if condition is None:
                 continue
-            for operand in _operands(parse_condition(condition, f"{side}")):
+            for operand in condition_operands(parse_condition(condition, f"{side}")):
                 if isinstance(operand, Call):
                     needed = max(needed, INDICATORS[operand.name].warmup(operand.period))
     # a crossing also looks one bar back

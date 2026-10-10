@@ -133,7 +133,7 @@ print. Engine logic never lives here.
 Checkpoint flags are offered on `run` only (not `optimize`, `validate`, `promote` or
 scenario fan-out), and periodic checkpointing keeps only the latest file (no numbered
 history, ADR-0058); `debug` replays a live-enabled run through `LiveRuntime`. Strategy entrypoints resolve relative to the working directory (documented
-in `runner._load_strategy`); `--override` has no `debug` form and `--json` no `debug`/`promote` form (ADR-0059). `optimize`
+in `runner._load_strategy`); `--override` has no `debug` form (ADR-0059). `optimize`
 is 1D only (mirrors `sweep_1d`'s scope, not `sensitivity_surface_2d`'s);
 its panel isn't persisted to disk, only printed (ADR-0022). Factor files
 are a CLI flag, not a config field — `ExperimentConfig`'s hash doesn't

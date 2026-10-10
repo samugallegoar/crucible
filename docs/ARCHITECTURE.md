@@ -82,7 +82,8 @@ bottom (siblings in one layer must not import each other):
 
 | # | Layer | Modules |
 |---|-------|---------|
-| 1 | entry | `mcp_server`, `cli` (`mcp_server` runs `cli` in process) |
+| 1 | entry | `mcp_server`, `cli` (`mcp_server` runs `cli` in a fresh process, ADR-0066) |
+| 1b | product | `product` (the one-step backtest, ADR-0068; imported by `cli`) |
 | 2 | runtimes | `live.runtime` |
 | 3 | orchestration | `experiments` |
 | 4 | engine and gates | `core.engine`, `validation`, `vectorized`, `analytics` |

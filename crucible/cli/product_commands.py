@@ -8,12 +8,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import TYPE_CHECKING
 
 from crucible.cli import machine
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
@@ -389,7 +385,3 @@ def dispatch(command: str, args: argparse.Namespace) -> int | None:
     if command == "results":
         return run_results_command(args)
     return None
-
-
-def names() -> Sequence[str]:
-    return ("backtest", "spec", "config", "results")

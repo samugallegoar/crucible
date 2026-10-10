@@ -220,8 +220,7 @@ checkpoint it (ADR-0042/0048).
 
 - No Python API to *list* experiments in an artifact root; use `crucible compare <family>` or
   list the directories (`EXP-*`).
-- No CLI flags for checkpoint/resume, config overrides (`--set key=value`) or `compare` across
-  families.
+- `compare` works within one family only, not across families.
 - `load_experiment` re-validates `config.yaml` with the current code: a run whose config used a
   field that has since been removed will not load (`docs/COMPATIBILITY.md` §5 says fields are
   deprecated, not deleted, for this reason).
