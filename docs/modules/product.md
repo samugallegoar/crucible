@@ -16,7 +16,7 @@ The one-step layer (ADR-0068) between a person's request and the engine.
 - `summary.py` — `build_summary(SummaryInputs) -> Summary`, the deterministic plain-language reading.
 - `report.py` — `render_html(doc, charts)`, the self-contained HTML report (inline SVG, no scripts).
 - the agent guide is `AGENT_GUIDE.md` at the repository root, the only source: the wheel build ships it
-  as `crucible/product/AGENT_GUIDE.md` (a hatch force-include) and `mcp_server.guide_text()` reads the
+  as `AGENT_GUIDE.md` inside the `crucible.product` package (a hatch force-include) and `mcp_server.guide_text()` reads the
   packaged file, else the root file of a source checkout.
 
 CLI: `crucible backtest`, `crucible results`, `crucible config show|set-home`, `crucible spec ...`

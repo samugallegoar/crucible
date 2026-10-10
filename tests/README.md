@@ -58,13 +58,19 @@ Use `tmp_path` / `tmp_path_factory`; never write into the repo.
 ## 4. Markers
 
 Registered in `pyproject.toml` (`docs/INVENTORY.md`, Pytest markers): `bench`, `golden`,
-`lookahead`.
+`lookahead`, `slow`.
 
 - `golden` — byte-identical reference tests (`tests/golden/`).
 - `lookahead` — information-barrier tests (`tests/lookahead/`).
 - `bench` — opt-in performance benchmarks, run with `-m bench`, **never gate correctness**.
   `tests/bench/` times the real-data examples when `data/processed/` holds the datasets and
   skips otherwise; results in `docs/data/scale.md` (ADR-0054).
+
+- `slow` — modules measured at 3 seconds or more (`tests/slow_modules.txt`, regenerated with
+  `python -m tools.slow_report`). It only labels: a plain `pytest` runs them, and `-m "not slow"` (or
+  `python -m tools.check --fast`) is the opt-in fast tier: about two minutes of tests against nine for the full run.
+  `tests/golden`, `tests/lookahead` and `tests/bench` are never listed, so the invariants stay in the
+  fast loop. A guard test fails when the list names a module that no longer exists.
 
 Select or skip with `-m`: `uv run pytest -m lookahead`, `uv run pytest -m "not golden"`.
 
@@ -144,6 +150,7 @@ uv run pytest tests/unit/test_ledger.py -q      # one file
 uv run pytest -k "dividend and not resume"      # by name
 uv run pytest -m lookahead                      # by marker
 uv run pytest -m "not golden"                   # skip the byte-identity tests
+uv run pytest -m "not slow"                     # the fast tier (opt-in; the default run is everything)
 uv run pytest tests/unit/test_architecture_conformance.py tests/unit/test_generated_docs.py  # the doc gates
 uv run pytest -x -q --lf                        # last failures first, stop at the first
 uv run pytest --regen-golden tests/golden       # regenerate golden (see §5; never silently)

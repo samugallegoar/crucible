@@ -33,6 +33,18 @@ kind of change is recorded).
 - Docs: README rewritten as a product page; user pages under `docs/guide/`; a contributor hub at
   `docs/contributing/README.md`. No engine, config-hash, artifact or existing golden change.
 
+### Development process and verdict guard
+- **Verdict:** `some_evidence` now also requires the realism check to have run and not flagged
+  `fragile_to_execution`; a result that clears every other guard without it is `not_conclusive`
+  with the blocker `realism_not_checked` (ADR-0068 amendment). Existing `not_conclusive` and
+  `no_edge_detected` results are unchanged.
+- **Packaging:** `AGENT_GUIDE.md` at the repository root is the only copy; the wheel ships it as
+  `crucible/product/AGENT_GUIDE.md`.
+- **Tooling:** `python -m tools.check` runs the five gates in order and stops at the first failure;
+  an opt-in fast test tier (`-m "not slow"`, `tests/slow_modules.txt`, `python -m tools.slow_report`);
+  a test that every `__main__.py` guards its call. `docs/DEPENDENCIES.md` states the `yfinance` and
+  `mcp` exceptions to the network-client rule.
+
 ## 0.1.0 - 2026-10-09
 
 First release.

@@ -48,6 +48,8 @@ definition) is a behaviour change: say so in the changelog and, if a golden move
 
 ```bash
 uv sync
+uv run python -m tools.check             # the five gates in order, stops at the first failure
+uv run python -m tools.check --fast      # same, with the fast test tier (no `slow` tests)
 uv run pytest                                   # the full suite (about 10 minutes; run it in the background)
 uv run mypy --strict crucible examples tools
 uv run ruff check . && uv run ruff format --check crucible tests examples tools
@@ -57,3 +59,8 @@ uv run python -m tools.docgen --check           # generated docs current (--writ
 
 Format only `crucible tests examples tools`; never the repository root (it rewrites Markdown code
 blocks under `docs/`).
+
+`tools.check` writes each gate's full output to `.check_logs/` (gitignored). The fast tier is the
+`slow` marker applied from `tests/slow_modules.txt`: it is opt-in (`-m "not slow"`), a plain `pytest`
+runs everything, and `uv run python -m tools.slow_report <durations.log> --write` regenerates the list
+from a `pytest --durations=0` log. Run the full suite before you hand work back.

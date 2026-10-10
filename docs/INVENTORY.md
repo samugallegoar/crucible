@@ -276,5 +276,6 @@ Registered in `pyproject.toml` (`--strict-markers`).
 | `bench` | opt-in performance benchmarks; never gate correctness |
 | `golden` | byte-identical reference-output tests |
 | `lookahead` | information-barrier harness tests |
+| `slow` | measured slow modules (tests/slow_modules.txt); a plain pytest runs them, -m \"not slow\" is the fast tier |
 
 <!-- END GENERATED: inventory -->
