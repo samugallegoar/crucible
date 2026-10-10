@@ -64,6 +64,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["crucible"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# one source: the guide at the repository root ships in the wheel as a package resource
+"AGENT_GUIDE.md" = "crucible/product/AGENT_GUIDE.md"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

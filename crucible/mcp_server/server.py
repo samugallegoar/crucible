@@ -134,8 +134,12 @@ def _rule_options(
 
 
 def guide_text() -> str:
-    """The agent guide shipped inside the package."""
-    return resources.files("crucible.product").joinpath("AGENT_GUIDE.md").read_text("utf-8")
+    """The agent guide: the packaged resource in an installed wheel (the build copies the root
+    ``AGENT_GUIDE.md`` into ``crucible/product/``), else the root file of a source checkout."""
+    packaged = resources.files("crucible.product").joinpath("AGENT_GUIDE.md")
+    if packaged.is_file():
+        return packaged.read_text("utf-8")
+    return (Path(__file__).resolve().parents[2] / "AGENT_GUIDE.md").read_text("utf-8")
 
 
 def _home_paths() -> tuple[str, str, str]:

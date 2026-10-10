@@ -32,7 +32,7 @@ Engine tools (advanced; all return the command's `--json` document): `crucible_s
 `crucible_data_check`, `crucible_data_build`, `crucible_data_fetch`.
 
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
-(`crucible/product/AGENT_GUIDE.md`, also `AGENT_GUIDE.md` at the repository root).
+(`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).
 
 ### Operational rules
 
