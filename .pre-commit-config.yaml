@@ -1,0 +1,31 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy --strict (crucible, examples, tools)
+        entry: uv run mypy --strict crucible examples tools
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: import-linter
+        name: layering rule (import-linter)
+        entry: uv run python -m tools.lint_imports
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: generated-docs
+        name: generated docs are current (tools.docgen --check)
+        entry: uv run python -m tools.docgen --check
+        language: system
+        pass_filenames: false
+        files: ^(crucible/|tools/|examples/|docs/adr/|docs/INVENTORY\.md|docs/SCHEMAS\.md|pyproject\.toml)

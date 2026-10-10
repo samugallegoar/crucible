@@ -1,0 +1,167 @@
+[project]
+name = "crucible"
+version = "0.1.0"
+description = "Crucible - a quant backtesting engine that makes it hard to fool yourself."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Samuel Gallego", email = "gallego80aristizabal@gmail.com" }]
+keywords = ["backtesting", "quantitative-finance", "trading", "reproducibility"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "polars>=1.0",
+    "numpy>=2.0",
+    "duckdb>=1.0",
+    "pyarrow>=17.0",
+    "pydantic>=2.7",
+    "exchange-calendars>=4.5",
+    "pyyaml>=6.0",
+    "matplotlib>=3.11.2",
+]
+
+[project.optional-dependencies]
+# Optional so the core install stays small (ADR-0063): `uv sync --extra yfinance`.
+yfinance = ["yfinance>=0.2.40"]
+# MCP server over the --json CLI (ADR-0066): `uv sync --extra mcp`.
+mcp = ["mcp>=2.3,<3"]
+
+[project.urls]
+Homepage = "https://github.com/samugallegoar/crucible"
+Repository = "https://github.com/samugallegoar/crucible"
+Issues = "https://github.com/samugallegoar/crucible/issues"
+Changelog = "https://github.com/samugallegoar/crucible/blob/main/CHANGELOG.md"
+
+[project.scripts]
+crucible = "crucible.cli.main:main"
+crucible-mcp = "crucible.mcp_server.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pre-commit>=3.8",
+    "types-pyyaml",
+    "import-linter>=2.15",
+    "psutil>=5.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["crucible"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "UP",        # pyupgrade
+    "B",         # bugbear
+    "C4",        # comprehensions
+    "SIM",       # simplify
+    "RUF",       # ruff-specific
+    "DTZ",       # naive-datetime bans (time discipline)
+    "PT",        # pytest style
+]
+ignore = [
+    "SIM108",    # ternary is not always clearer
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# exchange_calendars ships no py.typed; its objects are Any at the calendar
+# boundary, which crucible/data/calendars.py wraps behind typed methods.
+module = "exchange_calendars.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# yfinance is an optional extra (ADR-0063): not installed in every environment, and only
+# crucible/data/providers/yfinance.py imports it, lazily.
+module = "yfinance.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "yfinance"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# mcp is an optional extra (ADR-0066): imported only in crucible/mcp_server/
+module = "mcp.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mcp"
+ignore_missing_imports = true
+
+[tool.importlinter]
+root_package = "crucible"
+exclude_type_checking_imports = true
+
+# Layering rule (docs/ARCHITECTURE.md "Layering rule"): a module may import only
+# from modules in the same layer's own package or from layers BELOW it. Layers
+# are listed top to bottom; "a | b" means independent siblings that must not
+# import each other. Type-checking-only imports are not counted (no runtime edge).
+[[tool.importlinter.contracts]]
+name = "Layering (docs/ARCHITECTURE.md)"
+type = "layers"
+layers = [
+    "crucible.mcp_server",
+    "crucible.cli",
+    "crucible.live.runtime",
+    "crucible.experiments",
+    "crucible.core.engine | crucible.validation | crucible.vectorized | crucible.analytics",
+    "crucible.risk | crucible.strategy | crucible.live.venue | crucible.live.execution | crucible.live.interfaces | crucible.live.feed | crucible.live.paper | crucible.live.replay | crucible.live.venue_feed",
+    "crucible.execution | crucible.portfolio",
+    "crucible.accounting | crucible.data | crucible.orders | crucible.live.rows",
+    "crucible.core.clock | crucible.core.queue | crucible.core.logging",
+    "crucible.core.checkpoint",
+    "crucible.core.events | crucible.core.interfaces | crucible.core.instruments",
+    "crucible.core.types | crucible.core.errors | crucible.core.invariants | crucible.core.setup_fingerprint",
+]
+ignore_imports = [
+    # Cycle by design, both ends lazy: the checkpoint codec rebuilds ledger
+    # records by name, and the runner builds paper/live runtimes on demand.
+    "crucible.core.checkpoint -> crucible.accounting.ledger",
+    "crucible.experiments.runner -> crucible.live.runtime",
+]
+
+# The information barrier, structurally: code a strategy can reach reads data
+# through the PITAccessor Protocol only, never the store or the accessor impl.
+[[tool.importlinter.contracts]]
+name = "Strategy-facing code never touches the data store"
+type = "forbidden"
+source_modules = ["crucible.strategy", "crucible.portfolio"]
+forbidden_modules = ["crucible.data.store", "crucible.data.pit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "bench: opt-in performance benchmarks; never gate correctness",
+    "golden: byte-identical reference-output tests",
+    "lookahead: information-barrier harness tests",
+]

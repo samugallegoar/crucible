@@ -1,0 +1,15 @@
+# Palladium daily: '<data-dir>/final_palladium_data.csv' (2000-2025).
+# Bar-open UTC daily stamps (timezone not stated: an assumption). About 7% of rows violate OHLC
+# bounds; they are clamped (opt-in) and counted. The headlines column is not declared, so it is
+# ignored. See docs/data/metals-daily.md.
+kind: ohlcv_csv
+dataset: palladium_daily_v1
+input: '<data-dir>/final_palladium_data.csv'
+price_basis: raw
+delimiter: ';'
+columns: {timestamp: timestamp, open: open, high: high, low: low, close: close, volume: volume}
+symbol: {fixed: XPDUSD}
+timestamp: {format: "%Y-%m-%d", timezone: UTC, meaning: bar_open, interval: 1d}
+rows: {on_incomplete: drop, ohlc_repair: clamp, max_dropped_fraction: 0.10}
+quality_skip: [calendar_coverage]
+quality_skip_reason: metals trade on their own calendar; weekends and holidays have no bars

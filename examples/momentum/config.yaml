@@ -1,0 +1,33 @@
+experiment:
+  name: momentum_daily_example
+  family: momentum_daily_example
+  mode: evaluation
+  seed: 182736
+  realism_level: 1
+
+data:
+  store: examples/momentum/data
+  bars: momentum_bars_v1
+  corporate_actions: momentum_ca_v1
+  universe: momentum_universe_v1
+  calendar: XNYS
+  base_currency: USD
+
+strategy:
+  entrypoint: examples.momentum.strategy:Momentum
+  params:
+    bars_dataset: momentum_bars_v1
+    symbols: [SYM0, SYM1, SYM2, SYM3, SYM4, SYM5, SYM6, SYM7]
+    lookback: 60
+    top_k: 2
+    rebalance_every: 10
+    base_currency: USD
+
+execution:
+  slippage_bps: 5.0
+  commission_bps: 2.0
+
+initial_cash: "1000000"
+start: "2020-01-01"
+end: "2022-01-01"
+periods_per_year: 252.0

@@ -1,0 +1,8 @@
+# Polymarket BTC 5-minute sub-second ticks (42.7M rows, 14,361 contracts):
+# '<data-dir>/btc_5m_hf_ticks.parquet' with the outcomes table beside it.
+# Always pass --start/--end or --max-contracts: the whole file exceeds what the replay feed
+# holds (the importer and --max-rows refuse). See docs/data/polymarket-btc5m-ticks.md.
+kind: polymarket_parquet
+dataset: polymarket_btc5m_ticks_v1
+input: '<data-dir>/btc_5m_hf_ticks.parquet'
+outcomes: '<data-dir>/btc_5m_market_outcomes.parquet'

@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+build/
+dist/
+
+# Experiment artifacts: everything except reference-run manifests
+experiments/*
+!experiments/README.md
+!experiments/manifests/
+
+# Secrets: API keys live in .env (copy .env.example); never commit it
+.env
+.env.*
+!.env.example
+
+# Local data stores (root only — NOT crucible/data, the source package)
+/data/
+
+# Example datasets: regenerable via each example's build_data.py
+examples/*/data/
+
+# Tool caches
+.import_linter_cache/
+
+# Agent tooling: local state only (shared config: .claude/settings.json, .gemini/settings.json)
+.claude/settings.local.json
+.claude/worktrees/
+.superpowers/
+
+# OS / editor
+.DS_Store
+Thumbs.db

@@ -1,0 +1,13 @@
+# Gold spot XAU/USD 1d bars: '<data-dir>/XAU_1d_data.csv'.
+# Timestamps are bar OPEN times in UTC (the files state no timezone: an assumption, documented
+# in docs/data/xau-gold.md). The market is 24/5, so weekends have no bars.
+kind: ohlcv_csv
+dataset: xauusd_1d_v1
+input: '<data-dir>/XAU_1d_data.csv'
+price_basis: raw
+delimiter: ';'
+columns: {timestamp: Date, open: Open, high: High, low: Low, close: Close, volume: Volume}
+symbol: {fixed: XAUUSD}
+timestamp: {format: "%Y.%m.%d %H:%M", timezone: UTC, meaning: bar_open, interval: 1d}
+quality_skip: [calendar_coverage]
+quality_skip_reason: 24/5 market; weekends have no bars

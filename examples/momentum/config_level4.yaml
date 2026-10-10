@@ -1,0 +1,54 @@
+# The same momentum strategy at realism Level 4 with execution-scenario
+# fan-out. Compare with config.yaml (Level 1): the strategy is
+# identical; only the execution assumptions change.
+experiment:
+  name: momentum_daily_level4
+  family: momentum_daily_example
+  mode: evaluation
+  seed: 182736
+  realism_level: 4
+
+data:
+  store: examples/momentum/data
+  bars: momentum_bars_v1
+  corporate_actions: momentum_ca_v1
+  universe: momentum_universe_v1
+  calendar: XNYS
+  base_currency: USD
+
+strategy:
+  entrypoint: examples.momentum.strategy:Momentum
+  params:
+    bars_dataset: momentum_bars_v1
+    symbols: [SYM0, SYM1, SYM2, SYM3, SYM4, SYM5, SYM6, SYM7]
+    lookback: 60
+    top_k: 2
+    rebalance_every: 10
+    base_currency: USD
+
+execution:
+  spread: { type: dynamic, base_bps: 2.0, vol_mult: 1.5 }
+  latency: { type: constant, ms: 50.0 }
+  slippage: { type: sqrt_impact, coef: 0.1 }
+  commission: { type: per_share, rate: "0.005", minimum: "1.00" }
+  participation: { max_bar_vol: 0.10, max_adv: 0.02 }
+  stats_window: 20
+  scenarios:
+    optimistic:
+      spread: { type: static, half_spread_bps: 0.5 }
+      latency: { type: zero }
+      slippage: { type: none }
+    conservative:
+      spread: { type: dynamic, base_bps: 4.0, vol_mult: 3.0 }
+      latency: { type: constant, ms: 200.0 }
+      slippage: { type: sqrt_impact, coef: 0.3 }
+    extreme:
+      spread: { type: static, half_spread_bps: 25.0 }
+      latency: { type: normal, mean_ms: 500.0, std_ms: 200.0 }
+      slippage: { type: sqrt_impact, coef: 1.0 }
+      participation: { max_bar_vol: 0.01, max_adv: 0.005 }
+
+initial_cash: "1000000"
+start: "2020-01-01"
+end: "2021-01-01"
+periods_per_year: 252.0

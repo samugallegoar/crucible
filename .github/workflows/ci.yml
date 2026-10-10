@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Sync (locked)
+        run: uv sync --locked --all-extras
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check crucible tests examples tools
+      - name: Types
+        run: uv run mypy --strict crucible examples tools
+      - name: Layering (import-linter)
+        run: uv run python -m tools.lint_imports
+      - name: Generated docs are current
+        run: uv run python -m tools.docgen --check
+      - name: Tests
+        run: uv run pytest -q
+      - name: CLI smoke
+        run: uv run crucible --help

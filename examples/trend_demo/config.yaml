@@ -1,0 +1,30 @@
+experiment:
+  name: trend_demo
+  family: trend_demo
+  mode: evaluation
+  seed: 1
+  realism_level: 1
+
+data:
+  store: examples/trend_demo/data
+  bars: trend_demo_bars_v1
+  calendar: XNYS
+  base_currency: USD
+
+strategy:
+  entrypoint: examples.trend_demo.strategy:TrendFollower
+  params:
+    bars_dataset: trend_demo_bars_v1
+    symbol: TRENDY
+    lookback: 3
+    rebalance_every: 1
+    base_currency: USD
+
+execution:
+  slippage_bps: 0.0
+  commission_bps: 0.0
+
+initial_cash: "1000000"
+start: "2020-01-01"
+end: "2022-01-01"
+periods_per_year: 252.0

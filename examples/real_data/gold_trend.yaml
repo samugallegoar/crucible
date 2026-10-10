@@ -1,0 +1,35 @@
+# Trend following on the imported gold 15-minute bars (docs/data/xau-gold.md); timestamps are
+# assumed UTC bar-open. Build the dataset first:
+#   uv run crucible data build examples/imports/xau_15m.yaml --store data/processed
+experiment:
+  name: gold_trend_real
+  family: gold_trend_real
+  mode: evaluation
+  seed: 11
+  realism_level: 1
+
+data:
+  store: data/processed
+  bars: xauusd_15m_v1
+  calendar: "24/7"
+  base_currency: USD
+  quality_skip: [calendar_coverage]
+  quality_skip_reason: 24/5 market; weekends have no bars
+
+strategy:
+  entrypoint: examples.trend_demo.strategy:TrendFollower
+  params:
+    bars_dataset: xauusd_15m_v1
+    symbol: XAUUSD
+    lookback: 96
+    rebalance_every: 96
+    base_currency: USD
+
+execution:
+  slippage_bps: 1.0
+  commission_bps: 0.5
+
+initial_cash: "1000000"
+start: "2015-01-01"
+end: "2026-01-01"
+periods_per_year: 24192.0

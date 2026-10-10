@@ -1,0 +1,12 @@
+{
+  "experiment_id": "EXP-580da7a71177",
+  "files": {
+    "config.yaml": "23fa8c4e93c162adf0e0bc9ebeebefa15dd55464a5cf27e4f2b18124fd46680e",
+    "equity.parquet": "08300d025b93130eb84f479a48b3a6f2ae601b02c1368732b776584f431e1cfc",
+    "fills.parquet": "fcd6708f52b3cf3173dd7e1b6da26831b8883712b7de3ef54f0db5c26292cb0b",
+    "ledger.parquet": "8024ae0ad09012e8f7affd8cffa5d7ce501b34e246f00f96afba86641081d0e0",
+    "metrics.json": "b25f8f480ef8a0e57002dbed7b712e79b3630bfc6639610490c6e86a475c1331",
+    "orders.parquet": "9613b578857d5411ccfbe093ccc9ef178eced4430768ada085e53ee67bd3727d",
+    "trades.parquet": "f786fbb3454bf37d1e0155fa50f0ab92fb469454125f2b362e8f2069fb05ea09"
+  }
+}

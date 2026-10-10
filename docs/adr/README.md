@@ -1,0 +1,97 @@
+# Architecture decision records
+
+One decision per file, `NNNN-kebab-title.md`, from `0000-template.md`. Write one whenever
+you make a choice another engineer might question, and **always** when a result-affecting
+ambiguity forces a choice (timing, pessimism rules, accounting conventions): write the
+options, choose the more conservative one, and flag it in your summary (AGENTS.md §10).
+A change that moves a golden fixture for a reason other than a bug needs an ADR
+(`docs/COMPATIBILITY.md` §6).
+
+- **Numbering:** the next free number. Numbers may skip when a branch holds one that has not
+  merged yet; check open pull requests and branches (`gh pr list`, `git branch -a`) before
+  taking a number, and never renumber a merged ADR. Two branches once claimed 0056 at the same
+  time: the one that merged second was renumbered to 0057 before it merged.
+- **Immutability:** a merged ADR is history. Change a decision with a *new* ADR and set the
+  old one's status to `superseded by ADR-NNNN`; small amendments may be appended under a
+  dated `## Amendment` heading (ADR-0046 does this).
+- **Statuses:** `accepted` (in force), `draft` (the conservative option is in force, the owner
+  has not confirmed it: ADR-0005 to 0009), `superseded by ADR-NNNN`.
+- **Cite them** from code and docs as `ADR-NNNN`. Section numbers written `AGENTS.md §N`
+  mean `AGENTS.md §N`.
+
+The index below is generated from the ADR files (title, status and the first sentence of
+`## Decision`) by `tools/docgen.py`; a new ADR that is not in it fails
+`tests/unit/test_generated_docs.py` — run `uv run python -m tools.docgen --write`.
+
+<!-- BEGIN GENERATED: adr-index -->
+
+| ADR | Title | Status | Decision (first sentence) |
+|---|---|---|---|
+| [0001](0001-python-first-fully-typed.md) | Python ≥ 3.12, fully typed, uv-managed | accepted | Python ≥ 3.12 with `mypy --strict` as a CI gate; `uv` with a committed `uv.lock` for reproducible environments; `ruff` for lint/format |
+| [0002](0002-parquet-duckdb-storage.md) | Parquet on disk + DuckDB for queries | accepted | Parquet files as the storage format, one directory per dataset version with a `manifest.json` (schema version, content hash, row count, source, build time) |
+| [0003](0003-numba-later-no-rust-core.md) | Hot paths via Numba later; no Rust/C++ in the core | accepted | No JIT/no native code until Phase 2+ and only behind existing Python interfaces, starting with Numba on measured hot loops |
+| [0004](0004-utc-int64-ns-timestamps.md) | All internal time is UTC int64 nanoseconds | accepted | Internal timestamps are UTC epoch nanoseconds as `int64` (`crucible.core.types.TimestampNs`) |
+| [0005](0005-typed-missingness-reason-column.md) | Typed missingness via nullable value + reason enum column | draft | Nullable value column + companion `missing_reason` enum column (`crucible.core.types.MissingReason`, stored as Arrow dictionary/categorical) |
+| [0006](0006-events-frozen-slotted-dataclasses.md) | Events are frozen, slotted dataclasses (not msgspec) | draft | `dataclass(frozen=True, slots=True)`: stdlib, zero extra dependency, first-class mypy support, hashable, and immutable by construction |
+| [0007](0007-bar-available-at-close-plus-latency.md) | Bar `available_at` = bar close + non-negative feed latency (default 0) | draft | `available_at = bar_close_time + feed_latency`, where `feed_latency >= 0` and defaults to 0 |
+| [0008](0008-trial-family-scoping.md) | Trial families are explicit; DSR counts every trial in the family | draft | Every experiment config carries a mandatory `family` string (already in `ExperimentHeader`) |
+| [0009](0009-fx-marking-convention.md) | FX — equity marked at mid; conversions transact at the adverse side | draft | Marking (equity, exposures, reporting): mid rate `as_of` the mark time |
+| [0010](0010-level1-fill-semantics.md) | Level 0/1 fill semantics | accepted | Level 0: instant fill at the *current bar's close* (the decision-time reference); zero costs |
+| [0011](0011-deterministic-artifact-encoding.md) | Deterministic artifact and dataset encoding | accepted | Parquet (datasets and artifacts): written uncompressed, statistics disabled, rows sorted by the contract's sort keys (datasets) or generated in deterministic engine order (artifacts) |
+| [0012](0012-ladder-arrival-and-trigger-semantics.md) | Ladder arrival, trigger, and cap semantics (Levels 2-4) | accepted | Arrival rules. `effective_at = created_at + latency` (drawn once per order from the seeded run rng): |
+| [0013](0013-purge-embargo-and-walkforward-windows.md) | Purge/embargo convention and walk-forward's validate window | accepted | Purge is bidirectional, embargo is one-directional. For purged K-fold/CPCV, `purge` removes training rows adjacent to *either* edge of a test block (a training label whose window overlaps the test … |
+| [0014](0014-trial-registry-storage-and-scoping.md) | Trial registry storage, idempotency, and scenario-fanout scoping | accepted | Storage. `crucible.validation.trial_registry.DuckDBTrialRegistry` implements the `TrialRegistry` Protocol over a DuckDB file at `<artifacts_root>/trial_registry.duckdb` — one file per artifact store, … |
+| [0015](0015-dsr-pbo.md) | DSR/PBO formulas, per-period scale, and PBO's single-run limit | accepted | `crucible/validation/dsr.py` computes the Probabilistic Sharpe Ratio (Bailey & López de Prado 2012) and Deflated Sharpe Ratio (2014) entirely on per-period returns, Sharpe, skewness, and kurtosis — … |
+| [0016](0016-sensitivity-surfaces.md) | Sensitivity surface diagnostic and trial-counting for sweeps | accepted | The diagnostic is a relative drop-ratio, not a curvature formula |
+| [0017](0017-monte-carlo-resampling.md) | Monte Carlo resampling scope, and the shuffle/shift invariant | accepted | Scope this pass to the three return-only techniques: return-order shuffle, start-date shift, block bootstrap — implemented as `ResamplingTest`s in `crucible/validation/monte_carlo.py`, matching the … |
+| [0018](0018-perturbation-monte-carlo.md) | Perturbation Monte Carlo, and why it splits ADR-0014/0016's rule | accepted | Execution perturbation does not count as trials — same reasoning as ADR-0014 |
+| [0019](0019-null-tests.md) | Null test data transforms, temp-store isolation, and scope | accepted | Bar transforms decompose-and-reconstruct rather than touch prices directly |
+| [0020](0020-factor-regression-and-max-drawdown-ci.md) | Factor regression scope, numerical-perfect-fit guard, and the max-drawdown bootstrap CI | accepted | Factor regression is pure OLS statistics on an explicit `factors: Mapping[str, Sequence[float]]` argument, not file ingestion |
+| [0021](0021-contamination-flagging.md) | Contamination flagging via a trial-registry schema extension | accepted | Extend the trial registry's schema with `mode`, `start_ns`, `end_ns` columns, recorded at `record_trial` time, rather than reconstructing them from each trial's `config.yaml` in the artifact store |
+| [0022](0022-optimize-validate-cli.md) | `optimize`/`validate` CLI shape | accepted | `crucible optimize CONFIG --param NAME --values "v1,v2,..." [--metric sharpe] [--pbo-groups N]` (`crucible/experiments/optimize.py:: optimize_1d`): runs `run_experiment` once per value (reusing … |
+| [0023](0023-phase3-acceptance.md) | Phase 3 acceptance scope, RandomSignal design, and a null-test limitation | accepted | `examples/overfit_demo/strategy.py::RandomSignal` is the known-overfit vehicle: a long-only, equal-weight, periodic-rebalance strategy whose *symbol selection* is `rng.choice`, seeded only by … |
+| [0024](0024-trend-demo-closes-null-test-acceptance-gap.md) | `examples/trend_demo` closes the null-test acceptance gap | accepted | `examples/trend_demo/build_data.py` generates a single symbol (`TRENDY`) via an AR(1) return process: `r[t] = mu + phi*(r[t-1]-mu) + eps[t]`, `eps[t] ~ N(0, sigma_eps)`, with `sigma_eps` chosen via … |
+| [0025](0025-multi-currency-fx-handling.md) | Multi-currency FX handling (Phase 4 priority 1) | accepted | A symbol's currency is a config-level mapping, not a bar-schema field |
+| [0026](0026-dividend-timing-mechanics.md) | Dividend timing mechanics (Phase 4 priority 2) | accepted | A dividend is two events from one dataset row, both the same `CorporateActionEvent` type, distinguished by which field is set |
+| [0027](0027-risk-engine-composition-and-actions.md) | Risk engine composition and action semantics (Phase 4 priority 5) | accepted | Composition: `CompositeRiskEngine` (`crucible/risk/engine.py`) holds an ordered list of `PreTradeLimit`s and `MarkLimit`s (Protocols distinct from `RiskEngine` itself — a limit is not a full engine) |
+| [0028](0028-settlement-lag.md) | Settlement lag and available cash (Phase 4 priority 4) | accepted | A second cash balance, not a delayed transaction. `TransactionRecord` gains `settled_at: TimestampNs \| None` (`None` means "settles at `ts`" — unset by every transaction that doesn't model lag, so … |
+| [0029](0029-portfolio-constructors.md) | Portfolio constructors and target resolution (Phase 4 priority) | accepted | (1) `construct` gains an optional fourth parameter, `history: Mapping[Symbol, Sequence[float]] \| None = None` — each candidate symbol's recent return series, computed by the *strategy* through its … |
+| [0030](0030-multi-strategy-attribution.md) | Multi-strategy composition and per-strategy attribution (Phase 4, final priority) | accepted | Composition, not a new engine loop. `crucible/strategy/multi.py:: MultiStrategy` itself satisfies the `Strategy` Protocol — `BacktestEngine` still runs exactly one top-level strategy, completely … |
+| [0031](0031-margin-and-short-selling.md) | Margin requirement and margin-call liquidation for shorts (Phase 5, priority 1) | accepted | A simplified, documented Reg-T-style model, not a broker-accurate one |
+| [0032](0032-borrow-cost-and-margin-financing.md) | Borrow cost and margin financing accrual (Phase 5, priority 2) | accepted | A single accrual method on `BacktestEngine`, not a new pluggable model |
+| [0033](0033-futures-specs-mtm-and-rolls.md) | Futures contract specs, daily MTM settlement, and rolls (Phase 5, priority 3) | accepted | Reuse `PositionState.apply` unchanged, for both futures and equities — but book *different cash* at fill time, and add a new periodic settlement operation equities never need |
+| [0034](0034-post-phase-5-code-review-fixes.md) | Post-Phase-5 code review — fixes applied and gaps deferred | accepted |  |
+| [0035](0035-vectorized-engine-shift-discipline-and-agreement.md) | Vectorized engine — weight semantics, shift discipline, and the event-driven agreement test | accepted | 1. `score` is a target weight, used as-is |
+| [0036](0036-vectorized-config-glue-and-artifact-scope.md) | Vectorized config glue — refusal list and artifact scope | accepted | 1. Refuse whenever silently ignoring the field would compute a *different* result than the config asked for, not just an incomplete one |
+| [0037](0037-promotion-to-event-driven.md) | Promotion to the event-driven engine | accepted | Re-run the signal function (option 2). A replayed schedule (option 1) computed its weights frictionlessly, in one shot, against the vectorized run's own equity curve — it has no way to react to a … |
+| [0038](0038-multiprocessing-sweep-and-registry-queries.md) | Multiprocessing sweep runner and result-registry queries | accepted | Split `run_experiment` into two phases and run only the first one in parallel |
+| [0039](0039-datafeed-seam-and-engine-queue-merge.md) | The engine reads its market data through an injectable DataFeed and merges it with its own event queue | accepted | `BacktestEngine` (and `assemble_engine`) take `feed_factory: Callable[[FeedContext], DataFeed] \| None` |
+| [0040](0040-broker-finalization-and-paper-broker-facade.md) | `Broker` finalized on `OrderSpec`; `PaperBroker` is a facade outside the order path | accepted | `Broker`: `submit(spec: OrderSpec) -> OrderId`, `cancel(order_id)`, `order_state(order_id) -> OrderState` (new), `positions()` (signed non-zero quantities), `cash()` (ledger fold total balance per … |
+| [0041](0041-checkpoint-format-and-snapshot-protocol.md) | Checkpoints are a canonical JSON codec over per-component snapshots | accepted | Explicit `snapshot()`/`restore(state)` per stateful component (`Snapshottable`, `crucible/core/interfaces.py`): ledger, order manager, execution simulator, `MarketStats`, stateful risk limits … |
+| [0042](0042-strategy-state-contract.md) | Resumable strategy state lives in `ctx.state`; `StatefulStrategy` for the rest | accepted | `ctx.state` may hold the codec types (None, bool, int, float, str, Decimal, tuple, list, dict[str, ...], set, frozenset, numpy PCG64 Generator) |
+| [0043](0043-execution-backend-seam-and-simulated-venue.md) | The engine drives an ExecutionBackend; live runs use a simulated venue | accepted | `ExecutionBackend` Protocol (`crucible/execution/backend.py`) is exactly the surface the engine already called on the simulator |
+| [0044](0044-lazy-feed-stamping-resume-and-reconciliation.md) | Lazily stamping feeds, their resume, and venue reconciliation | accepted | `DataFeed.stamping` is `"eager"` or `"lazy"`; the engine refuses a feed that does not declare it |
+| [0045](0045-instrument-aware-risk-notional.md) | Risk limits use base-currency, multiplier-scaled notional | accepted | `PortfolioView` gains two pure reads, implemented by `PortfolioSnapshot` (which already holds the FX mid rates, futures specs and currency map, and whose `equity()` and `realized_pnl` already convert … |
+| [0046](0046-dividend-entitlement-uses-the-pre-ex-date-position.md) | Dividend entitlement uses the pre-ex-date position | accepted | The ex-date branch folds the ledger up to `event.ts - 1` ns, so fills booked at the ex-date timestamp are excluded from entitlement |
+| [0047](0047-fill-rows-carry-currency-multiplier-and-fx.md) | Fill rows carry currency, multiplier and FX; attribution values them | accepted | Each fill row gains `currency` (the symbol's currency), `multiplier` (Decimal text; `"1"` for non-futures) and `fx_to_base` (Decimal text; the mid rate at the fill's timestamp read through the PIT … |
+| [0048](0048-state-outside-the-snapshot-is-refused.md) | State held outside the snapshot is refused, and other hardening | accepted | A failed `on_start`, or a failed `resume_from` after validation, makes the engine unusable |
+| [0049](0049-trade-pnl-split-and-cross-currency-buying-power.md) | Trade PnL split and cross-currency buying power | accepted | The trade log values each FIFO lot with its fill's `multiplier` and `fx_to_base` (the columns fill rows carry since ADR-0047) |
+| [0050](0050-futures-margin-model.md) | Futures margin model | accepted | `FuturesSpec` gains optional per-contract `initial_margin` and `maintenance_margin` in the contract's currency: both or neither, and `initial >= maintenance > 0` (`ConfigurationError` otherwise) |
+| [0051](0051-cli-runtimes-vectorized-and-promotion.md) | CLI for the runtimes, the vectorized runner and promotion | accepted | `run_experiment(config, root, *, runtime="backtest"\|"paper"\|"live")` changes only how the engine is built (`assemble_engine`, `PaperRuntime(...).engine`, `LiveRuntime(...).engine`); everything after … |
+| [0052](0052-data-importers.md) | Spec-driven data importers for the user's files | accepted | A YAML import spec (`crucible/data/importers/spec.py`, pydantic, frozen, unknown keys refused) declares every assumption |
+| [0053](0053-derived-calendar-window.md) | Exchange calendars cover a window derived from the run, not from today | accepted | `ExchangeCalendarAdapter(name, *, start, end)` and `get_trading_calendar(name, *, start, end)` take the range (UTC ns) the caller works on |
+| [0054](0054-incremental-ledger-fold.md) | Incremental ledger fold and portfolio snapshot reuse | accepted | `InMemoryLedger.fold(up_to)` is incremental. The ledger is append-only in time order, so it keeps a running state (cash, available cash, positions, fees, last timestamp) and applies only the … |
+| [0055](0055-cross-platform-determinism.md) | Cross-platform determinism found by the first Linux CI run | accepted | `DataConfig.store` is serialized with forward slashes (`Path.as_posix()`), so the canonical config, its hash and the experiment id are the same on every OS |
+| [0056](0056-checkpoint-state-hardening.md) | Checkpoint state hardening | accepted | `describe()` is bounded by budget, not by a shallow wall. At most 50,000 container or object nodes per top-level attribute (each direct child of the described object has its own count), 500,000 … |
+| [0057](0057-agent-self-sufficiency.md) | Docs that cannot drift: generated references, conformance tests, a layering contract | accepted | Generate what can be generated, and test the rest against the code |
+| [0058](0058-cli-checkpoint-stop-resume.md) | Checkpoint, stop and resume from the CLI | accepted | A stopped run leaves only the checkpoint. `crucible run --stop-at TIME --checkpoint FILE` runs to the session boundary at or before `TIME`, writes `FILE`, prints its path and the boundary it holds, … |
+| [0059](0059-machine-readable-cli.md) | Machine-readable CLI (`--json`, `--override`, `crucible schema`) | accepted | `--json` on `run`, `run-vectorized`, `validate`, `optimize`, `compare`, `report` and `data list\|check\|build` prints exactly one JSON document on stdout (sorted keys, strict JSON: non-finite floats … |
+| [0060](0060-quote-aware-spread.md) | Quote-aware spread (bid/ask on bars) | accepted | Quotes are optional columns of the bar dataset, not a separate dataset: `bid_open`, `ask_open` (the bar's first quote) and `bid_close`, `ask_close` (its last), nullable Float64 … |
+| [0061](0061-vectorized-episodes-and-trial-counted-sweeps.md) | Vectorized position episodes and trial-counted parallel sweeps | accepted | Position episodes. `analytics.trades.build_episodes` derives the vectorized run's "trades" from its lagged weights: per symbol, a maximal run of bars with the same nonzero sign; a flip closes one … |
+| [0062](0062-vectorized-fx.md) | FX in the vectorized engine | accepted | The vectorized engine uses the event-driven convention (owner choice) |
+| [0063](0063-data-providers.md) | Data providers (yfinance and Tiingo) behind one interface | accepted | Providers sit upstream of the store. A fetch writes a dataset with `build_dataset`; runs name the stored dataset exactly as today |
+| [0064](0064-promotion-rebalance-timing.md) | Promotion rebalances on the last bar of a timestamp | accepted | The strategy rebalances once per timestamp, on the last of that timestamp's bars |
+| [0065](0065-vectorized-futures.md) | Futures multipliers in the vectorized engine | accepted | `data.futures_multipliers` is accepted. In a fraction-of-equity model the multiplier cancels: holding `w * E / (P * m)` contracts earns `w * E * (P1 / P0 - 1)` whatever `m` is |
+| [0066](0066-mcp-server.md) | An MCP server over the machine-readable CLI | accepted | A thin server, built on the CLI. `crucible/mcp_server/` exposes one tool per command and each tool builds the argv of the existing command and runs it as `python -m crucible.cli.main <argv>` in a … |
+
+<!-- END GENERATED: adr-index -->

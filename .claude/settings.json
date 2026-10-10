@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv sync)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run mypy:*)",
+      "Bash(uv run ruff check:*)",
+      "Bash(uv run ruff format:*)",
+      "Bash(uv run crucible:*)",
+      "Bash(uv run lint-imports)",
+      "Bash(uv run python -m tools.lint_imports)",
+      "Bash(uv run python -m tools.docgen:*)",
+      "PowerShell(uv run pytest*)",
+      "PowerShell(uv run mypy*)",
+      "PowerShell(uv run ruff*)",
+      "PowerShell(uv run crucible*)",
+      "PowerShell(uv run lint-imports*)",
+      "PowerShell(uv run python -m tools.lint_imports*)",
+      "PowerShell(uv run python -m tools.docgen*)"
+    ]
+  }
+}

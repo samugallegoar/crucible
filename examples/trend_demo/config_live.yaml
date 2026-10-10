@@ -1,0 +1,36 @@
+# The trend-following example run through LiveRuntime on the simulated venue
+#. Identical to config.yaml except the live block; results
+# match the backtest byte for byte (tests/integration/test_live_parity.py).
+experiment:
+  name: trend_demo_live
+  family: trend_demo_live
+  mode: evaluation
+  seed: 1
+  realism_level: 1
+
+data:
+  store: examples/trend_demo/data
+  bars: trend_demo_bars_v1
+  calendar: XNYS
+  base_currency: USD
+
+strategy:
+  entrypoint: examples.trend_demo.strategy:TrendFollower
+  params:
+    bars_dataset: trend_demo_bars_v1
+    symbol: TRENDY
+    lookback: 3
+    rebalance_every: 1
+    base_currency: USD
+
+execution:
+  slippage_bps: 0.0
+  commission_bps: 0.0
+
+live:
+  enabled: true
+
+initial_cash: "1000000"
+start: "2020-01-01"
+end: "2022-01-01"
+periods_per_year: 252.0

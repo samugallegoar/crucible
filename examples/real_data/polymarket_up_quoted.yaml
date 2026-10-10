@@ -1,0 +1,37 @@
+# Buy-cheap-UP on the imported Polymarket BTC five-minute contracts with quote-aware fills
+# (docs/data/polymarket-btc5m-csv.md, ADR-0060). Bars hold the bid/ask mid and the top-of-book
+# quotes; the `quoted` spread (Level 2) fills a buy at the ask and a sell at the bid, so results
+# pay the spread that polymarket_up.yaml (mid fills, Level 1) does not. Build the datasets first:
+#   uv run crucible data build examples/imports/polymarket_csv.yaml --store data/processed
+experiment:
+  name: polymarket_up_real_quoted
+  family: polymarket_up_real_quoted
+  mode: evaluation
+  seed: 5
+  realism_level: 2
+
+data:
+  store: data/processed
+  bars: polymarket_btc5m_csv_v1
+  corporate_actions: polymarket_btc5m_csv_v1_actions
+  calendar: "24/7"
+  base_currency: USD
+  quality_skip: [calendar_coverage]
+  quality_skip_reason: contracts trade only inside their five-minute windows
+
+strategy:
+  entrypoint: examples.real_data.polymarket_up:BuyCheapUp
+  params:
+    threshold: 0.45
+    quantity: 100
+
+execution:
+  spread:
+    type: quoted
+  slippage_bps: 0.0
+  commission_bps: 0.0
+
+initial_cash: "10000"
+start: "2026-02-23"
+end: "2026-03-06"
+periods_per_year: 105120.0

@@ -1,0 +1,17 @@
+# 569 US equities, daily, 2010-2026: '<data-dir>/price_data/'.
+# Prices are SPLIT- AND DIVIDEND-ADJUSTED (AAPL 2010-01-04 close 6.41), so price_basis is
+# declared adjusted; the label travels in the dataset manifest (docs/data/equities-daily.md).
+# Daily rows are mapped to the XNYS session close; a date that is not a session is dropped and
+# counted. OHLC-bound violations in the export are clamped (opt-in) and counted.
+kind: ohlcv_csv
+dataset: equities_daily_v1
+input: '<data-dir>/price_data/*.csv'
+price_basis: adjusted
+columns: {timestamp: Date, open: Open, high: High, low: Low, close: Close, volume: Volume}
+symbol: {column: Symbol}
+timestamp: {format: "%Y-%m-%d", timezone: UTC, meaning: session_close, calendar: XNYS}
+rows: {on_incomplete: drop, ohlc_repair: clamp, max_dropped_fraction: 0.01}
+quality_skip: [calendar_coverage]
+quality_skip_reason: >-
+  most tickers lack one XNYS session in the export (inspected: 46 of 60 sampled); see
+  docs/data/equities-daily.md

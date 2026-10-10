@@ -1,0 +1,8 @@
+# Polymarket BTC up/down 5-minute contracts, 2-second snapshots with resolutions:
+# '<data-dir>/market_data_2sec_weekly5_with_resolutions.csv' (1,191 contracts).
+# Becomes 1-second UP/DOWN mid-price bars, a BTCUSD spot series, settlement bars and delistings
+# (dataset polymarket_btc5m_csv_v1 and polymarket_btc5m_csv_v1_actions). See
+# docs/data/polymarket-btc5m-csv.md.
+kind: polymarket_csv
+dataset: polymarket_btc5m_csv_v1
+input: '<data-dir>/market_data_2sec_weekly5_with_resolutions.csv'

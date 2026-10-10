@@ -1,0 +1,37 @@
+# Momentum on the imported US equities (docs/data/equities-daily.md): 569 tickers, adjusted prices.
+# Build the dataset first:
+#   uv run crucible data build examples/imports/equities_daily.yaml --store data/processed
+# The symbols list is filled from the dataset (tests/bench does it); three are listed as a template.
+experiment:
+  name: equities_momentum_real
+  family: equities_momentum_real
+  mode: evaluation
+  seed: 7
+  realism_level: 1
+
+data:
+  store: data/processed
+  bars: equities_daily_v1
+  calendar: XNYS
+  base_currency: USD
+  quality_skip: [calendar_coverage]
+  quality_skip_reason: export misses sessions for most tickers (docs/data/equities-daily.md)
+
+strategy:
+  entrypoint: examples.momentum.strategy:Momentum
+  params:
+    bars_dataset: equities_daily_v1
+    symbols: [A, AAL, AAP]
+    lookback: 126
+    top_k: 20
+    rebalance_every: 21
+    base_currency: USD
+
+execution:
+  slippage_bps: 5.0
+  commission_bps: 1.0
+
+initial_cash: "1000000"
+start: "2015-01-01"
+end: "2026-01-01"
+periods_per_year: 252.0
