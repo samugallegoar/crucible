@@ -17,7 +17,7 @@
 
 | Command | Arguments and options | Help |
 |---|---|---|
-| `crucible backtest` | `--calendar --capital --commission-bps --costs --direction --end --entry --exit --family --fraction --home --json --max-holding-bars --name --null-iterations --offline --price-basis --provider --realism-check --short-entry --short-exit --slippage-bps --spec --start --stop-loss-pct --symbols --take-profit-pct` | One step: fetch data if needed, run a strategy spec, compare with buy-and-hold |
+| `crucible backtest` | `--calendar --capital --commission-bps --costs --direction --end --entry --exit --family --fraction --home --interval --json --max-holding-bars --name --null-iterations --offline --price-basis --provider --realism-check --short-entry --short-exit --slippage-bps --spec --start --stop-loss-pct --symbols --take-profit-pct` | One step: fetch data if needed, run a strategy spec, compare with buy-and-hold |
 | `crucible compare` | `<family> --artifacts --json` | Compare every recorded trial in a family from the trial registry |
 | `crucible config set-home` | `<path> --json` | Remember a home folder for every run |
 | `crucible config show` | `--home --json` | Print the resolved home folder and its subfolders |

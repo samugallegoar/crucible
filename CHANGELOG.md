@@ -8,6 +8,14 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Intraday bars in the one-step backtest (ADR-0072)
+- `crucible backtest --interval` and the MCP tool's `interval`: `1d` (default) or `1h`, `30m`,
+  `15m`, `5m` (yfinance). Sharpe, volatility and CAGR are annualized from the bars per session in
+  the data (hourly XNYS: 7 x 252, not 252), the warm-up is checked in bars, intraday trades carry
+  `entry_time`/`exit_time` and bars are stamped to the minute. Daily results are byte-identical.
+- The agent guide no longer says "daily bars only"; it explains intervals, bar-counted windows and
+  Yahoo's intraday history limits.
+
 ### Drawdown, dataset identity, DSR assumptions and point-in-time semantics (ADR-0071)
 - **Fixed: the maximum-drawdown bootstrap dropped a first-period loss.** Resampled paths started
   at `1 + r_1` instead of 1.0 (`[-0.10, 0.10]` scored 0 %), so the interval targeted a different

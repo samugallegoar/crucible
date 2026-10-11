@@ -27,7 +27,8 @@ CLI: `crucible backtest`, `crucible results`, `crucible config show|set-home`, `
 ### The flow
 
 1. Parse the spec (refuse with a location and a fix); normalize symbols; resolve the home.
-2. `ensure_dataset`: the dataset `px_<provider>_<symbols>_<start>_<end>_<interval>_<basis>` is
+2. `ensure_dataset` (for `request.interval`, default `1d`, ADR-0072): the dataset
+   `px_<provider>_<symbols>_<start>_<end>_<interval>_<basis>` is
    reused if stored, else fetched with `ohlc_repair="clamp_rounding"` and written through the quality
    battery. A window shorter than the rules' warm-up is refused first.
 3. Quality battery again, then the vectorized run (`run_vectorized_experiment`): one trial in the
@@ -103,7 +104,12 @@ Datasets from before ADR-0071 have no record and are fetched again on first use.
 
 - Daily US-style calendars: `calendar` is passed through but only `XNYS` and `24/7` have been used
   with real data.
-- One interval (`1d`) and adjusted prices from yfinance by default; Tiingo is selectable with a key.
+- Adjusted prices from yfinance by default (Tiingo selectable with a key, daily only). Intraday
+  (`interval` 5m-1h, ADR-0072): bars per year = sessions per year x median bars per session; the
+  window is checked in bars; trades and bars are stamped to the minute. Yahoo's intraday history
+  is short (about 60 days below 1h, about two years at 1h); the coverage check sees only each
+  session's last bar; the spec has no time-of-day conditions; real-data verification covers hourly
+  XNYS only (24/7 intraday is synthetic-tested).
   No dividends or splits as separate events (adjusted prices include them).
 - The headline run is the vectorized engine: fills at the signal bar's close with a one-bar lag, a
   more optimistic timing than the event-driven engine's next-open fill; `realism_check` measures the

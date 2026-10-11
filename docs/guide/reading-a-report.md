@@ -47,7 +47,7 @@ weight. Both curves are drawn together, then both drawdowns.
   more numbers" visibly lowers the next result's reliability. That is the point.
 - **Deflated Sharpe ratio (DSR)**: the probability that the Sharpe ratio is genuinely positive after
   accounting for the trial count and the shape of the returns. Under 0.95 is a warning.
-- **Random re-ordering test**: the same daily moves (overnight gap and day together) shuffled in
+- **Random re-ordering test**: the same bar-to-bar moves (gap and bar together) shuffled in
   time 100 times, the rules run on each. It reports how many shuffles matched or beat the strategy
   and a p-value of (that count + 1) / (101): it never says 0, because 100 shuffles cannot show
   that. If shuffled data does as well, the timing of the rules has not been shown to matter. Passing

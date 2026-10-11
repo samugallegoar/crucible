@@ -1,6 +1,6 @@
 """The default validation of a one-step backtest: a seeded shuffled-returns null test (ADR-0068).
 
-The same rules are run on bars whose whole daily moves have been randomly re-ordered
+The same rules are run on bars whose whole bar-to-bar moves have been randomly re-ordered
 (``crucible.data.transforms.shuffle_bar_returns``: each bar's overnight gap, open-to-close
 return, wicks and volume travel together): the multiset of close-to-close returns, and so the
 long-run return, is unchanged; only the order is destroyed (ADR-0070). If the strategy's Sharpe

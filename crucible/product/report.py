@@ -11,6 +11,8 @@ from __future__ import annotations
 import html
 from dataclasses import dataclass
 
+from crucible.product.summary import bar_returns
+
 _W, _H = 860, 300
 _PAD_L, _PAD_R, _PAD_T, _PAD_B = 64, 16, 14, 28
 
@@ -276,7 +278,8 @@ def render_html(doc: dict[str, object], charts: dict[str, object]) -> str:
     null_html = ""
     if isinstance(null, dict):
         null_html = (
-            f"<p>Random re-ordering test: {null['iterations']} shuffles of the same daily returns; "
+            f"<p>Random re-ordering test: {null['iterations']} shuffles of the same "
+            f"{bar_returns(str(request.get('interval', '1d')))} returns; "
             f"the strategy's Sharpe was matched or beaten in {null.get('exceedances', '?')} of "
             f"them (Monte Carlo p-value {float(null['p_value']):.3f}).</p>"
         )

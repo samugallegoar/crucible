@@ -41,16 +41,21 @@ SPEC_FILE = Path("examples/sma_cross/spec.yaml")
 
 
 def seed_dataset(
-    home: Home, symbols: list[str], start: dt.date, end: dt.date, bars: pl.DataFrame
+    home: Home,
+    symbols: list[str],
+    start: dt.date,
+    end: dt.date,
+    bars: pl.DataFrame,
+    interval: str = "1d",
 ) -> str:
     """Stores ``bars`` as the product dataset for this request, with its matching
     ``request.json`` (ADR-0071), as ``ensure_dataset`` would after a fetch."""
-    name = dataset_name("yfinance", symbols, start, end, "1d", "adjusted")
+    name = dataset_name("yfinance", symbols, start, end, interval, "adjusted")
     build_dataset(
         home.data, DatasetId(name), bars, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="t"
     )
     write_request_record(
-        home.data / name, dataset_request("yfinance", symbols, start, end, "1d", "adjusted")
+        home.data / name, dataset_request("yfinance", symbols, start, end, interval, "adjusted")
     )
     return name
 

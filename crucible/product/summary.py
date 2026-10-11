@@ -80,6 +80,8 @@ class SummaryInputs:
     cost_preset: str = "standard"
     realism: Side | None = None
     """The same rules re-run on the event-driven engine at Level 2 (``realism_check``)."""
+    interval: str = "1d"
+    """Bar length of the data (``1d`` or intraday, ADR-0072); only the wording depends on it."""
     home_trial_count: int | None = None
     """Distinct one-step trials in this home, every family (ADR-0070)."""
     dsr_home_wide: float | None = None
@@ -117,6 +119,11 @@ class Summary:
             "next_steps": self.next_steps,
             "disclaimer": self.disclaimer,
         }
+
+
+def bar_returns(interval: str) -> str:
+    """How the report names the returns: "daily" for daily bars, "1h-bar" and so on intraday."""
+    return "daily" if interval == "1d" else f"{interval}-bar"
 
 
 def money(value: float) -> str:
@@ -233,7 +240,8 @@ def _flags(i: SummaryInputs) -> list[Flag]:
         flags.append(
             Flag(
                 "null_not_beaten",
-                f"Re-ordering the same daily returns at random did as well or better in "
+                f"Re-ordering the same {bar_returns(i.interval)} returns at random did as well "
+                "or better in "
                 f"{i.null_exceedances} of {i.null_iterations} tries (p-value "
                 f"{i.null_p_value:.3f}). That is within what luck produces, so the timing of the "
                 "rules has not been shown to matter.",
@@ -408,9 +416,10 @@ def build_summary(i: SummaryInputs) -> Summary:
     if s.sharpe_low is not None and s.sharpe_high is not None:
         trust.append(
             f"Sharpe ratio (return per unit of risk): {s.sharpe:.2f}, with an approximate 95% "
-            f"range of {s.sharpe_low:.2f} to {s.sharpe_high:.2f} (a block bootstrap of the daily "
-            f"returns; in synthetic tests it held the true value only about 91-93% of the time "
-            f"with one year of data or heavy-tailed returns). Buy-and-hold: {b.sharpe:.2f}."
+            f"range of {s.sharpe_low:.2f} to {s.sharpe_high:.2f} (a block bootstrap of the "
+            f"{bar_returns(i.interval)} returns; in synthetic tests it held the true value only "
+            f"about 91-93% of the time with one year of data or heavy-tailed returns). "
+            f"Buy-and-hold: {b.sharpe:.2f}."
         )
     trust.append(
         f"Variants tried on these symbols so far (trial count): {i.trial_count}. Only variants "
@@ -435,7 +444,8 @@ def build_summary(i: SummaryInputs) -> Summary:
             else f"in {i.null_exceedances} of {i.null_iterations} tries"
         )
         trust.append(
-            f"Random re-ordering test: the same daily returns shuffled at random matched or beat "
+            f"Random re-ordering test: the same {bar_returns(i.interval)} returns shuffled at "
+            "random matched or beat "
             f"the strategy {beaten} (p-value {i.null_p_value:.3f}; with "
             f"{i.null_iterations} tries it cannot go below {1 / (i.null_iterations + 1):.3f}). "
             "A low number means the strategy gains from the real order "

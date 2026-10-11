@@ -24,8 +24,15 @@ lower return. The report shows both and does not pick for you.
 **Can it tell me what to buy?**
 No. It tests an idea you give it, against history. It is not investment advice.
 
+**Can I test intraday strategies?**
+Yes: pass `interval` (`1h`, `30m`, `15m` or `5m`; `--interval` on the command line). Rules count
+bars of that interval, Sharpe and returns are annualized from the number of bars per session, and
+trades are timestamped to the minute. Yahoo keeps about 60 days of 5-30 minute bars and about two
+years of hourly bars, so intraday tests are short and the report will usually say "not
+conclusive". Rules cannot use the time of day yet.
+
 **How are the confidence intervals made?**
-A circular block bootstrap of the daily returns (blocks of about the square root of the number
+A circular block bootstrap of the bar returns (blocks of about the square root of the number
 of days, 1,000 resamples, the 2.5th and 97.5th percentiles). In the one-step report only the
 Sharpe ratio carries one; the return and drawdown are point estimates. The interval is
 approximate: on synthetic data with a known Sharpe ratio it held the true value 94-95% of the

@@ -75,6 +75,14 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     backtest.add_argument("--calendar", default="XNYS", help="exchange_calendars name or '24/7'")
     backtest.add_argument(
+        "--interval",
+        default="1d",
+        help=(
+            "bar length: 1d (default) or intraday 5m, 15m, 30m, 1h (yfinance keeps about 60 days "
+            "of 5-30m bars and about 2 years of 1h; tiingo is daily only). Rules count bars"
+        ),
+    )
+    backtest.add_argument(
         "--offline", action="store_true", help="never download; use stored data or refuse"
     )
     backtest.add_argument(
@@ -232,6 +240,7 @@ def run_backtest_command(args: argparse.Namespace) -> int:
             provider=args.provider,
             price_basis=args.price_basis,
             calendar=args.calendar,
+            interval=args.interval,
             offline=args.offline,
             null_iterations=args.null_iterations,
             family=args.family,

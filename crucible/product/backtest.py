@@ -35,7 +35,7 @@ import polars as pl
 from crucible.analytics.metrics import compute_metrics, simple_returns
 from crucible.analytics.trades import EPISODE_SCHEMA, build_episodes
 from crucible.core.errors import ConfigurationError, CrucibleError
-from crucible.core.types import DatasetId, RealismLevel
+from crucible.core.types import DatasetId, RealismLevel, TimestampNs
 from crucible.data.calendars import get_trading_calendar
 from crucible.data.quality import run_quality_checks
 from crucible.data.store import ParquetDataStore
@@ -86,6 +86,11 @@ class BacktestRequest:
     provider: str | None = None
     price_basis: str = "adjusted"
     calendar: str = "XNYS"
+    interval: str = "1d"
+    """Bar length: ``1d`` or an intraday interval the provider offers (yfinance: ``5m``,
+    ``15m``, ``30m``, ``1h``; Yahoo keeps about 60 days of 5-30 minute bars and about two years
+    of hourly ones). Rules count bars, so ``sma(20)`` on hourly bars is a 20-hour average
+    (ADR-0072)."""
     offline: bool = False
     null_iterations: int = nulltest.DEFAULT_ITERATIONS
     family: str | None = None
@@ -103,6 +108,44 @@ def default_family(symbols: list[str]) -> str:
 
 def _to_date(ts_ns: int) -> str:
     return dt.datetime.fromtimestamp(ts_ns / 1e9, dt.UTC).date().isoformat()
+
+
+def _to_minute(ts_ns: int) -> str:
+    """UTC timestamp to the minute (``2024-01-02T15:30Z``), for intraday bars and trades."""
+    return dt.datetime.fromtimestamp(ts_ns / 1e9, dt.UTC).strftime("%Y-%m-%dT%H:%MZ")
+
+
+SESSIONS_PER_YEAR = {"24/7": 365.0}
+"""Sessions per year by calendar; every exchange calendar uses 252 (the existing convention)."""
+
+
+def bars_per_session(event_times: list[int], calendar: str) -> int:
+    """Median number of bars per trading session, each bar assigned to the first session close
+    at or after its ``event_time`` (an intraday bar never ends after its session's close, the
+    provider clips it). 1 for daily bars. Used to annualize per-bar statistics (ADR-0072)."""
+    if not event_times:
+        return 1
+    stamps = np.sort(np.asarray(event_times, dtype=np.int64))
+    week = 7 * _NS_PER_DAY
+    cal = get_trading_calendar(
+        calendar,
+        start=TimestampNs(int(stamps[0]) - week),
+        end=TimestampNs(int(stamps[-1]) + week),
+    )
+    closes = np.asarray(
+        cal.session_closes(TimestampNs(int(stamps[0])), TimestampNs(int(stamps[-1]) + week)),
+        dtype=np.int64,
+    )
+    session = np.searchsorted(closes, stamps, side="left")
+    _, counts = np.unique(session, return_counts=True)
+    return max(1, round(float(np.median(counts))))
+
+
+def periods_per_year_for(event_times: list[int], calendar: str) -> float:
+    """Bars per year: sessions per year (252 on an exchange calendar, 365 on 24/7) times the
+    median bars per session. Exactly the old 252 / 365 for daily bars (ADR-0072)."""
+    sessions = SESSIONS_PER_YEAR.get(calendar, 252.0)
+    return sessions * bars_per_session(event_times, calendar)
 
 
 def _side(equity: pl.DataFrame, metrics: dict[str, MetricValue], capital: float) -> Side:
@@ -153,9 +196,10 @@ def _parameter_hints(spec: StrategySpec) -> tuple[str, ...]:
 
 
 def _episodes_to_trades(
-    episodes: pl.DataFrame, bars: pl.DataFrame, limit: int
+    episodes: pl.DataFrame, bars: pl.DataFrame, limit: int, *, intraday: bool = False
 ) -> tuple[list[dict[str, object]], float | None]:
-    """Readable trade rows (price change, bars held) and the average bars held."""
+    """Readable trade rows (price change, bars held) and the average bars held. Intraday rows
+    also carry ``entry_time``/``exit_time`` (UTC, to the minute)."""
     if episodes.height == 0:
         return [], None
     indexed = (
@@ -177,17 +221,19 @@ def _episodes_to_trades(
         change = sign * (float(row["exit_close"]) / float(row["entry_close"]) - 1.0) * 100.0
         bars_held = int(row["exit_bar"]) - int(row["entry_bar"])
         held.append(float(bars_held))
-        rows.append(
-            {
-                "symbol": row["symbol"],
-                "side": row["side"],
-                "entry_date": _to_date(int(row["entry_ts"])),
-                "exit_date": _to_date(int(row["exit_ts"])),
-                "bars_held": bars_held,
-                "price_change_pct": round(change, 4),
-                "gross_pnl": round(float(row["pnl"]), 2),
-            }
-        )
+        trade: dict[str, object] = {
+            "symbol": row["symbol"],
+            "side": row["side"],
+            "entry_date": _to_date(int(row["entry_ts"])),
+            "exit_date": _to_date(int(row["exit_ts"])),
+            "bars_held": bars_held,
+            "price_change_pct": round(change, 4),
+            "gross_pnl": round(float(row["pnl"]), 2),
+        }
+        if intraday:
+            trade["entry_time"] = _to_minute(int(row["entry_ts"]))
+            trade["exit_time"] = _to_minute(int(row["exit_ts"]))
+        rows.append(trade)
     return rows[:limit], float(np.mean(held))
 
 
@@ -292,8 +338,11 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     )
     spec = request.spec
     needed = warmup_bars(spec)
+    intraday = request.interval != "1d"
     window_days = (end - start).days
-    if window_days < needed * 1.5:
+    # daily: checked before any download (a session is about a calendar day); intraday: checked
+    # against the bars actually received, below
+    if not intraday and window_days < needed * 1.5:
         msg = (
             f"the window {start} to {end} is about {window_days} calendar days, too short for "
             f"rules that need {needed} bars of history before they can act. Use a longer window"
@@ -308,17 +357,37 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
         provider=request.provider,
         price_basis=request.price_basis,
         calendar=request.calendar,
+        interval=request.interval,
         offline=request.offline,
     )
     store = ParquetDataStore(home.data)
     dataset = DatasetId(data.dataset)
+    window_bars = (
+        store.read(dataset, TimestampNs(2**63 - 1))  # a configuration check over the window
+        .select("symbol", "event_time")
+        .collect()
+    )
+    if intraday:
+        per_symbol = window_bars.group_by("symbol").len().get_column("len").to_list()
+        fewest = min((int(n) for n in per_symbol), default=0)
+        if fewest < needed * 1.5:
+            msg = (
+                f"the window {start} to {end} has {fewest} {request.interval} bars for at least "
+                f"one symbol, too few for rules that need {needed} bars of history before they "
+                "can act. Use a longer window or a shorter warm-up"
+            )
+            raise ConfigurationError(msg)
 
     realism = (
         RealismLevel.FRICTIONLESS
         if slippage == 0 and commission == 0
         else RealismLevel.BASIC_FRICTION
     )
-    periods_per_year = 365.0 if data.calendar == "24/7" else 252.0
+    # bars per year, from the data: sessions per year times the median bars per session, so an
+    # hourly Sharpe is not annualized as if every bar were a day (ADR-0072)
+    periods_per_year = periods_per_year_for(
+        window_bars.get_column("event_time").to_list(), data.calendar
+    )
     # the default family is the symbol set, not the window: re-running rules on another window
     # of the same symbols is part of the same search, so it counts toward the same DSR (ADR-0070)
     family = request.family or default_family(symbols)
@@ -407,7 +476,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
 
     bars = store.read(dataset, config.end_ns).collect()
     episodes = build_episodes(strategy_result.weights, strategy_result.pnl)
-    trades, avg_held = _episodes_to_trades(episodes, bars, limit=500)
+    trades, avg_held = _episodes_to_trades(episodes, bars, limit=500, intraday=intraday)
 
     eq = strategy_result.equity.sort("ts")
     bq = bench_result.equity.sort("ts")
@@ -416,6 +485,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
         raise ConfigurationError(msg)
     ts_list = [int(t) for t in eq.get_column("ts").to_list()]
     dates = [_to_date(t) for t in ts_list]
+    stamps = [_to_minute(t) for t in ts_list] if intraday else dates
     strategy_curve = [float(v) for v in eq.get_column("equity").to_list()]
     bench_curve = [float(v) for v in bq.get_column("equity").to_list()]
     years = (ts_list[-1] - ts_list[0]) / (365.25 * _NS_PER_DAY)
@@ -493,6 +563,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             null_iterations=request.null_iterations if null_result else 0,
             null_p_value=null_result.p_value if null_result else None,
             null_exceedances=null_result.exceedances if null_result else None,
+            interval=request.interval,
             spec_name=spec.name,
             parameter_hints=_parameter_hints(spec),
             cost_preset=cost_label,
@@ -538,6 +609,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             "price_basis": request.price_basis,
             "provider": data.provider,
             "calendar": data.calendar,
+            "interval": request.interval,
             "seed": request.seed,
         },
         "strategy_spec": full_spec,
@@ -547,8 +619,8 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             "rows": data.rows,
             "content_hash": data.content_hash,
             "source": data.source,
-            "first_bar": dates[0],
-            "last_bar": dates[-1],
+            "first_bar": stamps[0],
+            "last_bar": stamps[-1],
             "repaired_rows": data.repaired,
             "warnings": list(data.warnings),
             "quality_checks_ran": checks_ran,
@@ -599,6 +671,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             "experiment_id": str(run.experiment_id),
             "realism_level": config.experiment.realism_level.name,
             "engine": "vectorized (fills at the signal bar's close, one-bar lag)",
+            "periods_per_year": periods_per_year,
             "costs": f"{cost_label} ({slippage:g} bps slippage + {commission:g} bps commission)",
             "dataset": data.dataset,
             "data_hash": data.content_hash,
@@ -624,7 +697,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     }
 
     charts = {
-        "dates": dates,
+        "dates": stamps,
         "strategy": strategy_curve,
         "benchmark": bench_curve,
         "strategy_drawdown": _drawdown_pct(strategy_curve),

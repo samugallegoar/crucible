@@ -79,8 +79,11 @@ On each bar, for each symbol:
    the reverse.
 4. If the long and short entries are both true on one bar, the run is refused: make them mutually
    exclusive.
-5. Stops are checked on closing prices from the entry bar's close. A daily bar cannot show an
-   intraday stop, and a gap through the level fills at the next price.
+5. Stops are checked on closing prices from the entry bar's close. A bar cannot show a stop
+   inside it (on daily bars, an intraday move), and a gap through the level fills at the next
+   price.
+6. Every window counts bars of the chosen interval: on hourly bars `sma(20)` is a 20-hour average
+   and `max_holding_bars: 7` about one US trading day.
 
 With several symbols the capital is split equally between them and each trades on its own signal.
 `all_in` never uses leverage.

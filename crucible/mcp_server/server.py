@@ -214,6 +214,7 @@ def build_server() -> MCPServer:
         provider: Literal["yfinance", "tiingo"] | None = None,
         price_basis: Literal["adjusted"] = "adjusted",
         calendar: str = "XNYS",
+        interval: Literal["1d", "1h", "30m", "15m", "5m"] = "1d",
         offline: bool = False,
         null_iterations: int = 100,
         family: str | None = None,
@@ -228,6 +229,9 @@ def build_server() -> MCPServer:
         `entry` / `exit`, e.g. entry="sma(10) crosses_above sma(30)", exit="sma(10) crosses_below
         sma(30)". `symbols` is comma-separated (SPY or SPY,QQQ); `start`/`end` are YYYY-MM-DD and
         `end` must be in the past. `costs`: standard (default), conservative or none.
+        `interval`: 1d (default) or intraday 1h/30m/15m/5m (yfinance only; Yahoo keeps about two
+        years of 1h bars and about 60 days of 5-30m bars, so the window must fit). Rules count
+        bars: sma(20) on 1h bars is a 20-hour average.
         `realism_check` (about 30 s extra) also re-runs the rules with realistic fills
         (next-bar prices, spread, latency) and reports how much of the result survives.
 
@@ -260,6 +264,7 @@ def build_server() -> MCPServer:
             "provider": provider,
             "price_basis": price_basis,
             "calendar": calendar,
+            "interval": interval,
             "offline": offline,
             "null_iterations": _text(null_iterations),
             "family": family,

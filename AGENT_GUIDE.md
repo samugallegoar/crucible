@@ -76,14 +76,24 @@ When the person's words leave a number out ("when it is oversold"), choose the t
 every variant tried on the same data counts as a trial and lowers the deflated Sharpe (that is the
 honest price of looking, and the report shows it).
 
-Daily bars only. A rule is decided from a bar's close and acts at the next opportunity; you never
-need to think about lags: the engine applies the one-bar delay itself.
+Bars can be daily (the default) or intraday: pass `interval` = `1h`, `30m`, `15m` or `5m`
+(yfinance only; Tiingo is daily). A rule is decided from a bar's close and acts at the next
+opportunity; you never need to think about lags: the engine applies the one-bar delay itself.
+
+Rules count **bars**, not days: `sma(20)` on `1h` bars is a 20-hour average, and
+`max_holding_bars: 7` is about one trading day of hourly bars on a US exchange. Translate the
+person's words accordingly ("the 20-day average" on hourly bars is `sma(140)`). Yahoo keeps only
+about 60 days of 5-30 minute bars and about two years of hourly bars, so choose `start`/`end`
+inside that range; such short windows will usually come back `not_conclusive` with a short-sample
+flag, which is the honest answer. Intraday rules cannot use the time of day ("flat by the close",
+"only the first hour" are not expressible); a position can be held overnight.
 
 ## Calling `crucible_backtest`
 
 Required: `symbols` (comma-separated), `start`, `end` (YYYY-MM-DD, end in the past), and the
-strategy (`spec` as an object, or `entry`/`exit` inline). Optional: `capital`, `costs`,
-`direction`, `fraction`, `stop_loss_pct`, `take_profit_pct`, `offline`, `null_iterations`.
+strategy (`spec` as an object, or `entry`/`exit` inline). Optional: `interval` (`1d` default,
+or `1h`/`30m`/`15m`/`5m`), `capital`, `costs`, `direction`, `fraction`, `stop_loss_pct`,
+`take_profit_pct`, `offline`, `null_iterations`.
 
 The response is one JSON document. The parts you use:
 
@@ -132,7 +142,7 @@ count (`validation.trial_count`) and the realism level. Never quote a Sharpe alo
   trial family (`validation.trial_count_scope`); variants tried elsewhere are not in it.
   `validation.dsr_home_wide` counts every backtest in the home (`home_trial_count`); if you have
   tried the idea on several instruments, quote that one too.
-- **Random re-ordering test**: the same daily moves shuffled; quote it as "matched or beaten in
+- **Random re-ordering test**: the same bar-to-bar moves shuffled; quote it as "matched or beaten in
   `exceedances` of `iterations` shuffles (p-value `p_value`)". A strategy that does not beat
   shuffles has not shown that its timing matters; one that does has not shown it will continue.
 - **What the fills are**: `provenance.price_basis_note` and `provenance.execution_assumptions` say

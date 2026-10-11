@@ -85,7 +85,9 @@ How to read it: [reading a report](docs/guide/reading-a-report.md). A full worke
 Rules written as a few lines of data, no code: moving-average crossovers (SMA, EMA), RSI and
 momentum thresholds, channel breakouts, Bollinger bands, long only or long/short, all-in or a fixed
 fraction of capital, stop-loss, take-profit and maximum holding time, on one or many instruments
-(US equities and ETFs, indices, crypto; daily bars from Yahoo Finance or Tiingo).
+(US equities and ETFs, indices, crypto; daily bars from Yahoo Finance or Tiingo, and intraday
+bars of 5, 15 or 30 minutes or 1 hour from Yahoo Finance, which keeps about 60 days of the shorter
+ones and about two years of hourly bars).
 [Strategy spec reference](docs/guide/strategy-spec.md).
 
 Why the answers are trustworthy rather than flattering: a rule only ever sees bars that had
@@ -93,7 +95,7 @@ closed by the simulated moment (point-in-time *access*, enforced in code; the st
 a versioned record of what was known on each date), the engine refuses suspicious states instead of
 warning, results are deterministic, and a Sharpe ratio is never reported without its interval,
 trial count and realism level. What it cannot give you: the prices are today's dividend-and-split
-adjusted series (not the quotes traded on the day), fills are simulated from daily bars (no order
+adjusted series (not the quotes traded on the day), fills are simulated from daily or intraday bars (no order
 book, no market impact), and the statistics are honest about luck only for the variants Crucible
 saw. The engineering behind that is in
 the [contributor hub](docs/contributing/README.md).
