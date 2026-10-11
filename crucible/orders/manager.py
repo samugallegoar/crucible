@@ -48,6 +48,7 @@ class ManagedOrder:
         parent_id: OrderId | None = None,
         oco_with: OrderId | None = None,
         strategy_id: StrategyId | None = None,
+        close_at: TimestampNs | None = None,
     ) -> None:
         if qty <= 0:
             msg = f"order qty must be positive, got {qty} (order_id={id}, ts={created_at})"
@@ -70,6 +71,15 @@ class ManagedOrder:
         if type is OrderType.PARTICIPATION and (algo_rate is None or not 0 < algo_rate <= 1):
             msg = f"PARTICIPATION requires 0 < algo_rate <= 1 (order_id={id}, ts={created_at})"
             raise CrucibleError(msg)
+        if type is OrderType.MARKET_ON_CLOSE and (close_at is None or close_at <= created_at):
+            msg = (
+                f"MARKET_ON_CLOSE requires close_at, a session close after the order's creation "
+                f"(order_id={id}, ts={created_at}, close_at={close_at})"
+            )
+            raise CrucibleError(msg)
+        if type is not OrderType.MARKET_ON_CLOSE and close_at is not None:
+            msg = f"close_at is only for MARKET_ON_CLOSE orders (order_id={id}, type={type.name})"
+            raise CrucibleError(msg)
         self.id = id
         self.symbol = symbol
         self.side = side
@@ -85,6 +95,7 @@ class ManagedOrder:
         self.parent_id = parent_id
         self.oco_with = oco_with
         self.strategy_id = strategy_id
+        self.close_at = close_at
         self._state = OrderState.CREATED
         self._filled_qty = Decimal("0")
 
@@ -126,6 +137,7 @@ class InMemoryOrderManager:
         oco_with: OrderId | None = None,
         strategy_id: StrategyId | None = None,
         order_id: OrderId | None = None,
+        close_at: TimestampNs | None = None,
     ) -> ManagedOrder:
         if order_id is None:
             order_id = OrderId(f"O-{self._next_id:08d}")
@@ -148,6 +160,7 @@ class InMemoryOrderManager:
             algo_rate=algo_rate,
             parent_id=parent_id,
             oco_with=oco_with,
+            close_at=close_at,
             strategy_id=strategy_id,
         )
         self._orders[order_id] = order
@@ -236,6 +249,7 @@ class InMemoryOrderManager:
                     "parent_id": o.parent_id,
                     "oco_with": o.oco_with,
                     "strategy_id": o.strategy_id,
+                    "close_at": int(o.close_at) if o.close_at is not None else None,
                     "state": o.state,
                     "filled_qty": o.filled_qty,
                 }
@@ -255,6 +269,7 @@ class InMemoryOrderManager:
             parent = ckpt.optional_field(raw, "parent_id", str)
             oco = ckpt.optional_field(raw, "oco_with", str)
             strategy = ckpt.optional_field(raw, "strategy_id", str)
+            close_at = ckpt.optional_field(raw, "close_at", int)
             order = ManagedOrder(
                 id=OrderId(ckpt.field(raw, "id", str)),
                 symbol=Symbol(ckpt.field(raw, "symbol", str)),
@@ -271,6 +286,7 @@ class InMemoryOrderManager:
                 parent_id=OrderId(parent) if parent is not None else None,
                 oco_with=OrderId(oco) if oco is not None else None,
                 strategy_id=StrategyId(strategy) if strategy is not None else None,
+                close_at=TimestampNs(close_at) if close_at is not None else None,
             )
             order._state = ckpt.field(raw, "state", OrderState)
             order._filled_qty = ckpt.field(raw, "filled_qty", Decimal)

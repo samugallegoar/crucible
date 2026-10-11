@@ -52,6 +52,7 @@ from crucible.strategy_spec import (
     canonical_spec,
     describe_spec,
     spec_signal,
+    uses_time,
     warmup_bars,
 )
 from crucible.validation.dsr import deflated_sharpe_ratio, per_period_sharpe
@@ -402,12 +403,12 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     # time-of-day rules read the exchange schedule, so the signal is told the calendar and the
     # bar length; specs without them keep exactly the old params (and so their experiment ids)
     signal_params: dict[str, object] = {"spec": canonical}
-    if spec.session is not None:
+    if spec.session is not None or uses_time(spec):
         if not intraday:
             msg = (
-                "this strategy has time-of-day rules (session: flat_by_close / entry_window), "
-                "which need intraday bars; pass interval 1h, 30m, 15m or 5m, or remove the "
-                "session block"
+                "this strategy has time-of-day rules (session: flat_by_close / exit_at / "
+                "entry_window, or `time` in a condition), which need intraday bars; pass interval "
+                "1h, 30m, 15m or 5m, or remove them"
             )
             raise ConfigurationError(msg)
         signal_params["session"] = {"calendar": data.calendar, "interval": request.interval}

@@ -89,8 +89,11 @@ flag, which is the honest answer. Time-of-day rules (intraday only): `flat_by_cl
 "day trade, nothing overnight" (it exits on the session's next-to-last bar), and
 `entry_window: "10:30-14:30"` (inline) or `session: {entry_window: {start, end}}` (spec) for "only
 enter between...", in exchange time, matching when the deciding bar **ends** (the first hourly US
-bar ends at 10:30). Tell the person these two choices when you use them. Without
-`flat_by_close` a position can be held overnight.
+bar ends at 10:30). Add `market_on_close: true` to exit at the closing price instead of one bar
+early (exchanges only; it is decided by 15:50 New York time). `exit_at: "12:30"` closes positions
+from that time on. Conditions may test `time` (`time >= 10:30`). Every time is exchange time and
+refers to when a bar ends; tell the person which bar that means. Without `flat_by_close` or
+`exit_at` a position can be held overnight.
 
 ## Calling `crucible_backtest`
 

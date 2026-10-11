@@ -66,6 +66,7 @@ from crucible.execution.models import (
     NoSpread,
     ZeroLatency,
 )
+from crucible.orders.interfaces import MOC_CUTOFF_NS
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -442,6 +443,11 @@ class LadderExecutionSimulator:
             if bar.ts <= order.created_at:
                 self._note(order_id, bar.ts, "bar predates order (no time travel)")
                 continue
+            if order.type is OrderType.MARKET_ON_CLOSE:
+                moc = self._evaluate_moc(order, pending, bar, closed)
+                if moc is not None:
+                    candidates.append(moc)
+                continue
             if pending.effective_at >= bar.ts:
                 self._note(order_id, bar.ts, "in flight: latency not yet elapsed")
                 continue
@@ -525,6 +531,54 @@ class LadderExecutionSimulator:
             f"(order_id={order.id})"
         )
         raise ConfigurationError(msg)
+
+    def _evaluate_moc(
+        self, order: ManagedOrder, pending: _Pending, bar: BarEvent, closed: list[OrderClosed]
+    ) -> _Candidate | None:
+        """MARKET_ON_CLOSE (ADR-0074): waits for the bar that ends at ``close_at`` and fills at
+        its close (the closing auction), adjusted adversely like any aggressive fill and clamped
+        into the bar (I5). The order must have reached the market by ``close_at -
+        MOC_CUTOFF_NS`` (the exchanges' cutoff); arriving later, or no bar ending at ``close_at``
+        (a halt, a missing bar), ends it without a fill."""
+        close_at = order.close_at
+        assert close_at is not None  # enforced at creation
+        if int(bar.event_time) < int(close_at):
+            self._note(order.id, bar.ts, "market-on-close: waiting for the closing bar")
+            return None
+        if int(bar.event_time) > int(close_at):
+            self._end(order, OrderState.EXPIRED, bar, closed, "no bar ended at the session close")
+            return None
+        if int(pending.effective_at) > int(close_at) - MOC_CUTOFF_NS:
+            self._end(
+                order,
+                OrderState.REJECTED,
+                bar,
+                closed,
+                "market-on-close arrived after the cutoff ten minutes before the close "
+                "(missed the cutoff)",
+            )
+            return None
+        price = self._adjust_aggressive(bar.close, order, bar)
+        return _Candidate(
+            order=order,
+            qty=order.remaining_qty,
+            price=price,
+            passive=False,
+            adversity=self._adversity(order, price, order.remaining_qty),
+        )
+
+    def _end(
+        self,
+        order: ManagedOrder,
+        state: OrderState,
+        bar: BarEvent,
+        closed: list[OrderClosed],
+        reason: str,
+    ) -> None:
+        self._manager.transition(order.id, state, bar.ts)
+        del self._pending[order.id]
+        self._note(order.id, bar.ts, reason)
+        closed.append(OrderClosed(order_id=order.id, state=state, reason=reason))
 
     def _queue_threshold(self, limit: float, side: OrderSide) -> float:
         queue_bps = self._participation.queue_bps if self._participation else 0.0

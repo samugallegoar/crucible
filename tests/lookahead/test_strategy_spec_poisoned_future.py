@@ -141,6 +141,19 @@ SESSION_SPECS = {
         "entry": {"long": "close > highest(6)"},
         "session": {"flat_by_close": True, "entry_window": {"start": "11:30", "end": "13:30"}},
     },
+    "market_on_close": {
+        "entry": {"long": "sma(5) crosses_above sma(12)"},
+        "session": {"flat_by_close": True, "close_with": "market_on_close"},
+    },
+    "exit_at": {
+        "direction": "long_short",
+        "entry": {"long": "rsi(7) < 40", "short": "rsi(7) > 60"},
+        "session": {"exit_at": "13:30"},
+    },
+    "time_condition": {
+        "entry": {"long": {"all": ["close > sma(8)", "time >= 11:30", "time < 14:30"]}},
+        "exit": {"long": {"any": ["close < sma(8)", "time >= 15:30"]}},
+    },
 }
 
 

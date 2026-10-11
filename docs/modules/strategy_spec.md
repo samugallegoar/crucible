@@ -58,7 +58,12 @@ touches a null is false.
    inside it (exchange local time). Both read the calendar schedule only (`session_masks`): a bar
    is last when it ends at its session close, next-to-last when one more bar of the declared
    interval would reach it. They need `params["session"] = {"calendar", "interval"}` and intraday
-   bars; the lookahead harness covers three session specs on hourly XNYS bars.
+   bars; the lookahead harness covers the session specs on hourly XNYS bars.
+6. `close_with: market_on_close` (ADR-0074) flattens on the last bar instead and emits a
+   `close_at` column on the last bar ending by the market-on-close cutoff while a position is
+   held; the promotion path places a `MARKET_ON_CLOSE` order for it. `exit_at` is an exit on every
+   bar ending at or after that time. `time` (bar end, minutes after local midnight) compares with
+   a clock literal only.
 
 Sizing: a position is `+/- sizing.weight / N` of equity, `N` the number of symbols in the bars, so
 capital is split equally and a `long_only` spec is never levered.
@@ -94,10 +99,10 @@ A change to the grammar or to a field's meaning needs a new `spec_version`.
 
 ## Known gaps
 
-- Time-of-day rules are only `session.flat_by_close` and `session.entry_window`: no "exit at
-  12:00", no time conditions inside `entry`/`exit`, no market-on-close fill (so `flat_by_close`
-  gives up the last bar), no session spanning local midnight on an exchange calendar. Every
-  indicator counts bars, not time.
+- Time rules (ADR-0073, ADR-0074): `flat_by_close` (with `close_with`), `exit_at`,
+  `entry_window`, and `time` against clock literals in conditions. No day-of-week conditions, no
+  market-on-open, one market-on-close cutoff for every exchange (ten minutes), no session spanning
+  local midnight on an exchange calendar. Every indicator counts bars, not time.
 - Indicators are the eight above; no ATR, MACD, volatility targeting or cross-sectional ranking
   (a ranking strategy is a Python strategy, `examples/momentum`).
 - Sizing is per symbol and equal-weight across symbols; no volatility scaling, no pyramiding, no

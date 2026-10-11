@@ -14,7 +14,7 @@
 | **Experiment id** | `EXP-<first 12 hex of sha256(config_hash + data hashes)>` | Pure function of config + data. Changes whenever either changes — by design. |
 | **Run artifacts** (`config.yaml`, `manifest.json`, `*.parquet`, `metrics.json`, `logs/run.jsonl`) | `schema_version` in `manifest.json` (§3) | Existing columns/keys keep name, dtype, unit and meaning within a schema version. |
 | **Datasets** (Parquet + manifest) | `DatasetManifest.schema_version` (string, currently `"1"`) + `content_hash` | A dataset built once stays readable; the contract columns of `docs/SCHEMAS.md` are additive-only. |
-| **Checkpoints** | `SCHEMA_VERSION` in `crucible/core/checkpoint.py` (currently 5) | Not portable across versions: a mismatch is a `CheckpointError`, never a best-effort load. |
+| **Checkpoints** | `SCHEMA_VERSION` in `crucible/core/checkpoint.py` (currently 6; 6 = orders carry `close_at`, ADR-0074) | Not portable across versions: a mismatch is a `CheckpointError`, never a best-effort load. |
 | **Registry keys** (`fixed_bps`, `drawdown_halt`, ...) | the stable string used as `type:` in config | Never renamed, never removed without the deprecation path in §5. |
 | **Python API** | `crucible.__version__` = `pyproject.toml` version | §4. |
 | **CLI** (`crucible <cmd>` flags and exit codes) | `--help` | Flags are additive; a removed flag follows §5. |

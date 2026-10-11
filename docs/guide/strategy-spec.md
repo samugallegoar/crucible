@@ -33,6 +33,8 @@ Ready-made starting points: `crucible spec templates`. The JSON Schema:
 | `risk.take_profit_pct` | percent | close a position this far in profit |
 | `risk.max_holding_bars` | whole number >= 1 | close a position after this many bars |
 | `session.flat_by_close` | `true` | intraday only: nothing is held overnight (see below) |
+| `session.close_with` | `next_to_last_bar` (default), `market_on_close` | how `flat_by_close` exits |
+| `session.exit_at` | `"HH:MM"` | intraday only: close positions from this exchange time on |
 | `session.entry_window` | `{start: "HH:MM", end: "HH:MM"}` | intraday only: open positions only on bars that end in this window, exchange time |
 
 ## Conditions
@@ -97,6 +99,7 @@ entry: {long: "sma(5) crosses_above sma(12)"}
 exit:  {long: "sma(5) crosses_below sma(12)"}
 session:
   flat_by_close: true
+  close_with: market_on_close     # optional: exit at the closing price
   entry_window: {start: "10:30", end: "14:30"}
 ```
 
@@ -105,12 +108,21 @@ session:
   is what lets the realistic re-run, which trades at the next bar, still exit before the close.
   The price is the last bar's move (the last half hour on US hourly bars, five minutes on
   5-minute bars).
+- `close_with: market_on_close`: keep the last bar and exit at the session's closing price, as a
+  market-on-close order would. The order has to reach the exchange by ten minutes before the close
+  (15:50 in New York), so the decision is taken on the last bar ending by then and nothing new is
+  opened after it. Not available on 24/7 markets (no closing auction).
+- `exit_at: "12:30"`: close any position on the first bar ending at or after 12:30 and open nothing
+  until the next session. On hourly US bars, which end at :30, `exit_at: "12:00"` exits at 12:30.
+- `time` in a condition: when the bar ends, exchange time, compared with a clock time:
+  `{all: ["rsi(14) < 30", "time >= 10:30", "time < 15:00"]}`. Only `>`, `>=`, `<`, `<=`.
 - `entry_window`: times are when the deciding bar **ends**, in the exchange's local time (New York
   for US stocks, UTC on 24/7). The first hour on US hourly bars is `{start: "10:30", end: "10:30"}`
   (the 09:30-10:30 bar ends at 10:30); "not in the last hour" is `end: "15:00"`. Exits can happen
   at any time.
-- Both need `interval` intraday and are refused on daily bars. On the command line:
-  `--flat-by-close`, `--entry-window 10:30-14:30`.
+- All of these need `interval` intraday and are refused on daily bars. On the command line:
+  `--flat-by-close`, `--market-on-close`, `--exit-at 12:30`, `--entry-window 10:30-14:30`; `time`
+  goes straight into `--entry`/`--exit`.
 
 ## Plain language to spec
 
@@ -126,6 +138,9 @@ session:
 | "use half of my money" | `sizing: {type: fixed_fraction, fraction: 0.5}` |
 | "day trade only, flat by the close" (intraday) | `session: {flat_by_close: true}` |
 | "only enter in the first hour" (hourly US bars) | `session: {entry_window: {start: "10:30", end: "10:30"}}` |
+| "flat at the close, at the closing price" | `session: {flat_by_close: true, close_with: market_on_close}` |
+| "get out by midday" (hourly US bars) | `session: {exit_at: "12:30"}` |
+| "buy dips, but only after 10:30" | entry `{all: ["rsi(14) < 30", "time >= 10:30"]}` |
 
 ## What a refusal looks like
 

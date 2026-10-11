@@ -33,8 +33,9 @@ when every statistical guard passes.
 - Daily bars from Yahoo Finance (unofficial: it can change or throttle without notice) or Tiingo
   (official, free key), and intraday bars (5m, 15m, 30m, 1h) from Yahoo Finance only. Yahoo keeps
   about 60 days of 5-30 minute bars and about two years of hourly bars, so intraday tests are short
-  and usually `not_conclusive`. Time-of-day rules are limited to "flat by the close" and an entry
-  window; there are no market-on-close orders and no "exit at 12:00".
+  and usually `not_conclusive`. Time-of-day rules: flat by the close (optionally at the closing
+  price), exit at a clock time, an entry window and `time` in conditions; no market-on-open orders,
+  no day-of-week conditions, and the market-on-close cutoff is the US one (ten minutes).
 - No fundamentals, news, filings or alternative data.
 - Survivorship: a ticker you ask for today exists today. A test of a rule on today's index
   constituents over the past is flattered by the companies that were dropped; Crucible does not

@@ -70,6 +70,9 @@ class OrderType(enum.Enum):
     TWAP = "twap"
     VWAP = "vwap"
     PARTICIPATION = "participation"
+    MARKET_ON_CLOSE = "market_on_close"
+    """Fills at the close of the bar that ends at ``close_at`` (a session close), if it arrived
+    before that bar opened; otherwise rejected (ADR-0074)."""
 
 
 class TimeInForce(enum.Enum):

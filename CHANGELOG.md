@@ -8,6 +8,16 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Market-on-close orders, `exit_at` and `time` in conditions (ADR-0074)
+- `OrderType.MARKET_ON_CLOSE` with `OrderSpec.close_at`: fills at the closing bar's close (spread
+  and slippage still apply) if it reached the market ten minutes before the close (the NYSE/Nasdaq
+  15:50 cutoff); later it is rejected, without a closing bar it expires. Checkpoint
+  `SCHEMA_VERSION` 6.
+- `session.close_with: market_on_close` lets `flat_by_close` keep the last bar: both engines exit at
+  the closing price. `session.exit_at: "HH:MM"` closes positions from a clock time on. Conditions can
+  read `time` (`time >= 10:30`). CLI `--market-on-close`, `--exit-at`; MCP `market_on_close`,
+  `exit_at`.
+
 ### Time-of-day rules (ADR-0073)
 - Strategy specs gain an optional `session` block for intraday bars: `flat_by_close` (nothing held
   overnight; the position is closed on the session's next-to-last bar so the realistic re-run also

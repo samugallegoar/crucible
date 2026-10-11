@@ -60,7 +60,20 @@ class Call:
     k: float
 
 
-Operand = Num | BarField | Call
+@dataclass(frozen=True, slots=True)
+class TimeOfDay:
+    """``time``: when the bar ends, in minutes after midnight, exchange local time (ADR-0074)."""
+
+
+@dataclass(frozen=True, slots=True)
+class ClockTime:
+    """A clock literal (``10:30``), in minutes after midnight; compared with ``time`` only."""
+
+    minutes: int
+    text: str
+
+
+Operand = Num | BarField | Call | TimeOfDay | ClockTime
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +97,7 @@ class Group:
 Node = Comparison | Always | Group
 
 _CALL = re.compile(r"^([a-z_][a-z0-9_]*)\s*\(([^()]*)\)$")
+_CLOCK = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
 _OPERATOR = re.compile(r"\s*(>=|<=|>|<)\s*|\s+(crosses[_ ]above|crosses[_ ]below)\s+")
 
 
@@ -96,14 +110,20 @@ def _parse_operand(text: str, where: str) -> Operand:
         return Num(float(text))
     except ValueError:
         pass
+    if text == "time":
+        return TimeOfDay()
+    clock = _CLOCK.match(text)
+    if clock is not None:
+        return ClockTime(int(clock.group(1)) * 60 + int(clock.group(2)), text)
     if text in PRICE_FIELDS:
         return BarField(text)
     match = _CALL.match(text)
     if match is None:
         msg = (
             f"{where}: cannot read {text!r}. An operand is a number (30), a bar field "
-            f"({', '.join(PRICE_FIELDS)}) or an indicator call such as sma(10), rsi(14), "
-            "roc(20), highest(20), bb_lower(20, 2)"
+            f"({', '.join(PRICE_FIELDS)}), an indicator call such as sma(10), rsi(14), "
+            "roc(20), highest(20), bb_lower(20, 2), or on intraday bars `time` compared with a "
+            "clock time such as 10:30"
         )
         raise ConfigurationError(msg)
     raw_args = [a.strip() for a in match.group(2).split(",") if a.strip()]
@@ -136,6 +156,17 @@ def parse_condition_text(text: str, where: str) -> Node:
     op = operators[0].replace(" ", "_")
     left = _parse_operand(operands[0], where)
     right = _parse_operand(operands[1], where)
+    timed = [isinstance(o, TimeOfDay | ClockTime) for o in (left, right)]
+    if any(timed):
+        kinds = {type(left), type(right)}
+        if kinds != {TimeOfDay, ClockTime} or op not in (">", ">=", "<", "<="):
+            msg = (
+                f"{where}: {text!r}: `time` (when the bar ends, exchange time) is compared with a "
+                "clock time using >, >=, < or <=, e.g. `time >= 10:30` or `time < 15:00`; it "
+                "cannot cross, and a clock time cannot be compared with a price"
+            )
+            raise ConfigurationError(msg)
+        return Comparison(left, op, right)
     if isinstance(left, Num) and isinstance(right, Num):
         msg = f"{where}: {text!r} compares two constants, which is always the same answer"
         raise ConfigurationError(msg)
@@ -272,17 +303,53 @@ class EntryWindow(_Frozen):
         return self
 
 
-class SessionRules(_Frozen):
-    """Time-of-day rules for intraday bars (ADR-0073); refused on daily bars.
+def check_clock_time(value: str, where: str) -> str:
+    """``HH:MM`` or a ``ConfigurationError`` naming ``where``."""
+    if not _HHMM.match(value):
+        msg = (
+            f"{where} {value!r} is not a time; write it as HH:MM in the exchange's local time, "
+            "for example 09:45 or 15:00"
+        )
+        raise ConfigurationError(msg)
+    return value
 
-    ``flat_by_close``: no position is held from one session into the next. The position is closed
-    by the decision of the session's **next-to-last** bar, so the headline engine exits at that
-    bar's close and the event-driven engine (which trades at the next bar) exits at the last bar's
-    open: both are flat across the close, and neither takes the overnight gap. No entry is taken
-    on the last two bars of a session. ``entry_window``: see ``EntryWindow``."""
+
+class SessionRules(_Frozen):
+    """Time-of-day rules for intraday bars (ADR-0073, ADR-0074); refused on daily bars.
+
+    ``flat_by_close``: no position is held from one session into the next. How it is closed is
+    ``close_with``:
+
+    - ``next_to_last_bar`` (default): the position is closed by the decision of the session's
+      next-to-last bar, so the headline engine exits at that bar's close and the event-driven
+      engine (which trades at the next bar) at the last bar's open. No entry on the last two bars.
+      Gives up the last bar's move but needs no closing auction.
+    - ``market_on_close``: the position is held through the last bar and closed at the session's
+      closing price. The headline engine decides flat on the last bar (its fill is that bar's
+      close); the event-driven engine sends a market-on-close order on the next-to-last bar, which
+      fills at the same close. No entry on the last bar. Needs an exchange with a closing auction
+      (refused on 24/7).
+
+    ``exit_at``: ``HH:MM`` exchange time; the position is closed on the first bar ending at or
+    after it and nothing is opened again until the session ends. ``entry_window``: see
+    ``EntryWindow``."""
 
     flat_by_close: bool = False
+    close_with: Literal["next_to_last_bar", "market_on_close"] = "next_to_last_bar"
+    exit_at: str | None = None
     entry_window: EntryWindow | None = None
+
+    @model_validator(mode="after")
+    def _coherent(self) -> SessionRules:
+        if self.exit_at is not None:
+            check_clock_time(self.exit_at, "session.exit_at")
+        if self.close_with == "market_on_close" and not self.flat_by_close:
+            msg = (
+                "session.close_with: market_on_close only applies with flat_by_close: true; set "
+                "flat_by_close or remove close_with"
+            )
+            raise ConfigurationError(msg)
+        return self
 
 
 class StrategySpec(_Frozen):
@@ -338,15 +405,23 @@ def check_spec(spec: StrategySpec) -> None:
             raise ConfigurationError(msg)
     flips = spec.entry.long is not None and spec.entry.short is not None
     if spec.session is not None and not (
-        spec.session.flat_by_close or spec.session.entry_window is not None
+        spec.session.flat_by_close
+        or spec.session.entry_window is not None
+        or spec.session.exit_at is not None
     ):
-        msg = "session is empty; set session.flat_by_close: true or a session.entry_window"
+        msg = (
+            "session is empty; set session.flat_by_close: true, a session.exit_at time or a "
+            "session.entry_window"
+        )
         raise ConfigurationError(msg)
     has_generic_exit = (
         spec.risk.stop_loss_pct is not None
         or spec.risk.take_profit_pct is not None
         or spec.risk.max_holding_bars is not None
-        or (spec.session is not None and spec.session.flat_by_close)
+        or (
+            spec.session is not None
+            and (spec.session.flat_by_close or spec.session.exit_at is not None)
+        )
     )
     for side in ("long", "short"):
         entry = getattr(spec.entry, side)
@@ -379,8 +454,8 @@ def _format_validation_error(exc: ValidationError) -> str:
             message = (
                 "unknown field; allowed fields are spec_version, name, direction, entry, exit, "
                 "sizing, risk, session (and, inside them: long/short, type/fraction, "
-                "stop_loss_pct/take_profit_pct/max_holding_bars, flat_by_close/entry_window "
-                "with start/end)"
+                "stop_loss_pct/take_profit_pct/max_holding_bars, flat_by_close/close_with/"
+                "exit_at/entry_window with start/end)"
             )
         elif kind == "missing":
             message = "this field is required"

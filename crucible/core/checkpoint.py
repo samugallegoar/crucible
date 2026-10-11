@@ -38,10 +38,11 @@ if TYPE_CHECKING:
 
     from numpy.random.bit_generator import _PCG64State  # type: ignore[attr-defined]
 
+# 6: orders gained "close_at" (MARKET_ON_CLOSE, ADR-0074);
 # 5: BarEvent gained four optional quote fields (ADR-0060);
 # 4: ladder snapshot gained "models" (ADR-0056); 3: venue summary key "emitted" (ADR-0048);
 # 2: fill row columns (ADR-0047)
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 _TAG = "$t"
 
 _SUPPORTED = (

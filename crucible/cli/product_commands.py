@@ -52,6 +52,18 @@ def _add_rule_options(parser: argparse.ArgumentParser) -> None:
         help="intraday only: close every position before the session's close (ADR-0073)",
     )
     parser.add_argument(
+        "--market-on-close",
+        action="store_const",
+        const=True,
+        default=None,
+        help="with --flat-by-close: exit at the closing price with a market-on-close order",
+    )
+    parser.add_argument(
+        "--exit-at",
+        default=None,
+        help="intraday only: close every position at HH:MM exchange time, nothing after it",
+    )
+    parser.add_argument(
         "--entry-window",
         default=None,
         help="intraday only: open positions only on bars ending in HH:MM-HH:MM, exchange time",
@@ -156,6 +168,8 @@ def _spec_from_args(args: argparse.Namespace):  # type: ignore[no-untyped-def]
             "take_profit_pct",
             "max_holding_bars",
             "flat_by_close",
+            "market_on_close",
+            "exit_at",
             "entry_window",
         )
     )
@@ -201,6 +215,10 @@ def _spec_from_args(args: argparse.Namespace):  # type: ignore[no-untyped-def]
     session: dict[str, object] = {}
     if args.flat_by_close:
         session["flat_by_close"] = True
+    if args.market_on_close:
+        session["close_with"] = "market_on_close"
+    if args.exit_at is not None:
+        session["exit_at"] = str(args.exit_at).strip()
     if args.entry_window is not None:
         start, sep, end = str(args.entry_window).partition("-")
         if not sep:

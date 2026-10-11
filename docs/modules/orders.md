@@ -8,8 +8,9 @@ Order objects and their state machine. Detail sections follow.
 - `manager.py` — `ManagedOrder`, `InMemoryOrderManager` (creation-ordered, refuses overfills).
 - `state.py` — the transition table and `validate_transition` (I7).
 - Order types (`MARKET`, `LIMIT`, `STOP`, `STOP_LIMIT`, `TRAILING_STOP`, `BRACKET`, `OCO`, `OTO`,
-  `TWAP`, `VWAP`, `PARTICIPATION`) are the `OrderType` enum in `core/types.py`; the simulation
-  semantics are in `docs/modules/execution.md`.
+  `TWAP`, `VWAP`, `PARTICIPATION`, `MARKET_ON_CLOSE`) are the `OrderType` enum in `core/types.py`;
+  the simulation semantics are in `docs/modules/execution.md`. A `MARKET_ON_CLOSE` order needs
+  `close_at` (a session close after its creation); no other type may set it (ADR-0074).
 
 ## Responsibility
 Order objects, the state machine, and the manager that owns all transitions.

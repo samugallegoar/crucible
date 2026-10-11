@@ -98,8 +98,13 @@ it, so paper and backtest match (I14).
 
 ## Order types simulated
 MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP, TWAP, VWAP, PARTICIPATION,
-plus composite BRACKET/OCO/OTO via order-manager links (children activate on
+MARKET_ON_CLOSE, plus composite BRACKET/OCO/OTO via order-manager links (children activate on
 parent fill; dead parents cancel dormant children).
+
+MARKET_ON_CLOSE (ADR-0074) carries `close_at`, a session close. It fills on the bar ending at
+`close_at`, at that bar's close adjusted adversely (spread, slippage) and clamped into the bar (I5).
+It must arrive by `close_at - MOC_CUTOFF_NS` (ten minutes, the NYSE/Nasdaq 15:50 cutoff), else it is
+rejected; if no bar ends at `close_at` it expires. Level 0 refuses it.
 
 ## Execution backend (ADR-0043)
 `backend.py`: the engine drives an `ExecutionBackend` (Protocol:

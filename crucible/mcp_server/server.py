@@ -116,6 +116,8 @@ def _rule_options(
     name: str | None,
     flat_by_close: bool = False,
     entry_window: str | None = None,
+    market_on_close: bool = False,
+    exit_at: str | None = None,
 ) -> dict[str, Option]:
     """The strategy part of ``backtest`` / ``spec check``: a spec (object or text) or the inline
     rule options; ``direction`` only applies to an inline rule."""
@@ -132,6 +134,8 @@ def _rule_options(
         "take_profit_pct": _text(take_profit_pct),
         "max_holding_bars": _text(max_holding_bars),
         "flat_by_close": flat_by_close,
+        "market_on_close": market_on_close,
+        "exit_at": exit_at,
         "entry_window": entry_window,
         "name": name,
     }
@@ -211,6 +215,8 @@ def build_server() -> MCPServer:
         take_profit_pct: float | None = None,
         max_holding_bars: int | None = None,
         flat_by_close: bool = False,
+        market_on_close: bool = False,
+        exit_at: str | None = None,
         entry_window: str | None = None,
         name: str | None = None,
         capital: float = 100000.0,
@@ -238,8 +244,11 @@ def build_server() -> MCPServer:
         `interval`: 1d (default) or intraday 1h/30m/15m/5m (yfinance only; Yahoo keeps about two
         years of 1h bars and about 60 days of 5-30m bars, so the window must fit). Rules count
         bars: sma(20) on 1h bars is a 20-hour average. Intraday only: `flat_by_close` closes
-        every position before the session's close (nothing held overnight); `entry_window`
-        ("10:30-14:30", exchange time) opens positions only on bars ending in that window.
+        every position before the session's close (nothing held overnight); add
+        `market_on_close` to exit at the closing price instead of one bar early; `exit_at`
+        ("12:30") closes positions from that time on; `entry_window` ("10:30-14:30") opens
+        positions only on bars ending in that window; conditions can test `time`
+        (`time >= 10:30`). All times are exchange time and refer to when a bar ends.
         `realism_check` (about 30 s extra) also re-runs the rules with realistic fills
         (next-bar prices, spread, latency) and reports how much of the result survives.
 
@@ -261,6 +270,8 @@ def build_server() -> MCPServer:
                 take_profit_pct=take_profit_pct,
                 max_holding_bars=max_holding_bars,
                 flat_by_close=flat_by_close,
+                market_on_close=market_on_close,
+                exit_at=exit_at,
                 entry_window=entry_window,
                 name=name,
             ),
@@ -296,6 +307,8 @@ def build_server() -> MCPServer:
         take_profit_pct: float | None = None,
         max_holding_bars: int | None = None,
         flat_by_close: bool = False,
+        market_on_close: bool = False,
+        exit_at: str | None = None,
         entry_window: str | None = None,
         name: str | None = None,
     ) -> dict[str, object]:
@@ -315,6 +328,8 @@ def build_server() -> MCPServer:
                 take_profit_pct=take_profit_pct,
                 max_holding_bars=max_holding_bars,
                 flat_by_close=flat_by_close,
+                market_on_close=market_on_close,
+                exit_at=exit_at,
                 entry_window=entry_window,
                 name=name,
             ),

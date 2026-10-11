@@ -176,3 +176,134 @@ def test_the_explanation_says_flat_by_close() -> None:
     lines = " ".join(describe_spec(parse_spec(FLAT_SPEC)))
     assert "flat by the close" in lines
     assert HOUR > 0
+
+
+# --- market on close, exit_at and `time` end to end (ADR-0074) --------------------------------
+
+from zoneinfo import ZoneInfo  # noqa: E402
+
+NEW_YORK = ZoneInfo("America/New_York")
+
+
+def _ts(stamp: object) -> int:
+    return int(
+        dt.datetime.strptime(str(stamp), "%Y-%m-%dT%H:%MZ").replace(tzinfo=dt.UTC).timestamp() * 1e9
+    )
+
+
+def _local(stamp: object) -> str:
+    return (
+        dt.datetime.strptime(str(stamp), "%Y-%m-%dT%H:%MZ")
+        .replace(tzinfo=dt.UTC)
+        .astimezone(NEW_YORK)
+        .strftime("%H:%M")
+    )
+
+
+def _run(root: Path, spec: dict[str, object], *, realism: bool) -> tuple[dict[str, object], Path]:
+    home = _hourly_home(root)
+    doc = run_backtest(
+        request(
+            home,
+            spec=load_spec(spec),
+            symbols=["TRENDY"],
+            start=START.isoformat(),
+            end=END.isoformat(),
+            interval="1h",
+            null_iterations=0,
+            realism_check=realism,
+        )
+    )
+    return doc, home.experiments
+
+
+def _event_run(experiments: Path) -> Path:
+    runs = [
+        p.parent
+        for p in experiments.glob("*/manifest.json")
+        if json.loads(p.read_text(encoding="utf-8")).get("runtime") == "backtest"
+    ]
+    assert len(runs) == 1
+    return runs[0]
+
+
+MOC_SPEC = {
+    "entry": {"long": "sma(5) crosses_above sma(12)"},
+    "exit": {"long": "sma(5) crosses_below sma(12)"},
+    "session": {"flat_by_close": True, "close_with": "market_on_close"},
+}
+
+
+@pytest.fixture(scope="module")
+def moc_run(tmp_path_factory: pytest.TempPathFactory) -> tuple[dict[str, object], Path]:
+    return _run(tmp_path_factory.mktemp("moc"), MOC_SPEC, realism=True)
+
+
+def test_market_on_close_keeps_the_last_bar_on_the_headline(
+    moc_run: tuple[dict[str, object], Path],
+) -> None:
+    doc, _ = moc_run
+    trades = doc["trades"]
+    assert isinstance(trades, list)
+    assert trades
+    closes = set(_closes(START, END))
+    forced = [t for t in trades if isinstance(t, dict) and _ts(t["exit_time"]) in closes]
+    assert forced, "some position should be carried to the close"
+    for trade in trades:
+        assert isinstance(trade, dict)
+        assert trade["entry_date"] == trade["exit_date"], f"held overnight: {trade}"
+
+
+def test_the_realism_rerun_fills_market_on_close_orders_at_the_close(
+    moc_run: tuple[dict[str, object], Path],
+) -> None:
+    _, experiments = moc_run
+    run = _event_run(experiments)
+    orders = pl.read_parquet(run / "orders.parquet")
+    fills = pl.read_parquet(run / "fills.parquet")
+    moc_ids = orders.filter(pl.col("type") == "market_on_close").get_column("order_id")
+    moc_fills = fills.filter(pl.col("order_id").is_in(moc_ids.implode()))
+    assert moc_fills.height > 0, "the event-driven run should have closed at the auction"
+    closes = set(_closes(START, END))
+    assert set(moc_fills.get_column("ts").to_list()) <= closes  # filled at session closes only
+    signed = (
+        np.where(fills.get_column("side").to_numpy() == "buy", 1.0, -1.0)
+        * fills.get_column("qty").cast(pl.Float64).to_numpy()
+    )
+    order = np.argsort(fills.get_column("ts").to_numpy(), kind="stable")
+    held = np.cumsum(signed[order])
+    ts = fills.get_column("ts").to_numpy()[order]
+    for close in closes:
+        position = held[ts <= close][-1] if np.any(ts <= close) else 0.0
+        assert abs(position) < 1e-9, f"event-driven run held {position} at close ts={close}"
+
+
+def test_exit_at_closes_positions_and_blocks_entries_from_that_time(tmp_path: Path) -> None:
+    spec = {
+        "entry": {"long": "sma(5) crosses_above sma(12)"},
+        "exit": {"long": "sma(5) crosses_below sma(12)"},
+        "session": {"exit_at": "12:30"},
+    }
+    doc, _ = _run(tmp_path, spec, realism=False)
+    trades = doc["trades"]
+    assert isinstance(trades, list)
+    assert trades
+    for trade in trades:
+        assert isinstance(trade, dict)
+        assert _local(trade["entry_time"]) < "12:30", f"entered after exit_at: {trade}"
+        assert trade["entry_date"] == trade["exit_date"]
+        assert _local(trade["exit_time"]) <= "12:30", f"held past exit_at: {trade}"
+
+
+def test_a_time_condition_restricts_entries(tmp_path: Path) -> None:
+    spec = {
+        "entry": {"long": {"all": ["sma(5) crosses_above sma(12)", "time <= 11:30"]}},
+        "exit": {"long": "sma(5) crosses_below sma(12)"},
+    }
+    doc, _ = _run(tmp_path, spec, realism=False)
+    trades = doc["trades"]
+    assert isinstance(trades, list)
+    assert trades
+    for trade in trades:
+        assert isinstance(trade, dict)
+        assert _local(trade["entry_time"]) <= "11:30", f"entered after 11:30: {trade}"

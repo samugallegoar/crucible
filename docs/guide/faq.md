@@ -29,8 +29,9 @@ Yes: pass `interval` (`1h`, `30m`, `15m` or `5m`; `--interval` on the command li
 bars of that interval, Sharpe and returns are annualized from the number of bars per session, and
 trades are timestamped to the minute. Yahoo keeps about 60 days of 5-30 minute bars and about two
 years of hourly bars, so intraday tests are short and the report will usually say "not
-conclusive". Day-trading rules exist: `session.flat_by_close` (nothing held overnight) and
-`session.entry_window` (open only between two times); see the strategy spec page.
+conclusive". Day-trading rules exist: `session.flat_by_close` (nothing held overnight, optionally
+at the closing price with `close_with: market_on_close`), `session.exit_at` (out by a clock time),
+`session.entry_window` and `time` in conditions; see the strategy spec page.
 
 **How are the confidence intervals made?**
 A circular block bootstrap of the bar returns (blocks of about the square root of the number

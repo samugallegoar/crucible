@@ -21,10 +21,19 @@ from decimal import ROUND_DOWN, Decimal
 from typing import TYPE_CHECKING, cast
 
 from crucible.core.errors import ConfigurationError, CrucibleError
-from crucible.core.types import Currency, DatasetId, OrderSide, RealismLevel, Symbol
+from crucible.core.types import (
+    Currency,
+    DatasetId,
+    OrderSide,
+    OrderType,
+    RealismLevel,
+    Symbol,
+    TimestampNs,
+)
 from crucible.data.store import ParquetDataStore
 from crucible.experiments.config import ExecutionConfig, ExperimentConfig, StrategyConfig
 from crucible.experiments.runner import import_entrypoint
+from crucible.orders.interfaces import OrderSpec
 
 if TYPE_CHECKING:
     from crucible.core.events import BarEvent
@@ -144,12 +153,14 @@ class PromotedSignalStrategy:
         scored = cfg.signal(history.lazy(), cfg.signal_params).collect()
         if scored.height == 0:
             return
-        latest_scores = {
-            row["symbol"]: row["score"]
-            for row in scored.sort(["symbol", "ts"])
-            .group_by("symbol", maintain_order=True)
-            .last()
-            .to_dicts()
+        latest_rows = (
+            scored.sort(["symbol", "ts"]).group_by("symbol", maintain_order=True).last().to_dicts()
+        )
+        latest_scores = {row["symbol"]: row["score"] for row in latest_rows}
+        # an optional signal column (ADR-0074): the session close at which this bar's position is
+        # to be taken out with a market-on-close order
+        close_at = {
+            row["symbol"]: row["close_at"] for row in latest_rows if row.get("close_at") is not None
         }
 
         latest_prices = {
@@ -183,10 +194,21 @@ class PromotedSignalStrategy:
             position = ctx.portfolio.position(symbol)
             current_qty = position.qty if position is not None else Decimal("0")
             delta = target_qty - current_qty
-            if delta == 0:
-                continue
-            side = OrderSide.BUY if delta > 0 else OrderSide.SELL
-            ctx.orders.submit(symbol, side, abs(delta))
+            if delta != 0:
+                side = OrderSide.BUY if delta > 0 else OrderSide.SELL
+                ctx.orders.submit(symbol, side, abs(delta))
+            if key in close_at and target_qty != 0:
+                # take the target position out at the session's closing price; if the order
+                # misses the cutoff, the next bar's flat decision trades at the next open instead
+                ctx.orders.place(
+                    OrderSpec(
+                        symbol=symbol,
+                        side=OrderSide.SELL if target_qty > 0 else OrderSide.BUY,
+                        qty=abs(target_qty),
+                        type=OrderType.MARKET_ON_CLOSE,
+                        close_at=TimestampNs(int(close_at[key])),
+                    )
+                )
 
     def _fx_mid(self, ctx: BacktestContext, cfg: _Settings, symbol: Symbol) -> Decimal:
         """The symbol's currency-to-base mid as of now (1 for a base-currency symbol), read through

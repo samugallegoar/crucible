@@ -116,6 +116,7 @@ class SimulatedVenue:
             algo_rate=spec.algo_rate,
             strategy_id=spec.strategy_id,
             order_id=order_id,
+            close_at=spec.close_at,
         )
         self._orders.transition(order.id, OrderState.SUBMITTED, ts)
         self._orders.transition(order.id, OrderState.ACCEPTED, ts)

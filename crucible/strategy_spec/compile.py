@@ -30,6 +30,7 @@ bar of the declared interval would reach the close. They need ``params["session"
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -38,16 +39,19 @@ import polars as pl
 from crucible.core.errors import ConfigurationError
 from crucible.core.types import TimestampNs
 from crucible.data.calendars import get_trading_calendar
+from crucible.orders.interfaces import MOC_CUTOFF_NS
 from crucible.strategy_spec.indicators import INDICATORS
 from crucible.strategy_spec.models import (
     Always,
     BarField,
     Call,
+    ClockTime,
     Group,
     Node,
     Num,
     Operand,
     StrategySpec,
+    TimeOfDay,
     parse_condition,
     parse_spec,
 )
@@ -57,6 +61,7 @@ if TYPE_CHECKING:
 
 _BAR_COLUMNS = ("symbol", "event_time", "open", "high", "low", "close", "volume")
 _NS_PER_MINUTE = 60 * 10**9
+_TIME_COLUMN = "__time_of_day"
 _UNIT_MINUTES = {"m": 1, "h": 60}
 
 
@@ -73,28 +78,65 @@ def _interval_ns(interval: str) -> int:
     return int(number) * _UNIT_MINUTES[unit] * _NS_PER_MINUTE
 
 
-def session_masks(
+@dataclass(frozen=True, slots=True)
+class SessionSchedule:
+    """Per-bar schedule facts, from the calendar and the declared bar length only (ADR-0073,
+    ADR-0074). ``moc_close`` is the session close a market-on-close exit targets on that bar
+    (0 where none); ``minutes`` the bar's end time in minutes after local midnight."""
+
+    force_flat: NDArray[np.bool_]
+    entry_ok: NDArray[np.bool_]
+    moc_close: NDArray[np.int64]
+    minutes: NDArray[np.int64]
+
+
+def uses_time(spec: StrategySpec) -> bool:
+    """Whether an entry or exit condition reads ``time``."""
+    for rules in (spec.entry, spec.exit):
+        for side in ("long", "short"):
+            condition = getattr(rules, side)
+            if condition is None:
+                continue
+            node = parse_condition(condition, side)
+            if any(isinstance(o, TimeOfDay) for o in condition_operands(node)):
+                return True
+    return False
+
+
+def _clock_minutes(text: str) -> int:
+    hours, minutes = text.split(":")
+    return int(hours) * 60 + int(minutes)
+
+
+def session_schedule(
     spec: StrategySpec, event_times: NDArray[np.int64], params: dict[str, object]
-) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
-    """Per bar: ``force_flat`` (``flat_by_close``: the session's last two bars) and ``entry_ok``
-    (inside the entry window and not forced flat). From the calendar and the bar length only."""
+) -> SessionSchedule:
+    """The schedule facts the spec needs; trivial when it uses no time-of-day rule."""
     n = len(event_times)
     session = spec.session
-    if session is None or n == 0:
-        return np.zeros(n, dtype=np.bool_), np.ones(n, dtype=np.bool_)
+    timed = uses_time(spec)
+    trivial = SessionSchedule(
+        force_flat=np.zeros(n, dtype=np.bool_),
+        entry_ok=np.ones(n, dtype=np.bool_),
+        moc_close=np.zeros(n, dtype=np.int64),
+        minutes=np.zeros(n, dtype=np.int64),
+    )
+    if (session is None and not timed) or n == 0:
+        return trivial
     raw = params.get("session")
     if not isinstance(raw, dict) or "calendar" not in raw or "interval" not in raw:
         msg = (
-            "this spec has time-of-day rules (session) but the run did not say when sessions "
-            'close; pass params.session = {"calendar": "XNYS", "interval": "1h"} (the one-step '
-            "backtest does this for you)"
+            "this spec has time-of-day rules (session, or `time` in a condition) but the run did "
+            'not say when sessions close; pass params.session = {"calendar": "XNYS", "interval": '
+            '"1h"} (the one-step backtest does this for you)'
         )
         raise ConfigurationError(msg)
+    calendar = str(raw["calendar"])
     step = _interval_ns(str(raw["interval"]))
     week = 7 * 24 * 60 * _NS_PER_MINUTE
     first, last = int(event_times.min()), int(event_times.max())
     cal = get_trading_calendar(
-        str(raw["calendar"]), start=TimestampNs(first - week), end=TimestampNs(last + week)
+        calendar, start=TimestampNs(first - week), end=TimestampNs(last + week)
     )
     closes = np.asarray(
         cal.session_closes(TimestampNs(first), TimestampNs(last + week)), dtype=np.int64
@@ -102,34 +144,70 @@ def session_masks(
     index = np.searchsorted(closes, event_times, side="left")
     if closes.size == 0 or np.any(index >= closes.size):
         msg = (
-            f"a bar ends after the last session close the {raw['calendar']} calendar knows; "
-            "check the calendar matches the data"
+            f"a bar ends after the last session close the {calendar} calendar knows; check the "
+            "calendar matches the data"
         )
         raise ConfigurationError(msg)
     close_of = closes[index]
     is_last = event_times == close_of
     is_next_to_last = (~is_last) & (event_times + step >= close_of)
-    force_flat = (
-        (is_last | is_next_to_last) if session.flat_by_close else np.zeros(n, dtype=np.bool_)
+    local = (
+        pl.Series("t", event_times)
+        .cast(pl.Datetime("ns", "UTC"))
+        .dt.convert_time_zone(cal.timezone)
     )
-    if session.flat_by_close and bool(np.all(is_last)):
-        msg = (
-            "session.flat_by_close needs intraday bars: every bar here ends a session (daily "
-            "bars), so the strategy could never hold a position"
+    minutes = (local.dt.hour().cast(pl.Int64) * 60 + local.dt.minute().cast(pl.Int64)).to_numpy()
+
+    force_flat = np.zeros(n, dtype=np.bool_)
+    no_entry = np.zeros(n, dtype=np.bool_)
+    moc_close = np.zeros(n, dtype=np.int64)
+    if session is not None and session.flat_by_close:
+        if bool(np.all(is_last)):
+            msg = (
+                "session.flat_by_close needs intraday bars: every bar here ends a session (daily "
+                "bars), so the strategy could never hold a position"
+            )
+            raise ConfigurationError(msg)
+        if session.close_with == "market_on_close":
+            if calendar == "24/7":
+                msg = (
+                    "session.close_with: market_on_close needs an exchange with a closing "
+                    "auction; a 24/7 market has none. Use close_with: next_to_last_bar"
+                )
+                raise ConfigurationError(msg)
+            # the headline decides flat on the last bar (filled at its close); the event-driven
+            # run sends a market-on-close order on the last bar ending by the exchanges' cutoff
+            # (ten minutes before the close) for that same close; no entry after the cutoff,
+            # since the event-driven run could no longer take it out at the close
+            cutoff = close_of - MOC_CUTOFF_NS
+            decides = (event_times <= cutoff) & (event_times + step > cutoff)
+            force_flat |= is_last
+            moc_close = np.where(decides, close_of, 0).astype(np.int64)
+            no_entry |= event_times > cutoff
+        else:
+            force_flat |= is_last | is_next_to_last
+        no_entry |= force_flat
+    if session is not None and session.exit_at is not None:
+        after = minutes >= _clock_minutes(session.exit_at)
+        force_flat |= after
+        no_entry |= after
+    entry_ok = ~no_entry
+    if session is not None and session.entry_window is not None:
+        window = session.entry_window
+        entry_ok &= (minutes >= _clock_minutes(window.start)) & (
+            minutes <= _clock_minutes(window.end)
         )
-        raise ConfigurationError(msg)
-    entry_ok = ~force_flat
-    window = session.entry_window
-    if window is not None:
-        local = (
-            pl.Series("t", event_times)
-            .cast(pl.Datetime("ns", "UTC"))
-            .dt.convert_time_zone(cal.timezone)
-            .dt.strftime("%H:%M")
-            .to_numpy()
-        )
-        entry_ok = entry_ok & (local >= window.start) & (local <= window.end)
-    return force_flat, entry_ok
+    return SessionSchedule(
+        force_flat=force_flat, entry_ok=entry_ok, moc_close=moc_close, minutes=minutes
+    )
+
+
+def session_masks(
+    spec: StrategySpec, event_times: NDArray[np.int64], params: dict[str, object]
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Per bar: ``force_flat`` and ``entry_ok`` (see ``session_schedule``)."""
+    schedule = session_schedule(spec, event_times, params)
+    return schedule.force_flat, schedule.entry_ok
 
 
 def _operand_expr(operand: Operand) -> pl.Expr:
@@ -137,6 +215,10 @@ def _operand_expr(operand: Operand) -> pl.Expr:
         return pl.lit(operand.value, dtype=pl.Float64)
     if isinstance(operand, BarField):
         return pl.col(operand.name)
+    if isinstance(operand, TimeOfDay):
+        return pl.col(_TIME_COLUMN).cast(pl.Float64)
+    if isinstance(operand, ClockTime):
+        return pl.lit(float(operand.minutes), dtype=pl.Float64)
     return INDICATORS[operand.name].build(operand.period, operand.field, operand.k)
 
 
@@ -294,10 +376,14 @@ def spec_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
         msg = f"the bars lack columns {missing}; a strategy spec needs {list(_BAR_COLUMNS)}"
         raise ConfigurationError(msg)
     n_symbols = frame.get_column("symbol").n_unique()
-    force_flat, entry_ok = session_masks(spec, frame.get_column("event_time").to_numpy(), params)
+    schedule = session_schedule(spec, frame.get_column("event_time").to_numpy(), params)
+    frame = frame.with_columns(pl.Series(_TIME_COLUMN, schedule.minutes))
     scored = _signals(spec, frame).with_columns(
-        pl.Series("force_flat", force_flat), pl.Series("entry_ok", entry_ok)
+        pl.Series("force_flat", schedule.force_flat),
+        pl.Series("entry_ok", schedule.entry_ok),
+        pl.Series("moc_close", schedule.moc_close),
     )
+    with_moc = spec.session is not None and spec.session.close_with == "market_on_close"
     weight = spec.sizing.weight / max(n_symbols, 1)
 
     parts: list[pl.DataFrame] = []
@@ -315,16 +401,26 @@ def spec_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
             group.get_column("force_flat").to_numpy(),
             group.get_column("entry_ok").to_numpy(),
         )
-        parts.append(
-            pl.DataFrame(
-                {
-                    "ts": group.get_column("event_time"),
-                    "symbol": group.get_column("symbol"),
-                    "score": position * weight,
-                },
-                schema={"ts": pl.Int64(), "symbol": pl.String(), "score": pl.Float64()},
-            )
+        part = pl.DataFrame(
+            {
+                "ts": group.get_column("event_time"),
+                "symbol": group.get_column("symbol"),
+                "score": position * weight,
+            },
+            schema={"ts": pl.Int64(), "symbol": pl.String(), "score": pl.Float64()},
         )
+        if with_moc:
+            # the session close a market-on-close order should take this bar's position out at
+            # (event-driven path, ADR-0074); null where there is nothing to close
+            moc = group.get_column("moc_close").to_numpy()
+            part = part.with_columns(
+                pl.Series(
+                    "close_at",
+                    [int(c) if c and p != 0 else None for c, p in zip(moc, position, strict=True)],
+                    dtype=pl.Int64(),
+                )
+            )
+        parts.append(part)
     if not parts:
         return pl.DataFrame(
             schema={"ts": pl.Int64(), "symbol": pl.String(), "score": pl.Float64()}

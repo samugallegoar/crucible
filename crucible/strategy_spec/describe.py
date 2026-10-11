@@ -11,12 +11,14 @@ from crucible.strategy_spec.indicators import INDICATORS
 from crucible.strategy_spec.models import (
     Always,
     BarField,
+    ClockTime,
     Comparison,
     Group,
     Node,
     Num,
     Operand,
     StrategySpec,
+    TimeOfDay,
     parse_condition,
 )
 
@@ -43,6 +45,10 @@ def _operand_text(operand: Operand) -> str:
         return f"{operand.value:g}"
     if isinstance(operand, BarField):
         return _FIELD_NAMES[operand.name]
+    if isinstance(operand, TimeOfDay):
+        return "the bar's end time"
+    if isinstance(operand, ClockTime):
+        return f"{operand.text} (exchange time)"
     return INDICATORS[operand.name].describe(operand.period, operand.field, operand.k)
 
 
@@ -94,11 +100,23 @@ def describe_spec(spec: StrategySpec) -> list[str]:
             f"Open new positions only on bars that end between {window.start} and {window.end} "
             "(exchange time); exits are allowed at any time."
         )
-    if spec.session is not None and spec.session.flat_by_close:
+    if spec.session is not None and spec.session.exit_at is not None:
         lines.append(
-            "Be flat by the close: any position is closed on the session's next-to-last bar and "
-            "nothing new is opened on the last two bars, so nothing is held overnight."
+            f"Close any position on the first bar ending at or after {spec.session.exit_at} "
+            "(exchange time) and open nothing again until the next session."
         )
+    if spec.session is not None and spec.session.flat_by_close:
+        if spec.session.close_with == "market_on_close":
+            lines.append(
+                "Be flat by the close: any position is held through the last bar and closed at "
+                "the session's closing price (a market-on-close order); nothing new is opened on "
+                "the last bar, so nothing is held overnight."
+            )
+        else:
+            lines.append(
+                "Be flat by the close: any position is closed on the session's next-to-last bar "
+                "and nothing new is opened on the last two bars, so nothing is held overnight."
+            )
     if spec.sizing.type == "all_in":
         lines.append("Each position uses all of its share of the capital (no leverage).")
     else:

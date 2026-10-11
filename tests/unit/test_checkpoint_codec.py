@@ -120,7 +120,9 @@ def test_a_quoted_bar_round_trips_and_the_schema_version_records_the_new_fields(
         ask_close=0.43,
     )
     assert _roundtrip(bar) == bar
-    assert SCHEMA_VERSION == 5  # BarEvent gained four optional quote fields (ADR-0060)
+    # 5: BarEvent gained four optional quote fields (ADR-0060); 6: orders gained close_at
+    # (MARKET_ON_CLOSE, ADR-0074)
+    assert SCHEMA_VERSION == 6
 
 
 def test_events_and_transaction_records_roundtrip() -> None:

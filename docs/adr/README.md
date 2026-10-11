@@ -100,5 +100,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0071](0071-drawdown-dataset-identity-dsr-calibration-and-pit-semantics.md) | One drawdown definition, calendar-aware dataset identity, DSR assumptions and calibration, precise point-in-time semantics | accepted | One drawdown definition in a new pure module, `crucible.core.drawdown` (its own layer just above the bottom one, so `analytics` and `validation` both import it): `max_drawdown(equity)` on a path … |
 | [0072](0072-intraday-one-step-backtests.md) | Intraday bars in the one-step backtest | accepted | `BacktestRequest.interval` (default `1d`), `crucible backtest --interval`, and the MCP tool's `interval` (`1d`, `1h`, `30m`, `15m`, `5m`) |
 | [0073](0073-time-of-day-rules.md) | Time-of-day rules in the strategy spec | accepted | An optional `session` block in the spec (spec_version stays 1; absent, every existing spec, its canonical form and its experiment id are unchanged): |
+| [0074](0074-market-on-close-exit-at-and-time-conditions.md) | Market-on-close orders, `exit_at` and `time` in conditions | accepted | `OrderType.MARKET_ON_CLOSE` with `OrderSpec.close_at` (a session close, UTC ns) |
 
 <!-- END GENERATED: adr-index -->

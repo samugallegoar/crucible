@@ -64,6 +64,9 @@ Consequences a strategy can rely on (also in `docs/modules/strategy.md`):
   market order fills at the **next** bar's open (plus adverse slippage), booked at
   that bar's `available_at`. At Level 0 only, `on_order_submitted` fills a market
   order instantly at bar *t*'s close, inside step 6.
+- A `MARKET_ON_CLOSE` order (ADR-0074) rests until the bar that ends at its `close_at` and fills
+  at that bar's close in step 2 of that bar, so `on_market` of the closing bar already sees the
+  position closed. It must arrive ten minutes before `close_at` (`MOC_CUTOFF_NS`).
 - A fill's ledger `ts` is the fill bar's `available_at`, even though its price is
   usually that bar's open. Use `available_at` for "when did I learn about it".
 

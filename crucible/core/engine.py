@@ -1226,6 +1226,7 @@ class BacktestEngine:
             algo_rate=spec.algo_rate,
             parent_id=parent_id,
             strategy_id=spec.strategy_id,
+            close_at=spec.close_at,
         )
         return order.id
 

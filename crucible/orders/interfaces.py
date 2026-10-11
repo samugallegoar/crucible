@@ -24,6 +24,11 @@ from crucible.core.types import (
     TimestampNs,
 )
 
+MOC_CUTOFF_NS = 10 * 60 * 10**9
+"""Market-on-close orders must reach the market this long before the session close: NYSE and
+Nasdaq stop accepting them at 15:50 ET for a 16:00 close. Crucible applies the same ten minutes on
+every exchange calendar (ADR-0074); a later order is rejected, never filled at the close."""
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OrderSpec:
@@ -44,6 +49,8 @@ class OrderSpec:
     algo_bars: int | None = None
     algo_rate: float | None = None
     strategy_id: StrategyId | None = None
+    close_at: TimestampNs | None = None
+    """MARKET_ON_CLOSE only: the session close (UTC ns) whose closing price the order takes."""
 
 
 class Order(Protocol):
