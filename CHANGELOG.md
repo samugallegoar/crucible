@@ -8,6 +8,15 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Faster test runs (ADR-0075)
+- The suite runs on worker processes (pytest-xdist, dev-only): `tools.check` on up to four,
+  CI on every core of the runner; `tools.check --serial` runs one process.
+- The two Phase 3 null tests moved to `tests/integration/test_phase3_null_acceptance.py` (one class
+  each) and the market-on-close / `exit_at` / `time` end-to-end tests to
+  `tests/integration/test_product_time_rules_e2e.py`, so the slowest pieces run side by side; the
+  time-of-day backtests use two months of hourly bars instead of six. No assertion, seed or
+  iteration count changed.
+
 ### Market-on-close orders, `exit_at` and `time` in conditions (ADR-0074)
 - `OrderType.MARKET_ON_CLOSE` with `OrderSpec.close_at`: fills at the closing bar's close (spread
   and slippage still apply) if it reached the market ten minutes before the close (the NYSE/Nasdaq

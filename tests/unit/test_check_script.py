@@ -56,6 +56,13 @@ def test_fast_only_adds_the_slow_marker_filter_to_the_tests() -> None:
     assert all(extra == () for name, extra in extras.items() if name != "tests")
 
 
+def test_the_tests_run_on_up_to_four_workers_and_serial_turns_that_off() -> None:
+    tests = next(g for g in check.GATES if g.is_tests)
+    assert tests.command[-6:] == ("-n", "auto", "--maxprocesses", "4", "--dist", "loadscope")
+    extras = {g.name: e for g, e in check.select(fast=True, no_tests=False, serial=True)}
+    assert extras["tests"] == ("-m", "not slow", "-n", "0")
+
+
 def test_no_tests_drops_only_the_test_gate() -> None:
     names = [gate.name for gate, _ in check.select(fast=False, no_tests=True)]
     assert names == [g.name for g in check.GATES if not g.is_tests]

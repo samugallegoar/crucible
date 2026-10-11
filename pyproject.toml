@@ -55,6 +55,7 @@ dev = [
     "types-pyyaml",
     "import-linter>=2.15",
     "psutil>=5.9",
+    "pytest-xdist>=3.6",
 ]
 
 [build-system]

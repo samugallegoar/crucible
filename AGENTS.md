@@ -22,7 +22,7 @@ You are working on **Crucible**, a quant backtesting engine designed to be drive
 - Format only `crucible tests examples tools`; formatting the repository root rewrites the Markdown code blocks under `docs/` and corrupts them.
 - `uv run crucible --help` — CLI.
 - Pre-commit is configured; CI runs lint, mypy, import-linter, the doc generator check, the full test suite on Ubuntu, Windows and macOS, and a clean install of the built wheel with runtime dependencies only, on every push. Keep it green.
-- `uv run python -m tools.check` runs the five gates below in order of cost and stops at the first failure (`--keep-going` summarizes instead, `--no-tests` is the static gates only, `--list` prints them); a failure prints the tail of its output and writes the full output to `.check_logs/` (gitignored). `--fast` runs the tests with `-m "not slow"`, the fast tier for the inner loop; a plain `pytest` and the default `tools.check` always run **everything**, and the full run is what you hand back.
+- `uv run python -m tools.check` runs the five gates below in order of cost and stops at the first failure (`--keep-going` summarizes instead, `--no-tests` is the static gates only, `--list` prints them); a failure prints the tail of its output and writes the full output to `.check_logs/` (gitignored). `--fast` runs the tests with `-m "not slow"`, the fast tier for the inner loop; the tests run on up to four worker processes (pytest-xdist, ADR-0075), `--serial` runs one; a plain `pytest` and the default `tools.check` always run **everything**, and the full run is what you hand back.
 
 Core libraries: Polars, NumPy, DuckDB, PyArrow, Pydantic v2, `exchange_calendars`, Numba (hot paths only, later), pytest, hypothesis. Every dependency, why it is there, and what may never be added: `docs/DEPENDENCIES.md`.
 
@@ -169,7 +169,7 @@ uv run python -m tools.docgen --check   # generated docs are current (--write to
 - Tests are deterministic too: fixed timestamps and seeded `numpy.random.Generator`, never wall-clock time or global RNG.
 - **Edit scripts:** a bash heredoc turns a backslash-n inside a Python string into a real newline and breaks the script. Write scripts that contain one with your editor/Write tool, or build the character with `chr(10)`.
 - **`__main__.py`:** keep the call under `if __name__ == "__main__":`. `tools.docgen` imports every module under `crucible/`; an unguarded one runs at import time (it once held a docs run for two hours). `tests/unit/test_main_modules_guarded.py` enforces it.
-- **Long runs:** run the full suite in the background with its output in a file and one pytest at a time (it is 9-10 minutes and a few hundred MB); the harness stops background jobs when memory is critically low.
+- **Long runs:** run the full suite in the background with its output in a file and one pytest at a time; the harness stops background jobs when memory is critically low. `tools.check` runs the tests on up to four worker processes (ADR-0075, about 4-5 minutes); `--serial` runs one process (about 9-10 minutes, less memory).
 - **uv noise:** `UV_LINK_MODE=copy` silences the hardlink warning on another drive; a stale `VIRTUAL_ENV` only prints a warning (`tools.check` and the MCP server clear it for children).
 - **Worktrees** contain tracked files only: untracked or git-excluded files (private notes, `.env`, built datasets) are not there. Rebuild a venv per worktree (`uv sync --locked --all-extras`).
 

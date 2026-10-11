@@ -48,7 +48,8 @@ jobs:
       - name: Sync (locked)
         run: uv sync --locked --all-extras
       - name: Tests
-        run: uv run pytest -q
+        # every core of the runner (3-4), a module or class per worker (ADR-0075)
+        run: uv run pytest -q -n auto --dist loadscope
 
   # The published wheel with runtime dependencies only (no dev or test tools): catches a runtime
   # import of a package that is not declared in [project.dependencies] (ADR-0070).

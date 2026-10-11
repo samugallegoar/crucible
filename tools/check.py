@@ -5,12 +5,15 @@
     uv run python -m tools.check --no-tests   # static gates only (a few seconds)
     uv run python -m tools.check --keep-going # run every gate and summarize instead of stopping
     uv run python -m tools.check --list       # print the gates and exit
+    uv run python -m tools.check --serial     # the tests in one process (debugging, low memory)
 
 The gates are the five of AGENTS.md section 12, in the order CI runs them: lint (ruff check, then
 ruff format --check), types (mypy --strict), the layering contract, the generated docs, the tests.
 A failing gate prints the tail of its output and where the full output was written
 (``.check_logs/``, gitignored). Nothing here changes a gate or relaxes one: ``--fast`` only selects
-tests by the ``slow`` marker and the default run is the complete suite.
+tests by the ``slow`` marker and the default run is the complete suite. The tests run on up to
+four worker processes (pytest-xdist, ``--dist loadscope`` so a module or class stays on one worker
+and its fixtures are built once, ADR-0075); ``--serial`` runs them in one process.
 """
 
 from __future__ import annotations
@@ -45,10 +48,16 @@ GATES: tuple[Gate, ...] = (
     Gate("mypy --strict", (PY, "-m", "mypy", "--strict", "crucible", "examples", "tools")),
     Gate("layering", (PY, "-m", "tools.lint_imports")),
     Gate("generated docs", (PY, "-m", "tools.docgen", "--check")),
-    Gate("tests", (PY, "-m", "pytest", "-q"), is_tests=True),
+    Gate(
+        "tests",
+        (PY, "-m", "pytest", "-q", "-n", "auto", "--maxprocesses", "4", "--dist", "loadscope"),
+        is_tests=True,
+    ),
 )
 
 FAST_ARGS = ("-m", "not slow")
+SERIAL_ARGS = ("-n", "0")
+"""pytest-xdist's switch for "no workers": the last ``-n`` wins."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,13 +76,18 @@ class Outcome:
 Runner = Callable[[Gate, Sequence[str]], Outcome]
 
 
-def select(*, fast: bool, no_tests: bool) -> list[tuple[Gate, tuple[str, ...]]]:
+def select(
+    *, fast: bool, no_tests: bool, serial: bool = False
+) -> list[tuple[Gate, tuple[str, ...]]]:
     """The gates to run with the extra arguments each one gets."""
     chosen: list[tuple[Gate, tuple[str, ...]]] = []
     for gate in GATES:
         if gate.is_tests and no_tests:
             continue
-        chosen.append((gate, FAST_ARGS if (gate.is_tests and fast) else ()))
+        extra: tuple[str, ...] = ()
+        if gate.is_tests:
+            extra = (FAST_ARGS if fast else ()) + (SERIAL_ARGS if serial else ())
+        chosen.append((gate, extra))
     return chosen
 
 
@@ -136,8 +150,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--no-tests", action="store_true", help="static gates only")
     parser.add_argument("--keep-going", action="store_true", help="run every gate, then summarize")
     parser.add_argument("--list", action="store_true", help="print the gates and exit")
+    parser.add_argument(
+        "--serial", action="store_true", help="run the tests in one process instead of up to four"
+    )
     args = parser.parse_args(argv)
-    plan = select(fast=args.fast, no_tests=args.no_tests)
+    plan = select(fast=args.fast, no_tests=args.no_tests, serial=args.serial)
     if args.list:
         for gate, extra in plan:
             print(f"{gate.name}: {' '.join((*gate.command, *extra))}")

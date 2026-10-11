@@ -15,7 +15,10 @@ tests/integration/test_optimize_pbo_panel.py
 tests/integration/test_parallel_sweep.py
 tests/integration/test_perturbation.py
 tests/integration/test_phase3_acceptance.py
+tests/integration/test_phase3_null_acceptance.py
 tests/integration/test_product_backtest.py
+tests/integration/test_product_time_of_day.py
+tests/integration/test_product_time_rules_e2e.py
 tests/integration/test_runner_checkpoint.py
 tests/integration/test_runtime_flag.py
 tests/integration/test_scenario_fanout.py

@@ -160,6 +160,14 @@ The CI job (`.github/workflows/ci.yml`) runs `ruff`, `mypy --strict`, the layeri
 generator's `--check` and the full `pytest -q`, all from a locked install. Set `CI=true` locally to
 reproduce its derandomized hypothesis profile.
 
+## Running in parallel (ADR-0075)
+
+`python -m tools.check` and CI run the suite on worker processes (pytest-xdist,
+`-n auto --dist loadscope`; locally at most four). A module, or a class, stays on one worker, so
+its module- and class-scoped fixtures are built once: put independent heavy tests in separate
+classes or modules to let them overlap, and keep every write inside `tmp_path`.
+`python -m tools.check --serial` (or a plain `uv run pytest`) runs one process.
+
 ## 9. Acceptance scenarios: can the system reject misleading evidence? (ADR-0070)
 
 Each scenario has a known right answer; together they show the engine refuses to flatter a
@@ -167,8 +175,8 @@ result, not just that it produces one.
 
 | # | Scenario | Expected | Test |
 |---|---|---|---|
-| 1 | No predictive signal | null test not significant | `integration/test_phase3_acceptance.py::test_a_priori_no_edge_strategy_is_not_flagged_by_the_same_null_test` |
-| 2 | Known synthetic edge (AR(1)) | beats every shuffle, `p = 1/(B+1)` | `integration/test_phase3_acceptance.py::test_genuine_autocorrelation_edge_survives_a_shuffle_null_test` |
+| 1 | No predictive signal | null test not significant | `integration/test_phase3_null_acceptance.py::TestNoEdge` |
+| 2 | Known synthetic edge (AR(1)) | beats every shuffle, `p = 1/(B+1)` | `integration/test_phase3_null_acceptance.py::TestGenuineEdge` |
 | 3 | Deliberately leaked strategy | `LookaheadError` | `lookahead/test_leaky_strategy_canary.py`, `lookahead/test_poisoned_future*.py`; forward-label leakage in a split: `unit/test_validation_splits.py::test_unpurged_forward_labels_manufacture_an_edge_on_pure_noise` |
 | 4 | Edge that disappears after costs | gross Sharpe > 0, net < 0 | `integration/test_acceptance_costs.py` |
 | 5 | Identical strategies | PBO ≈ 0.5, not 1.0; no fake winner | `unit/test_pbo.py::test_identical_trials_are_a_coin_flip_not_certain_overfitting`, `::test_duplicating_the_dominant_trial_does_not_manufacture_overfitting` |

@@ -101,5 +101,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0072](0072-intraday-one-step-backtests.md) | Intraday bars in the one-step backtest | accepted | `BacktestRequest.interval` (default `1d`), `crucible backtest --interval`, and the MCP tool's `interval` (`1d`, `1h`, `30m`, `15m`, `5m`) |
 | [0073](0073-time-of-day-rules.md) | Time-of-day rules in the strategy spec | accepted | An optional `session` block in the spec (spec_version stays 1; absent, every existing spec, its canonical form and its experiment id are unchanged): |
 | [0074](0074-market-on-close-exit-at-and-time-conditions.md) | Market-on-close orders, `exit_at` and `time` in conditions | accepted | `OrderType.MARKET_ON_CLOSE` with `OrderSpec.close_at` (a session close, UTC ns) |
+| [0075](0075-parallel-test-runs.md) | Run the test suite on several processes; split the slowest modules | accepted | pytest-xdist (dev dependency only) runs the suite on worker processes with `--dist loadscope`: a module, or a class, stays on one worker, so module- and class-scoped fixtures are built once |
 
 <!-- END GENERATED: adr-index -->
