@@ -119,3 +119,113 @@ def test_the_signal_at_t_does_not_depend_on_bars_after_t(name: str) -> None:
         prefix = bars.filter(pl.col("event_time") <= cut_ts)
         short = spec_signal(prefix.lazy(), spec).collect().sort(["symbol", "ts"])
         assert short.equals(full.filter(pl.col("ts") <= cut_ts)), f"{name}: prefix {keep} differs"
+
+
+# --- time-of-day rules on intraday bars (ADR-0073) -----------------------------------------
+
+HOUR = 3_600 * 1_000_000_000
+SESSION = {"calendar": "XNYS", "interval": "1h"}
+SESSION_SPECS = {
+    "flat_by_close": {
+        "entry": {"long": "sma(5) crosses_above sma(12)"},
+        "exit": {"long": "sma(5) crosses_below sma(12)"},
+        "session": {"flat_by_close": True},
+    },
+    "entry_window": {
+        "direction": "long_short",
+        "entry": {"long": "rsi(7) < 40", "short": "rsi(7) > 60"},
+        "risk": {"max_holding_bars": 5},
+        "session": {"entry_window": {"start": "10:30", "end": "14:30"}},
+    },
+    "both": {
+        "entry": {"long": "close > highest(6)"},
+        "session": {"flat_by_close": True, "entry_window": {"start": "11:30", "end": "13:30"}},
+    },
+}
+
+
+def _hourly_bars(seed: int = 5) -> pl.DataFrame:
+    from crucible.data.calendars import get_trading_calendar
+
+    start, end = TimestampNs(19_000 * DAY), TimestampNs(19_060 * DAY)
+    cal = get_trading_calendar("XNYS", start=start, end=end)
+    stamps: list[int] = []
+    for close, open_ in sorted(cal.session_open_by_close(start, end).items()):
+        t = open_ + HOUR
+        while t < close:
+            stamps.append(t)
+            t += HOUR
+        stamps.append(close)
+    rng = np.random.default_rng(seed)
+    rows = []
+    for symbol in ("AAA", "BBB"):
+        close_px = 50.0 * np.cumprod(1.0 + rng.normal(0.0002, 0.006, len(stamps)))
+        for t, px in zip(stamps, close_px, strict=True):
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "event_time": t,
+                    "available_at": t,
+                    "open": float(px),
+                    "high": float(px) * 1.003,
+                    "low": float(px) * 0.997,
+                    "close": float(px),
+                    "volume": 1e5,
+                }
+            )
+    return pl.from_dicts(rows, schema=BAR_SCHEMA)
+
+
+def _session_params(name: str) -> dict[str, object]:
+    return {"spec": canonical_spec(parse_spec(SESSION_SPECS[name])), "session": SESSION}
+
+
+@pytest.mark.lookahead
+@pytest.mark.parametrize("name", sorted(SESSION_SPECS))
+def test_session_rules_do_not_read_the_future(name: str, tmp_path: Path) -> None:
+    bars = _hourly_bars()
+    cutoff = int(bars.get_column("available_at").median())  # type: ignore[arg-type]
+    end = int(bars.get_column("available_at").max())  # type: ignore[arg-type]
+    poison = pl.col("available_at") > cutoff
+    poisoned = bars.with_columns(
+        [
+            pl.when(poison).then(pl.col(c) * 1_000.0).otherwise(pl.col(c)).alias(c)
+            for c in ("open", "high", "low", "close", "volume")
+        ]
+    )
+
+    def run(store: ParquetDataStore):  # type: ignore[no-untyped-def]
+        return VectorizedBacktestEngine().run(
+            VectorizedConfig(
+                store=store,
+                bars_dataset=DATASET,
+                signal=spec_signal,
+                params=_session_params(name),
+                initial_cash=Decimal("100000"),
+                realism_level=RealismLevel.FRICTIONLESS,
+                start=TimestampNs(0),
+                end=TimestampNs(end),
+            )
+        )
+
+    clean = run(_store(tmp_path / "clean", bars))
+    dirty = run(_store(tmp_path / "dirty", poisoned))
+    for label in ("scores", "weights", "equity"):
+        before = getattr(clean, label).filter(pl.col("ts") <= cutoff)
+        after = getattr(dirty, label).filter(pl.col("ts") <= cutoff)
+        assert before.equals(after), f"{name}.{label}: a value at or before the cutoff changed"
+
+
+@pytest.mark.lookahead
+@pytest.mark.parametrize("name", sorted(SESSION_SPECS))
+def test_session_rules_at_t_do_not_depend_on_bars_after_t(name: str) -> None:
+    # the next-to-last bar of a session is known from the schedule, not from the next bar: a cut
+    # right before a session's last bar must give the same decision as the full history
+    bars = _hourly_bars()
+    params = _session_params(name)
+    full = spec_signal(bars.lazy(), params).collect().sort(["symbol", "ts"])
+    stamps = sorted(set(bars.get_column("event_time").to_list()))
+    for cut_ts in stamps[40::37]:
+        prefix = bars.filter(pl.col("event_time") <= cut_ts)
+        short = spec_signal(prefix.lazy(), params).collect().sort(["symbol", "ts"])
+        assert short.equals(full.filter(pl.col("ts") <= cut_ts)), f"{name}: prefix {cut_ts}"

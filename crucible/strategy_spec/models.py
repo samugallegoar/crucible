@@ -241,6 +241,50 @@ class RiskRules(_Frozen):
     max_holding_bars: int | None = Field(default=None, ge=1)
 
 
+_HHMM = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+
+
+class EntryWindow(_Frozen):
+    """New positions are opened only when the deciding bar **ends** between ``start`` and
+    ``end`` (inclusive, ``HH:MM``, the exchange's local time; UTC on a 24/7 calendar). Exits are
+    never restricted. On hourly US bars, the first hour is ``{start: "10:30", end: "10:30"}``
+    (the 09:30-10:30 bar ends at 10:30) and "not in the last hour" is ``end: "15:00"``."""
+
+    start: str
+    end: str
+
+    @model_validator(mode="after")
+    def _times(self) -> EntryWindow:
+        for name in ("start", "end"):
+            value = getattr(self, name)
+            if not _HHMM.match(value):
+                msg = (
+                    f"session.entry_window.{name} {value!r} is not a time; write it as HH:MM in "
+                    "the exchange's local time, for example 09:45 or 15:00"
+                )
+                raise ConfigurationError(msg)
+        if self.start > self.end:
+            msg = (
+                f"session.entry_window starts at {self.start} after it ends at {self.end}; a "
+                "window cannot cross midnight. Use start <= end"
+            )
+            raise ConfigurationError(msg)
+        return self
+
+
+class SessionRules(_Frozen):
+    """Time-of-day rules for intraday bars (ADR-0073); refused on daily bars.
+
+    ``flat_by_close``: no position is held from one session into the next. The position is closed
+    by the decision of the session's **next-to-last** bar, so the headline engine exits at that
+    bar's close and the event-driven engine (which trades at the next bar) exits at the last bar's
+    open: both are flat across the close, and neither takes the overnight gap. No entry is taken
+    on the last two bars of a session. ``entry_window``: see ``EntryWindow``."""
+
+    flat_by_close: bool = False
+    entry_window: EntryWindow | None = None
+
+
 class StrategySpec(_Frozen):
     """A trading rule as data. See the module docstring for an example."""
 
@@ -251,6 +295,7 @@ class StrategySpec(_Frozen):
     exit: Rules = Rules()
     sizing: Sizing = Sizing()
     risk: RiskRules = RiskRules()
+    session: SessionRules | None = None
 
     @model_validator(mode="after")
     def _coherent(self) -> StrategySpec:
@@ -292,10 +337,16 @@ def check_spec(spec: StrategySpec) -> None:
             )
             raise ConfigurationError(msg)
     flips = spec.entry.long is not None and spec.entry.short is not None
+    if spec.session is not None and not (
+        spec.session.flat_by_close or spec.session.entry_window is not None
+    ):
+        msg = "session is empty; set session.flat_by_close: true or a session.entry_window"
+        raise ConfigurationError(msg)
     has_generic_exit = (
         spec.risk.stop_loss_pct is not None
         or spec.risk.take_profit_pct is not None
         or spec.risk.max_holding_bars is not None
+        or (spec.session is not None and spec.session.flat_by_close)
     )
     for side in ("long", "short"):
         entry = getattr(spec.entry, side)
@@ -305,7 +356,8 @@ def check_spec(spec: StrategySpec) -> None:
             msg = (
                 f"entry.{side} has no way out: a position would be held forever. Add "
                 f"exit.{side} (e.g. the opposite crossing), or a risk.stop_loss_pct / "
-                "take_profit_pct / max_holding_bars. To hold from the first bar, use "
+                "take_profit_pct / max_holding_bars, or session.flat_by_close. To hold from the "
+                "first bar, use "
                 "entry: {long: always}"
             )
             raise ConfigurationError(msg)
@@ -326,8 +378,9 @@ def _format_validation_error(exc: ValidationError) -> str:
         if kind == "extra_forbidden":
             message = (
                 "unknown field; allowed fields are spec_version, name, direction, entry, exit, "
-                "sizing, risk (and, inside them: long/short, type/fraction, "
-                "stop_loss_pct/take_profit_pct/max_holding_bars)"
+                "sizing, risk, session (and, inside them: long/short, type/fraction, "
+                "stop_loss_pct/take_profit_pct/max_holding_bars, flat_by_close/entry_window "
+                "with start/end)"
             )
         elif kind == "missing":
             message = "this field is required"

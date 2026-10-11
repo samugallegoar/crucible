@@ -114,6 +114,8 @@ def _rule_options(
     take_profit_pct: float | None,
     max_holding_bars: int | None,
     name: str | None,
+    flat_by_close: bool = False,
+    entry_window: str | None = None,
 ) -> dict[str, Option]:
     """The strategy part of ``backtest`` / ``spec check``: a spec (object or text) or the inline
     rule options; ``direction`` only applies to an inline rule."""
@@ -129,6 +131,8 @@ def _rule_options(
         "stop_loss_pct": _text(stop_loss_pct),
         "take_profit_pct": _text(take_profit_pct),
         "max_holding_bars": _text(max_holding_bars),
+        "flat_by_close": flat_by_close,
+        "entry_window": entry_window,
         "name": name,
     }
 
@@ -206,6 +210,8 @@ def build_server() -> MCPServer:
         stop_loss_pct: float | None = None,
         take_profit_pct: float | None = None,
         max_holding_bars: int | None = None,
+        flat_by_close: bool = False,
+        entry_window: str | None = None,
         name: str | None = None,
         capital: float = 100000.0,
         costs: Literal["none", "standard", "conservative"] | None = None,
@@ -231,7 +237,9 @@ def build_server() -> MCPServer:
         `end` must be in the past. `costs`: standard (default), conservative or none.
         `interval`: 1d (default) or intraday 1h/30m/15m/5m (yfinance only; Yahoo keeps about two
         years of 1h bars and about 60 days of 5-30m bars, so the window must fit). Rules count
-        bars: sma(20) on 1h bars is a 20-hour average.
+        bars: sma(20) on 1h bars is a 20-hour average. Intraday only: `flat_by_close` closes
+        every position before the session's close (nothing held overnight); `entry_window`
+        ("10:30-14:30", exchange time) opens positions only on bars ending in that window.
         `realism_check` (about 30 s extra) also re-runs the rules with realistic fills
         (next-bar prices, spread, latency) and reports how much of the result survives.
 
@@ -252,6 +260,8 @@ def build_server() -> MCPServer:
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
                 max_holding_bars=max_holding_bars,
+                flat_by_close=flat_by_close,
+                entry_window=entry_window,
                 name=name,
             ),
             "symbols": symbols,
@@ -285,6 +295,8 @@ def build_server() -> MCPServer:
         stop_loss_pct: float | None = None,
         take_profit_pct: float | None = None,
         max_holding_bars: int | None = None,
+        flat_by_close: bool = False,
+        entry_window: str | None = None,
         name: str | None = None,
     ) -> dict[str, object]:
         """Validate a strategy spec (or inline rule) without running anything and read it back in
@@ -302,6 +314,8 @@ def build_server() -> MCPServer:
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
                 max_holding_bars=max_holding_bars,
+                flat_by_close=flat_by_close,
+                entry_window=entry_window,
                 name=name,
             ),
             "json": True,

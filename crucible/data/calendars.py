@@ -44,6 +44,12 @@ class ExchangeCalendarAdapter:
         self._cal = _load_calendar(name, self.window)
         self._bounds: tuple[list[int], list[int]] | None = None
 
+    @property
+    def timezone(self) -> str:
+        """The exchange's IANA time zone (``America/New_York`` for XNYS): local clock times in
+        time-of-day rules are read in it (ADR-0073)."""
+        return str(self._cal.tz)
+
     def is_open(self, ts: TimestampNs) -> bool:
         return bool(self._cal.is_open_on_minute(_from_ns(ts)))
 
@@ -105,6 +111,7 @@ class AlwaysOpenCalendar:
     """24/7 markets (crypto): daily sessions closing at UTC midnight."""
 
     name = "24/7"
+    timezone = "UTC"
 
     def is_open(self, ts: TimestampNs) -> bool:
         return True

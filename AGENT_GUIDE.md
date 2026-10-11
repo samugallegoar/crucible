@@ -85,8 +85,12 @@ Rules count **bars**, not days: `sma(20)` on `1h` bars is a 20-hour average, and
 person's words accordingly ("the 20-day average" on hourly bars is `sma(140)`). Yahoo keeps only
 about 60 days of 5-30 minute bars and about two years of hourly bars, so choose `start`/`end`
 inside that range; such short windows will usually come back `not_conclusive` with a short-sample
-flag, which is the honest answer. Intraday rules cannot use the time of day ("flat by the close",
-"only the first hour" are not expressible); a position can be held overnight.
+flag, which is the honest answer. Time-of-day rules (intraday only): `flat_by_close: true` for
+"day trade, nothing overnight" (it exits on the session's next-to-last bar), and
+`entry_window: "10:30-14:30"` (inline) or `session: {entry_window: {start, end}}` (spec) for "only
+enter between...", in exchange time, matching when the deciding bar **ends** (the first hourly US
+bar ends at 10:30). Tell the person these two choices when you use them. Without
+`flat_by_close` a position can be held overnight.
 
 ## Calling `crucible_backtest`
 

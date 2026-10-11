@@ -44,6 +44,18 @@ def _add_rule_options(parser: argparse.ArgumentParser) -> None:
         "--take-profit-pct", type=float, default=None, help="take profit, in percent"
     )
     parser.add_argument("--max-holding-bars", type=int, default=None)
+    parser.add_argument(
+        "--flat-by-close",
+        action="store_const",
+        const=True,
+        default=None,
+        help="intraday only: close every position before the session's close (ADR-0073)",
+    )
+    parser.add_argument(
+        "--entry-window",
+        default=None,
+        help="intraday only: open positions only on bars ending in HH:MM-HH:MM, exchange time",
+    )
     parser.add_argument("--name", default=None, help="a label for the strategy")
 
 
@@ -143,6 +155,8 @@ def _spec_from_args(args: argparse.Namespace):  # type: ignore[no-untyped-def]
             "stop_loss_pct",
             "take_profit_pct",
             "max_holding_bars",
+            "flat_by_close",
+            "entry_window",
         )
     )
     if args.spec and inline:
@@ -184,6 +198,20 @@ def _spec_from_args(args: argparse.Namespace):  # type: ignore[no-untyped-def]
     }
     if risk:
         raw["risk"] = risk
+    session: dict[str, object] = {}
+    if args.flat_by_close:
+        session["flat_by_close"] = True
+    if args.entry_window is not None:
+        start, sep, end = str(args.entry_window).partition("-")
+        if not sep:
+            msg = (
+                f"--entry-window {args.entry_window!r} is not a window; write it as "
+                "HH:MM-HH:MM in exchange time, for example 09:45-15:00"
+            )
+            raise ConfigurationError(msg)
+        session["entry_window"] = {"start": start.strip(), "end": end.strip()}
+    if session:
+        raw["session"] = session
     return parse_spec(raw)
 
 

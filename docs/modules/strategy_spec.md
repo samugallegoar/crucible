@@ -52,6 +52,13 @@ touches a null is false.
 2. If it exited, it is flat for the bar and no entry is taken on that bar.
 3. A flat position takes its entry; a `long_short` position flips directly on the opposite entry.
 4. Both entries true on one bar is refused with the symbol and timestamp.
+5. Time-of-day rules (`session`, ADR-0073): `flat_by_close` is an exit on the session's last two
+   bars (closing on the next-to-last, so the next-bar promotion path is flat before the close too)
+   that also blocks entries there; `entry_window` blocks entries and flips on bars that do not end
+   inside it (exchange local time). Both read the calendar schedule only (`session_masks`): a bar
+   is last when it ends at its session close, next-to-last when one more bar of the declared
+   interval would reach it. They need `params["session"] = {"calendar", "interval"}` and intraday
+   bars; the lookahead harness covers three session specs on hourly XNYS bars.
 
 Sizing: a position is `+/- sizing.weight / N` of equity, `N` the number of symbols in the bars, so
 capital is split equally and a `long_only` spec is never levered.
@@ -87,8 +94,10 @@ A change to the grammar or to a field's meaning needs a new `spec_version`.
 
 ## Known gaps
 
-- Daily-style bars only in practice: the grammar has no session, time-of-day or calendar rule, and
-  every indicator counts bars, not time.
+- Time-of-day rules are only `session.flat_by_close` and `session.entry_window`: no "exit at
+  12:00", no time conditions inside `entry`/`exit`, no market-on-close fill (so `flat_by_close`
+  gives up the last bar), no session spanning local midnight on an exchange calendar. Every
+  indicator counts bars, not time.
 - Indicators are the eight above; no ATR, MACD, volatility targeting or cross-sectional ranking
   (a ranking strategy is a Python strategy, `examples/momentum`).
 - Sizing is per symbol and equal-weight across symbols; no volatility scaling, no pyramiding, no

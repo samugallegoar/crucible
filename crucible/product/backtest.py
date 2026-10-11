@@ -399,6 +399,18 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     # the label is for people: it stays out of the config, so renaming a strategy is neither a new
     # experiment nor a new trial (the rules are what the trial count is about)
     canonical = {k: v for k, v in full_spec.items() if k != "name"}
+    # time-of-day rules read the exchange schedule, so the signal is told the calendar and the
+    # bar length; specs without them keep exactly the old params (and so their experiment ids)
+    signal_params: dict[str, object] = {"spec": canonical}
+    if spec.session is not None:
+        if not intraday:
+            msg = (
+                "this strategy has time-of-day rules (session: flat_by_close / entry_window), "
+                "which need intraday bars; pass interval 1h, 30m, 15m or 5m, or remove the "
+                "session block"
+            )
+            raise ConfigurationError(msg)
+        signal_params["session"] = {"calendar": data.calendar, "interval": request.interval}
     rules_id = hashlib.sha256(
         json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()[:10]
@@ -412,7 +424,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
                 "realism_level": int(realism),
             },
             "data": {"store": str(home.data), "bars": data.dataset, "calendar": data.calendar},
-            "strategy": {"entrypoint": ENTRYPOINT, "params": {"spec": canonical}},
+            "strategy": {"entrypoint": ENTRYPOINT, "params": signal_params},
             "execution": {"slippage_bps": slippage, "commission_bps": commission},
             "initial_cash": str(Decimal(str(request.capital))),
             "start": start_iso,
@@ -463,7 +475,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             )
         )
 
-    strategy_result = vec({"spec": canonical})
+    strategy_result = vec(signal_params)
     rng_bench = np.random.default_rng(request.seed)
     bench_result = vec({"spec": _BUY_AND_HOLD})
     bench_metrics = compute_metrics(
@@ -515,7 +527,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             dataset=f"{data.dataset}_null",
             scratch=home.scratch,
             signal=spec_signal,
-            params={"spec": canonical},
+            params=signal_params,
             initial_cash=cash,
             realism_level=realism,
             start=config.start_ns,

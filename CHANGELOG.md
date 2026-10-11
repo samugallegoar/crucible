@@ -8,6 +8,14 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Time-of-day rules (ADR-0073)
+- Strategy specs gain an optional `session` block for intraday bars: `flat_by_close` (nothing held
+  overnight; the position is closed on the session's next-to-last bar so the realistic re-run also
+  exits before the close) and `entry_window` (open positions only on bars ending between two
+  times, exchange local time). CLI `--flat-by-close`, `--entry-window HH:MM-HH:MM`; MCP
+  `flat_by_close`, `entry_window`. The schedule comes from the calendar, never from later bars
+  (lookahead harness extended). Specs without `session` are unchanged, ids included.
+
 ### Intraday bars in the one-step backtest (ADR-0072)
 - `crucible backtest --interval` and the MCP tool's `interval`: `1d` (default) or `1h`, `30m`,
   `15m`, `5m` (yfinance). Sharpe, volatility and CAGR are annualized from the bars per session in

@@ -32,6 +32,8 @@ Ready-made starting points: `crucible spec templates`. The JSON Schema:
 | `risk.stop_loss_pct` | percent, 0-100 | close a position that is this far below (above, for a short) its entry close |
 | `risk.take_profit_pct` | percent | close a position this far in profit |
 | `risk.max_holding_bars` | whole number >= 1 | close a position after this many bars |
+| `session.flat_by_close` | `true` | intraday only: nothing is held overnight (see below) |
+| `session.entry_window` | `{start: "HH:MM", end: "HH:MM"}` | intraday only: open positions only on bars that end in this window, exchange time |
 
 ## Conditions
 
@@ -88,6 +90,28 @@ On each bar, for each symbol:
 With several symbols the capital is split equally between them and each trades on its own signal.
 `all_in` never uses leverage.
 
+## Time-of-day rules (intraday bars)
+
+```yaml
+entry: {long: "sma(5) crosses_above sma(12)"}
+exit:  {long: "sma(5) crosses_below sma(12)"}
+session:
+  flat_by_close: true
+  entry_window: {start: "10:30", end: "14:30"}
+```
+
+- `flat_by_close`: any position is closed on the session's **next-to-last** bar and nothing new is
+  opened on the last two bars, so nothing is held overnight. The next-to-last bar (not the last)
+  is what lets the realistic re-run, which trades at the next bar, still exit before the close.
+  The price is the last bar's move (the last half hour on US hourly bars, five minutes on
+  5-minute bars).
+- `entry_window`: times are when the deciding bar **ends**, in the exchange's local time (New York
+  for US stocks, UTC on 24/7). The first hour on US hourly bars is `{start: "10:30", end: "10:30"}`
+  (the 09:30-10:30 bar ends at 10:30); "not in the last hour" is `end: "15:00"`. Exits can happen
+  at any time.
+- Both need `interval` intraday and are refused on daily bars. On the command line:
+  `--flat-by-close`, `--entry-window 10:30-14:30`.
+
 ## Plain language to spec
 
 | You say | Spec |
@@ -100,6 +124,8 @@ With several symbols the capital is split equally between them and each trades o
 | "momentum: hold when the last six months were up" | entry `roc(126) > 0`, exit `roc(126) <= 0` |
 | "long when the 20 is above the 50, short when below" | `long_short`, entry long `sma(20) crosses_above sma(50)`, short `sma(20) crosses_below sma(50)` |
 | "use half of my money" | `sizing: {type: fixed_fraction, fraction: 0.5}` |
+| "day trade only, flat by the close" (intraday) | `session: {flat_by_close: true}` |
+| "only enter in the first hour" (hourly US bars) | `session: {entry_window: {start: "10:30", end: "10:30"}}` |
 
 ## What a refusal looks like
 

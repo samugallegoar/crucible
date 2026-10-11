@@ -108,7 +108,8 @@ Datasets from before ADR-0071 have no record and are fetched again on first use.
   (`interval` 5m-1h, ADR-0072): bars per year = sessions per year x median bars per session; the
   window is checked in bars; trades and bars are stamped to the minute. Yahoo's intraday history
   is short (about 60 days below 1h, about two years at 1h); the coverage check sees only each
-  session's last bar; the spec has no time-of-day conditions; real-data verification covers hourly
+  session's last bar; time-of-day rules are `session.flat_by_close` and `session.entry_window`
+  only (ADR-0073; the product passes `params.session` for them); real-data verification covers hourly
   XNYS only (24/7 intraday is synthetic-tested).
   No dividends or splits as separate events (adjusted prices include them).
 - The headline run is the vectorized engine: fills at the signal bar's close with a one-bar lag, a

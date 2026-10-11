@@ -20,6 +20,11 @@ the promoted path's growing window):
 
 A run sees exactly the bars of its dataset: indicators warm up inside the window, and no rule can
 fire before it has its full history (a null is false).
+
+Time-of-day rules (``session``, ADR-0073) read only the exchange schedule, never another bar: a
+bar is its session's last when it ends at the session close, and its next-to-last when one more
+bar of the declared interval would reach the close. They need ``params["session"] = {"calendar",
+"interval"}`` (the one-step backtest passes it) and intraday bars.
 """
 
 from __future__ import annotations
@@ -31,6 +36,8 @@ import numpy as np
 import polars as pl
 
 from crucible.core.errors import ConfigurationError
+from crucible.core.types import TimestampNs
+from crucible.data.calendars import get_trading_calendar
 from crucible.strategy_spec.indicators import INDICATORS
 from crucible.strategy_spec.models import (
     Always,
@@ -49,6 +56,80 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 _BAR_COLUMNS = ("symbol", "event_time", "open", "high", "low", "close", "volume")
+_NS_PER_MINUTE = 60 * 10**9
+_UNIT_MINUTES = {"m": 1, "h": 60}
+
+
+def _interval_ns(interval: str) -> int:
+    """``5m`` / ``1h`` to nanoseconds; anything else (including ``1d``) is refused."""
+    text = interval.strip().lower()
+    number, unit = text[:-1], text[-1:]
+    if unit not in _UNIT_MINUTES or not number.isdigit() or int(number) <= 0:
+        msg = (
+            f"time-of-day rules (session) need intraday bars, got interval {interval!r}; use an "
+            "interval such as 5m, 15m, 30m or 1h, or remove the session block"
+        )
+        raise ConfigurationError(msg)
+    return int(number) * _UNIT_MINUTES[unit] * _NS_PER_MINUTE
+
+
+def session_masks(
+    spec: StrategySpec, event_times: NDArray[np.int64], params: dict[str, object]
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Per bar: ``force_flat`` (``flat_by_close``: the session's last two bars) and ``entry_ok``
+    (inside the entry window and not forced flat). From the calendar and the bar length only."""
+    n = len(event_times)
+    session = spec.session
+    if session is None or n == 0:
+        return np.zeros(n, dtype=np.bool_), np.ones(n, dtype=np.bool_)
+    raw = params.get("session")
+    if not isinstance(raw, dict) or "calendar" not in raw or "interval" not in raw:
+        msg = (
+            "this spec has time-of-day rules (session) but the run did not say when sessions "
+            'close; pass params.session = {"calendar": "XNYS", "interval": "1h"} (the one-step '
+            "backtest does this for you)"
+        )
+        raise ConfigurationError(msg)
+    step = _interval_ns(str(raw["interval"]))
+    week = 7 * 24 * 60 * _NS_PER_MINUTE
+    first, last = int(event_times.min()), int(event_times.max())
+    cal = get_trading_calendar(
+        str(raw["calendar"]), start=TimestampNs(first - week), end=TimestampNs(last + week)
+    )
+    closes = np.asarray(
+        cal.session_closes(TimestampNs(first), TimestampNs(last + week)), dtype=np.int64
+    )
+    index = np.searchsorted(closes, event_times, side="left")
+    if closes.size == 0 or np.any(index >= closes.size):
+        msg = (
+            f"a bar ends after the last session close the {raw['calendar']} calendar knows; "
+            "check the calendar matches the data"
+        )
+        raise ConfigurationError(msg)
+    close_of = closes[index]
+    is_last = event_times == close_of
+    is_next_to_last = (~is_last) & (event_times + step >= close_of)
+    force_flat = (
+        (is_last | is_next_to_last) if session.flat_by_close else np.zeros(n, dtype=np.bool_)
+    )
+    if session.flat_by_close and bool(np.all(is_last)):
+        msg = (
+            "session.flat_by_close needs intraday bars: every bar here ends a session (daily "
+            "bars), so the strategy could never hold a position"
+        )
+        raise ConfigurationError(msg)
+    entry_ok = ~force_flat
+    window = session.entry_window
+    if window is not None:
+        local = (
+            pl.Series("t", event_times)
+            .cast(pl.Datetime("ns", "UTC"))
+            .dt.convert_time_zone(cal.timezone)
+            .dt.strftime("%H:%M")
+            .to_numpy()
+        )
+        entry_ok = entry_ok & (local >= window.start) & (local <= window.end)
+    return force_flat, entry_ok
 
 
 def _operand_expr(operand: Operand) -> pl.Expr:
@@ -134,8 +215,15 @@ def _walk(
     entry_short: NDArray[np.bool_],
     exit_long: NDArray[np.bool_],
     exit_short: NDArray[np.bool_],
+    force_flat: NDArray[np.bool_] | None = None,
+    entry_ok: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float64]:
-    """The position (-1, 0, +1) held after each bar's decision."""
+    """The position (-1, 0, +1) held after each bar's decision. ``force_flat`` closes any
+    position and blocks entries on that bar; ``entry_ok`` false blocks new entries and flips."""
+    if force_flat is None:
+        force_flat = np.zeros(len(ts), dtype=np.bool_)
+    if entry_ok is None:
+        entry_ok = np.ones(len(ts), dtype=np.bool_)
     stop = spec.risk.stop_loss_pct
     take = spec.risk.take_profit_pct
     max_bars = spec.risk.max_holding_bars
@@ -154,11 +242,15 @@ def _walk(
                 or (take is not None and move >= take)
                 or (max_bars is not None and held >= max_bars)
                 or (exit_long[i] if state > 0 else exit_short[i])
+                or force_flat[i]
             ):
                 state = 0
                 exited = True
-        if exited:
+        if exited or force_flat[i]:
             position[i] = 0.0
+            continue
+        if not entry_ok[i]:
+            position[i] = float(state)
             continue
         go_long = bool(entry_long[i])
         go_short = bool(entry_short[i])
@@ -202,7 +294,10 @@ def spec_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
         msg = f"the bars lack columns {missing}; a strategy spec needs {list(_BAR_COLUMNS)}"
         raise ConfigurationError(msg)
     n_symbols = frame.get_column("symbol").n_unique()
-    scored = _signals(spec, frame)
+    force_flat, entry_ok = session_masks(spec, frame.get_column("event_time").to_numpy(), params)
+    scored = _signals(spec, frame).with_columns(
+        pl.Series("force_flat", force_flat), pl.Series("entry_ok", entry_ok)
+    )
     weight = spec.sizing.weight / max(n_symbols, 1)
 
     parts: list[pl.DataFrame] = []
@@ -217,6 +312,8 @@ def spec_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
             group.get_column("entry_short").to_numpy(),
             group.get_column("exit_long").to_numpy(),
             group.get_column("exit_short").to_numpy(),
+            group.get_column("force_flat").to_numpy(),
+            group.get_column("entry_ok").to_numpy(),
         )
         parts.append(
             pl.DataFrame(

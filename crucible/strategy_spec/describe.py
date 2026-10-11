@@ -88,6 +88,17 @@ def describe_spec(spec: StrategySpec) -> list[str]:
         )
     if spec.risk.max_holding_bars is not None:
         lines.append(f"Exit after holding for {spec.risk.max_holding_bars} bars at most.")
+    if spec.session is not None and spec.session.entry_window is not None:
+        window = spec.session.entry_window
+        lines.append(
+            f"Open new positions only on bars that end between {window.start} and {window.end} "
+            "(exchange time); exits are allowed at any time."
+        )
+    if spec.session is not None and spec.session.flat_by_close:
+        lines.append(
+            "Be flat by the close: any position is closed on the session's next-to-last bar and "
+            "nothing new is opened on the last two bars, so nothing is held overnight."
+        )
     if spec.sizing.type == "all_in":
         lines.append("Each position uses all of its share of the capital (no leverage).")
     else:

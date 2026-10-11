@@ -17,7 +17,7 @@
 
 | Command | Arguments and options | Help |
 |---|---|---|
-| `crucible backtest` | `--calendar --capital --commission-bps --costs --direction --end --entry --exit --family --fraction --home --interval --json --max-holding-bars --name --null-iterations --offline --price-basis --provider --realism-check --short-entry --short-exit --slippage-bps --spec --start --stop-loss-pct --symbols --take-profit-pct` | One step: fetch data if needed, run a strategy spec, compare with buy-and-hold |
+| `crucible backtest` | `--calendar --capital --commission-bps --costs --direction --end --entry --entry-window --exit --family --flat-by-close --fraction --home --interval --json --max-holding-bars --name --null-iterations --offline --price-basis --provider --realism-check --short-entry --short-exit --slippage-bps --spec --start --stop-loss-pct --symbols --take-profit-pct` | One step: fetch data if needed, run a strategy spec, compare with buy-and-hold |
 | `crucible compare` | `<family> --artifacts --json` | Compare every recorded trial in a family from the trial registry |
 | `crucible config set-home` | `<path> --json` | Remember a home folder for every run |
 | `crucible config show` | `--home --json` | Print the resolved home folder and its subfolders |
@@ -33,7 +33,7 @@
 | `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --json --override --resume --runtime --stop-at` | Run an experiment from a YAML config |
 | `crucible run-vectorized` | `<config> --artifacts --json --override` | Run an experiment on the vectorized engine (Levels 0-1) |
 | `crucible schema` | `--kind --out` | Print a JSON Schema: the experiment config (default) or a strategy spec |
-| `crucible spec check` | `--direction --entry --exit --fraction --json --max-holding-bars --name --short-entry --short-exit --spec --stop-loss-pct --take-profit-pct` | Validate a spec and read it back in plain language |
+| `crucible spec check` | `--direction --entry --entry-window --exit --flat-by-close --fraction --json --max-holding-bars --name --short-entry --short-exit --spec --stop-loss-pct --take-profit-pct` | Validate a spec and read it back in plain language |
 | `crucible spec templates` | `--json --name` | List ready-made specs to start from |
 | `crucible validate` | `<config> --artifacts --factors --json --override` | Run an experiment, optionally with a factor regression (R4.7) |
 
