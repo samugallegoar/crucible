@@ -42,7 +42,7 @@ from crucible.core.types import Currency, DatasetId, ExperimentId, Symbol, Times
 from crucible.data.calendars import get_trading_calendar
 from crucible.data.contracts import BAR_QUOTE_SCHEMA
 from crucible.data.quality import run_quality_checks
-from crucible.data.store import ParquetDataStore
+from crucible.data.store import ParquetDataStore, price_basis_of
 from crucible.execution import registry
 from crucible.execution.ladder import ExecutionSetup, ParticipationLimits
 from crucible.execution.models import MarketStats
@@ -69,7 +69,11 @@ from crucible.validation.monte_carlo import (
     ReturnOrderShuffleTest,
     StartDateShiftTest,
 )
-from crucible.validation.trial_registry import DuckDBTrialRegistry
+from crucible.validation.trial_registry import (
+    DuckDBTrialRegistry,
+    frequency_mismatch,
+    median_period_ns,
+)
 
 N_MONTE_CARLO_ITERATIONS = 1_000
 
@@ -688,16 +692,22 @@ def _finalize_experiment(pending: _PendingRun, *, record_trial: bool) -> RunArti
             mode=config.experiment.mode.value,
             start_ns=int(config.start_ns),
             end_ns=int(end),
+            period_ns=median_period_ns(equity.get_column("ts").to_list()),
         )
         if record_trial
         else trial_registry.trial_count(family)
     )
     dsr_result: DsrResult | None = None
-    dsr_error: str | None = None
-    try:
-        dsr_result = deflated_sharpe_ratio(returns, trial_registry.trial_sharpes(family))
-    except CrucibleError as exc:
-        dsr_error = str(exc)
+    dsr_error = frequency_mismatch(trial_registry.trial_periods(family))
+    if dsr_error is None:
+        try:
+            dsr_result = deflated_sharpe_ratio(
+                returns,
+                trial_registry.trial_sharpes(family),
+                n_trials=trial_registry.trial_count(family),
+            )
+        except CrucibleError as exc:
+            dsr_error = str(exc)
 
     # Contamination flagging (ADR-0021): only meaningful
     # for an evaluation-mode run, and only against trials that were
@@ -715,6 +725,12 @@ def _finalize_experiment(pending: _PendingRun, *, record_trial: bool) -> RunArti
         "commit": commit,
         "dirty": dirty,
         "data_manifests": data_hashes,
+        # the bars' declared price basis (ADR-0071): adjusted prices are a research series, not
+        # the quotes that traded; "undeclared" for a dataset that does not say
+        "bars_price_basis": price_basis_of(
+            ParquetDataStore(config.data.store).manifest(DatasetId(config.data.bars))
+        )
+        or "undeclared",
         "seed": config.experiment.seed,
         "realism_level": config.experiment.realism_level.name,
         "runtime": pending.runtime,
@@ -724,6 +740,9 @@ def _finalize_experiment(pending: _PendingRun, *, record_trial: bool) -> RunArti
         "dsr": dsr_result.dsr if dsr_result is not None else None,
         "dsr_benchmark_sharpe": dsr_result.benchmark_sharpe if dsr_result is not None else None,
         "dsr_error": dsr_error,
+        "dsr_n_trials_with_sharpe": (
+            dsr_result.n_trials_with_sharpe if dsr_result is not None else None
+        ),
         "pbo": None,  # PBO needs a multi-trial panel; not computable for one run (ADR-0015)
         "monte_carlo": monte_carlo,
         "contamination": contamination.contaminated,

@@ -103,7 +103,16 @@ bootstrap CIs, contamination flagging.
   DSR = PSR(0)" convention). `N` is the raw count of recorded trials in
   the family, not an effective number of independent trials, and the PSR
   variance assumes i.i.d. returns; DSR is not the probability that the
-  strategy is profitable. Wired into `run_experiment`: `manifest.json`'s `dsr`/
+  strategy is profitable. `n_trials` is passed separately from the recorded
+  Sharpes (ADR-0071): unrecorded Sharpes still count toward `N`, fewer than
+  two recorded Sharpes for `N > 1` is refused, and so are non-finite ones. A
+  family whose trials were measured at different return frequencies
+  (registry `period_ns`, ratio >= 1.5) gets no DSR. Measured behaviour of the
+  best-of-N rule DSR >= 0.95 (`tools/dsr_calibration.py`, ADR-0071): about 5 %
+  false positives with one trial, 0-0.5 % with N = 10-100 under independent,
+  autocorrelated, fat-tailed or unequal-window nulls, 4 % with highly
+  correlated trials; power for a true per-period Sharpe of 0.08 over five
+  years was 7-11 %. Conservative, with low power; not calibrated in general. Wired into `run_experiment`: `manifest.json`'s `dsr`/
   `dsr_benchmark_sharpe`/`dsr_error` and the report's statistical-validity
   block carry the real value (or an explicit "not computable" reason).
   Convention and formula choices pinned in ADR-0015.

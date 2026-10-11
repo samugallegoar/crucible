@@ -595,6 +595,7 @@ Current `schema_version`: **1**.
 | `commit` | string | no | both | Git commit of the code that ran (`unknown` outside git). |
 | `dirty` | boolean | no | both | True if the working tree had uncommitted changes. |
 | `data_manifests` | object | no | both | Role (`bars`, `corporate_actions`, `universe`, `fx_rates`) -> dataset content hash. |
+| `bars_price_basis` | string | no | both | The bars dataset's declared price basis: `adjusted` (a research series, not historical quotes), `raw`, or `undeclared` (ADR-0071). |
 | `seed` | integer | no | both | `experiment.seed`. |
 | `realism_level` | string | no | both | `RealismLevel` name, e.g. `BASIC_FRICTION`. |
 | `runtime` | string | no | event-driven | `backtest`, `paper` or `live` (ADR-0051). |
@@ -605,6 +606,7 @@ Current `schema_version`: **1**.
 | `dsr` | number | yes | both | Deflated Sharpe probability in [0, 1] (per-period scale, ADR-0015); null if not computable. |
 | `dsr_benchmark_sharpe` | number | yes | both | The per-period benchmark Sharpe the DSR is measured against. |
 | `dsr_error` | string | yes | both | Why the DSR is null, when it is. |
+| `dsr_n_trials_with_sharpe` | integer | yes | both | Trials whose Sharpe entered the DSR dispersion; below `trial_count` when some lack one (they still count toward N, ADR-0071). Null when the DSR is. |
 | `pbo` | number | yes | both | Always null for a single run; PBO needs a multi-trial panel (ADR-0015). |
 | `monte_carlo` | object | yes | both | Test name -> named statistics (ADR-0017); null on the vectorized path. |
 | `contamination` | boolean | yes | both | True if an optimization trial saw this window (ADR-0021). |
@@ -798,6 +800,7 @@ Append-only count of parameter evaluations per trial family (ADR-0008/0014). One
 | `mode` | VARCHAR | yes |
 | `start_ns` | BIGINT | yes |
 | `end_ns` | BIGINT | yes |
+| `period_ns` | BIGINT | yes |
 
 <!-- END GENERATED: trial-registry -->
 

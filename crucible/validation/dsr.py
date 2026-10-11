@@ -54,6 +54,10 @@ class DsrResult:
     observed_sharpe: float
     benchmark_sharpe: float
     n_trials: int
+    n_trials_with_sharpe: int = 0
+    """Trials whose Sharpe entered the cross-trial dispersion; fewer than ``n_trials`` means
+    some recorded trials lack a Sharpe (e.g. rows from before the column existed). They still
+    count toward ``N`` (ADR-0071)."""
 
 
 def per_period_sharpe(returns: NDArray[np.float64]) -> float:
@@ -80,11 +84,12 @@ def _kurtosis(returns: NDArray[np.float64]) -> float:
     return float(np.mean(((returns - returns.mean()) / std) ** 4))
 
 
-def _expected_max_sharpe(trial_sharpes: Sequence[float]) -> float:
+def _expected_max_sharpe(trial_sharpes: Sequence[float], n: int | None = None) -> float:
     """E[max_N SR] over N skill-less trials (extreme-value approximation,
-    Bailey & López de Prado 2014 eq. 10). 0.0 for N<=1: with only one
-    trial there is no multiple-testing bias to deflate."""
-    n = len(trial_sharpes)
+    Bailey & López de Prado 2014 eq. 10), ``N = n`` (default: the number of Sharpes),
+    with the cross-trial standard deviation estimated from ``trial_sharpes``. 0.0 for N<=1:
+    with only one trial there is no multiple-testing bias to deflate."""
+    n = len(trial_sharpes) if n is None else n
     if n <= 1:
         return 0.0
     sigma_n = float(np.std(np.asarray(trial_sharpes, dtype=np.float64), ddof=1))
@@ -107,13 +112,40 @@ def _psr(sharpe_hat: float, benchmark: float, n: int, skew: float, kurtosis: flo
 
 
 def deflated_sharpe_ratio(
-    returns: NDArray[np.float64], trial_sharpes: Sequence[float]
+    returns: NDArray[np.float64],
+    trial_sharpes: Sequence[float],
+    *,
+    n_trials: int | None = None,
 ) -> DsrResult:
     """``returns``: this trial's own per-period returns (e.g. the equity
     curve's simple returns). ``trial_sharpes``: every distinct trial's
     per-period Sharpe recorded for this family, including this one
     (``TrialRegistry.trial_sharpes``) -- their cross-trial dispersion is
-    what the benchmark needs (see module docstring)."""
+    what the benchmark needs (see module docstring). ``n_trials``: the number of trials
+    searched (``TrialRegistry.trial_count``); defaults to ``len(trial_sharpes)``. When some
+    trials have no recorded Sharpe they still count toward ``N``, the dispersion comes from
+    the ones that do, and with fewer than two Sharpes for ``N > 1`` the benchmark cannot be
+    estimated and DSR is refused rather than deflated against 0 (ADR-0071)."""
+    sharpes = np.asarray(trial_sharpes, dtype=np.float64)
+    n = len(sharpes) if n_trials is None else n_trials
+    if n < 1:
+        msg = f"cannot compute DSR over {n} trials; the trial being evaluated is itself one"
+        raise CrucibleError(msg)
+    if len(sharpes) > n:
+        msg = (
+            f"cannot compute DSR: {len(sharpes)} trial Sharpes but n_trials={n}; the trial count "
+            "must cover every Sharpe it is given"
+        )
+        raise CrucibleError(msg)
+    if not np.all(np.isfinite(sharpes)):
+        msg = "cannot compute DSR: a recorded trial Sharpe is NaN or infinite"
+        raise CrucibleError(msg)
+    if n > 1 and len(sharpes) < 2:
+        msg = (
+            f"cannot compute DSR: {n} trials were searched but only {len(sharpes)} has a "
+            "recorded Sharpe, so the cross-trial dispersion the benchmark needs is unknown"
+        )
+        raise CrucibleError(msg)
     if len(returns) < 3:
         msg = f"cannot compute DSR from {len(returns)} return observations; need >= 3"
         raise CrucibleError(msg)
@@ -130,12 +162,12 @@ def deflated_sharpe_ratio(
         )
         raise CrucibleError(msg)
     sharpe_hat = per_period_sharpe(returns)
-    benchmark = _expected_max_sharpe(trial_sharpes)
-    n = len(returns)
-    dsr = _psr(sharpe_hat, benchmark, n, _skew(returns), _kurtosis(returns))
+    benchmark = _expected_max_sharpe(sharpes.tolist(), n)
+    dsr = _psr(sharpe_hat, benchmark, len(returns), _skew(returns), _kurtosis(returns))
     return DsrResult(
         dsr=dsr,
         observed_sharpe=sharpe_hat,
         benchmark_sharpe=benchmark,
-        n_trials=len(trial_sharpes),
+        n_trials=n,
+        n_trials_with_sharpe=len(sharpes),
     )

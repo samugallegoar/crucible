@@ -20,6 +20,7 @@ window?" from the registry alone, without re-reading every past trial's
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -51,8 +52,41 @@ CREATE TABLE IF NOT EXISTS trials (
     start_ns BIGINT,
     end_ns BIGINT,
     PRIMARY KEY (family, experiment_id)
-)
+);
+ALTER TABLE trials ADD COLUMN IF NOT EXISTS period_ns BIGINT;
 """
+# period_ns (ADR-0071): the trial's median spacing between equity marks, i.e. the return
+# frequency its per-period Sharpe is measured at. Null for rows from before the column existed.
+
+FREQUENCY_TOLERANCE = 1.5
+"""Two trials' return periods count as the same frequency when they differ by less than this
+factor (daily marks on an exchange calendar and on 24/7 both have a median of one day)."""
+
+
+def median_period_ns(timestamps: Sequence[int]) -> int | None:
+    """Median spacing of sorted mark timestamps (UTC ns), or None with fewer than two marks."""
+    ts = sorted(int(t) for t in timestamps)
+    if len(ts) < 2:
+        return None
+    diffs = sorted(b - a for a, b in itertools.pairwise(ts))
+    return int(diffs[len(diffs) // 2])
+
+
+def frequency_mismatch(periods: Sequence[int]) -> str | None:
+    """A reason DSR must not pool these trials, or None. Per-period Sharpe ratios measured at
+    different return frequencies (daily vs weekly) are not comparable: their cross-trial
+    dispersion, and so the deflation benchmark, would mean nothing (ADR-0071)."""
+    known = [p for p in periods if p > 0]
+    if len(known) < 2:
+        return None
+    if max(known) / min(known) < FREQUENCY_TOLERANCE:
+        return None
+    days = sorted({round(p / 86_400e9, 3) for p in known})
+    return (
+        "cannot compute DSR: the trials pooled here were measured at different return "
+        f"frequencies (median periods of {days} days), so their per-period Sharpe ratios are "
+        "not comparable. Put trials of different frequencies in different families"
+    )
 
 
 class DuckDBTrialRegistry:
@@ -75,13 +109,15 @@ class DuckDBTrialRegistry:
         mode: str | None = None,
         start_ns: int | None = None,
         end_ns: int | None = None,
+        period_ns: int | None = None,
     ) -> int:
         with duckdb.connect(str(self._path)) as conn:
             conn.execute(_SCHEMA)
             conn.execute(
-                "INSERT INTO trials (family, experiment_id, sharpe, mode, start_ns, end_ns) "
-                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (family, experiment_id) DO NOTHING",
-                [family, experiment_id, sharpe, mode, start_ns, end_ns],
+                "INSERT INTO trials "
+                "(family, experiment_id, sharpe, mode, start_ns, end_ns, period_ns) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (family, experiment_id) DO NOTHING",
+                [family, experiment_id, sharpe, mode, start_ns, end_ns, period_ns],
             )
             return self._count(conn, family)
 
@@ -101,6 +137,24 @@ class DuckDBTrialRegistry:
                 [family],
             ).fetchall()
             return [float(row[0]) for row in rows]
+
+    def trial_periods(self, family: str | None = None) -> list[int]:
+        """Distinct recorded return periods (``period_ns``) of ``family``, or of the whole
+        registry when ``family`` is None; trials without one are omitted (ADR-0071)."""
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            if family is None:
+                rows = conn.execute(
+                    "SELECT DISTINCT period_ns FROM trials WHERE period_ns IS NOT NULL "
+                    "ORDER BY period_ns"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT DISTINCT period_ns FROM trials WHERE family = ? "
+                    "AND period_ns IS NOT NULL ORDER BY period_ns",
+                    [family],
+                ).fetchall()
+            return [int(row[0]) for row in rows]
 
     def total_trial_count(self) -> int:
         """Distinct experiments recorded in any family of this registry (ADR-0070): the whole

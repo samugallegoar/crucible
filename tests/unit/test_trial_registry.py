@@ -173,3 +173,61 @@ def test_an_empty_registry_has_no_trials(tmp_path: Path) -> None:
     registry = DuckDBTrialRegistry(tmp_path / "empty.duckdb")
     assert registry.total_trial_count() == 0
     assert registry.all_trial_sharpes() == []
+
+
+# --- return frequency (ADR-0071) -----------------------------------------------------------
+
+_DAY = 86_400 * 10**9
+
+
+def test_median_period_of_daily_marks_with_weekends_is_one_day() -> None:
+    from crucible.validation.trial_registry import median_period_ns
+
+    # Mon..Fri, Mon..Fri: four 1-day gaps and one 3-day gap per week
+    days = [0, 1, 2, 3, 4, 7, 8, 9, 10, 11]
+    assert median_period_ns([d * _DAY for d in days]) == _DAY
+    assert median_period_ns([5]) is None
+
+
+def test_daily_trials_on_two_calendars_are_one_frequency() -> None:
+    from crucible.validation.trial_registry import frequency_mismatch
+
+    assert frequency_mismatch([_DAY, _DAY]) is None
+    assert frequency_mismatch([_DAY]) is None
+    assert frequency_mismatch([]) is None
+
+
+def test_daily_and_weekly_trials_are_refused_together() -> None:
+    from crucible.validation.trial_registry import frequency_mismatch
+
+    reason = frequency_mismatch([_DAY, 7 * _DAY])
+    assert reason is not None
+    assert "different return frequencies" in reason
+
+
+def test_periods_are_recorded_per_family_and_across_the_registry(tmp_path: Path) -> None:
+    registry = DuckDBTrialRegistry(tmp_path / "r.duckdb")
+    registry.record_trial("daily", "E1", sharpe=0.1, period_ns=_DAY)
+    registry.record_trial("daily", "E2", sharpe=0.2, period_ns=_DAY)
+    registry.record_trial("weekly", "E3", sharpe=0.3, period_ns=7 * _DAY)
+    registry.record_trial("legacy", "E4", sharpe=0.0)  # no period recorded
+    assert registry.trial_periods("daily") == [_DAY]
+    assert registry.trial_periods() == [_DAY, 7 * _DAY]
+    assert registry.trial_periods("legacy") == []
+
+
+def test_a_registry_from_before_the_period_column_is_migrated(tmp_path: Path) -> None:
+    import duckdb
+
+    path = tmp_path / "old.duckdb"
+    with duckdb.connect(str(path)) as conn:
+        conn.execute(
+            "CREATE TABLE trials (family VARCHAR NOT NULL, experiment_id VARCHAR NOT NULL, "
+            "sharpe DOUBLE, mode VARCHAR, start_ns BIGINT, end_ns BIGINT, "
+            "PRIMARY KEY (family, experiment_id))"
+        )
+        conn.execute("INSERT INTO trials VALUES ('f', 'OLD', 0.1, NULL, NULL, NULL)")
+    registry = DuckDBTrialRegistry(path)
+    registry.record_trial("f", "NEW", sharpe=0.2, period_ns=_DAY)
+    assert registry.trial_count("f") == 2
+    assert registry.trial_periods("f") == [_DAY]

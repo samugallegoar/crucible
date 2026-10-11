@@ -121,6 +121,12 @@ MANIFEST_FIELDS: dict[str, ManifestField] = {
         False,
         "Role (`bars`, `corporate_actions`, `universe`, `fx_rates`) -> dataset content hash.",
     ),
+    "bars_price_basis": ManifestField(
+        "string",
+        False,
+        "The bars dataset's declared price basis: `adjusted` (a research series, not historical "
+        "quotes), `raw`, or `undeclared` (ADR-0071).",
+    ),
     "seed": ManifestField("integer", False, "`experiment.seed`."),
     "realism_level": ManifestField("string", False, "`RealismLevel` name, e.g. `BASIC_FRICTION`."),
     "runtime": ManifestField(
@@ -149,6 +155,12 @@ MANIFEST_FIELDS: dict[str, ManifestField] = {
         "number", True, "The per-period benchmark Sharpe the DSR is measured against."
     ),
     "dsr_error": ManifestField("string", True, "Why the DSR is null, when it is."),
+    "dsr_n_trials_with_sharpe": ManifestField(
+        "integer",
+        True,
+        "Trials whose Sharpe entered the DSR dispersion; below `trial_count` when some lack one "
+        "(they still count toward N, ADR-0071). Null when the DSR is.",
+    ),
     "pbo": ManifestField(
         "number", True, "Always null for a single run; PBO needs a multi-trial panel (ADR-0015)."
     ),

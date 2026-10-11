@@ -40,7 +40,7 @@ from crucible.analytics.report import render_report
 from crucible.analytics.trades import EPISODE_LABEL, build_episodes
 from crucible.core.errors import ConfigurationError, CrucibleError
 from crucible.core.types import DatasetId, ExperimentId, RealismLevel
-from crucible.data.store import ParquetDataStore
+from crucible.data.store import ParquetDataStore, price_basis_of
 from crucible.experiments.artifacts import SCHEMA_VERSION
 from crucible.experiments.config import ExperimentConfig, canonical_yaml, config_hash
 from crucible.experiments.runner import (
@@ -52,7 +52,11 @@ from crucible.experiments.runner import (
 )
 from crucible.validation.contamination import check_contamination
 from crucible.validation.dsr import DsrResult, deflated_sharpe_ratio, per_period_sharpe
-from crucible.validation.trial_registry import DuckDBTrialRegistry
+from crucible.validation.trial_registry import (
+    DuckDBTrialRegistry,
+    frequency_mismatch,
+    median_period_ns,
+)
 from crucible.vectorized.engine import VectorizedBacktestEngine, VectorizedConfig, VectorizedResult
 
 if TYPE_CHECKING:
@@ -297,16 +301,22 @@ def _finalize_vectorized(
             mode=config.experiment.mode.value,
             start_ns=int(config.start_ns),
             end_ns=int(config.end_ns),
+            period_ns=median_period_ns(pending.result.equity.get_column("ts").to_list()),
         )
         if record_trial
         else trial_registry.trial_count(family)
     )
     dsr_result: DsrResult | None = None
-    dsr_error: str | None = None
-    try:
-        dsr_result = deflated_sharpe_ratio(pending.returns, trial_registry.trial_sharpes(family))
-    except CrucibleError as exc:
-        dsr_error = str(exc)
+    dsr_error = frequency_mismatch(trial_registry.trial_periods(family))
+    if dsr_error is None:
+        try:
+            dsr_result = deflated_sharpe_ratio(
+                pending.returns,
+                trial_registry.trial_sharpes(family),
+                n_trials=trial_registry.trial_count(family),
+            )
+        except CrucibleError as exc:
+            dsr_error = str(exc)
     contamination = check_contamination(
         family, config.experiment.mode, config.start_ns, config.end_ns, trial_registry
     )
@@ -318,6 +328,12 @@ def _finalize_vectorized(
         "commit": commit,
         "dirty": dirty,
         "data_manifests": data_hashes,
+        # the bars' declared price basis (ADR-0071): adjusted prices are a research series, not
+        # the quotes that traded; "undeclared" for a dataset that does not say
+        "bars_price_basis": price_basis_of(
+            ParquetDataStore(config.data.store).manifest(DatasetId(config.data.bars))
+        )
+        or "undeclared",
         "seed": config.experiment.seed,
         "realism_level": config.experiment.realism_level.name,
         "mode": config.experiment.mode.value,
@@ -327,6 +343,9 @@ def _finalize_vectorized(
         "dsr": dsr_result.dsr if dsr_result is not None else None,
         "dsr_benchmark_sharpe": dsr_result.benchmark_sharpe if dsr_result is not None else None,
         "dsr_error": dsr_error,
+        "dsr_n_trials_with_sharpe": (
+            dsr_result.n_trials_with_sharpe if dsr_result is not None else None
+        ),
         "pbo": None,
         "monte_carlo": None,
         "contamination": contamination.contaminated,

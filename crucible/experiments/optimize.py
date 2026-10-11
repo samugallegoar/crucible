@@ -144,7 +144,9 @@ def optimize_1d(
     best_idx = int(np.argmax(metric_values))
     trial_registry = DuckDBTrialRegistry(artifacts_root / "trial_registry.duckdb")
     best_dsr = deflated_sharpe_ratio(
-        returns_list[best_idx], trial_registry.trial_sharpes(config.experiment.family)
+        returns_list[best_idx],
+        trial_registry.trial_sharpes(config.experiment.family),
+        n_trials=trial_registry.trial_count(config.experiment.family),
     )
 
     result = OptimizeResult(

@@ -79,3 +79,94 @@ def test_psr_refuses_a_non_positive_denominator() -> None:
     # to exactly zero: denom = 1 - skew*sharpe + (kurtosis-1)/4*sharpe**2.
     with pytest.raises(CrucibleError, match="non-positive"):
         _psr(sharpe_hat=2.0, benchmark=0.0, n=10, skew=1.0, kurtosis=1.0)
+
+
+# --- ADR-0071: trial count, missing metadata and independent references -------------------
+
+
+def test_one_trial_is_not_deflated_and_more_trials_are() -> None:
+    one = deflated_sharpe_ratio(_RETURNS, trial_sharpes=[0.2])
+    many = deflated_sharpe_ratio(_RETURNS, trial_sharpes=[0.2, -0.1, 0.05, 0.3, 0.0])
+    assert one.benchmark_sharpe == 0.0
+    assert many.benchmark_sharpe > 0.0
+    assert many.dsr < one.dsr
+
+
+def test_more_trials_with_the_same_dispersion_lower_the_dsr() -> None:
+    # observed Sharpe and the dispersion estimate held fixed; only N grows
+    sharpes = [0.2, -0.1, 0.05, 0.3]
+    values = [
+        deflated_sharpe_ratio(_RETURNS, trial_sharpes=sharpes, n_trials=n).dsr
+        for n in (4, 10, 100, 1000)
+    ]
+    assert values == sorted(values, reverse=True)
+    assert len(set(values)) == 4
+
+
+def test_trials_without_a_recorded_sharpe_still_count() -> None:
+    # 2 Sharpes recorded, 10 trials searched: N = 10, not 2 (missing metadata is not "no trial")
+    partial = deflated_sharpe_ratio(_RETURNS, trial_sharpes=[0.2, -0.1], n_trials=10)
+    assert partial.n_trials == 10
+    assert partial.n_trials_with_sharpe == 2
+    undercounted = deflated_sharpe_ratio(_RETURNS, trial_sharpes=[0.2, -0.1])
+    assert partial.benchmark_sharpe > undercounted.benchmark_sharpe
+
+
+def test_too_few_recorded_sharpes_to_estimate_the_dispersion_is_refused() -> None:
+    with pytest.raises(CrucibleError, match="only 1 has a recorded Sharpe"):
+        deflated_sharpe_ratio(_RETURNS, trial_sharpes=[0.2], n_trials=5)
+
+
+@pytest.mark.parametrize(
+    ("sharpes", "n_trials", "match"),
+    [
+        ([0.1, 0.2], 1, "must cover every Sharpe"),
+        ([], 0, "over 0 trials"),
+        ([0.1, float("nan")], None, "NaN or infinite"),
+    ],
+)
+def test_invalid_trial_configurations_are_refused(
+    sharpes: list[float], n_trials: int | None, match: str
+) -> None:
+    with pytest.raises(CrucibleError, match=match):
+        deflated_sharpe_ratio(_RETURNS, trial_sharpes=sharpes, n_trials=n_trials)
+
+
+def test_identical_trials_carry_no_dispersion_so_no_deflation() -> None:
+    # documented behaviour, not a dependence model: N copies of one strategy have zero
+    # cross-trial dispersion, so the benchmark is 0 whatever N is
+    copies = deflated_sharpe_ratio(_RETURNS, trial_sharpes=[0.3] * 50)
+    assert copies.benchmark_sharpe == pytest.approx(0.0, abs=1e-12)  # float noise only
+
+
+def test_dsr_is_invariant_to_the_scale_of_the_returns() -> None:
+    sharpes = [0.2, -0.1, 0.05]
+    base = deflated_sharpe_ratio(_RETURNS, trial_sharpes=sharpes)
+    scaled = deflated_sharpe_ratio(_RETURNS * 7.0, trial_sharpes=sharpes)
+    assert scaled.dsr == pytest.approx(base.dsr)
+
+
+@pytest.mark.parametrize("n", [10, 100, 1000])
+def test_the_benchmark_matches_a_monte_carlo_expected_maximum(n: int) -> None:
+    # independent of the extreme-value formula: simulate max of n normal Sharpes with known sd
+    from crucible.validation.dsr import _expected_max_sharpe
+
+    sigma = 0.05
+    rng = np.random.default_rng(11)
+    simulated = float(np.mean(rng.normal(0.0, sigma, size=(20_000, n)).max(axis=1)))
+    # feed the formula a dispersion of exactly sigma
+    sharpes = [-sigma, sigma]  # sample sd = sigma * sqrt(2)
+    analytic = _expected_max_sharpe(sharpes, n) / np.sqrt(2.0)
+    assert analytic == pytest.approx(simulated, rel=0.05)
+
+
+def test_psr_against_zero_is_calibrated_under_the_null_for_iid_normal_returns() -> None:
+    # independent of the PSR formula: one skill-less strategy, iid normal returns, T = 252;
+    # P(PSR >= 0.95) should be about 0.05. 4000 replications, binomial sd ~ 0.0034.
+    rng = np.random.default_rng(12)
+    hits = 0
+    reps = 4000
+    for _ in range(reps):
+        r = rng.normal(0.0, 0.01, 252)
+        hits += int(deflated_sharpe_ratio(r, trial_sharpes=[0.0]).dsr >= 0.95)
+    assert abs(hits / reps - 0.05) < 0.015

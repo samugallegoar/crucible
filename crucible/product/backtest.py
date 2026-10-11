@@ -55,7 +55,7 @@ from crucible.strategy_spec import (
     warmup_bars,
 )
 from crucible.validation.dsr import deflated_sharpe_ratio, per_period_sharpe
-from crucible.validation.trial_registry import DuckDBTrialRegistry
+from crucible.validation.trial_registry import DuckDBTrialRegistry, frequency_mismatch
 from crucible.vectorized.engine import VectorizedBacktestEngine, VectorizedConfig, VectorizedResult
 
 if TYPE_CHECKING:
@@ -318,7 +318,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
         if slippage == 0 and commission == 0
         else RealismLevel.BASIC_FRICTION
     )
-    periods_per_year = 365.0 if request.calendar == "24/7" else 252.0
+    periods_per_year = 365.0 if data.calendar == "24/7" else 252.0
     # the default family is the symbol set, not the window: re-running rules on another window
     # of the same symbols is part of the same search, so it counts toward the same DSR (ADR-0070)
     family = request.family or default_family(symbols)
@@ -342,7 +342,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
                 "seed": request.seed,
                 "realism_level": int(realism),
             },
-            "data": {"store": str(home.data), "bars": data.dataset, "calendar": request.calendar},
+            "data": {"store": str(home.data), "bars": data.dataset, "calendar": data.calendar},
             "strategy": {"entrypoint": ENTRYPOINT, "params": {"spec": canonical}},
             "execution": {"slippage_bps": slippage, "commission_bps": commission},
             "initial_cash": str(Decimal(str(request.capital))),
@@ -353,7 +353,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     )
 
     # gate 1: the quality battery, before anything is simulated
-    calendar = get_trading_calendar(request.calendar, start=config.start_ns, end=config.end_ns)
+    calendar = get_trading_calendar(data.calendar, start=config.start_ns, end=config.end_ns)
     checks_ran = run_quality_checks(store.read(dataset, config.end_ns), calendar)
 
     run = run_vectorized_experiment(config, home.experiments)
@@ -365,14 +365,16 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     registry = DuckDBTrialRegistry(home.experiments / "trial_registry.duckdb")
     home_trial_count = registry.total_trial_count()
     dsr_home: float | None = None
-    dsr_home_error: str | None = None
-    try:
-        dsr_home = deflated_sharpe_ratio(
-            simple_returns(pl.read_parquet(out_dir / "equity.parquet")),
-            registry.all_trial_sharpes(),
-        ).dsr
-    except CrucibleError as exc:
-        dsr_home_error = str(exc)
+    dsr_home_error = frequency_mismatch(registry.trial_periods())
+    if dsr_home_error is None:
+        try:
+            dsr_home = deflated_sharpe_ratio(
+                simple_returns(pl.read_parquet(out_dir / "equity.parquet")),
+                registry.all_trial_sharpes(),
+                n_trials=home_trial_count,
+            ).dsr
+        except CrucibleError as exc:
+            dsr_home_error = str(exc)
     engine = VectorizedBacktestEngine()
     cash = Decimal(str(request.capital))
 
@@ -535,7 +537,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             },
             "price_basis": request.price_basis,
             "provider": data.provider,
-            "calendar": request.calendar,
+            "calendar": data.calendar,
             "seed": request.seed,
         },
         "strategy_spec": full_spec,
