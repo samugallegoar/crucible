@@ -28,8 +28,10 @@ summary — real values or an explicit reason, never silently missing.
   seeded rng ⇒ deterministic). They are **approximate**: their coverage was measured only on
   synthetic processes (`tools/bootstrap_coverage.py`, ADR-0070, results in Known gaps), and
   volatility, hit rate, trade count and the one-step report's return and drawdown figures carry
-  none. Drawdown's CI reconstructs an equity curve from each bootstrap sample's returns via
-  `_max_drawdown_from_returns` (ADR-0020). Also volatility, hit rate,
+  none. Maximum drawdown has one definition, `crucible.core.drawdown` (ADR-0071): the path
+  starts at the initial capital (1.0 for a resample), so the point estimate and every bootstrap
+  resample measure the same statistic; before ADR-0071 the resample path dropped its starting
+  value and missed a first-period loss. Also volatility, hit rate,
   trade count. Refuses <3 equity points and post-ruin curves. Risk-free
   rate 0 (documented). `simple_returns
   (equity)` is the shared per-period return series both this and

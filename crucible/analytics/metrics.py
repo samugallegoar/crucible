@@ -16,6 +16,7 @@ import numpy as np
 import polars as pl
 
 from crucible.analytics.interfaces import MetricValue
+from crucible.core.drawdown import max_drawdown, max_drawdown_from_returns
 from crucible.core.errors import CrucibleError
 
 if TYPE_CHECKING:
@@ -40,22 +41,6 @@ def _cagr(returns: NDArray[np.float64], periods_per_year: float) -> float:
         return -1.0
     years = len(returns) / periods_per_year
     return float(growth ** (1.0 / years) - 1.0) if years > 0 else 0.0
-
-
-def _max_drawdown(equity: NDArray[np.float64]) -> float:
-    peaks = np.maximum.accumulate(equity)
-    return float(((equity - peaks) / peaks).min())
-
-
-def _max_drawdown_from_returns(returns: NDArray[np.float64]) -> float:
-    """Reconstructs an equity curve from ``returns`` alone (starting
-    capital is scale-irrelevant to drawdown, so it's fixed at 1.0) -- used
-    only for the bootstrap CI, whose resampled arrays are returns, not
-    equity levels (same reconstruction ``validation.monte_carlo`` uses for
-    the same reason, ADR-0017)."""
-    equity = np.cumprod(1.0 + returns)
-    peaks = np.maximum.accumulate(equity)
-    return float(((equity - peaks) / peaks).min())
 
 
 def _block_bootstrap_ci(
@@ -107,7 +92,9 @@ def compute_metrics(
 
     sharpe_ci = _block_bootstrap_ci(returns, lambda r: _sharpe(r, periods_per_year), rng)
     cagr_ci = _block_bootstrap_ci(returns, lambda r: _cagr(r, periods_per_year), rng)
-    max_dd_ci = _block_bootstrap_ci(returns, _max_drawdown_from_returns, rng)
+    # the point estimate and every bootstrap resample use the same definition: a path that
+    # starts at the initial capital (1.0 for a resample), ADR-0071
+    max_dd_ci = _block_bootstrap_ci(returns, max_drawdown_from_returns, rng)
 
     out: dict[str, MetricValue] = {
         "sharpe": MetricValue(_sharpe(returns, periods_per_year), *sharpe_ci),
@@ -115,7 +102,7 @@ def compute_metrics(
         "volatility": MetricValue(
             float(returns.std(ddof=1) * np.sqrt(periods_per_year)), None, None
         ),
-        "max_drawdown": MetricValue(_max_drawdown(values), *max_dd_ci),
+        "max_drawdown": MetricValue(max_drawdown(values), *max_dd_ci),
         "n_periods": MetricValue(float(len(returns)), None, None),
     }
     if trades.height:

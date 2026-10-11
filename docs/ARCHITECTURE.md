@@ -90,7 +90,7 @@ bottom (siblings in one layer must not import each other):
 | 5 | domain services | `risk`, `strategy`, `live.venue`, `live.execution`, `live.interfaces`, `live.feed`, `live.paper`, `live.replay`, `live.venue_feed` |
 | 6 | execution and portfolio | `execution`, `portfolio` |
 | 7 | ledger, data, orders | `accounting`, `data`, `orders`, `live.rows` |
-| 8 | kernel | `core.clock`, `core.queue`, `core.logging` above `core.checkpoint` above `core.events`, `core.interfaces`, `core.instruments` above `core.types`, `core.errors`, `core.invariants`, `core.setup_fingerprint` |
+| 8 | kernel | `core.clock`, `core.queue`, `core.logging` above `core.checkpoint` above `core.events`, `core.interfaces`, `core.instruments` above `core.drawdown` (the one maximum-drawdown definition, ADR-0071) above `core.types`, `core.errors`, `core.invariants`, `core.setup_fingerprint` |
 
 Why these directions: strategies and portfolio code sit *below* the engine, so a strategy can
 never import the engine, the store or an artifact writer (`strategy` and `portfolio` are also

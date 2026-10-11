@@ -148,6 +148,7 @@ layers = [
     "crucible.core.clock | crucible.core.queue | crucible.core.logging",
     "crucible.core.checkpoint",
     "crucible.core.events | crucible.core.interfaces | crucible.core.instruments",
+    "crucible.core.drawdown",
     "crucible.core.types | crucible.core.errors | crucible.core.invariants | crucible.core.setup_fingerprint",
 ]
 ignore_imports = [

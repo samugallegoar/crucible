@@ -24,20 +24,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from crucible.core.drawdown import max_drawdown_from_returns as _max_drawdown_from_returns
 from crucible.core.errors import ConfigurationError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 DEFAULT_DRAWDOWN_THRESHOLD = -0.30
-
-
-def _max_drawdown_from_returns(returns: np.ndarray) -> float:
-    """Reconstructs an equity curve from ``returns`` alone (starting
-    capital is scale-irrelevant to drawdown, so it's fixed at 1.0)."""
-    equity = np.cumprod(1.0 + returns)
-    peaks = np.maximum.accumulate(equity)
-    return float(((equity - peaks) / peaks).min())
 
 
 def _per_period_sharpe(returns: np.ndarray) -> float:
@@ -54,6 +47,12 @@ def _validated_array(returns: Sequence[float], n_iterations: int) -> np.ndarray:
         raise ConfigurationError(msg)
     if n_iterations < 1:
         msg = f"n_iterations must be >= 1, got {n_iterations}"
+        raise ConfigurationError(msg)
+    if not np.all(np.isfinite(arr)) or np.any(arr <= -1.0):
+        msg = (
+            "cannot run a Monte Carlo resampling test: the returns contain NaN/infinite values "
+            "or a return of -100% or worse (ruin)"
+        )
         raise ConfigurationError(msg)
     return arr
 

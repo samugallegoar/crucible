@@ -24,3 +24,4 @@ Never regenerate silently.
 
 2026-10-10: `sma_cross_spec_golden.json` created with the product layer (ADR-0068); its summary wording was adjusted before release (the verdict sentence), numbers unchanged.
 2026-10-10: `sma_cross_spec_golden.json` `sha256` regenerated for ADR-0070 (the shuffled-returns null now keeps overnight gaps, the null-test p-value is (k+1)/(B+1) with `exceedances`, the default trial family is the symbol set, the home-wide trial count and DSR, `schema_version` 2, new provenance keys and summary wording); final equity, benchmark equity, trade count, verdict and data hash unchanged.
+2026-10-11: `momentum_example_hashes.json` `metrics.json` hash regenerated for ADR-0071: the max-drawdown bootstrap now resamples paths that start at 1.0 (a first-period loss is no longer dropped), which moves the `max_drawdown` interval. The ledger, orders, fills, trades and equity hashes and every point estimate are unchanged.
