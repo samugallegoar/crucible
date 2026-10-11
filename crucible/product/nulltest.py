@@ -1,12 +1,13 @@
 """The default validation of a one-step backtest: a seeded shuffled-returns null test (ADR-0068).
 
-The same rules are run on bars whose per-bar returns have been randomly re-ordered
-(``crucible.data.transforms.shuffle_bar_returns``): the long-run return and every bar's size are
-unchanged, only the order is destroyed. If the strategy's Sharpe ratio is no better than what
-shuffled data produces, its timing has not been shown to matter. It runs on the vectorized engine
-(milliseconds per shuffle), uses a throwaway store under the home's scratch folder, and is
-deterministic: the generator is seeded from the experiment's seed. Shuffles never count as trials
-(they never touch real market data, ADR-0019).
+The same rules are run on bars whose whole daily moves have been randomly re-ordered
+(``crucible.data.transforms.shuffle_bar_returns``: each bar's overnight gap, open-to-close
+return, wicks and volume travel together): the multiset of close-to-close returns, and so the
+long-run return, is unchanged; only the order is destroyed (ADR-0070). If the strategy's Sharpe
+ratio is no better than what shuffled data produces, its timing has not been shown to matter.
+It runs on the vectorized engine (milliseconds per shuffle), uses a throwaway store under the
+home's scratch folder, and is deterministic: the generator is seeded from the experiment's seed.
+Shuffles never count as trials (they never touch real market data, ADR-0019).
 """
 
 from __future__ import annotations
@@ -45,6 +46,10 @@ class NullTest:
     null_median_per_period: float
     null_p95_per_period: float
     p_value: float
+    exceedances: int
+    """Shuffles whose Sharpe matched or beat the real one (``k``); ``p_value = (k+1)/(B+1)``."""
+    invalid: int
+    """Shuffles whose Sharpe was undefined; excluded from ``B`` (ADR-0070)."""
 
 
 def shuffle_null_test(
@@ -64,7 +69,9 @@ def shuffle_null_test(
     seed: int,
     iterations: int = DEFAULT_ITERATIONS,
 ) -> NullTest:
-    """P(a shuffled-data run matches or beats the real Sharpe). ``iterations`` >= 1."""
+    """Monte Carlo p-value ``(k + 1) / (B + 1)`` that a shuffled-data run matches or beats
+    the real Sharpe (``crucible.validation.null_tests``). ``iterations`` >= 1; with fewer than
+    19 the p-value cannot go below 0.05."""
     rng = np.random.default_rng(seed)
     scratch.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="null-", dir=scratch))
@@ -101,10 +108,13 @@ def shuffle_null_test(
         shutil.rmtree(work, ignore_errors=True)
     outcome = compare_to_null(real_sharpe_per_period, values)
     array = np.asarray(values, dtype=np.float64)
+    array = array[~np.isnan(array)]
     return NullTest(
         iterations=iterations,
         real_sharpe_per_period=real_sharpe_per_period,
         null_median_per_period=float(np.median(array)),
         null_p95_per_period=float(np.percentile(array, 95)),
-        p_value=outcome.p_value,
+        p_value=float(outcome.p_value if outcome.p_value is not None else 1.0),
+        exceedances=outcome.n_exceedances,
+        invalid=outcome.n_invalid,
     )

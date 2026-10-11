@@ -155,3 +155,21 @@ def test_all_trials_ignores_a_different_family(tmp_path: Path) -> None:
     registry.record_trial("family_a", "EXP-1", sharpe=1.0)
     registry.record_trial("family_b", "EXP-2", sharpe=2.0)
     assert [t.experiment_id for t in registry.all_trials("family_a")] == ["EXP-1"]
+
+
+def test_the_whole_registry_counts_distinct_experiments_across_families(tmp_path: Path) -> None:
+    # ADR-0070: the home-wide search behind the one-step backtest's second DSR
+    registry = DuckDBTrialRegistry(tmp_path / "r.duckdb")
+    registry.record_trial(family="quick:spy", experiment_id="E1", sharpe=0.10)
+    registry.record_trial(family="quick:spy", experiment_id="E2", sharpe=0.05)
+    registry.record_trial(family="quick:qqq", experiment_id="E3", sharpe=-0.02)
+    registry.record_trial(family="pre-registered", experiment_id="E1", sharpe=0.10)
+    assert registry.trial_count("quick:spy") == 2
+    assert registry.total_trial_count() == 3  # E1 is one experiment in two families
+    assert registry.all_trial_sharpes() == [0.10, 0.05, -0.02]
+
+
+def test_an_empty_registry_has_no_trials(tmp_path: Path) -> None:
+    registry = DuckDBTrialRegistry(tmp_path / "empty.duckdb")
+    assert registry.total_trial_count() == 0
+    assert registry.all_trial_sharpes() == []

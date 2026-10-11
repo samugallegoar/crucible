@@ -346,6 +346,7 @@ _VALIDATORS: tuple[tuple[str, str, str], ...] = (
     ("factor_regression", "crucible.validation.factor_regression", "function"),
     ("check_contamination", "crucible.validation.contamination", "function"),
     ("compare_to_null", "crucible.validation.null_tests", "function"),
+    ("compare_to_single_null", "crucible.validation.null_tests", "function"),
     ("DuckDBTrialRegistry", "crucible.validation.trial_registry", "class"),
     ("optimize_1d", "crucible.experiments.optimize", "function"),
     ("validate_run", "crucible.experiments.validate", "function"),
@@ -357,6 +358,8 @@ _VALIDATORS: tuple[tuple[str, str, str], ...] = (
     ("null_test_synthetic_gbm", "crucible.experiments.null_tests", "function"),
     ("run_quality_checks", "crucible.data.quality", "function"),
     ("shuffle_bar_returns", "crucible.data.transforms", "function"),
+    ("shuffle_intrabar_returns", "crucible.data.transforms", "function"),
+    ("shuffle_overnight_gaps", "crucible.data.transforms", "function"),
     ("sign_flip_returns", "crucible.data.transforms", "function"),
     ("synthetic_gbm_like", "crucible.data.transforms", "function"),
 )

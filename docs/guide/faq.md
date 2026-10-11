@@ -25,13 +25,22 @@ lower return. The report shows both and does not pick for you.
 No. It tests an idea you give it, against history. It is not investment advice.
 
 **How are the confidence intervals made?**
-A circular block bootstrap of the daily returns (95%), so autocorrelation is respected. Every
-headline Sharpe, return and drawdown carries one.
+A circular block bootstrap of the daily returns (blocks of about the square root of the number
+of days, 1,000 resamples, the 2.5th and 97.5th percentiles). In the one-step report only the
+Sharpe ratio carries one; the return and drawdown are point estimates. The interval is
+approximate: on synthetic data with a known Sharpe ratio it held the true value 94-95% of the
+time with five years of data, but only about 91-93% with one year, and about 91% with heavy-tailed
+returns even over five years (the blocks do handle autocorrelation; the measured numbers are in
+ADR-0070). Treat it as the least uncertainty there is, not the most.
 
 **What is the trial count and why does it matter?**
-It is the number of different variants tried on the same data and period. Try enough and one looks
-great by luck. Crucible counts them and reduces the deflated Sharpe accordingly. Renaming a strategy
-does not add a trial; changing a number does.
+It is the number of different variants tried on the same symbols, over any period, in this
+Crucible home (pass a `family` to group differently). Try enough and one looks great by luck.
+Crucible counts them and reduces the deflated Sharpe accordingly. Renaming a strategy does not add a
+trial; changing a number or the period does. A second count covers every backtest in your
+Crucible home, other instruments included, and the strongest verdict needs to clear both. Variants
+you tried outside Crucible are not counted, so the correction can only be too small, never too
+large.
 
 **What do the costs mean?**
 `standard`: 1 basis point of slippage and 0.5 of commission on every trade (a liquid large ETF or

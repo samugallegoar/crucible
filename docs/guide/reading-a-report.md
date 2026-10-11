@@ -30,7 +30,7 @@ few-dozen-trade backtests will say "not conclusive", and that is the honest answ
 | Return per year | the compound annual growth rate. Compare it with buy-and-hold first. |
 | Volatility | how much it swings, per year. |
 | Worst fall from a peak (max drawdown) | the biggest loss from a high to a later low: what you would have had to sit through. A strategy that earns less but falls much less can still be the one you could actually hold. |
-| Sharpe ratio, with its 95% range | return per unit of risk. The range is the honest part: if it is wide or includes zero, the data cannot tell skill from luck. |
+| Sharpe ratio, with its 95% range | return per unit of risk. The range is the honest part: if it is wide or includes zero, the data cannot tell skill from luck. It is an approximate bootstrap interval: on synthetic data with known answers it held the true Sharpe about 91-93% of the time with one year of daily data or with heavy-tailed returns, and about 94-95% with five years of well-behaved returns, so read it as the least uncertainty there is. The other rows have no range. |
 | Completed trades | round trips. A position still open at the end is not counted. |
 
 Buy-and-hold uses the same instruments, window, capital and costs. With several symbols it is equal
@@ -38,13 +38,19 @@ weight. Both curves are drawn together, then both drawdowns.
 
 ## How much to trust this
 
-- **Trial count**: how many variants of this idea have been tried on the same data. Each one makes
+- **Trial count**: how many variants have been tried on the same symbols (any window, any rules)
+  in this Crucible home, unless you named a family. The report also deflates the result against
+  every backtest in the home, other instruments included: trying an idea on one ticker after
+  another is a search too, and a strong verdict needs to survive both counts. Variants tried by
+  hand or with another tool are not in either, so they are lower bounds. Each one makes
   a good-looking result more likely by chance. Crucible counts them, so asking an agent to "try a few
   more numbers" visibly lowers the next result's reliability. That is the point.
 - **Deflated Sharpe ratio (DSR)**: the probability that the Sharpe ratio is genuinely positive after
   accounting for the trial count and the shape of the returns. Under 0.95 is a warning.
-- **Random re-ordering test**: the same daily returns shuffled in time 100 times, the rules run on
-  each. If shuffled data does as well, the timing of the rules has not been shown to matter. Passing
+- **Random re-ordering test**: the same daily moves (overnight gap and day together) shuffled in
+  time 100 times, the rules run on each. It reports how many shuffles matched or beat the strategy
+  and a p-value of (that count + 1) / (101): it never says 0, because 100 shuffles cannot show
+  that. If shuffled data does as well, the timing of the rules has not been shown to matter. Passing
   it means the strategy benefits from the real order of returns (trends, calm and stormy periods); it
   does not mean the edge will continue.
 - **Realism level**: how pessimistic the fill assumptions were. The default (Level 1) fills at the

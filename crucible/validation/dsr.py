@@ -10,6 +10,16 @@ All Sharpe/skew/kurtosis figures here are per-period, never annualized --
 annualizing would decouple the Sharpe estimator's scale from ``n`` (the
 observation count) and the higher-moment terms, which the formula's
 derivation assumes stay consistent (ADR-0015).
+
+What it is not (ADR-0070): DSR is the probability, under the PSR's asymptotic normal
+approximation, that the true per-period Sharpe exceeds the expected maximum of ``N``
+skill-less trials. It is not the probability that the strategy is profitable, it corrects
+only for the ``N`` trials actually recorded in the family (an unrecorded search is invisible
+to it), and ``N`` is the raw count of recorded trials, not an estimate of the effective
+number of independent trials (correlated variants overstate ``N``; the cross-trial Sharpe
+dispersion partly compensates). The variance of the Sharpe estimator assumes i.i.d. returns;
+autocorrelated returns make the reported probability too confident. A zero-variance series
+has no Sharpe ratio and is refused rather than scored.
 """
 
 from __future__ import annotations
@@ -106,6 +116,18 @@ def deflated_sharpe_ratio(
     what the benchmark needs (see module docstring)."""
     if len(returns) < 3:
         msg = f"cannot compute DSR from {len(returns)} return observations; need >= 3"
+        raise CrucibleError(msg)
+    if not np.all(np.isfinite(returns)):
+        msg = "cannot compute DSR: the return series has NaN or infinite values"
+        raise CrucibleError(msg)
+    if np.all(returns == returns[0]):  # exact: float std of a constant series is ~1e-19
+        # a flat series (a strategy that never held anything, or a constant yield) has no
+        # Sharpe ratio; reporting PSR(0) here would print a confident-looking probability
+        # for an undefined quantity (ADR-0070)
+        msg = (
+            "cannot compute DSR: the returns have zero variance (for example a strategy that "
+            "never held a position), so the Sharpe ratio is undefined"
+        )
         raise CrucibleError(msg)
     sharpe_hat = per_period_sharpe(returns)
     benchmark = _expected_max_sharpe(trial_sharpes)

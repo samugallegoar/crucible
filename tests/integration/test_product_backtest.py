@@ -316,3 +316,58 @@ def test_renaming_a_strategy_is_neither_a_new_experiment_nor_a_new_trial(home: H
 def test_raw_prices_are_refused_because_the_flow_has_no_dividend_events(home: Home) -> None:
     with pytest.raises(ConfigurationError, match="silently drop dividends"):
         run_backtest(request(home, price_basis="raw"))
+
+
+def test_another_window_on_the_same_symbols_is_another_trial_in_the_same_family(
+    tmp_path: Path,
+) -> None:
+    # regression: the default family was quick:<symbols>:<start>-<end>, so a second window
+    # started a new family at trial 1 and the DSR never saw the search (ADR-0070)
+    fresh = seed_home(tmp_path)
+    later = dt.date(2020, 6, 1)
+    bars = pl.read_parquet(next((fresh.data).glob("*/data.parquet")))
+    name = dataset_name("yfinance", [SYMBOL], later, END, "1d", "adjusted")
+    build_dataset(
+        fresh.data, DatasetId(name), bars, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="t"
+    )
+    first = run_backtest(request(fresh, null_iterations=0))
+    second = run_backtest(request(fresh, start=later.isoformat(), null_iterations=0))
+    v1, v2 = first["validation"], second["validation"]
+    assert isinstance(v1, dict)
+    assert isinstance(v2, dict)
+    assert v1["trial_family"] == v2["trial_family"] == f"quick:{SYMBOL.lower()}"
+    assert v1["trial_family_source"] == "default (symbol set)"
+    assert (v1["trial_count"], v2["trial_count"]) == (1, 2)
+
+
+def test_an_explicit_family_is_kept_and_labelled(home: Home) -> None:
+    result = run_backtest(request(home, family="pre-registered-2020", null_iterations=0))
+    validation = result["validation"]
+    assert isinstance(validation, dict)
+    assert validation["trial_family"] == "pre-registered-2020"
+    assert validation["trial_family_source"] == "explicit"
+    assert "lower bound" in str(validation["trial_count_scope"])
+
+
+def test_another_instrument_is_another_family_but_the_home_wide_count_sees_both(
+    tmp_path: Path,
+) -> None:
+    # ADR-0070: shopping an idea across instruments splits the families, so the home-wide
+    # count and DSR are what keep that search visible
+    fresh = seed_home(tmp_path)
+    bars = pl.read_parquet(next(fresh.data.glob("*/data.parquet")))
+    other = bars.with_columns(symbol=pl.lit("OTHER"))
+    name = dataset_name("yfinance", ["OTHER"], START, END, "1d", "adjusted")
+    build_dataset(
+        fresh.data, DatasetId(name), other, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="t"
+    )
+    first = run_backtest(request(fresh, null_iterations=0))
+    second = run_backtest(request(fresh, symbols=["OTHER"], null_iterations=0))
+    v1, v2 = first["validation"], second["validation"]
+    assert isinstance(v1, dict)
+    assert isinstance(v2, dict)
+    assert v1["trial_family"] != v2["trial_family"]
+    assert (v1["trial_count"], v2["trial_count"]) == (1, 1)
+    assert (v1["home_trial_count"], v2["home_trial_count"]) == (1, 2)
+    assert v1["dsr_home_wide"] == pytest.approx(v1["dsr"])  # one trial: the same deflation
+    assert v2["dsr_home_wide"] is not None

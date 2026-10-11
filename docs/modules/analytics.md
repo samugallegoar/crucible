@@ -24,9 +24,12 @@ summary — real values or an explicit reason, never silently missing.
 ## Implementations
 - `metrics.py`: `compute_metrics(equity, trades, rng, periods_per_year)` —
   Sharpe, CAGR, and max drawdown (R4.8) all carry circular-block-bootstrap
-  95% CIs (seeded rng ⇒ deterministic; drawdown's CI reconstructs an
-  equity curve from each bootstrap sample's returns via
-  `_max_drawdown_from_returns`, ADR-0020), plus volatility, hit rate,
+  percentile intervals at a nominal 95 % (block length `floor(sqrt(n))`, 1,000 resamples;
+  seeded rng ⇒ deterministic). They are **approximate**: their coverage was measured only on
+  synthetic processes (`tools/bootstrap_coverage.py`, ADR-0070, results in Known gaps), and
+  volatility, hit rate, trade count and the one-step report's return and drawdown figures carry
+  none. Drawdown's CI reconstructs an equity curve from each bootstrap sample's returns via
+  `_max_drawdown_from_returns` (ADR-0020). Also volatility, hit rate,
   trade count. Refuses <3 equity points and post-ruin curves. Risk-free
   rate 0 (documented). `simple_returns
   (equity)` is the shared per-period return series both this and
@@ -80,6 +83,13 @@ on the header extend `REQUIRED_HEADER_KEYS`. Regime labelers and the cost
 waterfall arrive Phases 2–3.
 
 ## Known gaps
+- The bootstrap intervals are approximate. Measured coverage of the nominal-95 % Sharpe interval
+  (`tools/bootstrap_coverage.py`, 400 replications per cell, MC s.e. ≈ 0.011): 0.91-0.93 at
+  n = 252 for every process tested (i.i.d. normal, zero alpha, Student-t 4, AR(1) 0.3, GARCH);
+  0.94-0.95 at n = 1260 except Student-t 4 (0.91). The `sqrt(n)` block handles AR(1)
+  autocorrelation (0.945 at n = 1260; an i.i.d. bootstrap gives 0.85). The CAGR and drawdown
+  intervals have not been measured. No automatic block length, no bias-corrected (BCa) or
+  studentized interval (ADR-0070).
 - `MetricsComputer` and `ReportRenderer` are stub Protocols: `compute_metrics` and `render_report` are free functions with different signatures; nothing implements the Protocols.
 Trade log omits delisting liquidations (ledger-only events). Its PnL is
 base-currency and multiplier-scaled with a `pnl_price`/`pnl_fx` split per FIFO

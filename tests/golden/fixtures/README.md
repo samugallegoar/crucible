@@ -23,3 +23,4 @@ Never regenerate silently.
 2026-09-27: regenerated for ADR-0055 (the canonical config serializes `data.store` with forward slashes so it is identical on Windows and Linux; every simulation artifact and `metrics.json` verified byte-identical, only config.yaml and experiment_id changed; the new values equal what the Ubuntu CI run computed).
 
 2026-10-10: `sma_cross_spec_golden.json` created with the product layer (ADR-0068); its summary wording was adjusted before release (the verdict sentence), numbers unchanged.
+2026-10-10: `sma_cross_spec_golden.json` `sha256` regenerated for ADR-0070 (the shuffled-returns null now keeps overnight gaps, the null-test p-value is (k+1)/(B+1) with `exceedances`, the default trial family is the symbol set, the home-wide trial count and DSR, `schema_version` 2, new provenance keys and summary wording); final equity, benchmark equity, trade count, verdict and data hash unchanged.

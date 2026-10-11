@@ -74,11 +74,16 @@ class SummaryInputs:
     contamination: bool
     null_iterations: int
     null_p_value: float | None
+    null_exceedances: int | None
     spec_name: str | None = None
     parameter_hints: tuple[str, ...] = ()
     cost_preset: str = "standard"
     realism: Side | None = None
     """The same rules re-run on the event-driven engine at Level 2 (``realism_check``)."""
+    home_trial_count: int | None = None
+    """Distinct one-step trials in this home, every family (ADR-0070)."""
+    dsr_home_wide: float | None = None
+    """DSR deflated by every one-step trial in this home, not only this family's."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,13 +214,29 @@ def _flags(i: SummaryInputs) -> list[Flag]:
                 f"(this report wants {DSR_CONFIDENT * 100:.0f}% or more).",
             )
         )
+    if (
+        i.home_trial_count is not None
+        and i.home_trial_count > i.trial_count
+        and i.dsr_home_wide is not None
+        and i.dsr_home_wide < DSR_CONFIDENT
+    ):
+        flags.append(
+            Flag(
+                "dsr_low_home_wide",
+                f"Counting all {i.home_trial_count} backtests run in this Crucible home (other "
+                "instruments and other families too), the probability that the Sharpe ratio is "
+                f"genuinely positive drops to {i.dsr_home_wide * 100:.0f}%. Trying an idea on one "
+                "instrument after another is also a search.",
+            )
+        )
     if i.null_p_value is not None and i.null_p_value >= NULL_P_VALUE:
         flags.append(
             Flag(
                 "null_not_beaten",
                 f"Re-ordering the same daily returns at random did as well or better in "
-                f"{i.null_p_value * 100:.0f}% of {i.null_iterations} tries. That is within what "
-                "luck produces, so the timing of the rules has not been shown to matter.",
+                f"{i.null_exceedances} of {i.null_iterations} tries (p-value "
+                f"{i.null_p_value:.3f}). That is within what luck produces, so the timing of the "
+                "rules has not been shown to matter.",
             )
         )
     if i.realism is not None:
@@ -268,6 +289,7 @@ def _verdict(i: SummaryInputs, flags: list[Flag]) -> tuple[str, str, list[str]]:
             "very_short_sample",
             "short_sample",
             "dsr_low",
+            "dsr_low_home_wide",
             "null_not_beaten",
             "contaminated",
             "fragile_to_execution",
@@ -385,10 +407,15 @@ def build_summary(i: SummaryInputs) -> Summary:
     trust: list[str] = []
     if s.sharpe_low is not None and s.sharpe_high is not None:
         trust.append(
-            f"Sharpe ratio (return per unit of risk): {s.sharpe:.2f}, with a 95% range of "
-            f"{s.sharpe_low:.2f} to {s.sharpe_high:.2f}. Buy-and-hold: {b.sharpe:.2f}."
+            f"Sharpe ratio (return per unit of risk): {s.sharpe:.2f}, with an approximate 95% "
+            f"range of {s.sharpe_low:.2f} to {s.sharpe_high:.2f} (a block bootstrap of the daily "
+            f"returns; in synthetic tests it held the true value only about 91-93% of the time "
+            f"with one year of data or heavy-tailed returns). Buy-and-hold: {b.sharpe:.2f}."
         )
-    trust.append(f"Variants tried on this data so far (trial count): {i.trial_count}.")
+    trust.append(
+        f"Variants tried on these symbols so far (trial count): {i.trial_count}. Only variants "
+        "run in this Crucible home and family are counted."
+    )
     tried = "1 variant" if i.trial_count == 1 else f"{i.trial_count} variants"
     if i.dsr is not None:
         trust.append(
@@ -397,20 +424,24 @@ def build_summary(i: SummaryInputs) -> Summary:
         )
     else:
         trust.append(
-            "Deflated Sharpe ratio: not computable yet (it needs more than one variant tried "
-            "on the same data)."
+            "Deflated Sharpe ratio: not computable for this run (the reason is in the result "
+            "document's validation.dsr_error; a strategy that never held a position has no "
+            "Sharpe ratio to deflate)."
         )
     if i.null_p_value is not None:
         beaten = (
             f"in none of the {i.null_iterations} tries"
-            if i.null_p_value == 0.0
-            else f"in {i.null_p_value * 100:.0f}% of {i.null_iterations} tries"
+            if i.null_exceedances == 0
+            else f"in {i.null_exceedances} of {i.null_iterations} tries"
         )
         trust.append(
             f"Random re-ordering test: the same daily returns shuffled at random matched or beat "
-            f"the strategy {beaten}. A low number means the strategy gains from the real order "
+            f"the strategy {beaten} (p-value {i.null_p_value:.3f}; with "
+            f"{i.null_iterations} tries it cannot go below {1 / (i.null_iterations + 1):.3f}). "
+            "A low number means the strategy gains from the real order "
             "of returns (trends, calm and stormy spells), which shuffling destroys; it does not "
-            "by itself show the edge will continue."
+            "by itself show the edge will continue, and it does not account for other "
+            "variants tried."
         )
 
     if i.realism is not None:

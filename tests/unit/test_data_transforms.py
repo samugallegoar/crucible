@@ -1,8 +1,8 @@
-"""Null-test bar transformations (ADR-0019).
+"""Null-test bar transformations (ADR-0019, ADR-0070).
 
-Reference values were computed independently (a standalone script, not
-this module) with the exact same decompose/reconstruct math, then
-hardcoded."""
+Reference values are hand-computable (round numbers below); the property-style checks
+assert what each null is documented to preserve. ``_BARS`` has no overnight gaps (every
+open equals the previous close), so the gap-carrying cases use ``_GAPPY``."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ import pytest
 from crucible.core.errors import DataQualityError
 from crucible.data.transforms import (
     shuffle_bar_returns,
+    shuffle_intrabar_returns,
+    shuffle_overnight_gaps,
     sign_flip_returns,
     synthetic_gbm_like,
 )
@@ -43,22 +45,132 @@ def _aaa(bars: pl.DataFrame) -> pl.DataFrame:
     return bars.filter(pl.col("symbol") == "AAA").sort("event_time")
 
 
+# three bars: +10% intraday; then a +10% gap and +10% intraday; then a -50% gap and +20%
+_HAND = pl.DataFrame(
+    {
+        "symbol": ["X", "X", "X"],
+        "event_time": [1, 2, 3],
+        "available_at": [1, 2, 3],
+        "open": [100.0, 121.0, 66.55],
+        "high": [110.0, 133.1, 79.86],
+        "low": [100.0, 121.0, 66.55],
+        "close": [110.0, 133.1, 79.86],
+        "volume": [1.0, 2.0, 3.0],
+    }
+)
+
+
 def test_shuffle_matches_hand_computed_reference() -> None:
-    result = shuffle_bar_returns(_BARS, np.random.default_rng(5))
-    aaa = _aaa(result)
-    assert aaa["open"].to_list() == pytest.approx(
-        [100.0, 99.04761904761905, 98.07656396137973, 101.96078431372548]
-    )
-    assert aaa["close"].to_list() == pytest.approx(
-        [99.04761904761905, 98.07656396137973, 101.96078431372548, 104.0]
-    )
-    assert aaa["high"].to_list() == pytest.approx(
-        [100.95238095238095, 100.50420168067227, 102.93183940242764, 105.01960784313725]
-    )
-    assert aaa["low"].to_list() == pytest.approx(
-        [99.04761904761905, 97.59103641456583, 97.59103641456583, 101.45098039215686]
-    )
+    # bar 0 stays; bars 1 and 2 either keep their order or swap. Swapped: bar 2's -50% gap
+    # lands on 110 -> 55, +20% -> 66; then bar 1's +10% gap -> 72.6, +10% -> 79.86.
+    seen: set[tuple[float, ...]] = set()
+    for seed in range(20):
+        x = shuffle_bar_returns(_HAND, np.random.default_rng(seed)).sort("event_time")
+        opens = tuple(round(v, 9) for v in x["open"].to_list())
+        closes = tuple(round(v, 9) for v in x["close"].to_list())
+        assert opens in {(100.0, 121.0, 66.55), (100.0, 55.0, 72.6)}
+        assert closes in {(110.0, 133.1, 79.86), (110.0, 66.0, 79.86)}
+        assert x["volume"].to_list() in ([1.0, 2.0, 3.0], [1.0, 3.0, 2.0])
+        seen.add(closes)
+    assert len(seen) == 2  # both orders occur
+
+
+def _close_to_close(bars: pl.DataFrame, symbol: str) -> list[float]:
+    closes = bars.filter(pl.col("symbol") == symbol).sort("event_time")["close"].to_numpy()
+    return sorted((closes[1:] / closes[:-1] - 1.0).tolist())
+
+
+_GAPPY = pl.DataFrame(
+    {
+        "symbol": ["G"] * 6,
+        "event_time": [1, 2, 3, 4, 5, 6],
+        "available_at": [1, 2, 3, 4, 5, 6],
+        "open": [100.0, 104.0, 99.0, 103.0, 110.0, 101.0],
+        "high": [103.0, 105.0, 102.0, 109.0, 111.0, 104.0],
+        "low": [99.0, 98.0, 98.5, 102.0, 100.0, 100.5],
+        "close": [102.0, 100.0, 101.0, 108.0, 102.0, 103.0],
+        "volume": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+    }
+)
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_shuffle_preserves_close_to_close_returns_and_final_close_with_gaps(seed: int) -> None:
+    # regression: re-chaining open[k+1] = close[k] dropped every overnight gap, so the
+    # shuffled path's close-to-close returns and final close differed from the real ones
+    result = shuffle_bar_returns(_GAPPY, np.random.default_rng(seed))
+    assert _close_to_close(result, "G") == pytest.approx(_close_to_close(_GAPPY, "G"))
+    assert result.sort("event_time")["close"][-1] == pytest.approx(103.0)
+    assert result.sort("event_time")["open"][0] == 100.0
     _assert_valid_ohlc(result)
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_intrabar_shuffle_keeps_each_gap_on_its_date(seed: int) -> None:
+    result = shuffle_intrabar_returns(_GAPPY, np.random.default_rng(seed)).sort("event_time")
+    gaps = result["open"].to_numpy()[1:] / result["close"].to_numpy()[:-1] - 1.0
+    real = _GAPPY["open"].to_numpy()[1:] / _GAPPY["close"].to_numpy()[:-1] - 1.0
+    assert gaps == pytest.approx(real)
+    intraday = sorted((result["close"] / result["open"] - 1.0).to_list())
+    assert intraday == pytest.approx(sorted((_GAPPY["close"] / _GAPPY["open"] - 1.0).to_list()))
+    assert result["close"][-1] == pytest.approx(103.0)
+    _assert_valid_ohlc(result)
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_gap_shuffle_keeps_each_intraday_shape_on_its_date(seed: int) -> None:
+    result = shuffle_overnight_gaps(_GAPPY, np.random.default_rng(seed)).sort("event_time")
+    assert (result["close"] / result["open"]).to_list() == pytest.approx(
+        (_GAPPY["close"] / _GAPPY["open"]).to_list()
+    )
+    assert result["volume"].to_list() == _GAPPY["volume"].to_list()
+    assert result["close"][-1] == pytest.approx(103.0)
+    _assert_valid_ohlc(result)
+
+
+def test_shuffle_of_a_constant_return_path_is_the_identity() -> None:
+    # every bar is identical in components, so any order rebuilds the same prices
+    closes = [100.0 * 1.01**k for k in range(1, 9)]
+    opens = [100.0 * 1.01 ** (k - 1) * 1.002 for k in range(1, 9)]
+    bars = pl.DataFrame(
+        {
+            "symbol": ["C"] * 8,
+            "event_time": list(range(8)),
+            "available_at": list(range(8)),
+            "open": opens,
+            "high": [max(o, c) for o, c in zip(opens, closes, strict=True)],
+            "low": [min(o, c) for o, c in zip(opens, closes, strict=True)],
+            "close": closes,
+            "volume": [5.0] * 8,
+        }
+    )
+    result = shuffle_bar_returns(bars, np.random.default_rng(3)).sort("event_time")
+    assert result["close"].to_list() == pytest.approx(closes)
+    assert result["open"].to_list() == pytest.approx(opens)
+
+
+def test_shuffle_destroys_a_trend_but_not_the_drift() -> None:
+    # 200 up-days then 200 down-days: the real path peaks in the middle; a shuffle keeps the
+    # endpoint (same multiset of returns) but not the shape
+    rng = np.random.default_rng(11)
+    rets = np.r_[np.full(200, 0.004), np.full(200, -0.003)] + rng.normal(0, 1e-4, 400)
+    closes = 100.0 * np.cumprod(1.0 + rets)
+    opens = np.r_[100.0, closes[:-1]]
+    bars = pl.DataFrame(
+        {
+            "symbol": ["T"] * 400,
+            "event_time": list(range(400)),
+            "available_at": list(range(400)),
+            "open": opens,
+            "high": np.maximum(opens, closes),
+            "low": np.minimum(opens, closes),
+            "close": closes,
+            "volume": np.ones(400),
+        }
+    )
+    shuffled = shuffle_bar_returns(bars, np.random.default_rng(4)).sort("event_time")
+    assert shuffled["close"][-1] == pytest.approx(closes[-1])
+    assert float(shuffled["close"].max()) < 0.8 * float(closes.max())
 
 
 def test_shuffle_preserves_timestamps_and_symbol() -> None:
@@ -107,13 +219,24 @@ def test_sign_flip_order_is_unchanged() -> None:
     assert aaa["volume"].to_list() == _aaa(_BARS)["volume"].to_list()
 
 
-def test_synthetic_gbm_matches_hand_computed_reference() -> None:
-    result = synthetic_gbm_like(_BARS, np.random.default_rng(5))
-    aaa = _aaa(result)
-    assert aaa["close"].to_list() == pytest.approx(
-        [99.07019577275854, 96.89907590070806, 97.29355038814977, 99.26112260032562]
-    )
+def test_synthetic_gbm_matches_its_specification() -> None:
+    # independent of the module: bar 0 kept, then i.i.d. normal close-to-close returns with
+    # the real close-to-close mean/stdev, all of it open-to-close (no gap)
+    closes = _GAPPY["close"].to_numpy()
+    c2c = closes[1:] / closes[:-1] - 1.0
+    draws = np.random.default_rng(5).normal(c2c.mean(), c2c.std(ddof=1), size=5)
+    expected = [102.0, *(102.0 * np.cumprod(1.0 + draws)).tolist()]
+    result = synthetic_gbm_like(_GAPPY, np.random.default_rng(5)).sort("event_time")
+    assert result["close"].to_list() == pytest.approx(expected)
+    assert result["open"].to_list()[1:] == pytest.approx(expected[:-1])
     _assert_valid_ohlc(result)
+
+
+def test_sign_flip_negates_gaps_as_well() -> None:
+    result = sign_flip_returns(_GAPPY).sort("event_time")
+    gaps = result["open"].to_numpy()[1:] / result["close"].to_numpy()[:-1] - 1.0
+    real = _GAPPY["open"].to_numpy()[1:] / _GAPPY["close"].to_numpy()[:-1] - 1.0
+    assert gaps == pytest.approx(-real)
 
 
 def test_synthetic_gbm_is_random_across_seeds() -> None:

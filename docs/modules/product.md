@@ -31,7 +31,7 @@ CLI: `crucible backtest`, `crucible results`, `crucible config show|set-home`, `
    reused if stored, else fetched with `ohlc_repair="clamp_rounding"` and written through the quality
    battery. A window shorter than the rules' warm-up is refused first.
 3. Quality battery again, then the vectorized run (`run_vectorized_experiment`): one trial in the
-   family (default `quick:<symbols>:<start>-<end>`), DSR and contamination in the manifest.
+   family (default `quick:<symbols>`: every window and every rule set tried on the same symbols counts together, ADR-0070; `trial_family_source` says whether it was given or derived and `trial_count_scope` what the count covers), DSR and contamination in the manifest.
 4. Buy-and-hold of the same symbols (spec `entry.long: always`) on the same engine, costs and
    window: a reference, not a trial. With several symbols it is equal weight, held at constant weights.
 5. The null test: `null_iterations` (default 100, 0 disables) shuffles of each symbol's per-bar
@@ -49,10 +49,14 @@ CLI: `crucible backtest`, `crucible results`, `crucible config show|set-home`, `
 Top level: `schema_version`, `status`, `experiment_id`, `request` (symbols, window, capital, costs,
 provider, seed), `strategy_spec`, `strategy_explained`, `data` (dataset, rows, hash, first/last bar,
 repaired rows, warnings, quality checks), `results` (`strategy`, `benchmark`, `equity_curve_monthly`,
-`years`), `validation` (realism level, engine, trial family and count, DSR, `dsr_error`, null test,
-contamination, `realism_check`), `summary`, `trades`, `provenance`, plus `report`, `technical_report`,
-`artifacts`, `summary_json`, `home`. Every Sharpe carries its 95 % bootstrap interval
-(`sharpe_low`/`sharpe_high`); percentages are in percent. `summary.json` is the same document without
+`years`), `validation` (realism level, engine, trial family, `trial_family_source`, count,
+`trial_count_scope`, DSR, `dsr_error`, `home_trial_count`, `dsr_home_wide`, `dsr_home_wide_error`, null test with `p_value` = (k+1)/(B+1), `exceedances`,
+`invalid_iterations` and `p_value_method`, contamination, `realism_check`), `summary`, `trades`,
+`provenance` (including `price_basis_note` and `execution_assumptions`), plus `report`,
+`technical_report`, `artifacts`, `summary_json`, `home`. Every Sharpe carries an approximate
+nominal-95 % block-bootstrap interval (`sharpe_low`/`sharpe_high`; measured coverage in ADR-0070);
+no other figure has one. Percentages are in percent. `schema_version` 2 (ADR-0070: the null-test
+p-value changed meaning). `summary.json` is the same document without
 the run-location keys and `data.fetched_now`: the same request and data give the same bytes.
 
 ### The verdict

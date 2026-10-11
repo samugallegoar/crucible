@@ -3,8 +3,9 @@
 **Backtest a trading idea by describing it. Get an honest answer.**
 
 Tell your AI agent - Claude, Codex, Cursor, Gemini - a strategy in plain words. Crucible tests it
-on real prices against simply holding, puts a confidence range on every number, counts how many
-variants you tried, and says in plain language when the result is too weak to mean anything. You
+on historical prices against simply holding, puts an approximate 95% range on the Sharpe ratio,
+counts how many variants you tried, and says in plain language when the result is too weak to mean
+anything. You
 never write code.
 
 > *"Backtest buying SPY when the 10-day average crosses above the 30-day and selling when it
@@ -67,8 +68,10 @@ No agent? `crucible backtest --entry "sma(10) crosses_above sma(30)" --exit "sma
 
 - **Strategy next to buy-and-hold**, same instruments, period and costs: return, worst fall,
   Sharpe ratio, number of trades.
-- **A 95% range on every headline number**, and the **trial count**: how many variants you have
-  tried on this data. Try enough and one looks great by luck; Crucible counts them and deflates.
+- **An approximate 95% range on the Sharpe ratio** (a block bootstrap; the return and drawdown
+  figures are point estimates without one), and the **trial count**: how many variants you have
+  tried on these symbols. Try enough and one looks great by luck; Crucible counts the ones it ran
+  and deflates. It cannot count variants you tried elsewhere.
 - **A verdict in words**: *no edge detected*, *not conclusive*, or *some evidence*. It never says a
   strategy "works", and it names the reasons (few trades, one instrument, a short period, ...).
 - **A report** you open in a browser: equity curve against buy-and-hold, drawdowns, every trade,
@@ -85,9 +88,13 @@ fraction of capital, stop-loss, take-profit and maximum holding time, on one or 
 (US equities and ETFs, indices, crypto; daily bars from Yahoo Finance or Tiingo).
 [Strategy spec reference](docs/guide/strategy-spec.md).
 
-Why the answers are trustworthy rather than flattering: prices are read point-in-time, the engine
-refuses suspicious states instead of warning, results are deterministic, and a result is never
-reported without its interval, trial count and realism level. The engineering behind that is in
+Why the answers are trustworthy rather than flattering: a rule only ever sees bars that had
+closed (point-in-time access, enforced in code), the engine refuses suspicious states instead of
+warning, results are deterministic, and a Sharpe ratio is never reported without its interval,
+trial count and realism level. What it cannot give you: the prices are today's dividend-and-split
+adjusted series (not the quotes traded on the day), fills are simulated from daily bars (no order
+book, no market impact), and the statistics are honest about luck only for the variants Crucible
+saw. The engineering behind that is in
 the [contributor hub](docs/contributing/README.md).
 
 ## What Crucible does not do

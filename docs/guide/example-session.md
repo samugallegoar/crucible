@@ -98,8 +98,9 @@ trial.
 
 > Try 2005 to 2014.
 
-A new window is new data and a new family, so the trial count starts again at 1; the agent should
-say that the earlier result is a separate test, not a retry.
+A new window on the same symbols stays in the same trial family (`quick:spy`), so the trial count
+goes up: trying another period is part of the same search, and the deflated Sharpe ratio accounts for
+it. To treat a period as a separate, pre-registered test, pass an explicit `family`.
 
 > Show me what I have run so far.
 

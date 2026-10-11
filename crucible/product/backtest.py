@@ -34,7 +34,7 @@ import polars as pl
 
 from crucible.analytics.metrics import compute_metrics, simple_returns
 from crucible.analytics.trades import EPISODE_SCHEMA, build_episodes
-from crucible.core.errors import ConfigurationError
+from crucible.core.errors import ConfigurationError, CrucibleError
 from crucible.core.types import DatasetId, RealismLevel
 from crucible.data.calendars import get_trading_calendar
 from crucible.data.quality import run_quality_checks
@@ -54,13 +54,14 @@ from crucible.strategy_spec import (
     spec_signal,
     warmup_bars,
 )
-from crucible.validation.dsr import per_period_sharpe
+from crucible.validation.dsr import deflated_sharpe_ratio, per_period_sharpe
+from crucible.validation.trial_registry import DuckDBTrialRegistry
 from crucible.vectorized.engine import VectorizedBacktestEngine, VectorizedConfig, VectorizedResult
 
 if TYPE_CHECKING:
     from crucible.analytics.interfaces import MetricValue
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: null_test.p_value is the Monte Carlo (k+1)/(B+1) (ADR-0070)
 """Version of the result document; bumped when a key is renamed or removed."""
 
 ENTRYPOINT = "crucible.strategy_spec.compile:spec_signal"
@@ -91,6 +92,13 @@ class BacktestRequest:
     realism_check: bool = False
     home: str | Path | None = None
     seed: int = DEFAULT_SEED
+
+
+def default_family(symbols: list[str]) -> str:
+    """The trial family a one-step backtest joins when none is given: ``quick:<symbols>``,
+    independent of the window and of the rules, so every variant and every window tried on the
+    same symbols is counted together (ADR-0070). Pass ``family`` to group differently."""
+    return f"quick:{'-'.join(sorted(s.lower() for s in symbols))}"
 
 
 def _to_date(ts_ns: int) -> str:
@@ -311,7 +319,10 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
         else RealismLevel.BASIC_FRICTION
     )
     periods_per_year = 365.0 if request.calendar == "24/7" else 252.0
-    family = request.family or f"quick:{'-'.join(symbols).lower()}:{start:%Y%m%d}-{end:%Y%m%d}"
+    # the default family is the symbol set, not the window: re-running rules on another window
+    # of the same symbols is part of the same search, so it counts toward the same DSR (ADR-0070)
+    family = request.family or default_family(symbols)
+    family_source = "explicit" if request.family else "default (symbol set)"
     start_iso = f"{start.isoformat()}"
     end_iso = f"{end.isoformat()}T23:59:59+00:00"
     name = spec.name or "Strategy"
@@ -348,6 +359,20 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     run = run_vectorized_experiment(config, home.experiments)
     out_dir = run.path
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    # the family's DSR deflates for the variants tried on these symbols; the home-wide DSR
+    # deflates for every one-step trial in this home, so trying the idea on one instrument after
+    # another cannot buy a stronger verdict (ADR-0070)
+    registry = DuckDBTrialRegistry(home.experiments / "trial_registry.duckdb")
+    home_trial_count = registry.total_trial_count()
+    dsr_home: float | None = None
+    dsr_home_error: str | None = None
+    try:
+        dsr_home = deflated_sharpe_ratio(
+            simple_returns(pl.read_parquet(out_dir / "equity.parquet")),
+            registry.all_trial_sharpes(),
+        ).dsr
+    except CrucibleError as exc:
+        dsr_home_error = str(exc)
     engine = VectorizedBacktestEngine()
     cash = Decimal(str(request.capital))
 
@@ -460,9 +485,12 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             commission_bps=commission,
             trial_count=int(manifest["trial_count"]),
             dsr=manifest["dsr"],
+            home_trial_count=home_trial_count,
+            dsr_home_wide=dsr_home,
             contamination=bool(manifest["contamination"]),
             null_iterations=request.null_iterations if null_result else 0,
             null_p_value=null_result.p_value if null_result else None,
+            null_exceedances=null_result.exceedances if null_result else None,
             spec_name=spec.name,
             parameter_hints=_parameter_hints(spec),
             cost_preset=cost_label,
@@ -533,9 +561,18 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             "realism_level": config.experiment.realism_level.name,
             "engine": "vectorized",
             "trial_family": family,
+            "trial_family_source": family_source,
             "trial_count": manifest["trial_count"],
+            "trial_count_scope": (
+                "backtests recorded in this family in this Crucible home only; variants tried "
+                "elsewhere (another home, another family, another tool, by hand) are not counted, "
+                "so the count is a lower bound on the search that produced this result"
+            ),
             "dsr": manifest["dsr"],
             "dsr_error": manifest["dsr_error"],
+            "home_trial_count": home_trial_count,
+            "dsr_home_wide": dsr_home,
+            "dsr_home_wide_error": dsr_home_error,
             "pbo": None,
             "pbo_note": "not computed for a single run; a parameter sweep reports it",
             "realism_check": realism_block,
@@ -546,6 +583,9 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
                 "kind": "shuffled_returns",
                 "iterations": null_result.iterations,
                 "p_value": round(null_result.p_value, 4),
+                "p_value_method": "monte_carlo (k + 1) / (B + 1), one-sided, ties count as k",
+                "exceedances": null_result.exceedances,
+                "invalid_iterations": null_result.invalid,
                 "real_sharpe_per_period": round(null_result.real_sharpe_per_period, 6),
                 "null_median_per_period": round(null_result.null_median_per_period, 6),
                 "null_p95_per_period": round(null_result.null_p95_per_period, 6),
@@ -562,6 +602,21 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             "data_hash": data.content_hash,
             "provider": data.provider,
             "price_basis": request.price_basis,
+            "price_basis_note": (
+                "fills, equity and costs are computed on dividend-and-split-adjusted prices: a "
+                "total-return research series re-computed by the provider after the fact, not "
+                "the quotes that could have been traded on each day. Returns are approximately "
+                "right; share counts and price levels are not historical (ADR-0070)"
+            ),
+            "execution_assumptions": (
+                "vectorized: the signal is lagged one bar against close-to-close returns, so "
+                "the position is in effect taken at the signal bar's close, which is optimistic; "
+                "fixed slippage and commission in bps of traded notional; no spread "
+                "model, no latency, no partial fills, no volume or liquidity limit, no market "
+                "impact, no borrow cost for shorts, no order types beyond the target position. "
+                "The optional realism check re-runs on the event-driven engine (next-bar fills, "
+                "spread, latency); it is not an order-book simulation"
+            ),
             "seed": request.seed,
         },
     }

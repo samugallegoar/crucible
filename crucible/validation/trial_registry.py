@@ -102,6 +102,25 @@ class DuckDBTrialRegistry:
             ).fetchall()
             return [float(row[0]) for row in rows]
 
+    def total_trial_count(self) -> int:
+        """Distinct experiments recorded in any family of this registry (ADR-0070): the whole
+        search this registry has seen. An experiment recorded under two families counts once."""
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            row = conn.execute("SELECT COUNT(DISTINCT experiment_id) FROM trials").fetchone()
+            return int(row[0]) if row else 0
+
+    def all_trial_sharpes(self) -> list[float]:
+        """Per-period Sharpe of every distinct experiment in any family that was given one,
+        ordered by ``experiment_id`` (ADR-0070)."""
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            rows = conn.execute(
+                "SELECT experiment_id, MAX(sharpe) FROM trials WHERE sharpe IS NOT NULL "
+                "GROUP BY experiment_id ORDER BY experiment_id"
+            ).fetchall()
+            return [float(row[1]) for row in rows]
+
     def all_trials(self, family: str) -> list[TrialRecord]:
         """Every recorded trial for ``family``, ordered by ``experiment_id``
         (deterministic and reproducible -- DuckDB makes no ordering

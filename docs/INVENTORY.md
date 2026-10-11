@@ -151,6 +151,8 @@ Gate 4 and the data gates: what a researcher calls to judge a result. Splitters,
 |---|---|---|
 | `run_quality_checks` | function | `crucible.data.quality` |
 | `shuffle_bar_returns` | function | `crucible.data.transforms` |
+| `shuffle_intrabar_returns` | function | `crucible.data.transforms` |
+| `shuffle_overnight_gaps` | function | `crucible.data.transforms` |
 | `sign_flip_returns` | function | `crucible.data.transforms` |
 | `synthetic_gbm_like` | function | `crucible.data.transforms` |
 | `null_test_shuffle` | function | `crucible.experiments.null_tests` |
@@ -166,6 +168,7 @@ Gate 4 and the data gates: what a researcher calls to judge a result. Splitters,
 | `per_period_sharpe` | function | `crucible.validation.dsr` |
 | `factor_regression` | function | `crucible.validation.factor_regression` |
 | `compare_to_null` | function | `crucible.validation.null_tests` |
+| `compare_to_single_null` | function | `crucible.validation.null_tests` |
 | `probability_of_backtest_overfitting` | function | `crucible.validation.pbo` |
 | `sensitivity_surface_1d` | function | `crucible.validation.sensitivity` |
 | `sensitivity_surface_2d` | function | `crucible.validation.sensitivity` |

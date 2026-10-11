@@ -49,6 +49,7 @@ def inputs(**overrides: object) -> SummaryInputs:
         contamination=False,
         null_iterations=100,
         null_p_value=0.01,
+        null_exceedances=0,
         realism=side(final_equity=147_000.0, cagr_pct=7.6, max_drawdown_pct=-16.0, sharpe=0.85),
     )
     return dataclasses.replace(base, **overrides)  # type: ignore[arg-type]
@@ -162,3 +163,26 @@ def test_the_realism_cap_only_names_itself_when_it_is_the_deciding_guard() -> No
     assert "realism_not_checked" not in codes(summary)
     assert "realism_not_checked" not in summary.blockers
     assert "realism check" not in " ".join(summary.next_steps)
+
+
+# --- the home-wide search (ADR-0070) ------------------------------------------------------
+
+
+def test_a_wider_search_in_the_home_blocks_some_evidence() -> None:
+    # clean in its own family, but 40 backtests across other instruments in this home deflate it
+    summary = build_summary(inputs(home_trial_count=40, dsr_home_wide=0.62))
+    assert "dsr_low_home_wide" in codes(summary)
+    assert summary.verdict_level == "not_conclusive"
+
+
+def test_the_home_wide_guard_is_silent_when_the_family_is_the_whole_search() -> None:
+    clean = inputs()
+    summary = build_summary(inputs(home_trial_count=clean.trial_count, dsr_home_wide=0.10))
+    assert "dsr_low_home_wide" not in codes(summary)
+    assert summary.verdict_level == "some_evidence"
+
+
+def test_a_wider_search_that_still_clears_the_bar_does_not_flag() -> None:
+    summary = build_summary(inputs(home_trial_count=40, dsr_home_wide=0.97))
+    assert "dsr_low_home_wide" not in codes(summary)
+    assert summary.verdict_level == "some_evidence"

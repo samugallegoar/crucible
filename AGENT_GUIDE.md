@@ -128,9 +128,16 @@ count (`validation.trial_count`) and the realism level. Never quote a Sharpe alo
 - **Sharpe ratio**: return per unit of risk. Its 95% range is the honest part: a wide range, or
   one that includes zero, means the data cannot tell skill from luck.
 - **Trades**: few trades (under about 100) means little evidence however good it looks.
-- **Deflated Sharpe**: the chance the Sharpe is real after counting every variant tried.
-- **Random re-ordering test**: the same returns shuffled; a strategy that does not beat shuffles has
-  not shown that its timing matters.
+- **Deflated Sharpe**: the chance the Sharpe is real after counting the variants recorded in this
+  trial family (`validation.trial_count_scope`); variants tried elsewhere are not in it.
+  `validation.dsr_home_wide` counts every backtest in the home (`home_trial_count`); if you have
+  tried the idea on several instruments, quote that one too.
+- **Random re-ordering test**: the same daily moves shuffled; quote it as "matched or beaten in
+  `exceedances` of `iterations` shuffles (p-value `p_value`)". A strategy that does not beat
+  shuffles has not shown that its timing matters; one that does has not shown it will continue.
+- **What the fills are**: `provenance.price_basis_note` and `provenance.execution_assumptions` say
+  it plainly (adjusted prices, fills at the signal bar's close, fixed costs, no order book); pass that on
+  when the person asks whether they could have traded it.
 
 ## Errors
 

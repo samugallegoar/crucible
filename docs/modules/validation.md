@@ -10,7 +10,7 @@ Gate 4 statistics. Detail sections follow.
   `per_period_sharpe`. `pbo.py` — `probability_of_backtest_overfitting`.
 - `sensitivity.py` — `sensitivity_surface_1d`, `sensitivity_surface_2d`.
 - `monte_carlo.py` — `ReturnOrderShuffleTest`, `StartDateShiftTest`, `BlockBootstrapTest`.
-- `null_tests.py` — `compare_to_null`; `factor_regression.py` — `factor_regression`;
+- `null_tests.py` — `compare_to_null` (Monte Carlo), `compare_to_single_null`; `factor_regression.py` — `factor_regression`;
   `contamination.py` — `check_contamination`.
 - `interfaces.py` — `Split` and the Protocols `Splitter`, `TrialRegistry`, `ResamplingTest`.
 
@@ -31,9 +31,13 @@ bootstrap CIs, contamination flagging.
   statistics. Implemented by three classes in `monte_carlo.py`.
 
 ## Implementations (`crucible/validation/splits.py`)
-- `WalkForwardSplitter(train_size, test_size, anchored, validate_size=0)` —
+- `WalkForwardSplitter(train_size, test_size, anchored, validate_size=0, purge=0)` —
   anchored (expanding) or rolling (fixed-width) train window; advance
   between folds is fixed at `test_size` (non-overlapping OOS coverage).
+  `purge` drops that many samples from the end of the train (and validate)
+  window: set it to the label horizon, or a forward-looking label leaks the
+  next window into training (ADR-0070; `test_unpurged_forward_labels_manufacture_an_edge_on_pure_noise`
+  shows an unpurged 20-bar label giving a correlation above 0.6 on pure noise).
 - `PurgedKFoldSplitter(n_splits, purge=0, embargo=0)` and
   `CombinatorialPurgedCVSplitter(n_groups, n_test_groups, purge=0,
   embargo=0)` share group-partition and purge/embargo arithmetic — plain
@@ -94,7 +98,12 @@ bootstrap CIs, contamination flagging.
   comes from `TrialRegistry.trial_sharpes(family)`. `N<=1` -> benchmark
   0.0 (no deflation without a search to deflate against); a non-positive
   PSR denominator raises `CrucibleError` rather than returning a bad
-  number. Wired into `run_experiment`: `manifest.json`'s `dsr`/
+  number, and so do non-finite returns and a zero-variance series (its
+  Sharpe ratio is undefined; ADR-0070 replaced the earlier "Sharpe 0,
+  DSR = PSR(0)" convention). `N` is the raw count of recorded trials in
+  the family, not an effective number of independent trials, and the PSR
+  variance assumes i.i.d. returns; DSR is not the probability that the
+  strategy is profitable. Wired into `run_experiment`: `manifest.json`'s `dsr`/
   `dsr_benchmark_sharpe`/`dsr_error` and the report's statistical-validity
   block carry the real value (or an explicit "not computable" reason).
   Convention and formula choices pinned in ADR-0015.
@@ -102,7 +111,18 @@ bootstrap CIs, contamination flagging.
   CSCV (Bailey, Borwein, López de Prado & Zhu 2015), implemented by
   reusing `CombinatorialPurgedCVSplitter` configured symmetrically
   (`n_test_groups == n_groups // 2`, purge=embargo=0) rather than a
-  separate splitter class. **Not wired into `run_experiment`**: PBO needs
+  separate splitter class. Rank convention (ADR-0070): out-of-sample rank
+  1 = worst, a split is overfit when `2 * rank <= N + 1` (logit <= 0,
+  computed on the integer rank, so no logarithm and no infinite logit).
+  Ties are resolved by expectation under uniform random tie-breaking, both
+  among in-sample co-winners and in the out-of-sample ranking, so a panel
+  of identical trials scores about 0.5, not 1.0; `n_tied_splits` counts the
+  splits that depended on a tie. Refuses NaN/infinite returns, a partition
+  shorter than two observations, and a constant non-zero row (undefined
+  Sharpe); a flat all-zero row scores Sharpe 0. Selection uses only each
+  split's in-sample columns. Tested against an exhaustive
+  tie-break-enumeration reference (`tests/unit/test_pbo.py`).
+  **Not wired into `run_experiment`**: PBO needs
   a trials × periods returns panel, which a single run doesn't have — see
   Known gaps and ADR-0015.
 
@@ -140,10 +160,19 @@ bootstrap CIs, contamination flagging.
 
 ## Implementations (`crucible/validation/null_tests.py`)
 - `compare_to_null(real_value, null_values) -> NullTestResult` — pure
-  statistics, no engine access: `p_value = P(null >= real)`. Degenerates
-  correctly to a binary 0.0/1.0 when given a single null value (the
-  sign-flip test's case, ADR-0019 — deterministic, not a distribution).
-  Refuses an empty `null_values` (`ConfigurationError`). The re-simulation
+  statistics, no engine access: a one-sided Monte Carlo test with
+  `p_value = (k + 1) / (B + 1)`, `k` the valid null values `>=` the real
+  one (ties count against the strategy), `B` the valid (non-NaN) null
+  values; it is never 0, and `n_exceedances`, `n_valid`, `n_invalid` and
+  `monte_carlo_se = sqrt(p (1 - p) / B)` are reported with it (ADR-0070;
+  the earlier `mean(null >= real)` reported 0 on zero exceedances).
+  Calibrated: under exchangeability `P(p <= 0.05) = 0.05` exactly for
+  `B = 19` (checked over 4,000 replications in `tests/unit/test_null_tests.py`).
+  `compare_to_single_null(real_value, null_value)` is the sign-flip's
+  single deterministic comparison: `p_value` is `None` (one value is not a
+  distribution), `null_matched_or_beat_real` says which side it fell.
+  Refuses an empty or all-NaN `null_values` and a non-finite real value
+  (`ConfigurationError`). Neither corrects for multiple testing. The re-simulation
   that produces `null_values` — reading real bars, transforming them,
   re-running `run_experiment` against the transformed data — lives in
   `experiments/null_tests.py`, one layer up (this module never runs the
@@ -194,7 +223,9 @@ implement `Splitter`. All stochastic components take an explicit
   would have already partially mitigated — deliberately the stricter,
   conservative default (ADR-0021), not an oversight.
 - Null tests cover shuffled/sign-flipped/synthetic-GBM data
-  only (ADR-0019); "time-shifted signals" (a fourth variant) needs
+  only (ADR-0019; the intraday-only and overnight-only shuffles of
+  ADR-0070 exist as transforms in `data.transforms` but are not wired into
+  an orchestration function or the CLI); "time-shifted signals" (a fourth variant) needs
   strategy-level signal-delay machinery, not a data transform, and is
   not implemented.
 - `experiments.null_tests`'s temp data stores
@@ -216,3 +247,9 @@ implement `Splitter`. All stochastic components take an explicit
   boundaries are a deterministic function of `n_samples`/`n_groups`) but is not first-class metadata.
 - Acceptance: a known-overfit strategy shows PBO > 0.5 and DSR ≈ 0, while a genuine synthetic edge
   survives (`tests/integration/test_phase3_acceptance.py`).
+- PBO's tie rule makes a degenerate panel (every split tied) report the probability of a random
+  pick (about 0.5), which describes the selection procedure, not the strategies; read it with
+  `n_tied_splits`. The CLI JSON carries it.
+- DSR's `N` is the number of trials recorded in the family; the registry cannot know about trials
+  run elsewhere, so the correction is a lower bound on the true search (the one-step result says
+  so in `validation.trial_count_scope`, ADR-0070). No effective-independent-trials estimate.

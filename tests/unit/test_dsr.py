@@ -46,10 +46,31 @@ def test_rejects_too_few_return_observations() -> None:
         deflated_sharpe_ratio(np.array([0.01, 0.02]), trial_sharpes=[0.1])
 
 
-def test_zero_std_returns_have_zero_sharpe_not_a_crash() -> None:
-    flat = np.zeros(10)
-    result = deflated_sharpe_ratio(flat, trial_sharpes=[0.0])
-    assert result.observed_sharpe == 0.0
+@pytest.mark.parametrize("value", [0.0, 0.001])
+def test_zero_variance_returns_are_undefined_not_a_probability(value: float) -> None:
+    # regression: a flat series scored Sharpe 0 and DSR = PSR(0) = 0.5 with one trial, a
+    # confident-looking probability for a strategy whose Sharpe ratio does not exist (ADR-0070)
+    with pytest.raises(CrucibleError, match="zero variance"):
+        deflated_sharpe_ratio(np.full(10, value), trial_sharpes=[0.0])
+
+
+def test_rejects_non_finite_returns() -> None:
+    with pytest.raises(CrucibleError, match="NaN or infinite"):
+        deflated_sharpe_ratio(np.array([0.01, np.nan, 0.02, 0.0]), trial_sharpes=[0.1])
+
+
+def test_dsr_rises_with_sample_length_for_the_same_sharpe() -> None:
+    # same per-period moments, four times the observations: more evidence, higher PSR/DSR
+    short = deflated_sharpe_ratio(_RETURNS, trial_sharpes=[0.2, 0.0, -0.1])
+    long = deflated_sharpe_ratio(np.tile(_RETURNS, 4), trial_sharpes=[0.2, 0.0, -0.1])
+    assert long.dsr > short.dsr
+
+
+def test_more_dispersed_trials_raise_the_benchmark() -> None:
+    narrow = deflated_sharpe_ratio(_RETURNS, trial_sharpes=[0.1, 0.11, 0.12, 0.13])
+    wide = deflated_sharpe_ratio(_RETURNS, trial_sharpes=[-0.5, 0.0, 0.5, 1.0])
+    assert wide.benchmark_sharpe > narrow.benchmark_sharpe
+    assert wide.dsr < narrow.dsr
 
 
 def test_psr_refuses_a_non_positive_denominator() -> None:

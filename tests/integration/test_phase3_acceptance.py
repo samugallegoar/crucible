@@ -137,7 +137,9 @@ def test_genuine_autocorrelation_edge_survives_a_shuffle_null_test(
     )
     assert len(null_runs) == _NULL_ITERATIONS
     assert real_run.metrics["sharpe"].value > 1.0
-    assert result.p_value == 0.0  # beats every one of the shuffled replays
+    assert result.n_exceedances == 0  # beats every one of the shuffled replays
+    # ...which a Monte Carlo test reports as its floor 1/(B+1), never 0 (ADR-0070)
+    assert result.p_value == pytest.approx(1 / (_NULL_ITERATIONS + 1))
 
 
 def test_a_priori_no_edge_strategy_is_not_flagged_by_the_same_null_test(

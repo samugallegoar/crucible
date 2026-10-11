@@ -13,8 +13,9 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
 - `quality.py` — the five checks of `DEFAULT_BAR_CHECKS` (`sorted_unique_event_times`,
   `positive_prices`, `ohlc_bounds`, `availability_not_before_event`, `calendar_coverage`; the
   names are the `data.quality_skip` keys) and `run_quality_checks`.
-- `transforms.py` — the null-test bar transforms (`shuffle_bar_returns`, `sign_flip_returns`,
-  `synthetic_gbm_like`).
+- `transforms.py` — the null-test bar transforms (`shuffle_bar_returns`, `shuffle_intrabar_returns`,
+  `shuffle_overnight_gaps`, `sign_flip_returns`, `synthetic_gbm_like`; `BarComponents`,
+  `decompose`, `reconstruct`).
 - `importers/` — spec-driven `ohlcv_csv`, `polymarket_csv`, `polymarket_parquet` importers behind
   `crucible data build`.
 - `providers/` — price providers behind one interface (`PriceProvider`, ADR-0063): the `tiingo` and `yfinance`
@@ -59,12 +60,23 @@ calendars, quality checks.
   OHLC bounds, `available_at >= event_time`, calendar coverage);
   `run_quality_checks` refuses skips without a reason.
 - `universe.py`: `TableUniverseProvider.members(as_of)`; `end_at` exclusive.
-- `transforms.py`: null-test bar transforms (ADR-0019) —
-  `shuffle_bar_returns`/`sign_flip_returns`/`synthetic_gbm_like(bars, ...)`.
-  Each decomposes a symbol's bars into per-bar shape features
-  (`intrabar_return`, non-negative `high_wick`/`low_wick`, `volume`),
-  transforms only what that null test targets, then re-chains
-  `open[k+1] = close[k]` and reapplies the wick fractions — every
+- `transforms.py`: null-test bar transforms (ADR-0019, ADR-0070) —
+  `shuffle_bar_returns` (whole bars after the first: the multiset of
+  close-to-close returns and the final close are preserved exactly),
+  `shuffle_intrabar_returns` (intraday shapes only, gaps stay on their
+  dates), `shuffle_overnight_gaps` (gaps only), `sign_flip_returns` (gap
+  and intraday return negated), `synthetic_gbm_like` (i.i.d. normal
+  close-to-close returns matched to the real mean/stdev). The module
+  docstring tabulates what each preserves and destroys.
+  Each decomposes a symbol's bars into per-bar components
+  (overnight `gap = open[k]/close[k-1] - 1`, `intrabar_return`,
+  non-negative `high_wick`/`low_wick`, `volume`), transforms only what that
+  null test targets, then rebuilds `open[k+1] = close[k] * (1 + gap[k+1])`
+  from the real first open and reapplies the wick fractions. (Before
+  ADR-0070 the rebuild was `open[k+1] = close[k]`, which dropped every
+  overnight gap: on AAPL 2009-2025 the gapless series compounds at 11.3 % a
+  year against 26.8 % close-to-close, so the old shuffle null had less than
+  half the real drift.) Every
   reconstructed bar is valid (`high >= max(open,close)`,
   `low <= min(open,close)`) by construction, not by post-hoc repair.
   Raises `DataQualityError` if a transformed return would drive a price to
@@ -126,8 +138,10 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
   ended before today. `registry.py` — name to adapter factory.
 - `tiingo.py` — Tiingo end-of-day bars, `raw` and `adjusted`, daily only (its IEX intraday timestamps are
   undocumented, so it is not offered); needs `TIINGO_API_KEY`.
-- `yfinance.py` — Yahoo Finance via the optional `yfinance` package (`uv sync --extra yfinance`), no key,
+- `yfinance.py` — Yahoo Finance via the `yfinance` package (a core dependency, imported lazily), no key,
   `adjusted` only, daily and intraday (about 60 days). Unofficial: it can break or be rate-limited.
+  Yahoo re-computes the adjusted series after every later dividend or split, so it is **not
+  point-in-time**: a past bar's price depends on the download date (ADR-0070).
 - Price basis: Tiingo supplies both `raw` and `adjusted`. A provider that cannot honestly supply a basis
   refuses it rather than mislabel (Yahoo's `Close` is split-adjusted, so it will offer `adjusted` only).
 

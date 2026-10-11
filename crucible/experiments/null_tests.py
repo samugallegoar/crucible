@@ -28,7 +28,11 @@ from crucible.data.contracts import BAR_SCHEMA, BAR_SORT_KEYS
 from crucible.data.store import ParquetDataStore, build_dataset
 from crucible.data.transforms import shuffle_bar_returns, sign_flip_returns, synthetic_gbm_like
 from crucible.experiments.runner import run_experiment
-from crucible.validation.null_tests import NullTestResult, compare_to_null
+from crucible.validation.null_tests import (
+    NullTestResult,
+    compare_to_null,
+    compare_to_single_null,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -125,14 +129,16 @@ def null_test_sign_flip(
     """The "sign-flipped" null test: deterministic, run exactly once
     (ADR-0019) -- negates every bar's intrabar return via
     ``crucible.data.transforms.sign_flip_returns`` and compares the real
-    run's ``metric`` against that single inverted-data run."""
+    run's ``metric`` against that single inverted-data run. One value is not a
+    distribution: the result has no p-value, only whether the null matched or beat
+    the real run (ADR-0070)."""
     _refuse_quoted_spread(config)
     real_run = run_experiment(config, artifacts_root)
     bars = _real_bars(config)
     null_run = _run_on_transformed_bars(
         config, sign_flip_returns(bars), artifacts_root, "sign_flip"
     )
-    result = compare_to_null(real_run.metrics[metric].value, [null_run.metrics[metric].value])
+    result = compare_to_single_null(real_run.metrics[metric].value, null_run.metrics[metric].value)
     return result, real_run, null_run
 
 

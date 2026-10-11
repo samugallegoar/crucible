@@ -277,8 +277,8 @@ def render_html(doc: dict[str, object], charts: dict[str, object]) -> str:
     if isinstance(null, dict):
         null_html = (
             f"<p>Random re-ordering test: {null['iterations']} shuffles of the same daily returns; "
-            f"the strategy's Sharpe was matched or beaten {float(null['p_value']) * 100:.0f}% of "
-            "the time.</p>"
+            f"the strategy's Sharpe was matched or beaten in {null.get('exceedances', '?')} of "
+            f"them (Monte Carlo p-value {float(null['p_value']):.3f}).</p>"
         )
 
     subtitle = (
