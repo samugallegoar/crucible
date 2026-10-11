@@ -23,6 +23,36 @@ the bar's fill range (`[low, high]`, widened to its quotes when it has them; I5 
 adjustments, through-only limit fills, arrival rules under latency, and
 adverse OCO resolution. Level 5 (order-book replay) is deferred.
 
+## Execution modes and validated scope (ADR-0070)
+
+Every result names its engine and realism level; the one-step result also carries
+`provenance.execution_assumptions`. The modes do **not** share one set of assumptions, so a
+vectorized result and an event-driven result of the same rules are different claims.
+
+| | vectorized (`run-vectorized`, the one-step `backtest`) | event-driven Level 0 / Level 1 | Level 2 | Level 3 | Level 4 |
+|---|---|---|---|---|---|
+| Orders | target position only | market, limit, stop, stop-limit, trailing, bracket/OCO, TWAP/VWAP | same | same | same |
+| Signal → fill | the weight is lagged one bar against close-to-close returns: in effect the position is taken at the signal bar's close (ADR-0035) | Level 0: the current bar's close; Level 1: the next bar's open for market orders, limits/stops on that bar's path (ADR-0010) | + latency (arrival rules, ADR-0012) | same | same |
+| Price source | bar close | Level 0: close; Level 1: open / limit / stop, clamped to `[low, high]` | + half-spread (static, dynamic or quoted) | same | same |
+| Costs | fixed bps slippage + commission | Level 1: fixed bps | + spread | + participation caps, partial fills | + square-root impact |
+| Liquidity | none | none | none | `max_bar_vol`, `max_adv` (I6) | same |
+| Rejections | none | risk limits, insufficient cash/margin | same | same | same |
+| Corporate actions | none (adjusted prices only) | cash dividends, delistings; others refused | same | same | same |
+| End of run | open position marked, not traded | same | same | same | same |
+
+Where OHLC cannot say what happened inside a bar the ladder takes the worse case: a stop
+that the open gaps through fills at the open; a limit must trade *through*, not touch; when
+both legs of an OCO trigger in one bar the adverse leg executes; a mid-bar arrival gets no
+intrabar credit. These are tested in `tests/unit/test_execution_ladder*.py`.
+
+**Validated scope.** Bar-based simulation only. No fill model has been compared with real
+quotes, trade prints or order-book data (none is available to the project), so fill realism is
+*assumed conservative*, not *empirically validated*. Level 5 (order-book replay) does not exist:
+there is no order-book sequencing, queue position, cancellation dynamics, latency distribution
+calibrated to a venue, venue fee/rebate schedule or routing model. Crucible therefore makes no
+claim about high-frequency or intraday-microstructure strategies; results for them are outside
+the validated scope.
+
 ## Structure
 - `models.py` — the pluggable pieces, all deterministic under the seeded
   run rng:
@@ -101,6 +131,12 @@ and changes state during a run is refused at `checkpoint()` by name. Restore is 
 the engine and simulator share one RNG object, so its state is restored into that object.
 
 ## Known gaps
+- A spread or slippage that would put a fill outside the bar's range is clamped into it (I5),
+  so the cost is erased when the open is the bar's extreme: slightly optimistic. Pinned by
+  `test_known_gap_cost_beyond_the_bar_range_is_clamped_away` (ADR-0070).
+- The engine's only random draw is latency. On daily bars a sub-second latency never changes
+  which bar an order reaches, so a Level 2-4 run on daily data is effectively deterministic in
+  its seed (a latency of about a day does change it; ADR-0070).
 - `FillModel` (`execution/interfaces.py`) is a stub Protocol: fills are produced inside `LadderExecutionSimulator`, not by a pluggable model.
 - VWAP slices equally and prices at (H+L+C)/3 — an approximation until
   intrabar data exists (ADR-0012).

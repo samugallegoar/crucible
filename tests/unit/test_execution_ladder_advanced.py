@@ -351,3 +351,55 @@ def test_impact_without_history_rejects_the_order() -> None:
     assert [c.state for c in closed] == [OrderState.REJECTED]
     assert order.state is OrderState.REJECTED
     assert any("rejected" in r for _, r in sim.why_not_filled(order.id))
+
+
+# ------------------------------------------------- mirror cases and known gaps (ADR-0070)
+
+
+def test_sell_stop_triggers_intrabar_at_stop_price() -> None:
+    manager = InMemoryOrderManager()
+    sim = _ladder(manager)
+    _live(manager, sim, side=OrderSide.SELL, type_=OrderType.STOP, stop=98.0)
+    [fill], _ = sim.on_bar(_bar(100, 100.0, 101.0, 97.0, 97.5, open_time=50))
+    assert fill.price == 98.0
+
+
+def test_sell_stop_gap_down_fills_at_the_worse_open() -> None:
+    manager = InMemoryOrderManager()
+    sim = _ladder(manager)
+    _live(manager, sim, side=OrderSide.SELL, type_=OrderType.STOP, stop=98.0)
+    [fill], _ = sim.on_bar(_bar(100, 90.0, 91.0, 89.0, 90.5, open_time=50))
+    assert fill.price == 90.0  # gapped through: you get the open, not the stop
+
+
+def test_stop_limit_that_gaps_past_its_limit_does_not_fill() -> None:
+    manager = InMemoryOrderManager()
+    sim = _ladder(manager)
+    order = _live(manager, sim, type_=OrderType.STOP_LIMIT, stop=102.0, limit=103.0)
+    fills, _ = sim.on_bar(_bar(100, 100.0, 103.0, 99.0, 102.5, open_time=50))
+    assert fills == []  # armed
+    # the next bar opens at 110 and never trades back to the 103 limit
+    fills, _ = sim.on_bar(_bar(200, 110.0, 112.0, 108.0, 111.0, open_time=100))
+    assert fills == []
+    assert any("never traded through the limit" in r for _, r in sim.why_not_filled(order.id))
+
+
+def test_a_limit_touched_but_not_traded_through_does_not_fill() -> None:
+    # pessimistic queue position: touching the limit is not enough
+    manager = InMemoryOrderManager()
+    sim = _ladder(manager)
+    _live(manager, sim, type_=OrderType.LIMIT, limit=99.0)
+    fills, _ = sim.on_bar(_bar(100, 100.0, 101.0, 99.0, 100.5, open_time=50))
+    assert fills == []
+
+
+def test_known_gap_cost_beyond_the_bar_range_is_clamped_away() -> None:
+    # KNOWN GAP (ADR-0070, docs/modules/execution.md): the half-spread would put this buy at
+    # 101.0 above the bar's high of 100.0; the fill is clamped into [low, high] (I5), so the
+    # spread cost is silently erased when the open is the bar's extreme. This pins the current,
+    # slightly optimistic behaviour so a fix shows up as a deliberate test change.
+    manager = InMemoryOrderManager()
+    sim = _ladder(manager, spread_bps=200.0)  # half-spread = 1% of close
+    _live(manager, sim)
+    [fill], _ = sim.on_bar(_bar(100, 100.0, 100.0, 95.0, 100.0, open_time=50))
+    assert fill.price == 100.0  # not 101.0

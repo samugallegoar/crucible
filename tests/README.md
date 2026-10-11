@@ -160,6 +160,24 @@ The CI job (`.github/workflows/ci.yml`) runs `ruff`, `mypy --strict`, the layeri
 generator's `--check` and the full `pytest -q`, all from a locked install. Set `CI=true` locally to
 reproduce its derandomized hypothesis profile.
 
+## 9. Acceptance scenarios: can the system reject misleading evidence? (ADR-0070)
+
+Each scenario has a known right answer; together they show the engine refuses to flatter a
+result, not just that it produces one.
+
+| # | Scenario | Expected | Test |
+|---|---|---|---|
+| 1 | No predictive signal | null test not significant | `integration/test_phase3_acceptance.py::test_a_priori_no_edge_strategy_is_not_flagged_by_the_same_null_test` |
+| 2 | Known synthetic edge (AR(1)) | beats every shuffle, `p = 1/(B+1)` | `integration/test_phase3_acceptance.py::test_genuine_autocorrelation_edge_survives_a_shuffle_null_test` |
+| 3 | Deliberately leaked strategy | `LookaheadError` | `lookahead/test_leaky_strategy_canary.py`, `lookahead/test_poisoned_future*.py`; forward-label leakage in a split: `unit/test_validation_splits.py::test_unpurged_forward_labels_manufacture_an_edge_on_pure_noise` |
+| 4 | Edge that disappears after costs | gross Sharpe > 0, net < 0 | `integration/test_acceptance_costs.py` |
+| 5 | Identical strategies | PBO ≈ 0.5, not 1.0; no fake winner | `unit/test_pbo.py::test_identical_trials_are_a_coin_flip_not_certain_overfitting`, `::test_duplicating_the_dominant_trial_does_not_manufacture_overfitting` |
+| 6 | Missing sessions, corporate actions | refused, or skipped only with a reason; unsupported actions stop the run | `unit/test_quality_checks.py::test_missing_session_bar_is_refused`, `integration/test_dividends.py` |
+| 7 | Interrupted and resumed run | byte-identical to the uninterrupted run, at every boundary | `integration/test_checkpoint_resume_equivalence.py` |
+| 8 | Ambiguous OHLC execution | the adverse outcome (gap fills at the open, adverse OCO leg) | `unit/test_execution_ladder_advanced.py` |
+| 9 | Multi-asset portfolio | I1-I4 hold at every mark; I2 over random fills | `integration/test_multi_currency_accounting.py`, `property/test_pnl_reconciliation.py` |
+| 10 | Data insufficient for a conclusion | refused or `not_conclusive` | `integration/test_product_backtest.py::test_a_window_too_short_for_the_rules_is_refused`, the verdict guards in `unit/test_product_summary.py` |
+
 ## Known gaps
 
 - No shared synthetic-data fixture module: each test builds its own bars (§3).

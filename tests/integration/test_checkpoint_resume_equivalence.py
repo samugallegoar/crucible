@@ -613,3 +613,54 @@ def test_multi_symbol_promoted_strategy_survives_resume(tmp_path: Path) -> None:
     assert_resume_equivalent(
         make, [stamps[n // 3], stamps[n // 2]], tmp_path, presence=presence, baseline=baseline
     )
+
+
+# ------------------------------------------------- every boundary, and seed sensitivity (ADR-0070)
+
+
+def test_every_session_boundary_of_the_dividend_run(dividend_store: Path, tmp_path: Path) -> None:
+    baseline = make_engine(dividend_store).run()
+    stamps = _stamps(baseline)
+    assert len(stamps) == 5
+    assert_resume_equivalent(
+        lambda: make_engine(dividend_store), stamps, tmp_path, baseline=baseline
+    )
+
+
+def test_momentum_level_4_resumes_identically_at_many_boundaries(
+    momentum_store: Path, tmp_path: Path
+) -> None:
+    config = _momentum_config(momentum_store, "config_level4.yaml", random_latency=True)
+
+    def make() -> BacktestEngine:
+        return assemble_engine(config)
+
+    baseline = make().run()
+    stamps = _stamps(baseline)
+    n = len(stamps)
+    boundaries = sorted({stamps[(k * (n - 1)) // 8] for k in range(1, 9)})
+    assert len(boundaries) == 8
+    assert_resume_equivalent(make, boundaries, tmp_path, baseline=baseline)
+
+
+def test_a_different_seed_changes_a_randomized_run_and_the_same_seed_does_not(
+    momentum_store: Path,
+) -> None:
+    # the engine's only random draw is latency; on daily bars a sub-second latency never
+    # changes which bar an order reaches, so the draws are consumed but the outcome is
+    # degenerate. A latency of about a day does move orders across bars.
+    raw = _momentum_config(momentum_store, "config_level4.yaml").model_dump(mode="python")
+    raw["execution"]["latency"] = {
+        "type": "normal",
+        "mean_ms": 86_400_000.0,
+        "std_ms": 43_200_000.0,
+    }
+    config = ExperimentConfig.model_validate(raw)
+    raw["experiment"]["seed"] = config.experiment.seed + 1
+    reseeded = ExperimentConfig.model_validate(raw)
+
+    first = assemble_engine(config).run()
+    again = assemble_engine(config).run()
+    other = assemble_engine(reseeded).run()
+    assert_same_result(again, first)
+    assert [r["equity"] for r in other.equity_rows] != [r["equity"] for r in first.equity_rows]

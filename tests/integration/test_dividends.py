@@ -282,3 +282,50 @@ def test_a_short_covered_on_the_ex_date_still_pays_the_dividend(store: Path) -> 
     dividends = _divco_dividends(result)
     assert [Decimal(str(r["amount"])) for r in dividends] == [Decimal("-100")]
     assert result.final_snapshot.cash(USD) == Decimal("99900")  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    "action", ["split", "reverse_split", "stock_dividend", "spinoff", "merger", "symbol_change"]
+)
+def test_an_unsupported_corporate_action_stops_the_run(tmp_path: Path, action: str) -> None:
+    # The engine books cash dividends and delistings only. A split (or any other action) in
+    # the data must stop the run, never be skipped: skipping a 2:1 split on raw prices would
+    # book a fake 50% loss, and adjusting shares through a fill would book a fake realized
+    # P&L on a reverse split (ADR-0070).
+    from crucible.core.errors import CrucibleError
+
+    bars = pl.DataFrame(
+        {
+            "symbol": ["DIVCO"] * 3,
+            "event_time": [d * DAY for d in range(1, 4)],
+            "available_at": [d * DAY for d in range(1, 4)],
+            "open": [50.0, 50.0, 25.0],
+            "high": [50.5, 50.5, 25.5],
+            "low": [49.5, 49.5, 24.5],
+            "close": [50.0, 50.0, 25.0],
+            "volume": [1e6] * 3,
+        }
+    )
+    build_dataset(tmp_path, BARS, bars, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="test")
+    actions = pl.DataFrame(
+        {
+            "symbol": ["DIVCO"],
+            "action": [action],
+            "effective_at": [3 * DAY],
+            "event_time": [3 * DAY],
+            "available_at": [3 * DAY],
+            "value": [2.0],
+            "pay_at": [None],
+        },
+        schema_overrides={"value": pl.Float64, "pay_at": pl.Int64},
+    )
+    build_dataset(
+        tmp_path,
+        ACTIONS,
+        actions,
+        schema=CORPORATE_ACTION_SCHEMA,
+        sort_keys=CORPORATE_ACTION_SORT_KEYS,
+        source="test",
+    )
+    with pytest.raises(CrucibleError, match=rf"{action}.*not supported.*DIVCO"):
+        _run(tmp_path)
