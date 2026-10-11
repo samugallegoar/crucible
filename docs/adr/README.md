@@ -96,5 +96,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0067](0067-strategy-spec.md) | A declarative strategy spec that compiles to the vectorized signal path | accepted | The spec is data. A versioned (`spec_version: 1`), Pydantic-validated YAML/JSON document (`crucible/strategy_spec/`): `direction` (`long_only`, `long_short`), `entry`/`exit` conditions per side, … |
 | [0068](0068-product-layer.md) | A one-step product layer on top of the engine | accepted | `crucible/product/` sits above `experiments` and below `cli` in the layering contract |
 | [0069](0069-documentation-by-audience.md) | Documentation split by audience, reference pages stay where they are | accepted | Front door for users: `README.md` is a product page; `docs/guide/` holds user pages (install and connect an agent, the strategy spec, reading a report, an example session, FAQ and troubleshooting, … |
+| [0070](0070-statistical-correctness-audit.md) | Correct the null tests, PBO ties, Monte Carlo p-values and trial families | accepted | Transforms carry the gap. Each bar decomposes into `gap = open[k]/close[k-1] - 1`, `intrabar_return`, the two wick fractions and volume; the path is rebuilt from the real first open with `open[k+1] = … |
 
 <!-- END GENERATED: adr-index -->

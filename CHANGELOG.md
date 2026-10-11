@@ -8,6 +8,57 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Statistical correctness audit (ADR-0070)
+- **Fixed: the null-test transforms dropped every overnight gap.** Shuffled, sign-flipped and
+  synthetic bars were rebuilt with `open[k+1] = close[k]`, so the "shuffled returns" null had only
+  the open-to-close drift (AAPL 2009-2025: 11.3 % a year against 26.8 % close-to-close) and any
+  long-biased strategy beat it. `shuffle_bar_returns` now permutes whole bars (gap, intraday
+  return, wicks, volume) and preserves every close-to-close return and the final close exactly;
+  new `shuffle_intrabar_returns` and `shuffle_overnight_gaps` test the two halves separately.
+- **Fixed: PBO counted ties as overfitting.** Identical or all-flat trials scored PBO = 1.0; ties
+  are now resolved by expectation under random tie-breaking (identical trials score about 0.5),
+  `PboResult.n_tied_splits` and the `crucible optimize --json` `pbo.n_tied_splits` key report
+  them, and NaN/infinite returns, too-short partitions and constant non-zero rows are refused.
+- **Fixed: Monte Carlo p-values could be 0.** `compare_to_null` returns `(k + 1) / (B + 1)` with
+  `n_exceedances`, `n_valid`, `n_invalid` and a Monte Carlo standard error; NaN null values are
+  excluded instead of counted as non-exceedances. The sign-flip uses the new
+  `compare_to_single_null`, which has no p-value. One-step result: `validation.null_test` gains
+  `exceedances`, `invalid_iterations`, `p_value_method`; `schema_version` 2.
+- **Fixed: DSR printed a probability for an undefined Sharpe.** Zero-variance (and non-finite)
+  return series are refused and reported as "not computable" (`dsr_error`); constancy is tested
+  exactly in DSR and PBO, so a constant series no longer gets a ~1e16 Sharpe ratio.
+- **Changed: the one-step default trial family is the symbol set** (`quick:<symbols>`), not
+  symbols plus window, so trying another period counts as another trial. A second, home-wide DSR
+  counts every one-step trial in the home (`validation.home_trial_count`, `dsr_home_wide`,
+  `dsr_home_wide_error`); when it falls under 0.95 while the home has seen more trials than the
+  family, the new flag `dsr_low_home_wide` blocks `some_evidence`. The result gains
+  `validation.trial_family_source` and `validation.trial_count_scope`, and `provenance` gains
+  `price_basis_note` and `execution_assumptions`.
+- `tools/bootstrap_coverage.py` measures the empirical coverage of the Sharpe interval on
+  synthetic processes; the interval is now documented as approximate, with the measured numbers
+  in ADR-0070.
+- Docs: README, guide, FAQ and agent guide no longer claim an interval on every number or
+  point-in-time prices; yfinance is described as the core dependency it is (docstrings, error
+  message, `docs/modules/data.md`, `docs/data/providers.md`).
+- Golden: `sma_cross_spec_golden.json` `sha256` regenerated for the null-test, family and wording
+  changes above; final equity, benchmark equity, trade count and verdict unchanged.
+- **Fixed: walk-forward splits could leak forward-looking labels.** `WalkForwardSplitter` and
+  `WalkForwardConfig` gain `purge` (default 0, unchanged behaviour); set it to the label horizon.
+- Accounting: I2 (realized + unrealized - costs) is now property-tested over random fills,
+  partial closes and reversals; its documented precision is corrected (exact up to the 28-digit
+  rounding of the average cost). Unsupported corporate actions (splits and others) are pinned as
+  refused.
+- Determinism: resume equivalence at every boundary of a small run and eight of a randomized
+  one; experiment-id sensitivity tests; a seed test that shows sub-second latency is inert on
+  daily bars.
+- Execution: an execution-modes table and validated-scope statement in
+  `docs/modules/execution.md` (no HFT or order-book claim); mirror-case order tests; the
+  slippage/spread clamp at the bar's edge is documented and pinned as a known gap.
+- Acceptance scenarios indexed in `tests/README.md` §9; new edge-disappears-after-costs and
+  metamorphic (scale, row-order) tests.
+- CI: tests on Ubuntu, Windows and macOS; a clean-install job of the built wheel with runtime
+  dependencies only. `mcp` no longer described as an optional extra.
+
 ### Product layer: a no-code, one-step backtest (ADR-0067, ADR-0068, ADR-0069)
 - Declarative **strategy specs** (`crucible/strategy_spec/`): moving-average crossovers, threshold
   rules on `rsi`, `roc`, `highest`/`lowest`, Bollinger bands, long-only or long/short, `all_in` or
