@@ -1,6 +1,6 @@
 """The MCP server (ADR-0066): tools are the ``--json`` CLI, reached through an MCP client.
 
-Skipped when the optional ``mcp`` extra is not installed (``uv sync --extra mcp``).
+Skipped when the ``mcp`` package (a core dependency) cannot be imported.
 """
 
 from __future__ import annotations

@@ -191,7 +191,7 @@ def test_the_registry_builds_yfinance_and_a_missing_package_says_how_to_install_
     )
     assert provider.info.name == "yfinance"
     monkeypatch.setitem(sys.modules, "yfinance", None)  # an ImportError, as if not installed
-    with pytest.raises(ProviderUnavailableError, match=r"uv sync --extra yfinance"):
+    with pytest.raises(ProviderUnavailableError, match=r"reinstall with `uv sync`"):
         registry.build_provider("yfinance", settings, calendar="XNYS")
 
 

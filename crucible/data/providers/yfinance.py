@@ -1,8 +1,10 @@
 """yfinance adapter (ADR-0063): UNOFFICIAL, may break or be rate-limited without notice.
 
 yfinance scrapes Yahoo Finance. It needs no key but Yahoo can change its pages, block a client or
-throttle at any time, so a failure here is not necessarily a bug in Crucible. The package is an
-optional extra (``uv sync --extra yfinance``); without it this provider refuses with that command.
+throttle at any time, so a failure here is not necessarily a bug in Crucible. The package is a
+core dependency (``pyproject.toml``; the ``yfinance`` extra is kept only as an alias). It is still
+imported lazily, so a broken or missing install surfaces as a provider refusal, not an import
+error at startup.
 
 Facts (yfinance source, verified 2026-10-07): ``Ticker.history(start, end, interval, auto_adjust)``
 takes ``start`` inclusive and ``end`` **exclusive**; the index is tz-aware in the exchange's time
@@ -10,6 +12,10 @@ zone, a daily bar stamped midnight local and an intraday bar at its start; intra
 limited (about 60 days). Yahoo's unadjusted ``Close`` is already **split-adjusted**, so a true raw
 series does not exist here: only ``price_basis="adjusted"`` (``auto_adjust=True``, splits and
 dividends) is offered, and ``raw`` is refused rather than mislabelled (AGENTS.md section 9).
+The adjusted series is re-computed by Yahoo whenever a later dividend or split occurs, so it is
+not point-in-time: a past bar's adjusted price depends on the download date, and a re-download
+can change a dataset's content hash. It is a total-return research series, not the quotes that
+traded on the day (ADR-0070).
 
 The adapter never imports pandas: it reads the returned frame through ``index`` and column access.
 """
@@ -120,7 +126,7 @@ class YFinanceProvider(BarsProvider):
                 msg = (
                     f"yfinance ({ticker}): the package failed with {type(exc).__name__}, which "
                     "points at a version mismatch rather than the network, so it is not retried. "
-                    f"Try `uv sync --extra yfinance --upgrade-package yfinance`; {_UNOFFICIAL}"
+                    f"Try `uv sync --upgrade-package yfinance`; {_UNOFFICIAL}"
                 )
                 raise ProviderError(msg) from None
             except Exception as exc:  # yfinance raises its own and requests' exception types
@@ -183,9 +189,9 @@ def _default_history() -> Callable[..., Any]:
         import yfinance
     except ImportError:
         msg = (
-            "the yfinance package is not installed; install it with `uv sync --extra yfinance` "
-            "(it is optional so the core install stays small), or choose another provider with "
-            "--provider tiingo"
+            "the yfinance package could not be imported although it is a core dependency of "
+            "crucible; reinstall with `uv sync` (or `uv tool install --reinstall crucible`), or "
+            "choose another provider with --provider tiingo"
         )
         raise ProviderUnavailableError(msg) from None
 

@@ -81,7 +81,13 @@ The standard library carries the rest: `decimal`, `dataclasses`, `hashlib`,
 ## Known gaps
 
 - `pyarrow` is declared but never imported; keep it (Arrow interchange in ADR-0002),
-  demote it to an extra, or drop it — **owner decision**.
+  demote it to an extra, or drop it — **owner decision**. Evidence (2026-10-10, ADR-0070): in a
+  clean install of the wheel with `pyarrow` uninstalled, the Parquet store (build and
+  point-in-time read), a vectorized run and the DuckDB trial registry all worked. The
+  event-driven engine, the one-step product flow and the yfinance provider were not exercised
+  without it, so dropping it still needs that check.
+- CI installs the built wheel into an environment with runtime dependencies only and imports every
+  entry point (`clean-install` job), so an undeclared runtime import fails CI (ADR-0070).
 - `numba` and any hot-path port are deferred (ADR-0003); the opt-in scale benchmarks
   (`tests/bench`, ADR-0054) showed none was needed
   beyond the opt-in `bench` marker.

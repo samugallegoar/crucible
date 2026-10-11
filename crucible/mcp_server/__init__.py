@@ -1,1 +1,1 @@
-"""MCP server over the machine-readable CLI (ADR-0066); needs the optional ``mcp`` extra."""
+"""MCP server over the machine-readable CLI (ADR-0066); ``mcp`` is a core dependency (ADR-0068)."""

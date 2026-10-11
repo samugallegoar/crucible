@@ -21,7 +21,7 @@ You are working on **Crucible**, a quant backtesting engine designed to be drive
 - `uv run python -m tools.lint_imports` — the layering rule (`docs/ARCHITECTURE.md`, "Layering rule"). `uv run python -m tools.docgen --write` — regenerate the generated docs (`docs/INVENTORY.md`, `docs/SCHEMAS.md`, `docs/adr/README.md`); `--check` fails if they are stale.
 - Format only `crucible tests examples tools`; formatting the repository root rewrites the Markdown code blocks under `docs/` and corrupts them.
 - `uv run crucible --help` — CLI.
-- Pre-commit is configured; CI runs lint, mypy, import-linter, the doc generator check, and tests on every push. Keep it green.
+- Pre-commit is configured; CI runs lint, mypy, import-linter, the doc generator check, the full test suite on Ubuntu, Windows and macOS, and a clean install of the built wheel with runtime dependencies only, on every push. Keep it green.
 - `uv run python -m tools.check` runs the five gates below in order of cost and stops at the first failure (`--keep-going` summarizes instead, `--no-tests` is the static gates only, `--list` prints them); a failure prints the tail of its output and writes the full output to `.check_logs/` (gitignored). `--fast` runs the tests with `-m "not slow"`, the fast tier for the inner loop; a plain `pytest` and the default `tools.check` always run **everything**, and the full run is what you hand back.
 
 Core libraries: Polars, NumPy, DuckDB, PyArrow, Pydantic v2, `exchange_calendars`, Numba (hot paths only, later), pytest, hypothesis. Every dependency, why it is there, and what may never be added: `docs/DEPENDENCIES.md`.

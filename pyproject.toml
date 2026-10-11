@@ -106,8 +106,8 @@ module = "exchange_calendars.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# yfinance is an optional extra (ADR-0063): not installed in every environment, and only
-# crucible/data/providers/yfinance.py imports it, lazily.
+# yfinance ships no type information; it is a core dependency, imported lazily and only by
+# crucible/data/providers/yfinance.py (ADR-0063, docs/DEPENDENCIES.md).
 module = "yfinance.*"
 ignore_missing_imports = true
 

@@ -25,7 +25,48 @@ jobs:
         run: uv run python -m tools.lint_imports
       - name: Generated docs are current
         run: uv run python -m tools.docgen --check
-      - name: Tests
-        run: uv run pytest -q
       - name: CLI smoke
         run: uv run crucible --help
+
+  # The full suite on every OS: the golden fixtures pin byte-identical artifacts, so a green run
+  # on all three is the continuous proof of ADR-0055's cross-platform determinism (ADR-0070).
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Sync (locked)
+        run: uv sync --locked --all-extras
+      - name: Tests
+        run: uv run pytest -q
+
+  # The published wheel with runtime dependencies only (no dev or test tools): catches a runtime
+  # import of a package that is not declared in [project.dependencies] (ADR-0070).
+  clean-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Build the wheel
+        run: uv build --wheel
+      - name: Install it into a fresh environment
+        run: |
+          uv venv /tmp/clean
+          VIRTUAL_ENV=/tmp/clean uv pip install dist/*.whl
+      - name: Import every runtime entry point and run the CLI
+        run: |
+          /tmp/clean/bin/python -c "import crucible.cli.main, crucible.product.backtest, crucible.mcp_server.server, crucible.data.providers.yfinance, crucible.core.engine, crucible.vectorized.engine"
+          /tmp/clean/bin/crucible --help

@@ -160,7 +160,8 @@ def build_server() -> MCPServer:
     except ImportError:
         msg = (
             "the MCP server needs the 'mcp' package, version 2.3 or newer (2.x): reinstall "
-            "Crucible (`uv tool install --reinstall ...`) or run `uv sync --extra mcp`"
+            "Crucible (`uv tool install --reinstall ...`) or run `uv sync` (it is a core "
+            "dependency)"
         )
         raise ConfigurationError(msg) from None
 

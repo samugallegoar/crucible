@@ -37,7 +37,7 @@ days before `--end` (`early_end:`, e.g. a delisting).
 ## Re-run
 
 ```bash
-uv sync --extra yfinance            # only for the yfinance provider
+uv sync                            # yfinance is a core dependency
 uv run crucible data fetch --provider yfinance --store data/processed --dataset spy_daily \
     --symbols SPY --start 2020-01-01 --end 2024-12-31 --refresh
 ```
