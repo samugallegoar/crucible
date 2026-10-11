@@ -8,6 +8,30 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Drawdown, dataset identity, DSR assumptions and point-in-time semantics (ADR-0071)
+- **Fixed: the maximum-drawdown bootstrap dropped a first-period loss.** Resampled paths started
+  at `1 + r_1` instead of 1.0 (`[-0.10, 0.10]` scored 0 %), so the interval targeted a different
+  statistic than the point estimate. One definition now lives in `crucible.core.drawdown` and is
+  used by the metrics and the Monte Carlo tests; invalid inputs are refused. The momentum golden's
+  `metrics.json` hash moved; every simulation artifact is unchanged.
+- **Fixed: one-step datasets ignored the calendar.** The calendar (canonicalised, so `nyse` and
+  `XNYS` are one) is part of the dataset name, `request.json` records the effective request, and a
+  stored dataset is reused only when it matches. A replaced dataset is archived under
+  `<home>/archive/`. Datasets from before this change are fetched again on first use.
+- **Fixed: DSR could undercount `N`.** `deflated_sharpe_ratio(..., n_trials=)` counts trials
+  without a recorded Sharpe, refuses too few Sharpes to estimate the dispersion, non-finite ones
+  and families that mix return frequencies (the registry now records `period_ns`, migrated in
+  place). Run manifests gain `dsr_n_trials_with_sharpe` and `bars_price_basis`.
+- **Fixed: `history` counted a revised observation twice.** It now returns the latest version
+  available at `as_of` once per `event_time`.
+- **New guard:** adjusted bars with a cash-dividend corporate-actions dataset are refused (each
+  dividend would be counted twice).
+- `tools/dsr_calibration.py` measures the best-of-N DSR rule: about 5 % false positives with one
+  trial, 0-0.5 % with N = 10-100 (4 % for highly correlated trials), and low power (7-11 % for an
+  annualized Sharpe of about 1.27 over five years). Documented as conservative, not calibrated.
+- Docs separate query-time restriction, availability timestamps, version integrity (not provided)
+  and price basis.
+
 ### Statistical correctness audit (ADR-0070)
 - **Fixed: the null-test transforms dropped every overnight gap.** Shuffled, sign-flipped and
   synthetic bars were rebuilt with `open[k+1] = close[k]`, so the "shuffled returns" null had only
