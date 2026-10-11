@@ -24,6 +24,7 @@ class WalkForwardConfig(_FrozenModel):
     test_size: int = Field(gt=0)
     anchored: bool
     validate_size: int = Field(ge=0, default=0)
+    purge: int = Field(ge=0, default=0)
 
 
 class PurgedKFoldConfig(_FrozenModel):

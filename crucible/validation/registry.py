@@ -27,6 +27,7 @@ def build_splitter(config: SplitterConfig) -> Splitter:
             test_size=config.test_size,
             anchored=config.anchored,
             validate_size=config.validate_size,
+            purge=config.purge,
         )
     if isinstance(config, PurgedKFoldConfig):
         return PurgedKFoldSplitter(

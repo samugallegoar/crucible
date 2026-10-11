@@ -135,3 +135,45 @@ def test_walk_forward_rejects_too_few_samples() -> None:
     splitter = WalkForwardSplitter(train_size=100, test_size=10, anchored=False)
     with pytest.raises(ConfigurationError, match="no walk-forward splits fit"):
         list(splitter.splits(50))
+
+
+def test_walk_forward_purge_hand_traced() -> None:
+    splitter = WalkForwardSplitter(
+        train_size=10, test_size=5, anchored=False, validate_size=4, purge=2
+    )
+    first = next(iter(splitter.splits(30)))
+    assert first.train == ((0, 8),)  # the last 2 of [0, 10) are purged
+    assert first.validate == ((10, 12),)  # the last 2 of [10, 14) are purged
+    assert first.test == ((14, 19),)  # test windows do not move
+
+
+def test_walk_forward_rejects_a_purge_that_empties_a_window() -> None:
+    with pytest.raises(ConfigurationError, match="whole training window"):
+        WalkForwardSplitter(train_size=3, test_size=2, anchored=True, purge=3)
+    with pytest.raises(ConfigurationError, match="whole validate window"):
+        WalkForwardSplitter(train_size=10, test_size=2, anchored=True, validate_size=2, purge=2)
+
+
+def test_unpurged_forward_labels_manufacture_an_edge_on_pure_noise() -> None:
+    # adversarial (ADR-0070): i.i.d. returns, label = sum of the next 20 returns. A "model"
+    # that predicts every test label with the last fitted training label has no skill, but
+    # without a purge that last label is computed from the test window's own returns.
+    import numpy as np
+
+    horizon, n = 20, 4000
+    returns = np.random.default_rng(7).normal(0.0, 0.01, n + horizon)
+    labels = np.array([returns[t + 1 : t + 1 + horizon].sum() for t in range(n)])
+
+    def score(purge: int) -> float:
+        predicted, actual = [], []
+        splitter = WalkForwardSplitter(train_size=200, test_size=5, anchored=False, purge=purge)
+        for split in splitter.splits(n):
+            last_fitted = split.train[-1][1] - 1
+            for t in range(*split.test[0]):
+                predicted.append(labels[last_fitted])
+                actual.append(labels[t])
+        return float(np.corrcoef(predicted, actual)[0, 1])
+
+    leaky, purged = score(0), score(horizon)
+    assert leaky > 0.6  # a "strong edge" from leakage alone
+    assert abs(purged) < 0.1  # gone once the label horizon is purged

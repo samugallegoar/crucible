@@ -178,10 +178,14 @@ class CombinatorialPurgedCVSplitter:
 
 @dataclass(frozen=True, slots=True)
 class WalkForwardSplitter:
-    """Walk-forward, anchored or rolling. Train always
-    precedes test, so there's no purge concept here — the optional
-    ``validate`` window (a three-way "train/validate/test") is what
-    separates them. The advance between folds is fixed to ``test_size``:
+    """Walk-forward, anchored or rolling. Train always precedes test in time,
+    but that alone does not stop leakage when a sample's label looks forward:
+    with an ``h``-bar forward label, the last ``h`` training labels are computed
+    from prices inside the next window. ``purge`` drops that many samples from
+    the end of the training window (and of the optional ``validate`` window)
+    so no label of a fitted sample overlaps the window evaluated after it
+    (ADR-0013, ADR-0070); set it to the label horizon. The test windows do
+    not move. The advance between folds is fixed to ``test_size``:
     non-overlapping, exhaustive OOS coverage ("results aggregate
     OOS only")."""
 
@@ -189,6 +193,7 @@ class WalkForwardSplitter:
     test_size: int
     anchored: bool
     validate_size: int = 0
+    purge: int = 0
 
     def __post_init__(self) -> None:
         if self.train_size <= 0:
@@ -199,6 +204,21 @@ class WalkForwardSplitter:
             raise ConfigurationError(msg)
         if self.validate_size < 0:
             msg = f"validate_size must be >= 0, got {self.validate_size}"
+            raise ConfigurationError(msg)
+        if self.purge < 0:
+            msg = f"purge must be >= 0, got {self.purge}"
+            raise ConfigurationError(msg)
+        if self.purge >= self.train_size:
+            msg = (
+                f"purge={self.purge} would remove the whole training window "
+                f"(train_size={self.train_size}); use a longer train_size or a shorter purge"
+            )
+            raise ConfigurationError(msg)
+        if self.validate_size and self.purge >= self.validate_size:
+            msg = (
+                f"purge={self.purge} would remove the whole validate window "
+                f"(validate_size={self.validate_size}); use a longer validate_size"
+            )
             raise ConfigurationError(msg)
 
     def splits(self, n_samples: int) -> Iterator[Split]:
@@ -217,9 +237,11 @@ class WalkForwardSplitter:
             test_end = test_start + self.test_size
             if test_end > n_samples:
                 break
-            validate = ((validate_start, validate_end),) if self.validate_size > 0 else ()
+            validate = (
+                ((validate_start, validate_end - self.purge),) if self.validate_size > 0 else ()
+            )
             split = Split(
-                train=((train_start, train_end),),
+                train=((train_start, train_end - self.purge),),
                 test=((test_start, test_end),),
                 validate=validate,
             )

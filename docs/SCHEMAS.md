@@ -523,6 +523,7 @@ Self-contained in `crucible/validation/config.py` (not part of `ExperimentConfig
 | `test_size` | integer | yes |  | > 0 |
 | `anchored` | boolean | yes |  |  |
 | `validate_size` | integer | no | `0` | ≥ 0 |
+| `purge` | integer | no | `0` | ≥ 0 |
 
 #### `PurgedKFoldConfig`
 
