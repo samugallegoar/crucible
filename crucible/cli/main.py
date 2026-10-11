@@ -682,6 +682,7 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
                     "pbo": result.pbo.pbo,
                     "n_combinations": result.pbo.n_combinations,
                     "n_trials": result.pbo.n_trials,
+                    "n_tied_splits": result.pbo.n_tied_splits,
                 },
                 "best": {
                     "experiment_id": result.best_experiment_id,
@@ -697,7 +698,8 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         sys.stdout.write(f"{args.param}={value}: {exp_id} {args.metric}={metric_value:.6g}\n")
     sys.stdout.write(
         f"PBO: {result.pbo.pbo:.4f} "
-        f"(n_combinations={result.pbo.n_combinations}, n_trials={result.pbo.n_trials})\n"
+        f"(n_combinations={result.pbo.n_combinations}, n_trials={result.pbo.n_trials}, "
+        f"n_tied_splits={result.pbo.n_tied_splits})\n"
     )
     sys.stdout.write(
         f"best: {result.best_experiment_id} DSR={result.best_dsr.dsr:.4f} "

@@ -1,15 +1,17 @@
 """Property: PBO is always a probability in [0, 1], and the number of
 combinatorial splits always matches math.comb(n_groups, n_groups // 2)
-(ADR-0015)."""
+(ADR-0015). The only refusal a finite panel can meet is a partition where a
+trial's returns are constant and non-zero, whose Sharpe is undefined (ADR-0070)."""
 
 from __future__ import annotations
 
 import math
 
 import numpy as np
-from hypothesis import given
+from hypothesis import given, reject
 from hypothesis import strategies as st
 
+from crucible.core.errors import ConfigurationError
 from crucible.validation.pbo import probability_of_backtest_overfitting
 from crucible.validation.splits import CombinatorialPurgedCVSplitter
 
@@ -31,7 +33,15 @@ def test_pbo_is_a_probability_with_the_expected_combination_count(data: st.DataO
     returns = np.array(rows)
     splitter = CombinatorialPurgedCVSplitter(n_groups=n_groups, n_test_groups=n_groups // 2)
 
-    result = probability_of_backtest_overfitting(returns, splitter)
+    try:
+        result = probability_of_backtest_overfitting(returns, splitter)
+    except ConfigurationError as exc:
+        refusal = str(exc)
+    else:
+        refusal = None
+    if refusal is not None:
+        assert "undefined" in refusal
+        reject()
 
     assert 0.0 <= result.pbo <= 1.0
     assert result.n_combinations == math.comb(n_groups, n_groups // 2)

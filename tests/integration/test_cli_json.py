@@ -70,7 +70,7 @@ def test_optimize_json_and_compare_json_agree(
     ) == 0  # fmt: skip
     optimized = json.loads(capsys.readouterr().out)
     assert len(optimized["points"]) == 3
-    assert {"pbo", "n_combinations", "n_trials"} == set(optimized["pbo"])
+    assert {"pbo", "n_combinations", "n_trials", "n_tied_splits"} == set(optimized["pbo"])
 
     assert main(["compare", family, "--artifacts", artifacts, "--json"]) == 0
     compared = json.loads(capsys.readouterr().out)
