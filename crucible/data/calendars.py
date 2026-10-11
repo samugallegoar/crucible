@@ -127,6 +127,30 @@ class AlwaysOpenCalendar:
         return {int(close): int(close) - _DAY_NS for close in self.session_closes(start, end)}
 
 
+ALWAYS_OPEN = "24/7"
+
+
+def canonical_calendar(name: str) -> str:
+    """The one name for a set of trading sessions (ADR-0071): ``"24/7"`` for the always-open
+    market, otherwise the ``exchange_calendars`` code after upper-casing and alias resolution, so
+    ``"nyse"``, ``"NYSE"`` and ``"XNYS"`` (and ``"XNAS"``, which ``exchange_calendars`` maps to the
+    same sessions) are one calendar. Refuses a name ``exchange_calendars`` does not know."""
+    text = name.strip()
+    if text == ALWAYS_OPEN:
+        return ALWAYS_OPEN
+    try:
+        resolved = str(xcals.resolve_alias(text.upper()))
+    except Exception:  # exchange_calendars raises its own untyped InvalidCalendarName
+        resolved = ""
+    if resolved not in xcals.get_calendar_names(include_aliases=False):
+        msg = (
+            f"unknown trading calendar {name!r}; use '24/7' or an exchange_calendars code such "
+            "as XNYS (New York), XLON (London) or XTKS (Tokyo)"
+        )
+        raise ConfigurationError(msg)
+    return resolved
+
+
 def get_trading_calendar(
     name: str, *, start: TimestampNs, end: TimestampNs
 ) -> ExchangeCalendarAdapter | AlwaysOpenCalendar:

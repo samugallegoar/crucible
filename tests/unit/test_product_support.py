@@ -98,7 +98,7 @@ def test_dataset_names_encode_the_whole_request() -> None:
     c = dataset_name(
         "tiingo", ["SPY"], dt.date(2015, 1, 1), dt.date(2025, 12, 30), "1d", "adjusted"
     )
-    assert a == "px_yfinance_spy_20150101_20251230_1d_adj"
+    assert a == "px_yfinance_spy_20150101_20251230_1d_adj_xnys"
     assert len({a, b, c}) == 3
 
 

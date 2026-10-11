@@ -89,6 +89,16 @@ A cost preset is an entry in `costs.PRESETS`. A new flag in the summary is a `Fl
 `summary._flags` plus a test and a line in `docs/guide/reading-a-report.md`. A new data provider
 needs nothing here (`ensure_dataset` takes the registry's name).
 
+### Dataset identity (ADR-0071)
+
+A one-step dataset is named by provider, symbols, window, interval, price basis and canonical
+calendar (`px_<provider>_<symbols>_<start>_<end>_<interval>_<adj|raw>_<calendar>`, the calendar as
+`canonical_calendar` resolves it: `nyse` and `XNYS` are one dataset). `request.json` beside it records
+the effective request (those inputs plus the OHLC repair mode and identity version 2); a stored
+dataset is reused only when the record matches, otherwise it is fetched again (refused offline). A
+fetch that replaces a stored dataset moves it to `<home>/archive/<name>/<content hash>/` first.
+Datasets from before ADR-0071 have no record and are fetched again on first use.
+
 ## Known gaps
 
 - Daily US-style calendars: `calendar` is passed through but only `XNYS` and `24/7` have been used

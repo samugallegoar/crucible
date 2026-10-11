@@ -24,7 +24,12 @@ from crucible.core.types import DatasetId, RealismLevel, TimestampNs
 from crucible.data.contracts import BAR_SCHEMA, BAR_SORT_KEYS
 from crucible.data.store import ParquetDataStore, build_dataset
 from crucible.product.backtest import BacktestRequest, run_backtest
-from crucible.product.data import dataset_name, ensure_dataset
+from crucible.product.data import (
+    dataset_name,
+    dataset_request,
+    ensure_dataset,
+    write_request_record,
+)
 from crucible.product.home import Home, resolve_home
 from crucible.strategy_spec import load_spec
 from crucible.vectorized.engine import VectorizedBacktestEngine, VectorizedConfig
@@ -35,16 +40,28 @@ START, END = dt.date(2020, 1, 1), dt.date(2021, 12, 30)
 SPEC_FILE = Path("examples/sma_cross/spec.yaml")
 
 
+def seed_dataset(
+    home: Home, symbols: list[str], start: dt.date, end: dt.date, bars: pl.DataFrame
+) -> str:
+    """Stores ``bars`` as the product dataset for this request, with its matching
+    ``request.json`` (ADR-0071), as ``ensure_dataset`` would after a fetch."""
+    name = dataset_name("yfinance", symbols, start, end, "1d", "adjusted")
+    build_dataset(
+        home.data, DatasetId(name), bars, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="t"
+    )
+    write_request_record(
+        home.data / name, dataset_request("yfinance", symbols, start, end, "1d", "adjusted")
+    )
+    return name
+
+
 def seed_home(root: Path) -> Home:
     """A home whose store holds the trend_demo bars under the product's own dataset name."""
     scratch = root / "_src"
     build_all(scratch)
     bars = pl.read_parquet(scratch / "trend_demo_bars_v1" / "data.parquet")
     home = resolve_home(root / "home")
-    name = dataset_name("yfinance", [SYMBOL], START, END, "1d", "adjusted")
-    build_dataset(
-        home.data, DatasetId(name), bars, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="t"
-    )
+    seed_dataset(home, [SYMBOL], START, END, bars)
     return home
 
 
@@ -326,10 +343,7 @@ def test_another_window_on_the_same_symbols_is_another_trial_in_the_same_family(
     fresh = seed_home(tmp_path)
     later = dt.date(2020, 6, 1)
     bars = pl.read_parquet(next((fresh.data).glob("*/data.parquet")))
-    name = dataset_name("yfinance", [SYMBOL], later, END, "1d", "adjusted")
-    build_dataset(
-        fresh.data, DatasetId(name), bars, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="t"
-    )
+    seed_dataset(fresh, [SYMBOL], later, END, bars)
     first = run_backtest(request(fresh, null_iterations=0))
     second = run_backtest(request(fresh, start=later.isoformat(), null_iterations=0))
     v1, v2 = first["validation"], second["validation"]
@@ -357,10 +371,7 @@ def test_another_instrument_is_another_family_but_the_home_wide_count_sees_both(
     fresh = seed_home(tmp_path)
     bars = pl.read_parquet(next(fresh.data.glob("*/data.parquet")))
     other = bars.with_columns(symbol=pl.lit("OTHER"))
-    name = dataset_name("yfinance", ["OTHER"], START, END, "1d", "adjusted")
-    build_dataset(
-        fresh.data, DatasetId(name), other, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="t"
-    )
+    seed_dataset(fresh, ["OTHER"], START, END, other)
     first = run_backtest(request(fresh, null_iterations=0))
     second = run_backtest(request(fresh, symbols=["OTHER"], null_iterations=0))
     v1, v2 = first["validation"], second["validation"]
