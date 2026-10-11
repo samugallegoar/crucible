@@ -89,7 +89,8 @@ fraction of capital, stop-loss, take-profit and maximum holding time, on one or 
 [Strategy spec reference](docs/guide/strategy-spec.md).
 
 Why the answers are trustworthy rather than flattering: a rule only ever sees bars that had
-closed (point-in-time access, enforced in code), the engine refuses suspicious states instead of
+closed by the simulated moment (point-in-time *access*, enforced in code; the stored prices are not
+a versioned record of what was known on each date), the engine refuses suspicious states instead of
 warning, results are deterministic, and a Sharpe ratio is never reported without its interval,
 trial count and realism level. What it cannot give you: the prices are today's dividend-and-split
 adjusted series (not the quotes traded on the day), fills are simulated from daily bars (no order

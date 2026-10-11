@@ -191,6 +191,7 @@ class BacktestEngine:
         if margin_financing_rate < 0:
             msg = f"margin_financing_rate must be >= 0, got {margin_financing_rate}"
             raise ConfigurationError(msg)
+        store.refuse_dividends_on_adjusted_bars(bars_dataset, corporate_actions_dataset)
         self._store = store
         self._bars_dataset = bars_dataset
         self._ca_dataset = corporate_actions_dataset

@@ -78,13 +78,17 @@ class StorePITAccessor:
         as_of: TimestampNs,
         lookback: int,
     ) -> pl.DataFrame:
-        """Up to ``lookback`` most recent available rows per symbol, ascending
-        in ``event_time`` within each symbol."""
+        """Up to ``lookback`` most recent observations per symbol, ascending in ``event_time``
+        within each symbol. A revised observation (the same ``event_time`` published again with
+        a later ``available_at``) counts once, as the latest version available at ``as_of``;
+        before ADR-0071 each version was a separate row, so a revision was counted twice."""
         if lookback <= 0:
             msg = f"lookback must be positive, got {lookback}"
             raise ValueError(msg)
         return (
             self._scan(dataset, fields, symbols, as_of)
+            # rows are sorted by (symbol, event_time, available_at): keep the last version
+            .unique(subset=["symbol", "event_time"], keep="last", maintain_order=True)
             .group_by("symbol", maintain_order=True)
             .tail(lookback)
             .collect()

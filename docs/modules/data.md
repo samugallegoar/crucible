@@ -47,7 +47,31 @@ calendars, quality checks.
   unfiltered read.
 - `pit.py`: `StorePITAccessor.get/history` — guards `as_of <= clock.now`
   (`LookaheadError`, I8) before touching data. Absent symbols are absent
-  rows, never fabricated.
+  rows, never fabricated. A revised observation (same `event_time`, later
+  `available_at`) is one observation: `get` and `history` return the latest
+  version available at `as_of` (before ADR-0071 `history` returned every
+  version, counting a revision twice). Boundary: `available_at == as_of` is
+  visible, one nanosecond later is not.
+- **What "point-in-time" covers (ADR-0071).** Four separate things:
+  *query-time restriction* — the clock guard and the `available_at <= as_of`
+  filter inside every read, enforced in code and tested (`tests/lookahead/`,
+  `tests/unit/test_pit_accessor.py`); *availability timestamps* — the
+  `available_at` values a dataset carries, trusted as given (a provider's
+  adjusted daily bar is stamped at its session close, not at the date the
+  adjusted value was computed); *version integrity* — **not provided**: the
+  store keeps one version per dataset name (the one-step flow archives the
+  versions it replaces, `product.data`), so it cannot reconstruct the
+  information set of a past date; *price basis* — declared by importers and
+  providers in the manifest `source` (`price_basis=raw|adjusted`, read by
+  `price_basis_of`), recorded in every run manifest as `bars_price_basis`
+  (`undeclared` when the dataset does not say).
+- `store.py`: `ParquetDataStore.refuse_dividends_on_adjusted_bars` — the
+  engine refuses adjusted bars together with a corporate-actions dataset that
+  holds cash dividends (each would be counted twice); a dataset with an
+  undeclared basis cannot be checked (ADR-0071).
+- `calendars.py`: `canonical_calendar(name)` — one name per set of sessions
+  (`"24/7"` or the `exchange_calendars` code after alias resolution; unknown
+  names refused), used for dataset identity (ADR-0071).
 - `calendars.py`: `ExchangeCalendarAdapter` (wraps `exchange_calendars`; the
   only tz-aware code besides I/O) and `AlwaysOpenCalendar` (24/7, UTC
   midnight closes); `get_trading_calendar(name, *, start, end)` factory ("24/7" or an
@@ -149,7 +173,10 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
 Provider adapters: `tiingo` and `yfinance` exist (ADR-0063). `data fetch` takes the provider from a flag or the environment, not from a spec file; intraday Tiingo is not offered.
 Missingness reason column (ADR-0005) is not materialized — bars are
 dense by construction. Abnormal-jump and tz-mismatch checks pending.
-Corporate actions beyond delisting unhandled (engine raises on them).
+Corporate actions beyond cash dividends and delisting unhandled (engine raises on them).
+No versioned (bitemporal) storage: a dataset name holds one version, so past information sets
+cannot be reconstructed; adjusted provider prices are re-computed after the fact and are a
+research series, not executable historical quotes (ADR-0070, ADR-0071).
 Importers: fundamentals/news/filings have no dataset contract; adjusted equity
 prices are imported labelled, not converted to raw; Polymarket bars hold the mid
 plus bucket quotes (ADR-0060; limit fills and tick-level quotes are not

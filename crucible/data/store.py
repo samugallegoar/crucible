@@ -18,8 +18,9 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from crucible.core.errors import DataQualityError, ExperimentError
+from crucible.core.errors import ConfigurationError, DataQualityError, ExperimentError
 from crucible.core.types import DatasetId, TimestampNs
+from crucible.data.contracts import END_AT_OPEN
 from crucible.data.interfaces import DatasetManifest
 
 if TYPE_CHECKING:
@@ -83,6 +84,18 @@ def build_dataset(
     return manifest
 
 
+def price_basis_of(manifest: DatasetManifest) -> str | None:
+    """The price basis a dataset declares (``"raw"`` or ``"adjusted"``), read from the
+    ``price_basis=`` field the importers and providers write into ``source``; None when the
+    dataset does not declare one (a hand-built or synthetic dataset): unknown, not raw
+    (ADR-0071)."""
+    for part in manifest.source.split(";"):
+        key, _, value = part.partition("=")
+        if key.strip() == "price_basis" and value.strip() in ("raw", "adjusted"):
+            return value.strip()
+    return None
+
+
 class ParquetDataStore:
     """Satisfies ``crucible.data.interfaces.DataStore``."""
 
@@ -117,6 +130,32 @@ class ParquetDataStore:
             source=raw["source"],
             built_at=TimestampNs(raw["built_at"]),
         )
+
+    def refuse_dividends_on_adjusted_bars(
+        self, bars: DatasetId, corporate_actions: DatasetId | None
+    ) -> None:
+        """Adjusted prices already contain every dividend; booking the dataset's cash dividends
+        on top would count each one twice. Refuses that combination (ADR-0071). A bars dataset
+        that does not declare its basis cannot be checked and is let through."""
+        if corporate_actions is None or price_basis_of(self.manifest(bars)) != "adjusted":
+            return
+        # a configuration check over the whole actions file, not a strategy read: the as_of is
+        # the open-ended sentinel on purpose
+        n_dividends = (
+            self.read(corporate_actions, TimestampNs(END_AT_OPEN))
+            .filter(pl.col("action") == "cash_dividend")
+            .select(pl.len())
+            .collect()
+            .item()
+        )
+        if n_dividends:
+            msg = (
+                f"bars dataset {bars} is dividend-adjusted (price_basis=adjusted) and corporate "
+                f"actions dataset {corporate_actions} has {n_dividends} cash dividend(s): each "
+                "dividend would be counted twice, once in the adjusted prices and once as cash. "
+                "Use raw prices with the dividends, or adjusted prices without them"
+            )
+            raise ConfigurationError(msg)
 
     def list_datasets(self) -> list[DatasetId]:
         if not self._root.is_dir():
