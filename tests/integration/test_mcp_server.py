@@ -86,6 +86,7 @@ def test_the_schema_tool_returns_the_config_schema() -> None:
     assert "properties" in json.loads(text)
 
 
+@pytest.mark.single_os  # plumbing over a full run; the process tests stay on every OS
 def test_a_run_returns_the_headline_set_together(store: Path, tmp_path: Path) -> None:
     config = _config(store, tmp_path / "c.yaml")
     is_error, text = _call(
@@ -98,6 +99,7 @@ def test_a_run_returns_the_headline_set_together(store: Path, tmp_path: Path) ->
     assert all(set(m) == {"value", "ci_low", "ci_high"} for m in doc["metrics"].values())
 
 
+@pytest.mark.single_os  # plumbing over a full run; the process tests stay on every OS
 def test_overrides_reach_the_run(store: Path, tmp_path: Path) -> None:
     config = _config(store, tmp_path / "c.yaml")
     _, plain = _call("crucible_run", {"config": str(config), "artifacts": str(tmp_path / "a")})
@@ -317,6 +319,7 @@ def test_an_argparse_error_keeps_the_actionable_last_line() -> None:
         invoke(["run", "x.yaml", "--runtime", "warp", "--json"])
 
 
+@pytest.mark.single_os  # plumbing over a full run; the process tests stay on every OS
 def test_debug_replays_a_finished_run_through_the_tool(store: Path, tmp_path: Path) -> None:
     config = _config(store, tmp_path / "c.yaml")
     _, ran = _call("crucible_run", {"config": str(config), "artifacts": str(tmp_path / "runs")})

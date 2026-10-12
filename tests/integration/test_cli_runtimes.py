@@ -11,6 +11,10 @@ import yaml
 from crucible.cli.main import main
 from examples.trend_demo.build_data import build_all
 
+# Ubuntu CI only (ADR-0076): CLI wrapper over the runtimes, whose parity test_live_parity covers on
+# every OS. Runs everywhere locally.
+pytestmark = pytest.mark.single_os
+
 
 @pytest.fixture(scope="module")
 def store(tmp_path_factory: pytest.TempPathFactory) -> Path:

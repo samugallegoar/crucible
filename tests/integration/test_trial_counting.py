@@ -14,6 +14,10 @@ from crucible.experiments.config import ExperimentConfig
 from crucible.experiments.runner import run_experiment, run_with_scenarios
 from examples.momentum.build_data import build_all
 
+# Ubuntu CI only (ADR-0076): registry bookkeeping over runs covered on every OS; no OS-specific
+# code. Runs everywhere locally.
+pytestmark = pytest.mark.single_os
+
 
 def _config(store: Path, **overrides: object) -> ExperimentConfig:
     raw = yaml.safe_load(Path("examples/momentum/config.yaml").read_text(encoding="utf-8"))

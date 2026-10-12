@@ -8,6 +8,13 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Shorter Windows and macOS CI jobs (ADR-0076)
+- A `single_os` marker labels OS-independent plumbing tests (CLI wrappers over library calls,
+  the runtime flag, perturbation, sensitivity and trial-count orchestration, three MCP plumbing
+  tests): CI runs them on Ubuntu only. Every OS-sensitive test and the golden, lookahead, property
+  and unit tiers still run on all three OSes, and a local run still runs everything. A guard test
+  fixes which modules may use the marker.
+
 ### Faster test runs (ADR-0075)
 - The suite runs on worker processes (pytest-xdist, dev-only): `tools.check` on up to four,
   CI on every core of the runner; `tools.check --serial` runs one process.

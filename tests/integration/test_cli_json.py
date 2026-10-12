@@ -12,6 +12,10 @@ from crucible.cli.main import main
 from crucible.experiments.config import config_hash, load_config
 from examples.momentum.build_data import build_all
 
+# Ubuntu CI only (ADR-0076): the CLI's JSON shape; the one-step CLI path stays on every OS in
+# test_product_backtest. Runs everywhere locally.
+pytestmark = pytest.mark.single_os
+
 
 @pytest.fixture(scope="module")
 def store(tmp_path_factory: pytest.TempPathFactory) -> Path:

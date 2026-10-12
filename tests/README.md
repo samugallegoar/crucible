@@ -58,7 +58,7 @@ Use `tmp_path` / `tmp_path_factory`; never write into the repo.
 ## 4. Markers
 
 Registered in `pyproject.toml` (`docs/INVENTORY.md`, Pytest markers): `bench`, `golden`,
-`lookahead`, `slow`.
+`lookahead`, `slow`, `single_os`.
 
 - `golden` — byte-identical reference tests (`tests/golden/`).
 - `lookahead` — information-barrier tests (`tests/lookahead/`).
@@ -71,6 +71,12 @@ Registered in `pyproject.toml` (`docs/INVENTORY.md`, Pytest markers): `bench`, `
   `python -m tools.check --fast`) is the opt-in fast tier: about two minutes of tests against nine for the full run.
   `tests/golden`, `tests/lookahead` and `tests/bench` are never listed, so the invariants stay in the
   fast loop. A guard test fails when the list names a module that no longer exists.
+
+- `single_os` — OS-independent plumbing over logic that is tested on every OS (CLI wrappers, the
+  runtime flag, sweep and trial-count orchestration, three MCP plumbing tests). CI runs it on Ubuntu
+  only; Windows and macOS run `-m "not single_os"`. Locally everything runs. The allowed modules are
+  fixed by `tests/unit/test_single_os_scope.py` and ADR-0076; golden, lookahead, property and unit
+  tests, and every OS-sensitive test (processes, files, paths, console), never carry it.
 
 Select or skip with `-m`: `uv run pytest -m lookahead`, `uv run pytest -m "not golden"`.
 

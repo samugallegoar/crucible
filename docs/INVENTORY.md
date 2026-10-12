@@ -281,5 +281,6 @@ Registered in `pyproject.toml` (`--strict-markers`).
 | `golden` | byte-identical reference-output tests |
 | `lookahead` | information-barrier harness tests |
 | `slow` | measured slow modules (tests/slow_modules.txt); a plain pytest runs them, -m \"not slow\" is the fast tier |
+| `single_os` | OS-independent plumbing over logic tested on every OS; CI runs it on Ubuntu only (ADR-0076) |
 
 <!-- END GENERATED: inventory -->

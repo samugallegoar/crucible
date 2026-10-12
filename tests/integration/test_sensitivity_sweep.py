@@ -15,6 +15,10 @@ from crucible.experiments.sensitivity import sweep_1d
 from crucible.validation.sensitivity import SensitivitySurface1D
 from examples.momentum.build_data import build_all
 
+# Ubuntu CI only (ADR-0076): orchestration over runs covered on every OS; no OS-specific code. Runs
+# everywhere locally.
+pytestmark = pytest.mark.single_os
+
 
 def _config(store: Path) -> ExperimentConfig:
     raw = yaml.safe_load(Path("examples/momentum/config.yaml").read_text(encoding="utf-8"))

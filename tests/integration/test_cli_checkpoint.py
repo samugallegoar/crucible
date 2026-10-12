@@ -11,6 +11,10 @@ from crucible.cli.main import main
 from crucible.core.checkpoint import read_checkpoint
 from examples.trend_demo.build_data import build_all
 
+# Ubuntu CI only (ADR-0076): CLI wrapper over checkpoint/resume, which test_runner_checkpoint and
+# the resume-equivalence matrix cover on every OS. Runs everywhere locally.
+pytestmark = pytest.mark.single_os
+
 DETERMINISTIC = [
     "config.yaml",
     "equity.parquet",

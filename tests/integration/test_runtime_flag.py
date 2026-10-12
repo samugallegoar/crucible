@@ -15,6 +15,10 @@ from crucible.experiments.runner import run_experiment
 from crucible.validation.trial_registry import DuckDBTrialRegistry
 from examples.trend_demo.build_data import build_all
 
+# Ubuntu CI only (ADR-0076): config-flag plumbing; live parity (I14) is test_live_parity on every
+# OS. Runs everywhere locally.
+pytestmark = pytest.mark.single_os
+
 
 @pytest.fixture(scope="module")
 def store(tmp_path_factory: pytest.TempPathFactory) -> Path:

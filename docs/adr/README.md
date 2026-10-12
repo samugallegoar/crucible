@@ -102,5 +102,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0073](0073-time-of-day-rules.md) | Time-of-day rules in the strategy spec | accepted | An optional `session` block in the spec (spec_version stays 1; absent, every existing spec, its canonical form and its experiment id are unchanged): |
 | [0074](0074-market-on-close-exit-at-and-time-conditions.md) | Market-on-close orders, `exit_at` and `time` in conditions | accepted | `OrderType.MARKET_ON_CLOSE` with `OrderSpec.close_at` (a session close, UTC ns) |
 | [0075](0075-parallel-test-runs.md) | Run the test suite on several processes; split the slowest modules | accepted | pytest-xdist (dev dependency only) runs the suite on worker processes with `--dist loadscope`: a module, or a class, stays on one worker, so module- and class-scoped fixtures are built once |
+| [0076](0076-os-independent-tests-run-on-one-ci-os.md) | OS-independent plumbing tests run on one CI OS | accepted | A `single_os` marker. CI runs it on Ubuntu only; the Windows and macOS jobs run `-m "not single_os"` |
 
 <!-- END GENERATED: adr-index -->

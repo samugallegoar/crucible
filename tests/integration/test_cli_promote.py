@@ -13,6 +13,10 @@ from crucible.experiments.config import ExecutionConfig, load_config
 from crucible.experiments.promotion import promote_config
 from examples.trend_demo.build_data import build_all
 
+# Ubuntu CI only (ADR-0076): CLI wrapper over promotion, covered directly on every OS. Runs
+# everywhere locally.
+pytestmark = pytest.mark.single_os
+
 _EXECUTION = {
     "spread": {"type": "static", "half_spread_bps": 25.0},
     "latency": {"type": "constant", "ms": 50.0},

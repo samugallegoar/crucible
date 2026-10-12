@@ -11,6 +11,10 @@ import yaml
 from crucible.cli.main import main
 from examples.momentum.build_data import build_all
 
+# Ubuntu CI only (ADR-0076): CLI wrapper over optimize/validate, covered directly on every OS. Runs
+# everywhere locally.
+pytestmark = pytest.mark.single_os
+
 
 def _write_config(store: Path, dest: Path, *, mode: str) -> Path:
     raw = yaml.safe_load(Path("examples/momentum/config.yaml").read_text(encoding="utf-8"))
