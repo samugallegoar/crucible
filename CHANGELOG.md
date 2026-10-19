@@ -10,12 +10,18 @@ kind of change is recorded).
 
 ### One fixed results table (ADR-0077)
 - `crucible backtest` (terminal, `--json`, the MCP tool and the HTML report) now takes its metric
-  table from one builder: the same 14 rows, in the same order, with the same labels and number
+  table from one builder: the same 23 rows, in the same order, with the same labels and number
   formats in every run, and `n/a` where a value does not exist. The JSON document gains
   `results_table` (`columns`, `rows` with stable ids, and a ready-made `markdown` text); additive,
   `schema_version` stays 2 and the product golden is unchanged. The terminal and report tables grew
-  from 6-7 rows to 14 (volatility, total return, winning trades, average bars held, time in the
-  market, trial count, deflated Sharpe, shuffle p-value, realism level). `AGENT_GUIDE.md` and the
+  from 6-7 rows to 23. Beyond volatility, total return, bars held, time in the market and the
+  validation rows, they now answer "does the edge survive?": cost drag per year, turnover, the
+  break-even cost per side (from one extra frictionless run: costs are linear in turnover),
+  winning trades after costs, net expectancy per trade with a 95% range, profit factor, average
+  win over average loss, alpha and beta against buy-and-hold with a Newey-West t-statistic,
+  return per unit of exposure, and the share of the Sharpe kept under the realism check. The
+  deflated-Sharpe label no longer says "chance the Sharpe is real". The numbers are also in the
+  document as `diagnostics` (additive; the golden surface is unchanged). `AGENT_GUIDE.md` and the
   `crucible_backtest` tool description tell agents to show `results_table.markdown` unchanged.
 
 ### Shorter Windows and macOS CI jobs (ADR-0076)

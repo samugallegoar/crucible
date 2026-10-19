@@ -42,7 +42,7 @@ from crucible.data.store import ParquetDataStore
 from crucible.experiments.config import ExperimentConfig
 from crucible.experiments.vectorized_runner import run_vectorized_experiment
 from crucible.product import costs as cost_module
-from crucible.product import nulltest
+from crucible.product import diagnostics, nulltest
 from crucible.product.data import ensure_dataset, normalize_symbols, parse_day
 from crucible.product.home import Home, resolve_home
 from crucible.product.report import render_html
@@ -199,11 +199,12 @@ def _parameter_hints(spec: StrategySpec) -> tuple[str, ...]:
 
 def _episodes_to_trades(
     episodes: pl.DataFrame, bars: pl.DataFrame, limit: int, *, intraday: bool = False
-) -> tuple[list[dict[str, object]], float | None]:
-    """Readable trade rows (price change, bars held) and the average bars held. Intraday rows
-    also carry ``entry_time``/``exit_time`` (UTC, to the minute)."""
+) -> tuple[list[dict[str, object]], float | None, list[float]]:
+    """Readable trade rows (price change, bars held), the average bars held and the signed price
+    change in percent of *every* trade (the rows are capped at ``limit``). Intraday rows also
+    carry ``entry_time``/``exit_time`` (UTC, to the minute)."""
     if episodes.height == 0:
-        return [], None
+        return [], None, []
     indexed = (
         bars.select("symbol", "event_time", "close")
         .sort(["symbol", "event_time"])
@@ -218,11 +219,13 @@ def _episodes_to_trades(
     )
     rows: list[dict[str, object]] = []
     held: list[float] = []
+    changes: list[float] = []
     for row in joined.iter_rows(named=True):
         sign = 1.0 if row["side"] == "long" else -1.0
         change = sign * (float(row["exit_close"]) / float(row["entry_close"]) - 1.0) * 100.0
         bars_held = int(row["exit_bar"]) - int(row["entry_bar"])
         held.append(float(bars_held))
+        changes.append(change)
         trade: dict[str, object] = {
             "symbol": row["symbol"],
             "side": row["side"],
@@ -236,7 +239,76 @@ def _episodes_to_trades(
             trade["entry_time"] = _to_minute(int(row["entry_ts"]))
             trade["exit_time"] = _to_minute(int(row["exit_ts"]))
         rows.append(trade)
-    return rows[:limit], float(np.mean(held))
+    return rows[:limit], float(np.mean(held)), changes
+
+
+def _diagnostics(
+    *,
+    strategy_result: VectorizedResult,
+    gross_result: VectorizedResult | None,
+    ts_list: list[int],
+    strategy_curve: list[float],
+    bench_curve: list[float],
+    trade_changes_pct: list[float],
+    years: float,
+    capital: float,
+    slippage: float,
+    commission: float,
+    periods_per_year: float,
+    time_in_market: float,
+) -> dict[str, object]:
+    """What the headline numbers hide: cost drag, turnover, break-even cost, net per-trade
+    statistics and alpha against the benchmark (``product/diagnostics.py``)."""
+    per_side = slippage + commission
+    net_curve = np.asarray(strategy_curve, dtype=float)
+    net_returns = net_curve[1:] / net_curve[:-1] - 1.0
+    if gross_result is None:
+        gross_final, gross_returns = float(net_curve[-1]), net_returns
+    else:
+        gross = gross_result.equity.sort("ts").filter(pl.col("ts").is_in(ts_list))
+        gross_values = gross.get_column("equity").to_numpy()
+        gross_final, gross_returns = (
+            float(gross_values[-1]),
+            gross_values[1:] / gross_values[:-1] - 1,
+        )
+    net_cagr = diagnostics.annual_return_pct(float(net_curve[-1]), capital, years)
+    gross_cagr = diagnostics.annual_return_pct(gross_final, capital, years)
+    changes = (
+        strategy_result.weights.filter(pl.col("ts").is_in(ts_list))
+        .sort(["symbol", "ts"])
+        .select(pl.col("weight").diff().abs().over("symbol").sum())
+        .item()
+    )
+    bench = np.asarray(bench_curve, dtype=float)
+    # a round trip pays the per-side cost twice; the trade's price change is in percent
+    net_trade_bps = [c * 100.0 - 2.0 * per_side for c in trade_changes_pct]
+    return {
+        "assumed_cost_bps_per_side": round(per_side, 4),
+        "gross_cagr_pct": round(gross_cagr, 4),
+        "net_cagr_pct": round(net_cagr, 4),
+        "cost_drag_pct": round(gross_cagr - net_cagr, 4),
+        "turnover_per_year": _round(diagnostics.turnover_per_year(float(changes or 0.0), years), 2),
+        "break_even_bps_per_side": _round(
+            diagnostics.break_even_bps(gross_returns, net_returns, per_side), 2
+        ),
+        "trade_net": {
+            k: (round(v, 4) if isinstance(v, float) else v)
+            for k, v in diagnostics.trade_stats(net_trade_bps).items()
+        },
+        "alpha_beta": {
+            k: (round(v, 4) if isinstance(v, float) else v)
+            for k, v in diagnostics.alpha_beta(
+                net_returns, bench[1:] / bench[:-1] - 1.0, periods_per_year
+            ).items()
+        },
+        "return_per_exposure_pct": _round(
+            net_cagr / (time_in_market / 100.0) if time_in_market > 0 else None, 4
+        ),
+    }
+
+
+def _round(value: float | None, digits: int) -> float | None:
+    return None if value is None else round(value, digits)
 
 
 def _monthly(dates: list[str], strategy: list[float], benchmark: list[float]) -> list[object]:
@@ -461,7 +533,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
     engine = VectorizedBacktestEngine()
     cash = Decimal(str(request.capital))
 
-    def vec(params: dict[str, object]) -> VectorizedResult:
+    def vec(params: dict[str, object], *, frictionless: bool = False) -> VectorizedResult:
         return engine.run(
             VectorizedConfig(
                 store=store,
@@ -469,11 +541,11 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
                 signal=spec_signal,
                 params=params,
                 initial_cash=cash,
-                realism_level=realism,
+                realism_level=RealismLevel.FRICTIONLESS if frictionless else realism,
                 start=config.start_ns,
                 end=config.end_ns,
-                slippage_bps=slippage,
-                commission_bps=commission,
+                slippage_bps=0.0 if frictionless else slippage,
+                commission_bps=0.0 if frictionless else commission,
             )
         )
 
@@ -490,7 +562,9 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
 
     bars = store.read(dataset, config.end_ns).collect()
     episodes = build_episodes(strategy_result.weights, strategy_result.pnl)
-    trades, avg_held = _episodes_to_trades(episodes, bars, limit=500, intraday=intraday)
+    trades, avg_held, trade_changes_pct = _episodes_to_trades(
+        episodes, bars, limit=500, intraday=intraday
+    )
 
     eq = strategy_result.equity.sort("ts")
     bq = bench_result.equity.sort("ts")
@@ -547,6 +621,22 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
         realism_side, realism_block = _realism_check(
             config, int(bars.height), slippage, commission, home, request.capital
         )
+
+    gross_result = vec(signal_params, frictionless=True) if (slippage or commission) else None
+    diag = _diagnostics(
+        strategy_result=strategy_result,
+        gross_result=gross_result,
+        ts_list=ts_list,
+        strategy_curve=strategy_curve,
+        bench_curve=bench_curve,
+        trade_changes_pct=trade_changes_pct,
+        years=years,
+        capital=request.capital,
+        slippage=slippage,
+        commission=commission,
+        periods_per_year=periods_per_year,
+        time_in_market=time_in_market,
+    )
 
     n_trades = int(strategy_metrics["n_trades"].value)
     hit = strategy_metrics.get("hit_rate")
@@ -710,6 +800,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
         },
     }
 
+    doc["diagnostics"] = diag
     doc["results_table"] = build_results_table(doc)
 
     charts = {
