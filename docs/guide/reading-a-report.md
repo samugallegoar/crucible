@@ -56,10 +56,10 @@ weight. Both curves are drawn together, then both drawdowns.
 - **Deflated Sharpe ratio (DSR)**: the probability that the Sharpe ratio is genuinely positive after
   accounting for the trial count and the shape of the returns. Under 0.95 is a warning.
 - **Random re-ordering test**: the same bar-to-bar moves (gap and bar together) shuffled in
-  time 10,000 times, the rules run on each. It reports how many shuffles matched or beat the
-  strategy and a p-value of (that count + 1) / 10,001: it never says 0, because a finite number of
-  shuffles cannot show that (the smallest value is about 0.0001). With this many shuffles the p-value
-  is stable to about the third decimal; with 100 it could move by 0.04 between identical runs. If shuffled data does as well, the timing of the rules has not been shown to matter. Passing
+  time 1,000 times, the rules run on each. It reports how many shuffles matched or beat the
+  strategy and a p-value of (that count + 1) / 1,001: it never says 0, because a finite number of
+  shuffles cannot show that (the smallest value is about 0.001). The p-value is a sampling estimate:
+  with 1,000 shuffles it can move by about 0.013 between identical runs at p = 0.2, with 100 by 0.04. If shuffled data does as well, the timing of the rules has not been shown to matter. Passing
   it means the strategy benefits from the real order of returns (trends, calm and stormy periods); it
   does not mean the edge will continue.
 - **Realism level**: how pessimistic the fill assumptions were. The default (Level 1) fills at the

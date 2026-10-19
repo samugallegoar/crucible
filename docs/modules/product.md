@@ -50,7 +50,7 @@ trades as independent and use the price change on adjusted prices; the alpha is 
    family (default `quick:<symbols>`: every window and every rule set tried on the same symbols counts together, ADR-0070; `trial_family_source` says whether it was given or derived and `trial_count_scope` what the count covers), DSR and contamination in the manifest.
 4. Buy-and-hold of the same symbols (spec `entry.long: always`) on the same engine, costs and
    window: a reference, not a trial. With several symbols it is equal weight, held at constant weights.
-5. The null test: `null_iterations` (default 10,000, ADR-0078; 0 disables) shuffles of each symbol's per-bar
+5. The null test: `null_iterations` (default 1,000, ADR-0078; 0 disables) shuffles of each symbol's per-bar
    returns (`data.transforms.shuffle_bar_returns`), the spec run on each; the p-value is the fraction
    of shuffles whose per-period Sharpe matched or beat the real one. Seeded from the experiment seed.
 6. Optional `realism_check`: `promote_config` to Level 2 (static half spread = the preset's slippage,

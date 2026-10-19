@@ -37,11 +37,11 @@ server's working directory.
 
 A first run downloads data and a realism check adds about 30 seconds. The server stops any call
 after `CRUCIBLE_MCP_TIMEOUT` seconds (default 900) and kills the work; cancelling a call in the
-client does the same. The shuffled-returns test runs 10,000 shuffles by default, which takes
-about five minutes for ten years of daily bars (a few seconds per hundred shuffles, more with
-several symbols), and some MCP clients give up on a tool call sooner than that. While exploring,
-ask for fewer shuffles (`null_iterations: 100`, about six seconds) and run the default once for
-the result you intend to report; raise the client's tool timeout if it has one.
+client does the same. The shuffled-returns test runs 1,000 shuffles by default, which takes
+about 30 seconds for ten years of daily bars (more with several symbols or a long intraday
+window), and some MCP clients give up on a tool call sooner than that. For a quick look ask for
+fewer shuffles (`null_iterations: 100`, about six seconds); raise the client's tool timeout if it
+has one.
 
 ## It will not use my own data
 

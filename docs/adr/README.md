@@ -104,6 +104,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0075](0075-parallel-test-runs.md) | Run the test suite on several processes; split the slowest modules | accepted | pytest-xdist (dev dependency only) runs the suite on worker processes with `--dist loadscope`: a module, or a class, stays on one worker, so module- and class-scoped fixtures are built once |
 | [0076](0076-os-independent-tests-run-on-one-ci-os.md) | OS-independent plumbing tests run on one CI OS | accepted | A `single_os` marker. CI runs it on Ubuntu only; the Windows and macOS jobs run `-m "not single_os"` |
 | [0077](0077-one-fixed-results-table.md) | One fixed results table for the one-step backtest | accepted | `crucible/product/table.py::build_results_table` builds the table once, from the finished result document |
-| [0078](0078-ten-thousand-shuffles.md) | 10,000 shuffles by default in the shuffled-returns test | accepted | `DEFAULT_ITERATIONS = 10_000` (`product/nulltest.py`); the CLI flag and the MCP tool default to it |
+| [0078](0078-one-thousand-shuffles.md) | 1,000 shuffles by default in the shuffled-returns test | accepted | `DEFAULT_ITERATIONS = 1_000` (`product/nulltest.py`); the CLI flag, the MCP tool and `BacktestRequest` default to it |
 
 <!-- END GENERATED: adr-index -->
