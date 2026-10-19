@@ -12,17 +12,36 @@ never write code.
 > crosses below. Long only, 2015 to 2025, $100,000."*
 
 ```text
-SMA 10/30 crossover turned $100,000 into $227,474 (+127.5%, 7.8% a year) on SPY; buying and
-holding would have made $402,665 (+302.7%, 13.5% a year).
+SMA 10/30 crossover turned $100,000 into $225,789 (+125.8%, 7.7% a year) on SPY; buying and
+holding would have made $399,682 (+299.7%, 13.5% a year).
 
 Verdict: Not conclusive: it made money in this one backtest and earned less than buy-and-hold; the
 evidence is too thin to tell skill from luck.
 
-                      Strategy              Buy and hold
-  Return per year     7.8%                  13.5%
-  Worst fall          -17.8%                -33.7%
-  Sharpe (95% range)  0.74 (0.11 to 1.36)   0.80 (0.29 to 1.45)
-  Trades              39                    -
+  Metric                                  Strategy                      Buy and hold
+  Final value                             $225,789                      $399,682
+  Total return                            +125.8%                       +299.7%
+  Return per year (after costs)           7.7%                          13.5%
+  Cost drag per year                      0.1%                          -
+  Turnover per year (x capital)           7.2x                          -
+  Break-even cost per side                112.8 bps (assumed 1.5)       -
+  Volatility (per year)                   10.9%                         17.8%
+  Worst fall from a peak                  -17.8%                        -33.7%
+  Sharpe ratio (95% range)                0.74 (0.10 to 1.34)           0.80 (0.28 to 1.44)
+  Alpha per year vs buy and hold          +2.7% (t +1.0), beta 0.37     -
+  Return per year per unit of exposure    11.4%                         13.5%
+  Completed trades                        39                            -
+  Winning trades (after costs)            48.7%                         -
+  Net expectancy per trade                +228.7 bps (+38.2 to +419.2)  -
+  Profit factor (net)                     3.28                          -
+  Average win / average loss (net)        3.46                          -
+  Average bars held                       47.3                          -
+  Time in the market                      67.3%                         100.0%
+  Variants tried (trial count)            1                             -
+  Deflated Sharpe (chance it beats luck)  99%                           -
+  Shuffled-returns p-value                0.228                         -
+  Sharpe kept under realistic fills       not run                       -
+  Realism level                           BASIC_FRICTION                -
   - Only 39 completed trades. One instrument is one history. Per unit of risk it did not improve
     on buy-and-hold.
 ```

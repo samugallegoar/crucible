@@ -234,30 +234,16 @@ def _spec_from_args(args: argparse.Namespace):  # type: ignore[no-untyped-def]
 
 
 def _print_backtest(doc: dict[str, object]) -> None:
+    from crucible.product.table import to_text
+
     summary = doc["summary"]
     assert isinstance(summary, dict)
-    results = doc["results"]
-    assert isinstance(results, dict)
-    s, b = results["strategy"], results["benchmark"]
-    assert isinstance(s, dict)
-    assert isinstance(b, dict)
+    table = doc["results_table"]
+    assert isinstance(table, dict)
     out = sys.stdout.write
     out(f"{summary['headline']}\n\n")
     out(f"Verdict: {summary['verdict']}\n\n")
-    rows = [
-        ("", "Strategy", "Buy and hold"),
-        ("Final value", f"${s['final_equity']:,.0f}", f"${b['final_equity']:,.0f}"),
-        ("Return per year", f"{s['cagr_pct']:.1f}%", f"{b['cagr_pct']:.1f}%"),
-        ("Worst fall", f"{s['max_drawdown_pct']:.1f}%", f"{b['max_drawdown_pct']:.1f}%"),
-        (
-            "Sharpe (95% range)",
-            f"{s['sharpe']:.2f} ({s['sharpe_low']:.2f} to {s['sharpe_high']:.2f})",
-            f"{b['sharpe']:.2f} ({b['sharpe_low']:.2f} to {b['sharpe_high']:.2f})",
-        ),
-        ("Trades", str(s["n_trades"]), "-"),
-    ]
-    for label, left, right in rows:
-        out(f"  {label:<20}{left:<28}{right}\n")
+    out(to_text(table["rows"]) + "\n")
     flags = summary["flags"]
     assert isinstance(flags, list)
     if flags:

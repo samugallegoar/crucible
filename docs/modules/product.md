@@ -24,6 +24,21 @@ CLI: `crucible backtest`, `crucible results`, `crucible config show|set-home`, `
 `crucible_check_strategy`, `crucible_strategy_templates`, `crucible_strategy_schema`
 (`docs/modules/mcp_server.md`).
 
+### The results table (ADR-0077)
+
+`product/table.py::build_results_table(doc)` builds the one headline table from the finished result
+document: fixed rows (`ROW_IDS`), labels, number formats and `n/a` for a value that does not exist.
+The terminal output, the HTML report and the document's `results_table` (`columns`, `rows`,
+`markdown`) all render from it, so agents show one shape and a row never disappears. It reads only
+`results`, `validation`, `trades` and `diagnostics`, so it is not part of the golden surface.
+`product/diagnostics.py` computes the evidence behind the cost and edge rows from the run's own
+arrays: a second, frictionless vectorized run gives the gross curve (cost drag, break-even cost per
+side = the cost at which the mean bar return reaches zero, exact because the engine charges
+`turnover x (slippage + commission)`), every trade's price change gives the net per-trade
+statistics (a round trip pays the per-side cost twice), and an OLS of the strategy's bar returns on
+the benchmark's gives beta and annual alpha with a Newey-West t-statistic. Per-trade statistics treat
+trades as independent and use the price change on adjusted prices; the alpha is arithmetic.
+
 ### The flow
 
 1. Parse the spec (refuse with a location and a fix); normalize symbols; resolve the home.

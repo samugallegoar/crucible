@@ -252,7 +252,9 @@ def build_server() -> MCPServer:
         `realism_check` (about 30 s extra) also re-runs the rules with realistic fills
         (next-bar prices, spread, latency) and reports how much of the result survives.
 
-        Returns one document: `summary` (headline, verdict, flags in words, next steps),
+        Returns one document: `results_table.markdown` (the metric table: paste it as it is,
+        never rebuild, reorder, rename, add or drop rows; a value that does not exist already
+        reads `n/a`), `summary` (headline, verdict, flags in words, next steps),
         `results.strategy` and `results.benchmark` (every Sharpe with its 95% range), `validation`
         (trial count, deflated Sharpe, null test, realism level), `trades`, `strategy_explained`
         and the absolute `report` path. Tell the person `summary.verdict` and its flags; never say

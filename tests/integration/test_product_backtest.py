@@ -119,6 +119,18 @@ def test_the_document_has_everything_a_non_quant_needs(doc: dict[str, object]) -
     assert Path(str(doc["report"])).is_file()
 
 
+def test_the_document_carries_the_fixed_results_table(doc: dict[str, object]) -> None:
+    from crucible.product.table import ROW_IDS
+
+    table = doc["results_table"]
+    assert isinstance(table, dict)
+    assert [r["id"] for r in table["rows"]] == list(ROW_IDS)
+    assert "n/a" not in table["markdown"]  # a full run has every value
+    page = Path(str(doc["report"])).read_text(encoding="utf-8")
+    for row in table["rows"]:
+        assert row["label"] in page  # the HTML report shows the same rows
+
+
 def test_the_report_is_self_contained_and_shows_the_benchmark(doc: dict[str, object]) -> None:
     page = Path(str(doc["report"])).read_text(encoding="utf-8")
     assert page.count("<svg") == 2  # equity and drawdown, inline
@@ -228,6 +240,35 @@ def test_the_costs_are_in_the_result_and_change_it(home: Home) -> None:
     assert pricey_equity < free_equity
     assert free["request"]["costs"]["preset"] == "none"  # type: ignore[index]
     assert free["validation"]["realism_level"] == "FRICTIONLESS"  # type: ignore[index]
+
+
+def test_the_diagnostics_are_consistent_with_the_costs(home: Home) -> None:
+    standard = run_backtest(request(home, cost_preset="standard", null_iterations=0))
+    pricey = run_backtest(request(home, cost_preset="conservative", null_iterations=0))
+    free = run_backtest(request(home, cost_preset="none", null_iterations=0))
+    d_std, d_pricey, d_free = (
+        standard["diagnostics"],  # type: ignore[index]
+        pricey["diagnostics"],  # type: ignore[index]
+        free["diagnostics"],  # type: ignore[index]
+    )
+    # the cost drag is the gap between the gross and the net annual return, and costs raise it
+    assert d_std["cost_drag_pct"] == pytest.approx(
+        d_std["gross_cagr_pct"] - d_std["net_cagr_pct"], abs=1e-3
+    )
+    assert 0.0 < d_std["cost_drag_pct"] < d_pricey["cost_drag_pct"]
+    assert d_free["cost_drag_pct"] == 0.0
+    assert d_free["break_even_bps_per_side"] is None  # no cost assumed: nothing to scale
+    # the break-even cost belongs to the strategy, not to the cost assumed (costs are linear in
+    # turnover), so two assumptions must agree on it; and the assumed cost must be below it for
+    # the strategy to make money net of costs
+    assert d_std["break_even_bps_per_side"] == pytest.approx(
+        d_pricey["break_even_bps_per_side"], rel=0.15
+    )
+    assert d_std["turnover_per_year"] == d_pricey["turnover_per_year"] > 0
+    # a round trip pays the cost twice: net trade returns shift by exactly that, trade for trade
+    gap = d_free["trade_net"]["expectancy_bps"] - d_std["trade_net"]["expectancy_bps"]
+    assert gap == pytest.approx(2.0 * d_std["assumed_cost_bps_per_side"], abs=1e-3)
+    assert d_std["trade_net"]["n"] == standard["results"]["strategy"]["n_trades"]  # type: ignore[index]
 
 
 def test_the_cli_prints_one_json_document_and_lists_results(home: Home) -> None:

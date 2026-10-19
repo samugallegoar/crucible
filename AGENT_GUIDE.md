@@ -106,20 +106,35 @@ The response is one JSON document. The parts you use:
 
 | Key | Use |
 |---|---|
+| `results_table.markdown` | **the metric table: show it exactly as it is** (see below) |
 | `summary.headline` | the first sentence to say |
 | `summary.verdict`, `summary.verdict_level` | the honest conclusion (`not_conclusive`, `no_edge_detected`, `some_evidence`) |
 | `summary.versus_benchmark` | strategy against buy-and-hold: return and worst fall |
 | `summary.flags` | warnings to pass on, each already in words |
 | `summary.next_steps` | what the person could try next |
+| `diagnostics` | the numbers behind the cost and edge rows (break-even cost, net per-trade statistics, alpha and beta) |
 | `results.strategy`, `results.benchmark` | the numbers, each Sharpe with its 95% range |
 | `strategy_explained` | the rule read back; show it so they can confirm it |
 | `report` | absolute path of the HTML report to point the person to |
 | `data.warnings`, `data.repaired_rows` | data caveats; mention them if non-empty |
 
+**The table is fixed.** `results_table.markdown` has the same 23 rows, in the same order, with the
+same labels and number formats, in every run (`results_table.rows` has them one by one, each with a
+stable `id`). Paste it as it is, then add your own words around it. Do not rebuild the table from
+`results.*`, do not drop, reorder or rename a row, and do not reformat a number: people compare runs
+side by side and a table that changes shape between runs hides the comparison. A value that does not
+exist reads `n/a` (it is a row you must still show). If you want to stress something, say it in a
+sentence below the table.
+
 When a result looks promising (`not_conclusive` with `realism_not_checked` as the only blocker, or
 `some_evidence`-class numbers), run it again with `realism_check: true` (about 30 seconds more): the
 strongest verdict is not given until the rules have been tested with next-bar fills, a spread and
 latency. Do not skip it and then describe the result as stronger than `not_conclusive`.
+
+Read the evidence rows before the outcome rows. A strong return with a break-even cost close to
+the assumed cost, a net expectancy whose range includes zero, an alpha t-statistic below 2 or a
+Sharpe that shrinks under the realism check is a weak result, however good the final value looks;
+say so.
 
 Always quote a headline number together with its range (`sharpe_low`..`sharpe_high`), the trial
 count (`validation.trial_count`) and the realism level. Never quote a Sharpe alone.
