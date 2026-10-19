@@ -106,6 +106,7 @@ The response is one JSON document. The parts you use:
 
 | Key | Use |
 |---|---|
+| `results_table.markdown` | **the metric table: show it exactly as it is** (see below) |
 | `summary.headline` | the first sentence to say |
 | `summary.verdict`, `summary.verdict_level` | the honest conclusion (`not_conclusive`, `no_edge_detected`, `some_evidence`) |
 | `summary.versus_benchmark` | strategy against buy-and-hold: return and worst fall |
@@ -115,6 +116,14 @@ The response is one JSON document. The parts you use:
 | `strategy_explained` | the rule read back; show it so they can confirm it |
 | `report` | absolute path of the HTML report to point the person to |
 | `data.warnings`, `data.repaired_rows` | data caveats; mention them if non-empty |
+
+**The table is fixed.** `results_table.markdown` has the same 14 rows, in the same order, with the
+same labels and number formats, in every run (`results_table.rows` has them one by one, each with a
+stable `id`). Paste it as it is, then add your own words around it. Do not rebuild the table from
+`results.*`, do not drop, reorder or rename a row, and do not reformat a number: people compare runs
+side by side and a table that changes shape between runs hides the comparison. A value that does not
+exist reads `n/a` (it is a row you must still show). If you want to stress something, say it in a
+sentence below the table.
 
 When a result looks promising (`not_conclusive` with `realism_not_checked` as the only blocker, or
 `some_evidence`-class numbers), run it again with `realism_check: true` (about 30 seconds more): the

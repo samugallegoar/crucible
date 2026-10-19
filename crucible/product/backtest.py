@@ -47,6 +47,7 @@ from crucible.product.data import ensure_dataset, normalize_symbols, parse_day
 from crucible.product.home import Home, resolve_home
 from crucible.product.report import render_html
 from crucible.product.summary import Side, SummaryInputs, build_summary
+from crucible.product.table import build_results_table
 from crucible.strategy_spec import (
     StrategySpec,
     canonical_spec,
@@ -708,6 +709,8 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
             "seed": request.seed,
         },
     }
+
+    doc["results_table"] = build_results_table(doc)
 
     charts = {
         "dates": stamps,

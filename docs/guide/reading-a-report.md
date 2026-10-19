@@ -32,6 +32,10 @@ few-dozen-trade backtests will say "not conclusive", and that is the honest answ
 | Worst fall from a peak (max drawdown) | the biggest loss from a high to a later low: what you would have had to sit through. A strategy that earns less but falls much less can still be the one you could actually hold. |
 | Sharpe ratio, with its 95% range | return per unit of risk. The range is the honest part: if it is wide or includes zero, the data cannot tell skill from luck. It is an approximate bootstrap interval: on synthetic data with known answers it held the true Sharpe about 91-93% of the time with one year of daily data or with heavy-tailed returns, and about 94-95% with five years of well-behaved returns, so read it as the least uncertainty there is. The other rows have no range. |
 | Completed trades | round trips. A position still open at the end is not counted. |
+| Winning trades, average bars held, time in the market | how often a trade ended up, how long a trade lasted (in bars of the chosen interval), and the share of bars with a position open. |
+| Variants tried, deflated Sharpe, shuffled-returns p-value, realism level | how much searching went into the result and how it holds up against luck; read them next to the Sharpe, never without them. |
+
+The table always has these rows in this order; a number that cannot be computed reads `n/a`.
 
 Buy-and-hold uses the same instruments, window, capital and costs. With several symbols it is equal
 weight. Both curves are drawn together, then both drawdowns.

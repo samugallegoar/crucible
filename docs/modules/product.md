@@ -24,6 +24,14 @@ CLI: `crucible backtest`, `crucible results`, `crucible config show|set-home`, `
 `crucible_check_strategy`, `crucible_strategy_templates`, `crucible_strategy_schema`
 (`docs/modules/mcp_server.md`).
 
+### The results table (ADR-0077)
+
+`product/table.py::build_results_table(doc)` builds the one headline table from the finished result
+document: fixed rows (`ROW_IDS`), labels, number formats and `n/a` for a value that does not exist.
+The terminal output, the HTML report and the document's `results_table` (`columns`, `rows`,
+`markdown`) all render from it, so agents show one shape and a row never disappears. It reads only
+`results`, `validation` and `trades`, so it is not part of the golden surface.
+
 ### The flow
 
 1. Parse the spec (refuse with a location and a fix); normalize symbols; resolve the home.

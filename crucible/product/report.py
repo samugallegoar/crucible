@@ -156,12 +156,6 @@ def _table(headers: list[str], rows: list[list[str]], numeric_from: int = 1) -> 
     return f'<div class="scroll"><table><tr>{head}</tr>{body}</table></div>'
 
 
-def _interval(low: object, high: object) -> str:
-    if low is None or high is None:
-        return "-"
-    return f"{float(str(low)):.2f} to {float(str(high)):.2f}"
-
-
 def render_html(doc: dict[str, object], charts: dict[str, object]) -> str:
     """The report page for ``doc`` (the result document) and its chart series."""
     summary = doc["summary"]
@@ -205,30 +199,11 @@ def render_html(doc: dict[str, object], charts: dict[str, object]) -> str:
         title="How far the account was below its previous peak",
     )
 
-    def sharpe_cell(side: dict[str, object]) -> str:
-        interval = _interval(side["sharpe_low"], side["sharpe_high"])
-        return f"{float(str(side['sharpe'])):.2f} ({interval})"
-
-    def metric_row(name: str, key: str, fmt: str) -> list[str]:
-        return [name, fmt.format(strat[key]), fmt.format(bench[key])]
-
-    rows = [
-        [
-            "Final value",
-            f"${float(strat['final_equity']):,.0f}",
-            f"${float(bench['final_equity']):,.0f}",
-        ],
-        metric_row("Total return", "total_return_pct", "{:+.1f}%"),
-        metric_row("Return per year", "cagr_pct", "{:.1f}%"),
-        metric_row("Volatility (per year)", "volatility_pct", "{:.1f}%"),
-        metric_row("Worst fall from a peak", "max_drawdown_pct", "{:.1f}%"),
-        [
-            "Sharpe ratio (95% range)",
-            sharpe_cell(strat),
-            sharpe_cell(bench),
-        ],
-        ["Completed trades", str(strat["n_trades"]), "1 (held throughout)"],
-    ]
+    table = doc["results_table"]
+    assert isinstance(table, dict)
+    table_rows = table["rows"]
+    assert isinstance(table_rows, list)
+    rows = [[str(r["label"]), str(r["strategy"]), str(r["benchmark"])] for r in table_rows]
 
     flags = summary["flags"]
     assert isinstance(flags, list)

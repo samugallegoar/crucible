@@ -119,6 +119,18 @@ def test_the_document_has_everything_a_non_quant_needs(doc: dict[str, object]) -
     assert Path(str(doc["report"])).is_file()
 
 
+def test_the_document_carries_the_fixed_results_table(doc: dict[str, object]) -> None:
+    from crucible.product.table import ROW_IDS
+
+    table = doc["results_table"]
+    assert isinstance(table, dict)
+    assert [r["id"] for r in table["rows"]] == list(ROW_IDS)
+    assert "n/a" not in table["markdown"]  # a full run has every value
+    page = Path(str(doc["report"])).read_text(encoding="utf-8")
+    for row in table["rows"]:
+        assert row["label"] in page  # the HTML report shows the same rows
+
+
 def test_the_report_is_self_contained_and_shows_the_benchmark(doc: dict[str, object]) -> None:
     page = Path(str(doc["report"])).read_text(encoding="utf-8")
     assert page.count("<svg") == 2  # equity and drawdown, inline

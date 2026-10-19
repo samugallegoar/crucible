@@ -45,22 +45,31 @@ seconds.
 ## What comes back (the parts the agent reads to you)
 
 ```text
-SMA 10/30 crossover turned $100,000 into $227,474 (+127.5%, 7.8% a year) on SPY from 2015-01-02
-to 2025-12-30; buying and holding SPY would have made $402,665 (+302.7%, 13.5% a year).
+SMA 10/30 crossover turned $100,000 into $225,789 (+125.8%, 7.7% a year) on SPY from 2015-01-02
+to 2025-12-31; buying and holding SPY would have made $399,682 (+299.7%, 13.5% a year).
 
 Verdict: Not conclusive: it made money in this one backtest and earned less than buy-and-hold; the
 evidence is too thin to tell skill from luck (see the warnings). Treat it as an idea worth testing
 further, not a basis for real money.
 
-                      Strategy                    Buy and hold
-  Final value         $227,474                    $402,665
-  Return per year     7.8%                        13.5%
-  Worst fall          -17.8%                      -33.7%
-  Sharpe (95% range)  0.74 (0.11 to 1.36)         0.80 (0.29 to 1.45)
-  Trades              39                          -
+  Metric                                Strategy             Buy and hold
+  Final value                           $225,789             $399,682
+  Total return                          +125.8%              +299.7%
+  Return per year                       7.7%                 13.5%
+  Volatility (per year)                 10.9%                17.8%
+  Worst fall from a peak                -17.8%               -33.7%
+  Sharpe ratio (95% range)              0.74 (0.10 to 1.34)  0.80 (0.28 to 1.44)
+  Completed trades                      39                   -
+  Winning trades (before costs)         48.7%                -
+  Average bars held                     47.3                 -
+  Time in the market                    67.3%                100.0%
+  Variants tried (trial count)          1                    -
+  Chance the Sharpe is real (deflated)  99%                  -
+  Shuffled-returns p-value              0.228                -
+  Realism level                         BASIC_FRICTION       -
 
 Warnings:
-  - The 95% range for the Sharpe ratio is wide (0.11 to 1.36): the data cannot pin down how good
+  - The 95% range for the Sharpe ratio is wide (0.10 to 1.34): the data cannot pin down how good
     the strategy is, only that the estimate is above zero.
   - Only 39 completed trades. A few dozen decisions are not enough to separate skill from luck (this
     report asks for 100 or more).
@@ -69,9 +78,8 @@ Warnings:
   - Per unit of risk, the strategy did not improve on simply buying and holding (Sharpe 0.74 vs 0.80).
 ```
 
-Also in the document: trial count 1, deflated Sharpe 0.99, the shuffle test (matched or beat in none
-of 100 tries), 49% of trades profitable before costs, invested 67% of the time, the 39 trades one
-by one, and `report`: the absolute path of `summary.html`.
+The same table is in the document as `results_table` (rows plus a ready-made `markdown` text), and
+the document also holds the 39 trades one by one and `report`: the absolute path of `summary.html`.
 
 ## What the agent tells you
 

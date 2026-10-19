@@ -66,7 +66,7 @@ the rules above apply. Tracked as a limitation in the README.
 | Trial registry | none (DDL is the schema) | Migrate additively; never drop or repurpose a column. |
 | Strategy spec (ADR-0067) | `spec_version` (integer, currently 1) in the spec | A field, indicator or condition changes meaning, or one is removed. Adding an indicator or an optional field is additive. A spec with another version is refused with the version Crucible reads. |
 | One-step datasets (ADR-0071) | identity version 2 in `request.json` | The dataset name or the recorded request changes meaning. Version 1 datasets (no calendar in the name, no record) are never reused: the request is fetched again. |
-| One-step result document (ADR-0068) | `schema_version` (integer, currently 2; 2 = ADR-0070 p-value) in `summary.json` and the `crucible backtest --json` document | A key is removed, renamed or changes unit or meaning. Adding a key is additive. Percentages are in percent; the verdict thresholds in `product/summary.py` are behaviour, so changing one is recorded in the changelog. |
+| One-step result document (ADR-0068) | `schema_version` (integer, currently 2; 2 = ADR-0070 p-value) in `summary.json` and the `crucible backtest --json` document | A key is removed, renamed or changes unit or meaning. Adding a key is additive (`results_table`, ADR-0077, is one: its row ids are stable, removing or renaming one is a bump). Percentages are in percent; the verdict thresholds in `product/summary.py` are behaviour, so changing one is recorded in the changelog. |
 
 A reader must check the version before trusting the shape: `load_experiment`
 (`docs/USAGE.md`) refuses a run whose `schema_version` is newer than the code
