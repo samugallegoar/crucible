@@ -36,7 +36,10 @@ if TYPE_CHECKING:
     from crucible.core.types import TimestampNs
     from crucible.vectorized.interfaces import SignalFunction
 
-DEFAULT_ITERATIONS = 100
+DEFAULT_ITERATIONS = 1_000
+"""Shuffles per run (ADR-0078). The p-value is a Monte Carlo estimate with a standard error of
+``sqrt(p (1 - p) / B)``: about 0.04 at B = 100, 0.013 at B = 1,000. Costs about 25-30 ms per
+shuffle (about 30 seconds for ten years of daily bars); ``null_iterations`` changes it."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from crucible.product.summary import p_text
+
 ROW_IDS: tuple[str, ...] = (
     "final_value",
     "total_return",
@@ -206,7 +208,7 @@ def build_results_table(doc: dict[str, Any]) -> dict[str, Any]:
         ),
         "shuffle_p_value": (
             "Shuffled-returns p-value",
-            na if null is None else f"{float(null['p_value']):.3f}",
+            na if null is None else p_text(float(null["p_value"])),
             dash,
         ),
         "realism_retention": (
