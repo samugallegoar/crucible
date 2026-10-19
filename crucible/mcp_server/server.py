@@ -228,14 +228,16 @@ def build_server() -> MCPServer:
         calendar: str = "XNYS",
         interval: Literal["1d", "1h", "30m", "15m", "5m"] = "1d",
         offline: bool = False,
-        null_iterations: int = 100,
+        null_iterations: int = 10_000,
         family: str | None = None,
         realism_check: bool = False,
     ) -> dict[str, object]:
         """Backtest a strategy in one step and compare it with buy-and-hold. No files or code
         needed: give the instrument(s), the period and the rule. Downloads prices if they are not
         stored (internet needed the first time), checks the data, runs the backtest, a
-        buy-and-hold benchmark and a shuffled-returns test, and writes an HTML report.
+        buy-and-hold benchmark and a shuffled-returns test (`null_iterations`, default 10000: about
+        five minutes for ten years of daily bars; use 100-200 while exploring), and writes an HTML
+        report.
 
         Strategy: either `spec` (an object, see crucible_strategy_templates) or the inline rule
         `entry` / `exit`, e.g. entry="sma(10) crosses_above sma(30)", exit="sma(10) crosses_below

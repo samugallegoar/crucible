@@ -112,8 +112,8 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     backtest.add_argument(
         "--null-iterations",
         type=int,
-        default=100,
-        help="shuffled-returns test size (0 turns it off)",
+        default=10_000,
+        help="shuffled-returns test size (default 10000, a few minutes; 0 turns it off)",
     )
     backtest.add_argument("--family", default=None, help="trial-counting family (default: auto)")
     backtest.add_argument(

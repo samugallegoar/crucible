@@ -8,6 +8,15 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Shuffled-returns test: 10,000 shuffles by default (ADR-0078)
+- `null_iterations` defaults to 10,000 (it was 100) in `crucible backtest` and the MCP tool: the
+  Monte Carlo p-value's standard error drops from about 0.04 to 0.004 at p = 0.2. **Behaviour
+  change:** a default run takes about five minutes for ten years of daily bars (it took about six
+  seconds); `--null-iterations 100` restores the quick run. Default-run p-values and their
+  wording change (0.228 became 0.219 on the SMA example); no seed, trial count, DSR or golden
+  changed (the golden fixes `null_iterations`). A p-value below 0.001 is now shown with four
+  decimals instead of `0.000`.
+
 ### One fixed results table (ADR-0077)
 - `crucible backtest` (terminal, `--json`, the MCP tool and the HTML report) now takes its metric
   table from one builder: the same 23 rows, in the same order, with the same labels and number

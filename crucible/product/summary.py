@@ -121,6 +121,11 @@ class Summary:
         }
 
 
+def p_text(value: float) -> str:
+    """A p-value for people: three decimals, four when it is below 0.001 (never ``0.000``)."""
+    return f"{value:.3f}" if value >= 0.001 else f"{value:.4f}"
+
+
 def bar_returns(interval: str) -> str:
     """How the report names the returns: "daily" for daily bars, "1h-bar" and so on intraday."""
     return "daily" if interval == "1d" else f"{interval}-bar"
@@ -243,8 +248,8 @@ def _flags(i: SummaryInputs) -> list[Flag]:
                 f"Re-ordering the same {bar_returns(i.interval)} returns at random did as well "
                 "or better in "
                 f"{i.null_exceedances} of {i.null_iterations} tries (p-value "
-                f"{i.null_p_value:.3f}). That is within what luck produces, so the timing of the "
-                "rules has not been shown to matter.",
+                f"{p_text(i.null_p_value)}). That is within what luck produces, so the "
+                "timing of the rules has not been shown to matter.",
             )
         )
     if i.realism is not None:
@@ -446,8 +451,8 @@ def build_summary(i: SummaryInputs) -> Summary:
         trust.append(
             f"Random re-ordering test: the same {bar_returns(i.interval)} returns shuffled at "
             "random matched or beat "
-            f"the strategy {beaten} (p-value {i.null_p_value:.3f}; with "
-            f"{i.null_iterations} tries it cannot go below {1 / (i.null_iterations + 1):.3f}). "
+            f"the strategy {beaten} (p-value {p_text(i.null_p_value)}; with "
+            f"{i.null_iterations} tries it cannot go below {p_text(1 / (i.null_iterations + 1))}). "
             "A low number means the strategy gains from the real order "
             "of returns (trends, calm and stormy spells), which shuffling destroys; it does not "
             "by itself show the edge will continue, and it does not account for other "

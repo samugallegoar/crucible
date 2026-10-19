@@ -164,7 +164,9 @@ count (`validation.trial_count`) and the realism level. Never quote a Sharpe alo
   trial family (`validation.trial_count_scope`); variants tried elsewhere are not in it.
   `validation.dsr_home_wide` counts every backtest in the home (`home_trial_count`); if you have
   tried the idea on several instruments, quote that one too.
-- **Random re-ordering test**: the same bar-to-bar moves shuffled; quote it as "matched or beaten in
+- **Random re-ordering test** (10,000 shuffles by default, about five minutes for ten years of
+  daily bars; pass `null_iterations` 100-200 while exploring, and say the p-value is then coarse,
+  about +/-0.04, and run the default for the result you report): the same bar-to-bar moves shuffled; quote it as "matched or beaten in
   `exceedances` of `iterations` shuffles (p-value `p_value`)". A strategy that does not beat
   shuffles has not shown that its timing matters; one that does has not shown it will continue.
 - **What the fills are**: `provenance.price_basis_note` and `provenance.execution_assumptions` say

@@ -39,8 +39,9 @@ uses the default costs and reads the rule back by calling `crucible_check_strate
 ```
 
 Crucible downloads SPY once, checks the data (sorted, positive prices, bar consistency, session
-coverage), runs the strategy, runs buy-and-hold, runs 100 shuffles, and writes the report. About six
-seconds.
+coverage), runs the strategy, runs buy-and-hold, runs 10,000 shuffles, and writes the report. About five minutes
+for ten years of daily bars, nearly all of it the shuffles (pass `null_iterations: 100` to get an
+answer in about six seconds while exploring).
 
 ## What comes back (the parts the agent reads to you)
 
