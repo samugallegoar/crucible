@@ -26,16 +26,12 @@ import numpy as np
 
 from crucible.core.drawdown import max_drawdown_from_returns as _max_drawdown_from_returns
 from crucible.core.errors import ConfigurationError
+from crucible.core.stats import per_period_sharpe as _per_period_sharpe
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 DEFAULT_DRAWDOWN_THRESHOLD = -0.30
-
-
-def _per_period_sharpe(returns: np.ndarray) -> float:
-    std = returns.std(ddof=1)
-    return float(returns.mean() / std) if std else 0.0
 
 
 def _validated_array(returns: Sequence[float], n_iterations: int) -> np.ndarray:

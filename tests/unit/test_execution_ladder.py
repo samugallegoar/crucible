@@ -179,16 +179,21 @@ def test_no_fill_against_bar_from_the_orders_own_past() -> None:
 
 
 def test_day_limit_expires_after_one_full_bar() -> None:
+    """ADR-0010 6: a DAY order that rests through one full bar of its symbol without filling
+    expires. The counter used to require two full bars, so a DAY order could fill a session
+    after it should have died (found in the 2026-10 audit)."""
     manager = InMemoryOrderManager()
     sim = _ladder(manager, slippage_bps=0.0, commission_bps=0.0)
     order = _accepted(manager, sim, type_=OrderType.LIMIT, limit=50.0, tif=TimeInForce.DAY)
+    # bar 100 is its first full bar (it arrived before this bar's open) and does not fill
     fills, closed = sim.on_bar(_bar(100, open_=100.0, high=101.0, low=99.0, close=100.0))
     assert fills == []
-    assert closed == []
-    fills, closed = sim.on_bar(_bar(200, open_=100.0, high=101.0, low=99.0, close=100.0))
-    assert fills == []
-    assert [c.order_id for c in closed] == [order.id]
+    assert [(c.order_id, c.state) for c in closed] == [(order.id, OrderState.EXPIRED)]
     assert order.state is OrderState.EXPIRED
+    # a later bar trades far through the limit: the order is no longer there to fill
+    fills, closed = sim.on_bar(_bar(200, open_=40.0, high=41.0, low=39.0, close=40.0))
+    assert fills == []
+    assert closed == []
 
 
 def test_level0_fills_instantly_at_close_with_no_costs() -> None:
@@ -316,3 +321,11 @@ def test_a_sell_limit_at_or_below_the_bid_fills_as_a_taker_at_the_bid() -> None:
     price, passive = _limit_fill(OrderSide.SELL, 0.37)  # type: ignore[misc]
     assert price == pytest.approx(0.38)
     assert not passive
+
+
+def test_level0_refuses_a_configured_cost_model() -> None:
+    """Regression (2026-10 audit, LOW): Level 0 fills at the bar's close with zero commission by
+    definition, so a spread/slippage/commission setup was silently ignored. The config path
+    already refuses it; this is the direct-API guard."""
+    with pytest.raises(ConfigurationError, match="FRICTIONLESS"):
+        _ladder(InMemoryOrderManager(), RealismLevel.FRICTIONLESS, slippage_bps=10.0)

@@ -29,18 +29,31 @@ if TYPE_CHECKING:
     from crucible.core.types import Currency
 
 
+def _checked_rate(rate: Decimal | None, ccy: Currency, base: Currency, direction: str) -> Decimal:
+    """A marking rate must be finite and strictly positive: a zero or negative mid silently
+    zeroed or inverted equity while every accounting identity still passed (2026-10 audit)."""
+    if rate is None:
+        msg = f"no FX mid rate available to convert {direction}"
+        raise CrucibleError(msg)
+    if not rate.is_finite() or rate <= 0:
+        msg = (
+            f"FX mid rate {ccy}->{base} is {rate}, which is not a usable price: a marking rate "
+            "must be finite and strictly positive. Fix the fx_rates dataset row "
+            "(or the symbol's pair) before running"
+        )
+        raise CrucibleError(msg)
+    return rate
+
+
 def convert_at_mid(
     amount: Decimal, ccy: Currency, base: Currency, mid_rates: Mapping[Currency, Decimal]
 ) -> Decimal:
     """Marking role: ``amount`` (in ``ccy``) valued in ``base`` at the mid
     rate. Identity when ``ccy == base`` -- no rate lookup needed for a
     single-currency portfolio."""
-    if ccy == base:
+    if ccy == base or amount == 0:
         return amount
-    rate = mid_rates.get(ccy)
-    if rate is None:
-        msg = f"no FX mid rate available to convert {ccy} into {base}"
-        raise CrucibleError(msg)
+    rate = _checked_rate(mid_rates.get(ccy), ccy, base, f"{ccy} into {base}")
     return amount * rate
 
 
@@ -53,12 +66,9 @@ def convert_from_base_at_mid(
     fraction of base-currency equity (ADR-0029). Identity when
     ``ccy == base``. ``mid_rates`` is still keyed ``ccy -> base`` (ADR-0009's
     one direction), so this divides rather than multiplies."""
-    if ccy == base:
+    if ccy == base or amount == 0:
         return amount
-    rate = mid_rates.get(ccy)
-    if rate is None:
-        msg = f"no FX mid rate available to convert {base} into {ccy}"
-        raise CrucibleError(msg)
+    rate = _checked_rate(mid_rates.get(ccy), ccy, base, f"{base} into {ccy}")
     return amount / rate
 
 

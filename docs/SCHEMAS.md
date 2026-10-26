@@ -152,7 +152,7 @@ what each level adds: `RealismLevel` in `docs/INVENTORY.md` and `docs/modules/ex
 | `initial_cash` | decimal | yes |  | > 0.0 |
 | `start` | string | yes |  | ISO date (UTC midnight) or ISO datetime with tz |
 | `end` | string | yes |  |  |
-| `periods_per_year` | number | no | `252.0` | > 0 |
+| `periods_per_year` | number | no | `252.0` | > 0; Bars per year used to annualize per-bar statistics. Leave it unset to derive it from the bars' spacing and the calendar (252 sessions x median bars per session; 365 for 24/7); setting it overrides the derivation (2026-10 audit, M5). |
 | `settlement_lag_days` | integer | no | `0` | ≥ 0; T+N settlement (ADR-0028): delays sale proceeds joining available cash by N calendar days; never affects equity. 0 = T+0 (unchanged). |
 | `short_borrow_rate` | number | no | `0.0` | ≥ 0.0; Annualized stock-loan fee on short notional (Actual/365, ADR-0032), accrued at every mark. 0 = no borrow cost (unchanged). |
 | `margin_financing_rate` | number | no | `0.0` | ≥ 0.0; Annualized interest on a negative (margin) cash balance (Actual/365, ADR-0032), accrued at every mark. 0 = no financing cost (unchanged). |
@@ -592,8 +592,10 @@ Current `schema_version`: **1**.
 | `schema_version` | integer | no | both | Artifact layout version (`SCHEMA_VERSION`); absent in runs before it existed. |
 | `experiment_id` | string | no | both | `EXP-<12 hex>`: config hash + data hashes. |
 | `config_hash` | string | no | both | SHA-256 of the canonical config JSON. |
+| `crucible_version` | string | no | both | `crucible.__version__` of the code that ran; unlike `commit`, a wheel install records it. |
 | `commit` | string | no | both | Git commit of the code that ran (`unknown` outside git). |
 | `dirty` | boolean | no | both | True if the working tree had uncommitted changes. |
+| `code_fingerprint` | string | no | both | SHA-256 over HEAD, `git status` and the working-tree diff: the code identity the overwrite guard compares (ADR-0079). `unknown` outside a readable checkout. |
 | `data_manifests` | object | no | both | Role (`bars`, `corporate_actions`, `universe`, `fx_rates`) -> dataset content hash. |
 | `bars_price_basis` | string | no | both | The bars dataset's declared price basis: `adjusted` (a research series, not historical quotes), `raw`, or `undeclared` (ADR-0071). |
 | `seed` | integer | no | both | `experiment.seed`. |

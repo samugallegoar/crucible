@@ -37,6 +37,18 @@ summary — real values or an explicit reason, never silently missing.
   (equity)` is the shared per-period return series both this and
   `validation.dsr` operate on (ADR-0015) — extracted so the two never
   silently drift apart.
+  A series with no dispersion (a strategy that never traded, or a constant
+  per-period return whose values differ only by float dust) has no Sharpe
+  ratio: `sharpe` and `volatility` report `0.0`, the shared estimators live in
+  `crucible/core/stats.py` with the DSR and the Monte Carlo, and the runners
+  record a `NULL` trial Sharpe instead of the ~1e14 one this used to produce
+  (ADR-0079).
+- Two realized-PnL definitions coexist by design (2026-10 audit, M8): the **ledger**
+  (`realized_pnl`) uses average cost (`PositionState.apply`), while **`trades.parquet`** uses
+  FIFO lots. Buy 10 @100, buy 10 @90, sell 10 @105 gives ledger realized 100 (10 left at 95) and
+  trade-log PnL 50. Both are internally consistent; they answer different questions ("what did
+  the book realise on the position" vs "what did each round trip earn") and are not meant to add
+  up to each other. The trade log is gross of commissions, which the ledger books separately.
 - `trades.py`: `build_trades` — FIFO lot matching per symbol, longs and
   shorts, gross PnL, holding period; typed empty frame when no round trips.
   `build_episodes(weights, pnl)` (ADR-0061, ADR-0062) — closed position episodes from a

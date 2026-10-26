@@ -91,6 +91,25 @@ class PortfolioSnapshot:
             total += convert_at_mid(amount, ccy, self._base, self._fx_mid_rates)
         return total
 
+    def cash_total(self, base_currency: Currency) -> Decimal:
+        """Every currency's cash valued in the base at the mid rate (the ``equity.parquet.cash``
+        column).
+
+        ``cash(base)`` is only the base-currency wallet: reporting it as the portfolio's cash
+        made ``cash + positions`` disagree with equity by the foreign wallet's converted value
+        (2026-10 audit). Uses the same marking rates as ``equity``.
+        """
+        if base_currency != self._base:
+            msg = (
+                f"this run is denominated in {self._base}; cash can only be totalled in that "
+                f"currency, not {base_currency}"
+            )
+            raise CrucibleError(msg)
+        total = Decimal("0")
+        for ccy, amount in self._balances.cash.items():
+            total += convert_at_mid(amount, ccy, self._base, self._fx_mid_rates)
+        return total
+
     def position(self, symbol: Symbol) -> SnapshotPosition | None:
         state = self._balances.positions.get(symbol)
         if state is None or state.qty == 0:
@@ -236,4 +255,13 @@ class PortfolioSnapshot:
 
     @property
     def fees_paid(self) -> Decimal:
-        return self._balances.fees_paid
+        """Cumulative fees in the base currency, each currency converted at the snapshot's mid.
+
+        The ledger keeps fees per currency; adding the raw amounts (the old behaviour) added
+        dollars to euros. The conversion values a past fee at the current rate, so an FX move
+        after the fee was paid changes this figure -- the cash impact at posting time is not
+        tracked separately (2026-10 audit, H5)."""
+        total = Decimal("0")
+        for ccy, amount in self._balances.fees_by_currency.items():
+            total += convert_at_mid(amount, ccy, self._base, self._fx_mid_rates)
+        return total

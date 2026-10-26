@@ -34,24 +34,29 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 import polars as pl
 
+from crucible import __version__ as crucible_version
 from crucible.analytics.metrics import compute_metrics, simple_returns
 from crucible.analytics.plots import plot_equity_drawdown
 from crucible.analytics.report import render_report
 from crucible.analytics.trades import EPISODE_LABEL, build_episodes
 from crucible.core.errors import ConfigurationError, CrucibleError
+from crucible.core.stats import is_degenerate_returns, per_period_sharpe
 from crucible.core.types import DatasetId, ExperimentId, RealismLevel
+from crucible.data.calendars import periods_per_year_for
 from crucible.data.store import ParquetDataStore, price_basis_of
 from crucible.experiments.artifacts import SCHEMA_VERSION
 from crucible.experiments.config import ExperimentConfig, canonical_yaml, config_hash
 from crucible.experiments.runner import (
+    _code_fingerprint,
     _env_lock_hash,
     _git_provenance,
+    _refuse_overwrite,
     _write_parquet,
     experiment_id,
     import_entrypoint,
 )
 from crucible.validation.contamination import check_contamination
-from crucible.validation.dsr import DsrResult, deflated_sharpe_ratio, per_period_sharpe
+from crucible.validation.dsr import DsrResult, deflated_sharpe_ratio
 from crucible.validation.trial_registry import (
     DuckDBTrialRegistry,
     frequency_mismatch,
@@ -222,9 +227,26 @@ class _PendingVectorizedRun:
     episodes: pl.DataFrame
     metrics: dict[str, MetricValue]
     returns: NDArray[np.float64]
-    this_sharpe: float
+    this_sharpe: float | None
     commit: str
     dirty: bool
+    code_fingerprint: str
+
+
+def _periods_per_year(config: ExperimentConfig, store: ParquetDataStore) -> float:
+    """The config's value when the author set it, else the bars' own factor (252 sessions x
+    median bars per session; 365 for ``24/7``). The default 252 is a daily factor: an intraday
+    config that left it untouched annualized by 1/sqrt(bars_per_session) too little (M5)."""
+    if "periods_per_year" in config.model_fields_set:
+        return float(config.periods_per_year)
+    stamps = (
+        store.read(DatasetId(config.data.bars), config.end_ns)
+        .select("event_time")
+        .collect()
+        .get_column("event_time")
+        .to_list()
+    )
+    return periods_per_year_for(stamps, config.data.calendar)
 
 
 def _run_vectorized_compute(
@@ -255,7 +277,10 @@ def _run_vectorized_compute(
     episodes = build_episodes(result.weights, result.pnl)
     rng = np.random.default_rng(config.experiment.seed)
     metrics = compute_metrics(
-        result.equity, episodes, rng=rng, periods_per_year=config.periods_per_year
+        result.equity,
+        episodes,
+        rng=rng,
+        periods_per_year=_periods_per_year(config, store),
     )
     returns = simple_returns(result.equity)
     commit, dirty = _git_provenance()
@@ -269,14 +294,15 @@ def _run_vectorized_compute(
         episodes=episodes,
         metrics=metrics,
         returns=returns,
-        this_sharpe=per_period_sharpe(returns),
+        this_sharpe=None if is_degenerate_returns(returns) else per_period_sharpe(returns),
         commit=commit,
         dirty=dirty,
+        code_fingerprint=_code_fingerprint(),
     )
 
 
 def _finalize_vectorized(
-    pending: _PendingVectorizedRun, *, record_trial: bool
+    pending: _PendingVectorizedRun, *, record_trial: bool, overwrite: bool = False
 ) -> VectorizedRunArtifacts:
     """The trial-registry-touching half (ADR-0038): records the trial, computes DSR and
     contamination exactly as ``runner._finalize_experiment`` does, writes the artifacts."""
@@ -288,6 +314,14 @@ def _finalize_vectorized(
     data_hashes = pending.data_hashes
     commit, dirty = pending.commit, pending.dirty
     family = config.experiment.family
+    # before the trial registry and before any file: a refused overwrite writes nothing (ADR-0079)
+    _refuse_overwrite(
+        out_dir,
+        commit=commit,
+        dirty=dirty,
+        fingerprint=pending.code_fingerprint,
+        overwrite=overwrite,
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # this trial's own per-period Sharpe is recorded before trial_sharpes() is read, so its own
@@ -325,8 +359,10 @@ def _finalize_vectorized(
         "schema_version": SCHEMA_VERSION,
         "experiment_id": str(exp_id),
         "config_hash": config_hash(config),
+        "crucible_version": crucible_version,
         "commit": commit,
         "dirty": dirty,
+        "code_fingerprint": pending.code_fingerprint,
         "data_manifests": data_hashes,
         # the bars' declared price basis (ADR-0071): adjusted prices are a research series, not
         # the quotes that traded; "undeclared" for a dataset that does not say
@@ -417,7 +453,11 @@ def _finalize_vectorized(
 
 
 def run_vectorized_experiment(
-    config: ExperimentConfig, artifacts_root: Path, *, record_trial: bool = True
+    config: ExperimentConfig,
+    artifacts_root: Path,
+    *,
+    record_trial: bool = True,
+    overwrite: bool = False,
 ) -> VectorizedRunArtifacts:
     """Runs a vectorized backtest end-to-end and writes artifacts under
     ``<artifacts_root>/<EXP-ID>/``: ``config.yaml``, ``manifest.json``, ``equity.parquet``
@@ -431,7 +471,9 @@ def run_vectorized_experiment(
     stay unreported for a single vectorized run (``None`` in the manifest, stated in the report).
     """
     return _finalize_vectorized(
-        _run_vectorized_compute(config, artifacts_root), record_trial=record_trial
+        _run_vectorized_compute(config, artifacts_root),
+        record_trial=record_trial,
+        overwrite=overwrite,
     )
 
 
@@ -441,6 +483,7 @@ def run_vectorized_experiment_parallel(
     *,
     max_workers: int | None = None,
     record_trial: bool = True,
+    overwrite: bool = False,
 ) -> list[VectorizedRunArtifacts]:
     """The vectorized twin of ``runner.run_experiment_parallel`` (ADR-0038, ADR-0061).
 
@@ -457,4 +500,7 @@ def run_vectorized_experiment_parallel(
         max_workers=max_workers, mp_context=multiprocessing.get_context("spawn")
     ) as pool:
         pending = list(pool.map(_run_vectorized_compute, configs, [artifacts_root] * len(configs)))
-    return [_finalize_vectorized(item, record_trial=record_trial) for item in pending]
+    return [
+        _finalize_vectorized(item, record_trial=record_trial, overwrite=overwrite)
+        for item in pending
+    ]

@@ -4,7 +4,7 @@
 
 The `crucible` command (`crucible/cli/main.py`: `build_parser`, `main`). Every command, with its
 options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `spec check`, `spec templates`,
-`config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`,
+`config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `data build`, `data fetch`, `data check`, `data list`. Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1. stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
@@ -85,6 +85,13 @@ The `crucible` command.
   gone — the registry row alone is still valid). Prints
   `no trials recorded for family ...` (exit 0) rather than erroring on an
   empty/unknown family.
+- `crucible walk-forward <config.yaml> --param NAME --values "v1,v2" --train SPAN --test SPAN
+  --step SPAN [--metric sharpe] [--holdout SPAN] [--max-runs N] [--artifacts DIR]` — chooses the
+  parameter on each fold's train window and reports only out-of-fold metrics
+  (`experiments.walk_forward.walk_forward`, ADR-0081). Test runs are not recorded as trials, so
+  the per-fold selection is not deflated; the summary says so and lives in
+  `<artifacts>/walk_forward.json`. Refuses a metric whose best value is the smallest, a single
+  candidate, a plan with no fitting fold, or one above `--max-runs`.
 - `crucible validate <config.yaml> [--factors CSV] [--artifacts DIR]` —
   runs the config like `run`; if `--factors` is given, regresses the run's
   own returns on the CSV's factor columns (one column per factor, one row

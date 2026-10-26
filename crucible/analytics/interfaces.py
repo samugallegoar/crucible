@@ -19,8 +19,9 @@ import polars as pl
 @dataclass(frozen=True, slots=True)
 class MetricValue:
     """A point estimate with its confidence interval. ``ci_low``/``ci_high``
-    are None only for quantities that are identities, not estimates
-    (e.g., total fees paid)."""
+    are None for a quantity that is an identity (e.g. total fees paid, a trade
+    count) or that this build has no interval for (annualized volatility, hit
+    rate): the absence is reported, never invented."""
 
     value: float
     ci_low: float | None

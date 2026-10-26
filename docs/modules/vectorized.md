@@ -27,7 +27,13 @@ shift discipline (mandatory lag between signal and position, poison-tested).
 `engine.py::VectorizedBacktestEngine.run`:
 1. Reads `bars` via `store.read(bars_dataset, as_of=config.end)` (PIT-legal
    up to the run's end), calls the `SignalFunction`, validates the result
-   has `ts`/`symbol`/`score` columns (`ConfigurationError` otherwise).
+   has `ts`/`symbol`/`score` columns (`ConfigurationError` otherwise) and
+   that it holds **exactly one score per `(symbol, ts)` of the bar grid**
+   (`ConfigurationError` for a dropped, duplicated or invented row; a bars
+   dataset with a duplicated `(symbol, event_time)` is a `DataQualityError`).
+   The lag below is by *row*, so a sparse score frame would re-time every
+   later weight and drop those bars' returns from the equity curve without a
+   trace (2026-10 audit).
 2. **Shift discipline, the engine's one unconditional operation**:
    `weight = score.shift(lag_bars).over(symbol)`, `lag_bars >= 1` refused
    otherwise (no opt-out). This is *structural*, not a check on the signal

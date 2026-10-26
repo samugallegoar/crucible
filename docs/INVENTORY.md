@@ -30,12 +30,13 @@
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
 | `crucible report` | `<experiment_id> --artifacts --json` | Re-render the report for a finished experiment |
 | `crucible results` | `--home --json --limit` | List earlier one-step backtests, newest first |
-| `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --json --override --resume --runtime --stop-at` | Run an experiment from a YAML config |
-| `crucible run-vectorized` | `<config> --artifacts --json --override` | Run an experiment on the vectorized engine (Levels 0-1) |
+| `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --json --override --overwrite --resume --runtime --stop-at` | Run an experiment from a YAML config |
+| `crucible run-vectorized` | `<config> --artifacts --json --override --overwrite` | Run an experiment on the vectorized engine (Levels 0-1) |
 | `crucible schema` | `--kind --out` | Print a JSON Schema: the experiment config (default) or a strategy spec |
 | `crucible spec check` | `--direction --entry --entry-window --exit --exit-at --flat-by-close --fraction --json --market-on-close --max-holding-bars --name --short-entry --short-exit --spec --stop-loss-pct --take-profit-pct` | Validate a spec and read it back in plain language |
 | `crucible spec templates` | `--json --name` | List ready-made specs to start from |
 | `crucible validate` | `<config> --artifacts --factors --json --override` | Run an experiment, optionally with a factor regression (R4.7) |
+| `crucible walk-forward` | `<config> --artifacts --holdout --json --max-runs --metric --override --param --step --test --train --values` | Choose a parameter on train folds, report only out-of-fold metrics (ADR-0081) |
 
 ## Execution models
 
@@ -126,6 +127,7 @@ Checked at every mark by `accounting.invariants.check_mark`. Inline invariants (
 |---|
 | `I1.equity_identity` |
 | `I12.available_cash_bound` |
+| `I2.pnl_reconciliation` |
 | `I3.cash_identity` |
 | `I4.qty_identity` |
 

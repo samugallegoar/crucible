@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from crucible.core.errors import CrucibleError
+from crucible.core.stats import is_degenerate_returns, per_period_sharpe
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -58,15 +59,6 @@ class DsrResult:
     """Trials whose Sharpe entered the cross-trial dispersion; fewer than ``n_trials`` means
     some recorded trials lack a Sharpe (e.g. rows from before the column existed). They still
     count toward ``N`` (ADR-0071)."""
-
-
-def per_period_sharpe(returns: NDArray[np.float64]) -> float:
-    """The per-period (not annualized) Sharpe estimator this whole module
-    operates on. Public: the runner needs it to record a trial's Sharpe
-    into the registry (ADR-0015) before this trial's own DSR can be
-    computed against a benchmark that includes it."""
-    std = returns.std(ddof=1)
-    return float(returns.mean() / std) if std else 0.0
 
 
 def _skew(returns: NDArray[np.float64]) -> float:
@@ -152,13 +144,15 @@ def deflated_sharpe_ratio(
     if not np.all(np.isfinite(returns)):
         msg = "cannot compute DSR: the return series has NaN or infinite values"
         raise CrucibleError(msg)
-    if np.all(returns == returns[0]):  # exact: float std of a constant series is ~1e-19
-        # a flat series (a strategy that never held anything, or a constant yield) has no
-        # Sharpe ratio; reporting PSR(0) here would print a confident-looking probability
-        # for an undefined quantity (ADR-0070)
+    if is_degenerate_returns(returns):
+        # a flat series (a strategy that never held anything) or one whose values differ only
+        # by float dust (a constant per-period return compounded) has no Sharpe ratio;
+        # reporting PSR(0) here would print a confident-looking probability for an undefined
+        # quantity (ADR-0070)
         msg = (
-            "cannot compute DSR: the returns have zero variance (for example a strategy that "
-            "never held a position), so the Sharpe ratio is undefined"
+            "cannot compute DSR: the returns have zero variance (no dispersion at all: a "
+            "strategy that never held a position, or one whose equity grows by the same "
+            "fraction every period), so the Sharpe ratio is undefined"
         )
         raise CrucibleError(msg)
     sharpe_hat = per_period_sharpe(returns)

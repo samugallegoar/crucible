@@ -1,4 +1,4 @@
-"""Mark-time accounting invariants I1, I3, I4 (docs/INVARIANTS.md).
+"""Mark-time accounting invariants I1, I2, I3, I4, I12 (docs/INVARIANTS.md).
 
 The runtime calls :func:`check_mark` at every mark. Each identity is also
 registered in the core invariant registry so the engine can enumerate what it
@@ -117,6 +117,67 @@ def check_equity_identity(context: object) -> None:
         raise InvariantViolation(msg)
 
 
+def check_pnl_reconciliation(context: object) -> None:
+    """I2: equity ties out to the PnL the ledger says the book made.
+
+    ``equity = initial cash + realized + unrealized - fees + other income``, every term from a
+    fresh fold and converted at the mark's mid. ``realized``/``unrealized`` are the average-cost
+    decomposition the ledger itself uses (multiplier-scaled for futures); ``other income`` is
+    dividends, borrow and financing, the flows that change equity without touching PnL.
+
+    This is the identity the 2026-10 audit found missing: a delisting that booked notional as
+    cash passed I1/I3/I4 (cash and equity agreed, both wrong) but would have failed here (equity
+    moved by the notional, PnL by the price delta). Tolerance: ``PositionState`` divides for the
+    average cost, so the two sides can differ in the last Decimal digits; 1e-9 relative.
+    """
+    ctx = _require(context)
+    folded = ctx.ledger.fold(up_to=ctx.ts)
+    rates, base = ctx.fx_mid_rates, ctx.base_currency
+
+    initial = sum(
+        (
+            convert_at_mid(amount, ccy, base, rates)
+            for ccy, amount in ctx.ledger.initial_cash.items()
+        ),
+        Decimal("0"),
+    )
+    realized = Decimal("0")
+    unrealized = Decimal("0")
+    for symbol, position in folded.positions.items():
+        spec = ctx.futures_specs.get(symbol)
+        multiplier = spec.multiplier if spec is not None else Decimal(1)
+        ccy = ctx.symbol_currency.get(symbol, base)
+        realized += convert_at_mid(position.realized_pnl * multiplier, ccy, base, rates)
+        if position.qty == 0:
+            continue
+        mark = ctx.marks.get(symbol)
+        if mark is None:
+            msg = f"I2: held position {symbol} has no mark at ts={ctx.ts}"
+            raise InvariantViolation(msg)
+        unrealized += convert_at_mid(
+            (mark - position.avg_cost) * position.qty * multiplier, ccy, base, rates
+        )
+    fees = sum(
+        (convert_at_mid(a, c, base, rates) for c, a in folded.fees_by_currency.items()),
+        Decimal("0"),
+    )
+    income = sum(
+        (convert_at_mid(a, c, base, rates) for c, a in folded.income_by_currency.items()),
+        Decimal("0"),
+    )
+    expected = initial + realized + unrealized - fees + income
+    actual = ctx.snapshot.equity(base)
+    tolerance = Decimal("1e-9") * max(Decimal(1), abs(actual))
+    if abs(actual - expected) > tolerance:
+        msg = (
+            f"I2 pnl reconciliation violated at ts={ctx.ts}: equity={actual}, "
+            f"initial+realized+unrealized-fees+income={expected} "
+            f"(initial={initial}, realized={realized}, unrealized={unrealized}, fees={fees}, "
+            f"income={income}). A cash movement is not reflected in the PnL the ledger reports."
+        )
+        raise InvariantViolation(msg)
+
+
 def check_available_cash_bound(context: object) -> None:
     """I12: available cash never exceeds total cash, per currency
     (ADR-0028) -- settlement lag only ever withholds spendability from a
@@ -138,6 +199,7 @@ _MARK_CHECKS: list[tuple[str, Callable[[object], None]]] = [
     ("I3.cash_identity", check_cash_identity),
     ("I4.qty_identity", check_qty_identity),
     ("I1.equity_identity", check_equity_identity),
+    ("I2.pnl_reconciliation", check_pnl_reconciliation),
     ("I12.available_cash_bound", check_available_cash_bound),
 ]
 

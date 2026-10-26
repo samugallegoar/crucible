@@ -109,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="While running to the end, rewrite --checkpoint FILE every INTERVAL of simulated "
         "time (30s, 15m, 4h, 1d, 2w); after a crash, --resume FILE continues from the latest",
     )
+    run.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing experiment directory even if it was written by different code "
+        "(same commit + same working-tree diff is replaced without this flag; ADR-0079)",
+    )
     _add_json(run)
     _add_override(run)
     run_vec = subparsers.add_parser(
@@ -116,6 +122,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_vec.add_argument("config", help="Path to a vectorized experiment YAML")
     run_vec.add_argument("--artifacts", default="experiments")
+    run_vec.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing experiment directory written by different code (ADR-0079)",
+    )
     _add_json(run_vec)
     _add_override(run_vec)
 
@@ -189,6 +200,24 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(optimize)
     _add_override(optimize)
 
+    wf = subparsers.add_parser(
+        "walk-forward",
+        help="Choose a parameter on train folds, report only out-of-fold metrics (ADR-0081)",
+    )
+    wf.add_argument("config", help="Path to experiment YAML")
+    wf.add_argument("--param", required=True, help="Strategy parameter to choose per fold")
+    wf.add_argument("--values", required=True, help="Comma-separated candidate values")
+    wf.add_argument("--train", required=True, help="Train span per fold, e.g. 26w (s/m/h/d/w)")
+    wf.add_argument("--test", required=True, help="Test span per fold, e.g. 13w")
+    wf.add_argument("--step", required=True, help="How far the train window advances per fold")
+    wf.add_argument("--metric", default="sharpe", help="Higher-is-better metric to choose by")
+    wf.add_argument("--holdout", default=None, help="Final span never used for selection")
+    wf.add_argument(
+        "--max-runs", type=int, default=250, help="Refuse a plan above this many experiment runs"
+    )
+    wf.add_argument("--artifacts", default="experiments")
+    _add_json(wf)
+    _add_override(wf)
     validate = subparsers.add_parser(
         "validate", help="Run an experiment, optionally with a factor regression (R4.7)"
     )
@@ -421,6 +450,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         resume_from=resume,
         checkpoint_path=checkpoint if every_ns is not None else None,
         checkpoint_every_ns=every_ns,
+        overwrite=args.overwrite,
     )
     if args.json:
         machine.emit(machine.run_payload(artifacts))
@@ -438,7 +468,7 @@ def _cmd_run_vectorized(args: argparse.Namespace) -> int:
     from crucible.experiments.vectorized_runner import run_vectorized_experiment
 
     config = load_config(Path(args.config), args.override)
-    artifacts = run_vectorized_experiment(config, Path(args.artifacts))
+    artifacts = run_vectorized_experiment(config, Path(args.artifacts), overwrite=args.overwrite)
     if args.json:
         machine.emit(machine.run_payload(artifacts))
         return 0
@@ -686,8 +716,11 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
                 },
                 "best": {
                     "experiment_id": result.best_experiment_id,
-                    "dsr": result.best_dsr.dsr,
-                    "benchmark_sharpe": result.best_dsr.benchmark_sharpe,
+                    "dsr": None if result.best_dsr is None else result.best_dsr.dsr,
+                    "benchmark_sharpe": (
+                        None if result.best_dsr is None else result.best_dsr.benchmark_sharpe
+                    ),
+                    "dsr_error": result.best_dsr_error,
                 },
             }
         )
@@ -701,10 +734,84 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         f"(n_combinations={result.pbo.n_combinations}, n_trials={result.pbo.n_trials}, "
         f"n_tied_splits={result.pbo.n_tied_splits})\n"
     )
-    sys.stdout.write(
-        f"best: {result.best_experiment_id} DSR={result.best_dsr.dsr:.4f} "
-        f"(benchmark_sharpe={result.best_dsr.benchmark_sharpe:.4f})\n"
+    if result.best_dsr is None:
+        sys.stdout.write(
+            f"best: {result.best_experiment_id} DSR not computable: {result.best_dsr_error}\n"
+        )
+    else:
+        sys.stdout.write(
+            f"best: {result.best_experiment_id} DSR={result.best_dsr.dsr:.4f} "
+            f"(benchmark_sharpe={result.best_dsr.benchmark_sharpe:.4f})\n"
+        )
+    return 0
+
+
+def _cmd_walk_forward(args: argparse.Namespace) -> int:
+    from crucible.experiments.config import load_config
+    from crucible.experiments.walk_forward import walk_forward
+
+    config = load_config(Path(args.config), args.override)
+    values = [float(part) for part in args.values.split(",")]
+    result = walk_forward(
+        config,
+        Path(args.artifacts),
+        param_name=args.param,
+        values=values,
+        train=args.train,
+        test=args.test,
+        step=args.step,
+        metric=args.metric,
+        holdout=args.holdout,
+        max_runs=args.max_runs,
     )
+    if args.json:
+        machine.emit(
+            {
+                "param": result.param_name,
+                "metric": result.metric,
+                "values": list(result.values),
+                "folds": [
+                    {
+                        "index": fold.index,
+                        "chosen": fold.chosen_value,
+                        "test_experiment_id": fold.test_experiment_id,
+                        "test_metric": fold.test_metrics[result.metric].value,
+                    }
+                    for fold in result.folds
+                ],
+                "mean_test_metric": result.mean_metric,
+                "std_test_metric": result.std_metric,
+                "share_positive": result.share_positive,
+                "holdout": (
+                    None
+                    if result.holdout is None
+                    else {
+                        "chosen": result.holdout.chosen_value,
+                        "test_experiment_id": result.holdout.test_experiment_id,
+                        "test_metric": result.holdout.test_metrics[result.metric].value,
+                    }
+                ),
+                "summary": str(result.summary_path),
+            }
+        )
+        return 0
+    for fold in result.folds:
+        sys.stdout.write(
+            f"fold {fold.index}: {args.param}={fold.chosen_value} out-of-fold "
+            f"{result.metric}={fold.test_metrics[result.metric].value:.4f} "
+            f"({fold.test_experiment_id})\n"
+        )
+    sys.stdout.write(
+        f"mean {result.metric}={result.mean_metric:.4f} sd={result.std_metric:.4f} "
+        f"positive folds={result.share_positive:.0%}\n"
+    )
+    if result.holdout is not None:
+        sys.stdout.write(
+            f"holdout: {args.param}={result.holdout.chosen_value} "
+            f"{result.metric}={result.holdout.test_metrics[result.metric].value:.4f} "
+            "(never used for selection)\n"
+        )
+    sys.stdout.write(f"summary: {result.summary_path}\n")
     return 0
 
 
@@ -1008,6 +1115,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_debug(args)
         if args.command == "optimize":
             return _cmd_optimize(args)
+        if args.command == "walk-forward":
+            return _cmd_walk_forward(args)
         if args.command == "validate":
             return _cmd_validate(args)
         if args.command == "compare":

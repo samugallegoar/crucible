@@ -28,7 +28,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from crucible.core.errors import CrucibleError
-from crucible.validation.dsr import deflated_sharpe_ratio, per_period_sharpe
+from crucible.core.stats import per_period_sharpe
+from crucible.validation.dsr import deflated_sharpe_ratio
 
 SIGMA = 0.01
 THRESHOLD = 0.95

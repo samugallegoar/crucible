@@ -1121,7 +1121,19 @@ class BacktestEngine:
                 msg = f"delisting of {symbol} at ts={event.ts} with no prior mark"
                 raise CrucibleError(msg)
             qty = -position.qty  # close it out
-            liquidation_amount = -qty * mark
+            if symbol in self._futures_specs:
+                # a futures position is closed for its *price delta* times the contract
+                # multiplier, never for notional: the variation margin since the last
+                # settlement is already cash (ADR-0033). Booking qty * mark here credited the
+                # whole notional (2 ES at 4520 -> +9040 instead of 0; 2026-10 audit).
+                spec = self._futures_specs[symbol]
+                liquidation_amount = (
+                    self._futures_price_delta(symbol, qty, mark, event.ts) * spec.multiplier
+                )
+                settled_at = None  # futures cash moves without an equity settlement lag
+            else:
+                liquidation_amount = -qty * mark
+                settled_at = self._settled_at(event.ts, liquidation_amount)
             self._ledger.append(
                 TransactionRecord(
                     id=self._txn_id(),
@@ -1132,7 +1144,7 @@ class BacktestEngine:
                     symbol=symbol,
                     qty=qty,
                     price=mark,
-                    settled_at=self._settled_at(event.ts, liquidation_amount),
+                    settled_at=settled_at,
                 )
             )
             self._log.info(
@@ -1157,6 +1169,14 @@ class BacktestEngine:
         ``pay_at`` already models the one real-world delay (ADR-0026); settlement lag (ADR-0028) is
         a *trading* friction
         (broker-mediated sale proceeds) and does not stack on top."""
+        if event.symbol in self._futures_specs:
+            msg = (
+                f"cash dividend on futures symbol {event.symbol} at ts={event.ts}: a futures "
+                "contract has no dividend entitlement, and crediting qty * per_share would book "
+                "cash with no contract multiplier (2026-10 audit). Remove the row from the "
+                "corporate-actions dataset or fix its symbol"
+            )
+            raise DataQualityError(msg)
         if event.resolved_amount is not None:
             ccy = self._currency_of(event.symbol)
             self._ledger.append(
@@ -1337,6 +1357,15 @@ class BacktestEngine:
 
     def submit_oco(self, first: OrderSpec, second: OrderSpec) -> tuple[OrderId, OrderId]:
         self._require_composite_level("OCO")
+        if first.side is not second.side:
+            msg = (
+                f"submit_oco needs two orders on the same side, got {first.side.name} "
+                f"({first.symbol}) and {second.side.name} ({second.symbol}): OCO means one of "
+                "the two executes and the other is cancelled, and the adverse-leg rule compares "
+                "signed cash flow, which would always pick the buy leg of an opposite-side pair "
+                "(2026-10 audit). Submit the two sides as separate orders instead"
+            )
+            raise ConfigurationError(msg)
         first_id = self._create_from_spec(first)
         second_id = self._create_from_spec(second)
         self._orders.link_oco(first_id, second_id)
@@ -1673,7 +1702,7 @@ class BacktestEngine:
             {
                 "ts": int(self._clock.now),
                 "equity": float(snapshot.equity(self._base)),
-                "cash": float(snapshot.cash(self._base)),
+                "cash": float(snapshot.cash_total(self._base)),
                 "realized_pnl": float(snapshot.realized_pnl),
                 "fees_paid": float(snapshot.fees_paid),
             }

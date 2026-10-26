@@ -22,11 +22,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from crucible.analytics.metrics import simple_returns
+from crucible.core.stats import per_period_sharpe
 from crucible.core.types import DatasetId, RealismLevel
 from crucible.data.contracts import BAR_SCHEMA, BAR_SORT_KEYS
 from crucible.data.store import ParquetDataStore, build_dataset
 from crucible.data.transforms import shuffle_bar_returns
-from crucible.validation.dsr import per_period_sharpe
 from crucible.validation.null_tests import compare_to_null
 from crucible.vectorized.engine import VectorizedBacktestEngine, VectorizedConfig
 

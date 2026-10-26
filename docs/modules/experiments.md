@@ -55,6 +55,31 @@ inputs ⇒ identical experiment id ⇒ byte-identical artifacts (golden-tested).
   artifacts: `config.yaml, manifest.json, ledger/orders/fills/trades/equity
   .parquet, metrics.json, equity.svg, report.html, logs/run.jsonl`.
   `experiment_id` = `EXP-` + hash of (config hash, data hashes).
+- `walk_forward.py` (ADR-0081): `walk_forward(config, artifacts_root, *, param_name, values,
+  train, test, step, metric, holdout, max_runs)` builds rolling folds with
+  `validation.splits.WalkForwardSplitter` semantics (`fold_windows` is the pure, tested
+  arithmetic), selects each fold's value on train with the ordinary `run_experiment`, evaluates
+  it on test with `record_trial=False`, and writes `<artifacts>/walk_forward.json`. First
+  increment: no concatenated out-of-fold series/DSR yet, and the per-fold selection is not
+  deflated (both stated in the summary).
+- `runner.py` annualization (2026-10 audit, M5): when the config leaves `periods_per_year`
+  unset (`model_fields_set`), `_prepare_run` derives it from the bars' spacing and the
+  calendar -- 252 sessions a year times the median bars per session, 365 for `24/7`
+  (`crucible.data.calendars.periods_per_year_for`, the same rule the one-step product uses).
+  An explicit value always wins. Before this, an intraday config that left the daily default
+  annualized per-bar Sharpe by `1/sqrt(bars per session)` too little (hourly on XNYS: 0.81
+  instead of 2.13 for the same series); the derivation costs one `event_time` column scan and
+  only runs when the field is untouched. The vectorized runner applies the same rule.
+- `runner.py` result identity (ADR-0079): the manifest records
+  `crucible_version`, `commit`, `dirty` and `code_fingerprint` (HEAD +
+  `git status` + the working-tree diff), all resolved from the checkout that
+  contains the loaded package rather than the process cwd (a run from another
+  directory used to record `commit="unknown"`). Before the trial registry and
+  before any file, `_refuse_overwrite` compares the existing manifest's code
+  identity with the current run's: the same fingerprint is an idempotent
+  re-run, a different one raises `ExperimentError` unless `overwrite=True`
+  (`crucible run --overwrite`), so a run of different code cannot silently
+  replace the earlier numbers.
   Git commit/dirty captured via subprocess (unknown ⇒ treated dirty);
   env hash = SHA-256 of `uv.lock`. `trial_count` in the manifest/report
   header comes from `validation.trial_registry.DuckDBTrialRegistry`

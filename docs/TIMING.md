@@ -131,8 +131,8 @@ Order is fixed; each step reads the ledger as the previous step left it.
    unrealized P&L inside the position.
 3. **Snapshot** `PortfolioSnapshot` from a fresh ledger fold at `clock.now`, FX
    mid rates as of `clock.now`.
-4. **Invariants** `check_mark` re-derives cash, quantity and equity from the raw
-   ledger and raises `InvariantViolation` on any mismatch (I1, I3, I4, I12).
+4. **Invariants** `check_mark` re-derives cash, quantity, equity and the PnL tie-out from the
+   raw ledger and raises `InvariantViolation` on any mismatch (I1, I2, I3, I4, I12).
 5. **Equity row** appended: `ts, equity, cash, realized_pnl, fees_paid`.
 6. **Risk** `risk_engine.on_mark(snapshot, ts)`: `HALT` sets the halted reason (all
    later orders are rejected); `FLATTEN` submits closing `MARKET` orders for every
