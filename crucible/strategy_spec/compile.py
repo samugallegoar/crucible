@@ -288,10 +288,68 @@ def _signals(spec: StrategySpec, frame: pl.DataFrame) -> pl.DataFrame:
     return frame.with_columns(columns)
 
 
+def _exit_levels(
+    state: int, entry_price: float, stop: float | None, take: float | None
+) -> tuple[float | None, float | None]:
+    """Absolute stop-loss and take-profit prices for a position held at ``state`` (+1 / -1)."""
+    stop_level = None
+    if stop is not None:
+        stop_level = (
+            entry_price * (1.0 - stop / 100.0) if state > 0 else entry_price * (1.0 + stop / 100.0)
+        )
+    take_level = None
+    if take is not None:
+        take_level = (
+            entry_price * (1.0 + take / 100.0) if state > 0 else entry_price * (1.0 - take / 100.0)
+        )
+    return stop_level, take_level
+
+
+def _intrabar_exit(
+    state: int,
+    open_: float,
+    high: float,
+    low: float,
+    stop_level: float | None,
+    take_level: float | None,
+) -> float | None:
+    """The price a stop or take-profit fills at inside one bar, or None when neither is touched.
+
+    The **open decides first**, because it is the only fill whose ordering against the levels is
+    known: opening through the stop fills at the open (that gap is the price that was available),
+    and opening beyond the take-profit fills at the open (price improvement, the event ladder's
+    rule, ADR-0010 5). Then, inside the bar, the stop wins when both levels are touched -- the
+    worse outcome (ADR-0012's adverse rule). ``low``/``high`` reach the level only when the bar
+    actually traded there, which is the whole point of ADR-0082.
+    """
+    if state > 0:
+        if stop_level is not None and open_ <= stop_level:
+            return open_
+        if take_level is not None and open_ >= take_level:
+            return open_
+        if stop_level is not None and low <= stop_level:
+            return stop_level
+        if take_level is not None and high >= take_level:
+            return take_level
+    else:
+        if stop_level is not None and open_ >= stop_level:
+            return open_
+        if take_level is not None and open_ <= take_level:
+            return open_
+        if stop_level is not None and high >= stop_level:
+            return stop_level
+        if take_level is not None and low <= take_level:
+            return take_level
+    return None
+
+
 def _walk(
     spec: StrategySpec,
     symbol: str,
     ts: NDArray[np.int64],
+    open_: NDArray[np.float64],
+    high: NDArray[np.float64],
+    low: NDArray[np.float64],
     close: NDArray[np.float64],
     entry_long: NDArray[np.bool_],
     entry_short: NDArray[np.bool_],
@@ -299,9 +357,14 @@ def _walk(
     exit_short: NDArray[np.bool_],
     force_flat: NDArray[np.bool_] | None = None,
     entry_ok: NDArray[np.bool_] | None = None,
-) -> NDArray[np.float64]:
-    """The position (-1, 0, +1) held after each bar's decision. ``force_flat`` closes any
-    position and blocks entries on that bar; ``entry_ok`` false blocks new entries and flips."""
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """The position (-1, 0, +1) held after each bar's decision, and the price a stop or
+    take-profit closed it at *inside* that bar (NaN when the bar has no such fill).
+
+    ``force_flat`` closes any position and blocks entries on that bar; ``entry_ok`` false blocks
+    new entries and flips. ``risk.stop_fill == "close"`` reproduces the pre-ADR-0082 behaviour:
+    exits are compared and filled on closes, so the exit price is always NaN (the close the
+    engine already uses)."""
     if force_flat is None:
         force_flat = np.zeros(len(ts), dtype=np.bool_)
     if entry_ok is None:
@@ -309,7 +372,9 @@ def _walk(
     stop = spec.risk.stop_loss_pct
     take = spec.risk.take_profit_pct
     max_bars = spec.risk.max_holding_bars
+    level_fill = spec.risk.stop_fill == "level"
     position = np.zeros(len(ts), dtype=np.float64)
+    exit_prices = np.full(len(ts), np.nan, dtype=np.float64)
     state = 0
     entry_price = math.nan
     held = 0
@@ -318,16 +383,26 @@ def _walk(
         exited = False
         if state != 0:
             held += 1
-            move = (price / entry_price - 1.0) * 100.0 * state
+            fill: float | None = None
+            if level_fill:
+                stop_level, take_level = _exit_levels(state, entry_price, stop, take)
+                fill = _intrabar_exit(
+                    state, float(open_[i]), float(high[i]), float(low[i]), stop_level, take_level
+                )
+                hit = fill is not None
+            else:
+                move = (price / entry_price - 1.0) * 100.0 * state
+                hit = (stop is not None and move <= -stop) or (take is not None and move >= take)
             if (
-                (stop is not None and move <= -stop)
-                or (take is not None and move >= take)
+                hit
                 or (max_bars is not None and held >= max_bars)
                 or (exit_long[i] if state > 0 else exit_short[i])
                 or force_flat[i]
             ):
                 state = 0
                 exited = True
+                if fill is not None:
+                    exit_prices[i] = float(fill)
         if exited or force_flat[i]:
             position[i] = 0.0
             continue
@@ -348,7 +423,7 @@ def _walk(
         elif go_short and state >= 0:
             state, entry_price, held = -1, price, 0
         position[i] = float(state)
-    return position
+    return position, exit_prices
 
 
 def spec_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
@@ -389,10 +464,13 @@ def spec_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
     parts: list[pl.DataFrame] = []
     for symbol, group in scored.group_by("symbol", maintain_order=True):
         name = str(symbol[0])
-        position = _walk(
+        position, exit_prices = _walk(
             spec,
             name,
             group.get_column("event_time").to_numpy(),
+            group.get_column("open").to_numpy(),
+            group.get_column("high").to_numpy(),
+            group.get_column("low").to_numpy(),
             group.get_column("close").to_numpy(),
             group.get_column("entry_long").to_numpy(),
             group.get_column("entry_short").to_numpy(),
@@ -401,14 +479,24 @@ def spec_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
             group.get_column("force_flat").to_numpy(),
             group.get_column("entry_ok").to_numpy(),
         )
-        part = pl.DataFrame(
-            {
-                "ts": group.get_column("event_time"),
-                "symbol": group.get_column("symbol"),
-                "score": position * weight,
-            },
-            schema={"ts": pl.Int64(), "symbol": pl.String(), "score": pl.Float64()},
-        )
+        columns: dict[str, object] = {
+            "ts": group.get_column("event_time"),
+            "symbol": group.get_column("symbol"),
+            "score": position * weight,
+        }
+        schema: dict[str, pl.DataType] = {
+            "ts": pl.Int64(),
+            "symbol": pl.String(),
+            "score": pl.Float64(),
+        }
+        if spec.risk.stop_fill == "level" and (
+            spec.risk.stop_loss_pct is not None or spec.risk.take_profit_pct is not None
+        ):
+            # the price a stop/take-profit closed inside the bar; NaN when the bar has none. The
+            # vectorized engine replaces that bar's close with it (ADR-0082)
+            columns["exit_price"] = exit_prices
+            schema["exit_price"] = pl.Float64()
+        part = pl.DataFrame(columns, schema=schema)
         if with_moc:
             # the session close a market-on-close order should take this bar's position out at
             # (event-driven path, ADR-0074); null where there is nothing to close

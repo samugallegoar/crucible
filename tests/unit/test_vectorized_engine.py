@@ -341,3 +341,39 @@ def test_result_carries_a_per_symbol_gross_pnl_frame(tmp_path: Path) -> None:
     )
     assert result.pnl.sort("ts")["pnl"].to_list() == pytest.approx([0.0, 100.0, 110.0, -121.0])
     assert result.pnl["symbol"].unique().to_list() == ["X"]
+
+
+def test_an_intrabar_exit_price_values_that_bar_at_the_fill(tmp_path: Path) -> None:
+    """ADR-0082: the spec path can hand the engine the price a stop closed at. Closes are flat at
+    100, so a close-to-close return is 0; the stop at 95 must still cost 5% on that bar."""
+    rows = [_bar("X", ts, 100.0) for ts in (1, 2, 3)]
+
+    def stop_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
+        return bars.select(
+            symbol="symbol",
+            ts=pl.col("event_time"),
+            score=pl.when(pl.col("event_time") <= 1).then(pl.lit(1.0)).otherwise(pl.lit(0.0)),
+            exit_price=pl.when(pl.col("event_time") == 2)
+            .then(pl.lit(95.0))
+            .otherwise(pl.lit(None, dtype=pl.Float64)),
+        )
+
+    store = _store(tmp_path, rows)
+    result = VectorizedBacktestEngine().run(
+        VectorizedConfig(
+            store=store,
+            bars_dataset=BARS_DATASET,
+            signal=stop_signal,
+            params={},
+            initial_cash=Decimal("1000"),
+            realism_level=RealismLevel.FRICTIONLESS,
+            start=TimestampNs(1),
+            end=TimestampNs(3),
+        )
+    )
+    equity_by_ts = {row["ts"]: row["equity"] for row in result.equity.to_dicts()}
+    assert equity_by_ts[1] == pytest.approx(1000.0)  # flat on the first bar (lag)
+    assert equity_by_ts[2] == pytest.approx(950.0)  # weight 1 into the 95 exit, not the 100 close
+    assert equity_by_ts[3] == pytest.approx(950.0)  # flat afterwards
+    # the published scores frame keeps its schema: exit_price is engine-internal
+    assert result.scores.columns == ["ts", "symbol", "score"]

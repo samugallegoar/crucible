@@ -57,6 +57,16 @@ kind of change is recorded).
   protected holdout; summary in `<artifacts>/walk_forward.json`. Test runs do not record trials,
   so the per-fold selection is not deflated (stated in the output). The concatenated
   out-of-fold series and its DSR are the next increment.
+- **Strategy-spec stops now fill inside the bar** (ADR-0082). `risk.stop_fill: level` (the new
+  default) triggers on the bar's high/low instead of only its close, fills at the stop/take level
+  (or at the open when the bar gapped through it), and lets the stop win when one bar touches
+  both; the vectorized engine values that bar at the fill, not at its close. **Behaviour change**
+  for any spec with `stop_loss_pct`/`take_profit_pct`: exits that used to wait for a closing
+  breach now happen where the market went. `stop_fill: close` reproduces the old model. The
+  product golden's numbers are unchanged (its spec has no stops); its artifact hash moved because
+  the canonical spec now records `stop_fill`, so spec-run experiment ids change (documented in
+  `docs/COMPATIBILITY.md`). The promoted run still exits at the next open (it cannot fill inside a
+  bar), and the vectorized multi-currency path refuses `stop_fill: level`.
 - **Invariant I2 is registered** (ADR-0080): at every mark, equity must tie out to
   `initial + realized + unrealized − fees + dividends/borrow/financing` (1e-9 relative, for the
   Decimal average-cost residue). `docs/INVARIANTS.md` called I2 "derived" while it was neither
