@@ -184,7 +184,9 @@ def bars_per_session(event_times: list[int], calendar: str) -> int:
 
     if not event_times:
         return 1
-    stamps = np.sort(np.asarray(event_times, dtype=np.int64))
+    # distinct bar times: a dataset holds one row per symbol per bar, and counting rows would
+    # multiply the factor by the number of symbols (two symbols on daily bars gave 504)
+    stamps = np.unique(np.asarray(event_times, dtype=np.int64))
     week = 7 * _DAY_NS
     cal = get_trading_calendar(
         calendar,

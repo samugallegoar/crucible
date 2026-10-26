@@ -33,7 +33,9 @@ kind of change is recorded).
   daily 252. Intraday Sharpe/volatility/CAGR were understated by `sqrt(bars per session)`
   (hourly on XNYS: 0.81 vs 2.13 for the same series); set the field explicitly to keep the old
   value. The one-step product already derived it; now both paths share the rule in
-  `crucible.data.calendars`.
+  `crucible.data.calendars`. Bars are counted by distinct time, not by row: with several symbols
+  the rule counted every symbol's row, so two symbols on daily bars were annualized with 504
+  instead of 252 (Sharpe and volatility too large by sqrt(2)), in the one-step product too.
 - **`equity.parquet.cash` is every currency converted to the base**, as documented; it was the
   base-currency wallet only, so `cash + positions` disagreed with equity in a multi-currency
   run. `fees_paid` has the same fix (`PortfolioBalances.fees_by_currency`, converted at the mid

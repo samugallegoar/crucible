@@ -64,6 +64,17 @@ def test_hourly_xnys_bars_are_1764_a_year() -> None:
     assert periods_per_year_for(daily, "XNYS") == 252.0
 
 
+def test_several_symbols_do_not_multiply_the_factor() -> None:
+    """A dataset holds one row per symbol per bar: counting rows instead of distinct bar times
+    made two symbols on daily bars 504 a year (Sharpe and volatility too large by sqrt(2))."""
+    closes = _session_closes()
+    hourly = sorted(close - k * HOUR_NS for close in closes for k in range(7))
+    for symbols in (2, 5):
+        assert periods_per_year_for(sorted(closes * symbols), "XNYS") == 252.0
+        assert periods_per_year_for(sorted(hourly * symbols), "XNYS") == 1764.0
+        assert bars_per_session(sorted(hourly * symbols), "XNYS") == 7
+
+
 def _config(store: Path, *, years: float | None = None) -> ExperimentConfig:
     raw = yaml.safe_load(
         Path("examples/trend_demo/config_vectorized.yaml").read_text(encoding="utf-8")
