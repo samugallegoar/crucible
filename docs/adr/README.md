@@ -108,5 +108,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0079](0079-result-integrity.md) | Result integrity — code identity, overwrite protection, degenerate returns | ? | Provenance is resolved from the code, then the cwd. `runner._resolution_root()` is the directory two levels above the loaded package (`crucible/experiments/runner.py`); git is run with `cwd=` the … |
 | [0080](0080-invariant-i2.md) | Register invariant I2 — PnL reconciliation at every mark | ? | Register `I2.pnl_reconciliation` and check it at every mark, against a fresh fold: |
 | [0081](0081-walk-forward-command.md) | An out-of-sample walk-forward command | ? | Add one command, `crucible walk-forward CONFIG`, that runs a 1-D selection over time folds and reports only out-of-fold metrics: |
+| [0082](0082-intrabar-stop-fills.md) | Intrabar stop and take-profit fills in the strategy-spec path | ? | `risk.stop_fill` (new, default `level`) selects the model: |
 
 <!-- END GENERATED: adr-index -->

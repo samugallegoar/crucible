@@ -219,10 +219,27 @@ class VectorizedBacktestEngine:
         _validate_score_schema(scored)
         _validate_score_grid(scored, bars)
 
+        names = scored.collect_schema().names()
+        has_exit = "exit_price" in names
+        # ADR-0082: a bar a stop/take-profit closed inside is valued at that fill, not at its
+        # close. Kept aside before the select so the signal runs exactly once.
+        # A bar with no fill may arrive as null or as NaN (the spec signal marks it NaN); NaN is
+        # not null in polars, so it is converted here, or every held bar would be valued at NaN.
+        exits = (
+            scored.select(
+                "ts", "symbol", pl.col("exit_price").fill_nan(None).alias("exit_price")
+            ).sort(["symbol", "ts"])
+            if has_exit
+            else None
+        )
         scored = scored.select(["ts", "symbol", "score"]).sort(["symbol", "ts"])
         weighted = scored.with_columns(
             weight=pl.col("score").shift(config.lag_bars).over("symbol").fill_null(0.0)
         )
+        if exits is not None:
+            weighted = weighted.join(exits, on=["symbol", "ts"], how="left")
+        else:
+            weighted = weighted.with_columns(exit_price=pl.lit(None, dtype=pl.Float64))
 
         prices = (
             bars.select(["symbol", "event_time", "close"])
@@ -230,12 +247,25 @@ class VectorizedBacktestEngine:
             .sort(["symbol", "ts"])
         )
         if _foreign_currencies(config, prices):
+            if has_exit:
+                msg = (
+                    "intrabar stop/take-profit fills (spec risk.stop_fill: level) are not "
+                    "supported on the vectorized multi-currency path: the FX equity model has no "
+                    "per-bar exit price. Use stop_fill: close, single-currency symbols, or the "
+                    "event-driven engine (ADR-0082)"
+                )
+                raise ConfigurationError(msg)
             return self._run_with_fx(config, weighted, prices, scored)
+        effective_close = (
+            pl.when(pl.col("exit_price").is_not_null() & (pl.col("weight") != 0.0))
+            .then(pl.col("exit_price"))
+            .otherwise(pl.col("close"))
+        )
         joined = (
             weighted.join(prices, on=["symbol", "ts"], how="inner")
             .sort(["symbol", "ts"])
             .with_columns(
-                ret=(pl.col("close") / pl.col("close").shift(1).over("symbol") - 1.0).fill_null(
+                ret=(effective_close / pl.col("close").shift(1).over("symbol") - 1.0).fill_null(
                     0.0
                 ),
                 turnover=(

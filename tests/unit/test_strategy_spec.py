@@ -278,3 +278,74 @@ def test_describe_reads_the_rule_in_words() -> None:
     assert "10-bar simple moving average" in text
     assert "crosses above" in text
     assert "crosses below" in text
+
+
+def _bars(spec_rows: list[tuple[float, float, float, float]]) -> pl.DataFrame:
+    from crucible.core.types import TimestampNs
+
+    day = 86_400 * 10**9
+    return pl.DataFrame(
+        {
+            "symbol": ["AAA"] * len(spec_rows),
+            "event_time": [TimestampNs((i + 1) * day) for i in range(len(spec_rows))],
+            "available_at": [TimestampNs((i + 1) * day) for i in range(len(spec_rows))],
+            "open": [r[0] for r in spec_rows],
+            "high": [r[1] for r in spec_rows],
+            "low": [r[2] for r in spec_rows],
+            "close": [r[3] for r in spec_rows],
+            "volume": [1e6] * len(spec_rows),
+        }
+    ).lazy()
+
+
+def _spec_with_stop(**risk: object) -> dict[str, object]:
+    return {
+        "spec_version": 1,
+        "entry": {"long": "always"},
+        "exit": {"long": "close < 0"},
+        "risk": {"stop_loss_pct": 5.0, **risk},
+    }
+
+
+def test_a_wick_through_the_stop_exits_at_the_stop_level() -> None:
+    """ADR-0082: the bar's low triggers the stop (it used to need a close below it), and the fill
+    is the stop level, not the close that recovered."""
+    out = spec_signal(
+        _bars([(100, 101, 99, 100), (100, 101, 90, 100), (100, 101, 99, 100)]),
+        {"spec": _spec_with_stop()},
+    ).collect()
+    out = out.sort("ts")
+    # flat on the bar the stop fired, then the `always` entry re-enters on the next bar
+    assert out["score"].to_list() == [1.0, 0.0, 1.0]
+    assert out["exit_price"][1] == pytest.approx(95.0)
+
+
+def test_a_gap_through_the_stop_fills_at_the_open() -> None:
+    out = spec_signal(
+        _bars([(100, 101, 99, 100), (93, 94, 92, 93), (93, 94, 92, 93)]),
+        {"spec": _spec_with_stop()},
+    ).collect()
+    assert out.sort("ts")["exit_price"][1] == pytest.approx(93.0)
+
+
+def test_when_one_bar_touches_both_levels_the_stop_wins() -> None:
+    spec = {
+        "spec_version": 1,
+        "entry": {"long": "always"},
+        "exit": {"long": "close < 0"},
+        "risk": {"stop_loss_pct": 5.0, "take_profit_pct": 5.0},
+    }
+    out = spec_signal(
+        _bars([(100, 101, 99, 100), (100, 108, 90, 100), (100, 101, 99, 100)]), {"spec": spec}
+    ).collect()
+    assert out.sort("ts")["exit_price"][1] == pytest.approx(95.0)  # the stop, not the 105 target
+
+
+def test_stop_fill_close_reproduces_the_pre_adr0082_model() -> None:
+    out = spec_signal(
+        _bars([(100, 101, 99, 100), (100, 101, 90, 100), (100, 101, 99, 100)]),
+        {"spec": _spec_with_stop(stop_fill="close")},
+    ).collect()
+    out = out.sort("ts")
+    assert "exit_price" not in out.columns
+    assert out["score"].to_list() == [1.0, 1.0, 1.0]  # the close never breached the stop

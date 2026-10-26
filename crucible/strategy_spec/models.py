@@ -263,13 +263,23 @@ class RiskRules(_Frozen):
     """Optional exits that do not depend on the indicators.
 
     Percentages are in percent (``stop_loss_pct: 5`` is 5 %), measured from the closing price of
-    the bar the position was entered on, and checked on each later close: a daily-bar backtest
-    cannot see an intrabar stop, so a stop can only trigger at a close (and the exit happens at
-    the following bar's price). ``max_holding_bars`` closes a position after that many bars."""
+    the bar the position was entered on. ``stop_fill`` says how a stop or take-profit that the bar
+    *touches* is filled (ADR-0082):
+
+    - ``level`` (default): the bar's high/low can trigger it, and the fill is the stop/take level
+      -- or the bar's open when it gapped through the level, which is the price actually
+      available. If one bar touches both, the stop wins (the worse outcome).
+    - ``close``: the old behaviour -- only the close is compared, and the exit fills at that
+      close. Kept for reproducing runs made before ADR-0082.
+
+    The promoted (event-driven) run cannot fill inside a bar, so it exits at the next bar's open,
+    which is never better than the level: the two paths agree in direction, not to the cent.
+    ``max_holding_bars`` closes a position after that many bars."""
 
     stop_loss_pct: float | None = Field(default=None, gt=0.0, lt=100.0)
     take_profit_pct: float | None = Field(default=None, gt=0.0)
     max_holding_bars: int | None = Field(default=None, ge=1)
+    stop_fill: Literal["level", "close"] = "level"
 
 
 _HHMM = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")

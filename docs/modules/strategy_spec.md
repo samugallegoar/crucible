@@ -47,8 +47,12 @@ touches a null is false.
 
 ### Position logic (per symbol, bar by bar)
 
-1. A held position meets its exits first: stop-loss, take-profit (percent move of the close from the
-   entry bar's close, checked on closes only), `max_holding_bars`, then the spec's own exit.
+1. A held position meets its exits first: stop-loss, take-profit, `max_holding_bars`, then the
+   spec's own exit. Levels are percentages of the entry bar's close; with `risk.stop_fill: level`
+   (the default, ADR-0082) the bar's high/low trigger them and the fill is the level -- or the
+   bar's open when it gapped through it -- and if one bar touches both, the stop wins. The
+   vectorized engine values that bar at the fill price (`exit_price`, not its close). With
+   `risk.stop_fill: close` the old close-only model is reproduced exactly.
 2. If it exited, it is flat for the bar and no entry is taken on that bar.
 3. A flat position takes its entry; a `long_short` position flips directly on the opposite entry.
 4. Both entries true on one bar is refused with the symbol and timestamp.
@@ -107,8 +111,10 @@ A change to the grammar or to a field's meaning needs a new `spec_version`.
   (a ranking strategy is a Python strategy, `examples/momentum`).
 - Sizing is per symbol and equal-weight across symbols; no volatility scaling, no pyramiding, no
   per-symbol weights.
-- Stops are close-based: a daily bar cannot show an intrabar stop, and a gap through the stop is
-  filled at the next price, not at the stop.
+- Stop fills are intrabar (ADR-0082) in the vectorized path only: the promoted event-driven run
+  cannot fill inside a bar, so it exits at the next bar's open, which is never better than the
+  level (agree in direction, not to the cent), and the vectorized multi-currency path refuses
+  `stop_fill: level` because the FX equity model has no per-bar exit price.
 - The compiled signal recomputes the whole window each call, so a promoted run needs a lookback of at
   least the run's number of bars (the product flow sets it).
 - One spec per run: no portfolio of specs, and no parameter sweep syntax in the spec (use
