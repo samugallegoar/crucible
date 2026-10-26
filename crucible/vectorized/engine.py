@@ -223,8 +223,12 @@ class VectorizedBacktestEngine:
         has_exit = "exit_price" in names
         # ADR-0082: a bar a stop/take-profit closed inside is valued at that fill, not at its
         # close. Kept aside before the select so the signal runs exactly once.
+        # A bar with no fill may arrive as null or as NaN (the spec signal marks it NaN); NaN is
+        # not null in polars, so it is converted here, or every held bar would be valued at NaN.
         exits = (
-            scored.select(["ts", "symbol", "exit_price"]).sort(["symbol", "ts"])
+            scored.select(
+                "ts", "symbol", pl.col("exit_price").fill_nan(None).alias("exit_price")
+            ).sort(["symbol", "ts"])
             if has_exit
             else None
         )

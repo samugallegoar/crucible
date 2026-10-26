@@ -45,7 +45,8 @@ shift discipline (mandatory lag between signal and position, poison-tested).
 3. Joins `weight` against each symbol's close-to-close `ret`. A signal may also return an
    `exit_price` column (the strategy-spec path does, ADR-0082): on a bar where the position was
    held and closed at a stop/take-profit, that price replaces the close in the return, so the
-   fill is inside the bar rather than at its close. `scores` keeps its ts/symbol/score schema --
+   fill is inside the bar rather than at its close. A bar with no fill is null or NaN (the spec
+   path writes NaN; the engine reads both as "no fill"). `scores` keeps its ts/symbol/score schema --
    the column is engine-internal. The multi-currency path refuses it (no per-bar exit price).
 3. Joins `weight` against each symbol's close-to-close `ret`, computes
    `net = sum(weight * ret) - turnover * (slippage_bps + commission_bps) /

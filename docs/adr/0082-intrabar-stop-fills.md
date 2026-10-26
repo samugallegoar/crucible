@@ -62,6 +62,9 @@ The `exit_price` column is the general seam: any signal may provide it, and `sco
   docstring says the same at the field.
 - Tests: `tests/unit/test_strategy_spec.py` covers a wick trigger at the level, a gap at the
   open, "both touched, stop wins", and the `close` model; `tests/unit/test_vectorized_engine.py`
-  covers the engine valuing a bar at `exit_price`.
+  covers the engine valuing a bar at `exit_price`; `tests/integration/test_stop_fill_end_to_end.py`
+  runs a spec with a stop through the real engine (hand-computed: 95000 for `level`, 100000 for
+  `close`). That test exists because the spec marks a bar with no fill `NaN`, which is not null in
+  polars: the engine now converts `NaN` to null, otherwise every held bar was valued at `NaN`.
 - Open follow-up: the promoted path submitting real stop orders (above), and a per-bar exit price
   in the FX path.
