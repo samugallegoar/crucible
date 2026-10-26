@@ -112,10 +112,21 @@ MANIFEST_FIELDS: dict[str, ManifestField] = {
     ),
     "experiment_id": ManifestField("string", False, "`EXP-<12 hex>`: config hash + data hashes."),
     "config_hash": ManifestField("string", False, "SHA-256 of the canonical config JSON."),
+    "crucible_version": ManifestField(
+        "string",
+        False,
+        "`crucible.__version__` of the code that ran; unlike `commit`, a wheel install records it.",
+    ),
     "commit": ManifestField(
         "string", False, "Git commit of the code that ran (`unknown` outside git)."
     ),
     "dirty": ManifestField("boolean", False, "True if the working tree had uncommitted changes."),
+    "code_fingerprint": ManifestField(
+        "string",
+        False,
+        "SHA-256 over HEAD, `git status` and the working-tree diff: the code identity the "
+        "overwrite guard compares (ADR-0079). `unknown` outside a readable checkout.",
+    ),
     "data_manifests": ManifestField(
         "object",
         False,

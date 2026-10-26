@@ -133,6 +133,68 @@ def _validate_score_schema(scored: pl.LazyFrame) -> None:
         raise ConfigurationError(msg)
 
 
+def _validate_score_grid(scored: pl.LazyFrame, bars: pl.LazyFrame) -> None:
+    """Exactly one score per ``(symbol, ts)`` of the run's bar grid.
+
+    ``lag_bars`` shifts the score frame by *rows*, and the engine joins it to the bars with an
+    inner join, so a signal that drops a bar shifts every later weight by one row **and** removes
+    that bar's return from the equity curve; a duplicated row double-counts a bar; a row for a
+    timestamp the bars do not have moves the lag without contributing a return. None of those is
+    visible in the result, so the engine refuses them (AGENTS.md §1.2: the engine enforces).
+    """
+    bar_pairs = bars.select(pl.col("symbol"), pl.col("event_time").alias("ts")).collect()
+    expected = bar_pairs.unique()
+    if bar_pairs.height != expected.height:
+        duplicated = (
+            bar_pairs.group_by(["symbol", "ts"])
+            .len()
+            .filter(pl.col("len") > 1)
+            .sort("len", descending=True)
+        )
+        msg = (
+            f"the bars dataset holds {bar_pairs.height - expected.height} duplicated "
+            f"(symbol, event_time) rows, e.g. {duplicated.head(3).to_dicts()}; the vectorized "
+            "engine assigns one weight and one return per bar, so a duplicated bar would be "
+            "counted twice. Deduplicate the dataset (keep one version per bar) before running"
+        )
+        raise DataQualityError(msg)
+    pairs = scored.select("symbol", "ts").collect()
+    unique = pairs.unique()
+    if pairs.height != unique.height:
+        duplicated = (
+            pairs.group_by(["symbol", "ts"])
+            .len()
+            .filter(pl.col("len") > 1)
+            .sort("len", descending=True)
+        )
+        msg = (
+            f"the signal function returned {pairs.height - unique.height} duplicated (symbol, ts) "
+            f"score rows (of {pairs.height}), e.g. {duplicated.head(3).to_dicts()}; a signal must "
+            "return exactly one score per bar, because the engine's lag shifts the score frame by "
+            "rows and a duplicate double-counts that bar's weight and return"
+        )
+        raise ConfigurationError(msg)
+    missing = expected.join(unique, on=["symbol", "ts"], how="anti")
+    if missing.height:
+        msg = (
+            f"the signal function returned no score for {missing.height} of {expected.height} "
+            f"(symbol, ts) bars, e.g. {missing.head(3).to_dicts()}; the mandatory lag shifts the "
+            "score frame by rows, so a missing bar would lag every later weight by one row and "
+            "drop that bar's return from the equity curve. Return a score for every bar of the "
+            "frame the engine passes in (fill warm-up with 0.0 rather than dropping the rows)"
+        )
+        raise ConfigurationError(msg)
+    extra = unique.join(expected, on=["symbol", "ts"], how="anti")
+    if extra.height:
+        msg = (
+            f"the signal function returned {extra.height} (symbol, ts) score rows that are not "
+            f"bars of dataset {sorted(extra.get_column('symbol').unique().to_list())}, e.g. "
+            f"{extra.head(3).to_dicts()}; the lag is applied over the score frame, so a row "
+            "without a bar would shift it. Score exactly the bars the engine passes in"
+        )
+        raise ConfigurationError(msg)
+
+
 def _foreign_currencies(config: VectorizedConfig, prices: pl.LazyFrame) -> set[str]:
     """The non-base currencies of the symbols the bars actually hold (ADR-0062)."""
     if not config.symbol_currency:
@@ -155,6 +217,7 @@ class VectorizedBacktestEngine:
         bars = config.store.read(config.bars_dataset, as_of=config.end)
         scored = config.signal(bars, dict(config.params))
         _validate_score_schema(scored)
+        _validate_score_grid(scored, bars)
 
         scored = scored.select(["ts", "symbol", "score"]).sort(["symbol", "ts"])
         weighted = scored.with_columns(

@@ -395,3 +395,36 @@ def test_attribution_values_a_foreign_round_trip_in_base_currency(tmp_path: Path
     result = _run_eur_round_trip(tmp_path)
     frame = per_strategy_pnl_deltas(result.fill_rows, [2 * DAY, 4 * DAY, 5 * DAY])
     assert frame[UNATTRIBUTED].to_list() == pytest.approx([-550.0, 660.0, 0.0])
+
+
+def test_the_reported_cash_column_is_every_currency_converted_to_base(store: Path) -> None:
+    """Regression (2026-10 audit): ``equity.parquet.cash`` reported only the base-currency
+    wallet, so ``cash + positions`` disagreed with equity by the foreign wallet's converted
+    value (89,900 + 25,400 != 103,180). ``cash`` is now the converted total, which restores
+    ``cash + positions = equity`` for a multi-currency book."""
+    engine = BacktestEngine(
+        store=ParquetDataStore(store),
+        bars_dataset=BARS,
+        corporate_actions_dataset=None,
+        strategy=BuyBothOnce(),
+        params={},
+        initial_cash=Decimal("100000"),
+        base_currency=USD,
+        realism_level=RealismLevel.BASIC_FRICTION,
+        slippage_bps=0.0,
+        commission_bps=0.0,
+        start=TimestampNs(0),
+        end=TimestampNs(4 * DAY),
+        symbol_currency={EURSTOCK: EUR},
+        fx_dataset=FX,
+    )
+    result = engine.run()
+    snapshot = result.final_snapshot
+    positions_in_base = sum(
+        value for symbol in snapshot.positions() if (value := snapshot.notional(symbol)) is not None
+    )
+    assert snapshot.cash_total(USD) + positions_in_base == pytest.approx(snapshot.equity(USD))
+    last = result.equity_rows[-1]
+    assert float(last["cash"]) == pytest.approx(float(snapshot.cash_total(USD)))
+    # the base wallet alone is not the reported cash: the EUR wallet is converted, not dropped
+    assert float(last["cash"]) != pytest.approx(float(snapshot.cash(USD)))

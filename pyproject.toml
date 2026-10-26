@@ -150,7 +150,7 @@ layers = [
     "crucible.core.checkpoint",
     "crucible.core.events | crucible.core.interfaces | crucible.core.instruments",
     "crucible.core.drawdown",
-    "crucible.core.types | crucible.core.errors | crucible.core.invariants | crucible.core.setup_fingerprint",
+    "crucible.core.types | crucible.core.errors | crucible.core.invariants | crucible.core.setup_fingerprint | crucible.core.stats",
 ]
 ignore_imports = [
     # Cycle by design, both ends lazy: the checkpoint codec rebuilds ledger

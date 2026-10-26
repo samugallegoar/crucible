@@ -105,5 +105,8 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0076](0076-os-independent-tests-run-on-one-ci-os.md) | OS-independent plumbing tests run on one CI OS | accepted | A `single_os` marker. CI runs it on Ubuntu only; the Windows and macOS jobs run `-m "not single_os"` |
 | [0077](0077-one-fixed-results-table.md) | One fixed results table for the one-step backtest | accepted | `crucible/product/table.py::build_results_table` builds the table once, from the finished result document |
 | [0078](0078-one-thousand-shuffles.md) | 1,000 shuffles by default in the shuffled-returns test | accepted | `DEFAULT_ITERATIONS = 1_000` (`product/nulltest.py`); the CLI flag, the MCP tool and `BacktestRequest` default to it |
+| [0079](0079-result-integrity.md) | Result integrity — code identity, overwrite protection, degenerate returns | ? | Provenance is resolved from the code, then the cwd. `runner._resolution_root()` is the directory two levels above the loaded package (`crucible/experiments/runner.py`); git is run with `cwd=` the … |
+| [0080](0080-invariant-i2.md) | Register invariant I2 — PnL reconciliation at every mark | ? | Register `I2.pnl_reconciliation` and check it at every mark, against a fresh fold: |
+| [0081](0081-walk-forward-command.md) | An out-of-sample walk-forward command | ? | Add one command, `crucible walk-forward CONFIG`, that runs a 1-D selection over time folds and reports only out-of-fold metrics: |
 
 <!-- END GENERATED: adr-index -->

@@ -18,6 +18,7 @@ import polars as pl
 from crucible.analytics.interfaces import MetricValue
 from crucible.core.drawdown import max_drawdown, max_drawdown_from_returns
 from crucible.core.errors import CrucibleError
+from crucible.core.stats import is_degenerate_returns
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -29,10 +30,9 @@ CI_LEVEL = 0.95
 
 
 def _sharpe(returns: NDArray[np.float64], periods_per_year: float) -> float:
-    std = returns.std(ddof=1)
-    if std == 0.0:
+    if is_degenerate_returns(returns):
         return 0.0
-    return float(returns.mean() / std * np.sqrt(periods_per_year))
+    return float(returns.mean() / returns.std(ddof=1) * np.sqrt(periods_per_year))
 
 
 def _cagr(returns: NDArray[np.float64], periods_per_year: float) -> float:
@@ -41,6 +41,13 @@ def _cagr(returns: NDArray[np.float64], periods_per_year: float) -> float:
         return -1.0
     years = len(returns) / periods_per_year
     return float(growth ** (1.0 / years) - 1.0) if years > 0 else 0.0
+
+
+def _volatility(returns: NDArray[np.float64], periods_per_year: float) -> float:
+    """Annualized standard deviation; 0.0 for a degenerate series (no dispersion to report)."""
+    if is_degenerate_returns(returns):
+        return 0.0
+    return float(returns.std(ddof=1) * np.sqrt(periods_per_year))
 
 
 def _block_bootstrap_ci(
@@ -100,7 +107,9 @@ def compute_metrics(
         "sharpe": MetricValue(_sharpe(returns, periods_per_year), *sharpe_ci),
         "cagr": MetricValue(_cagr(returns, periods_per_year), *cagr_ci),
         "volatility": MetricValue(
-            float(returns.std(ddof=1) * np.sqrt(periods_per_year)), None, None
+            _volatility(returns, periods_per_year),
+            None,
+            None,
         ),
         "max_drawdown": MetricValue(max_drawdown(values), *max_dd_ci),
         "n_periods": MetricValue(float(len(returns)), None, None),

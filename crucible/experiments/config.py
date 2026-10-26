@@ -383,7 +383,13 @@ class ExperimentConfig(_FrozenModel):
     initial_cash: Annotated[Decimal, Field(gt=0)]
     start: str = Field(description="ISO date (UTC midnight) or ISO datetime with tz")
     end: str
-    periods_per_year: float = Field(gt=0, default=252.0)
+    periods_per_year: float = Field(
+        gt=0,
+        default=252.0,
+        description="Bars per year used to annualize per-bar statistics. Leave it unset to "
+        "derive it from the bars' spacing and the calendar (252 sessions x median bars per "
+        "session; 365 for 24/7); setting it overrides the derivation (2026-10 audit, M5).",
+    )
     settlement_lag_days: int = Field(
         ge=0,
         default=0,

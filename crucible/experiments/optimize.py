@@ -20,7 +20,7 @@ import numpy as np
 import polars as pl
 
 from crucible.analytics.metrics import simple_returns
-from crucible.core.errors import ConfigurationError
+from crucible.core.errors import ConfigurationError, CrucibleError
 from crucible.core.types import RunMode
 from crucible.experiments.runner import run_experiment, run_experiment_parallel
 from crucible.experiments.sensitivity import _derived_param_config
@@ -31,7 +31,7 @@ from crucible.experiments.vectorized_runner import (
 from crucible.validation.dsr import deflated_sharpe_ratio
 from crucible.validation.pbo import probability_of_backtest_overfitting
 from crucible.validation.splits import CombinatorialPurgedCVSplitter
-from crucible.validation.trial_registry import DuckDBTrialRegistry
+from crucible.validation.trial_registry import DuckDBTrialRegistry, frequency_mismatch
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -48,6 +48,11 @@ DEFAULT_PBO_GROUPS = 6
 untuned, like ``spike_threshold``/``N_MONTE_CARLO_ITERATIONS`` elsewhere
 in this codebase."""
 
+LOWER_IS_BETTER_METRICS = frozenset({"volatility", "max_drawdown"})
+"""``optimize --metric`` picks the *best* trial; these are the metrics whose best value is the
+smallest. Every other metric (sharpe, cagr, n_trades, ...) is maximized. Before this set, a
+sweep ranked by volatility selected the *most* volatile trial."""
+
 
 @dataclass(frozen=True, slots=True)
 class OptimizeResult:
@@ -56,7 +61,9 @@ class OptimizeResult:
     -- not the partial count each trial's own ``manifest.json["dsr"]``
     was computed against mid-sweep (a trial recorded early in the search
     has no way to know how many more trials would follow it; only after
-    the sweep completes is the search's true trial count known)."""
+    the sweep completes is the search's true trial count known).
+    ``best_dsr`` is None when the family cannot support a DSR (mixed return
+    frequencies, or a degenerate return series); ``best_dsr_error`` says why."""
 
     param_name: str
     values: tuple[float, ...]
@@ -65,7 +72,8 @@ class OptimizeResult:
     metric_values: tuple[float, ...]
     pbo: PboResult
     best_experiment_id: str
-    best_dsr: DsrResult
+    best_dsr: DsrResult | None
+    best_dsr_error: str | None = None
 
 
 def optimize_1d(
@@ -141,13 +149,23 @@ def optimize_1d(
     pbo_result = probability_of_backtest_overfitting(panel, splitter)
 
     metric_values = [run.metrics[metric].value for run in runs]
-    best_idx = int(np.argmax(metric_values))
+    lower_is_better = metric in LOWER_IS_BETTER_METRICS
+    best_idx = int(np.argmin(metric_values)) if lower_is_better else int(np.argmax(metric_values))
     trial_registry = DuckDBTrialRegistry(artifacts_root / "trial_registry.duckdb")
-    best_dsr = deflated_sharpe_ratio(
-        returns_list[best_idx],
-        trial_registry.trial_sharpes(config.experiment.family),
-        n_trials=trial_registry.trial_count(config.experiment.family),
-    )
+    # the same frequency gate the runners and the one-step product apply: a family whose trials
+    # were measured at different return frequencies has no comparable DSR (docs/modules/
+    # validation.md), and PBO still ranks the panel by per-period Sharpe
+    dsr_error = frequency_mismatch(trial_registry.trial_periods(config.experiment.family))
+    best_dsr: DsrResult | None = None
+    if dsr_error is None:
+        try:
+            best_dsr = deflated_sharpe_ratio(
+                returns_list[best_idx],
+                trial_registry.trial_sharpes(config.experiment.family),
+                n_trials=trial_registry.trial_count(config.experiment.family),
+            )
+        except CrucibleError as exc:
+            dsr_error = str(exc)
 
     result = OptimizeResult(
         param_name=param_name,
@@ -158,5 +176,6 @@ def optimize_1d(
         pbo=pbo_result,
         best_experiment_id=str(runs[best_idx].experiment_id),
         best_dsr=best_dsr,
+        best_dsr_error=dsr_error,
     )
     return result, runs

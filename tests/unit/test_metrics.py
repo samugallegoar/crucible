@@ -85,3 +85,19 @@ def test_ruin_is_refused() -> None:
             rng=np.random.default_rng(1),
             periods_per_year=252,
         )
+
+
+def test_a_constant_per_period_return_does_not_invent_an_enormous_sharpe() -> None:
+    """Regression (2026-10 audit): 500 bars of exactly +0.1% compound to returns whose
+    standard deviation is ~9e-17; ``std == 0.0`` did not catch it and the reported Sharpe was
+    1.7e14, which the trial registry then used as a real observation (poisoning the family's
+    DSR). A series with no dispersion has no Sharpe ratio."""
+    values = [100.0]
+    for _ in range(499):
+        values.append(values[-1] * 1.001)
+    metrics = compute_metrics(
+        _equity(values), _no_trades(), rng=np.random.default_rng(1), periods_per_year=252
+    )
+    assert metrics["sharpe"].value == 0.0
+    assert metrics["volatility"].value == 0.0
+    assert metrics["cagr"].value > 0.0  # the growth itself is real and still reported

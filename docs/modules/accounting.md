@@ -56,6 +56,16 @@ when a priced quantity becomes a cash movement, nowhere else.
   currency other than the run's own base. A futures symbol contributes
   only its *unsettled* variation margin, `(mark - avg_cost) · qty ·
   multiplier`, never the full notional — see "Futures" below.
+  `cash_total(base)` values every currency's wallet at the mid rate and is
+  what `equity.parquet.cash` reports (2026-10 audit: the base wallet alone
+  made `cash + positions ≠ equity` for a multi-currency book); `cash(ccy)`
+  remains the single-currency wallet. `fees_paid` likewise converts each
+  currency's fees at the mid (the ledger keeps `fees_by_currency`; adding the
+  raw amounts mixed dollars and euros). A past fee is valued at the
+  snapshot's rate, so a later FX move changes `fees_paid`; the cash impact at
+  posting time is not tracked separately. A mid rate that is non-finite or
+  `<= 0` is refused by `fx.convert_at_mid` rather than silently zeroing or
+  inverting equity, and a zero balance needs no rate at all.
   `realized_pnl` scales each position's raw `PositionState.realized_pnl`
   by its futures multiplier (1 for an equity) *and* converts to base
   currency via `convert_at_mid` (a code-review fix, ADR-0034 — this
@@ -139,6 +149,12 @@ clarity; only cash amounts, `equity()`'s position contribution, and
 `realized_pnl` apply the multiplier. A roll (closing an expiring
 contract, opening the next) needs no dedicated mechanism — each
 contract month is its own `Symbol`, so it's just two ordinary orders.
+A `delisting` on a futures symbol liquidates at `(mark - avg_cost) · qty ·
+multiplier`, the same realized-delta rule as a closing fill, with no
+settlement lag — it used to book `qty · mark` (the whole notional, 2 ES at
+4520 crediting +9040; 2026-10 audit). A `cash_dividend` row on a futures
+symbol is refused (`DataQualityError`): a contract has no dividend
+entitlement and `qty · per_share` would ignore the multiplier.
 
 ## Checkpoint/resume (E7, ADR-0041)
 `InMemoryLedger.snapshot()` is the ordered transaction list (`txns`);

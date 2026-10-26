@@ -35,6 +35,7 @@ import polars as pl
 from crucible.analytics.metrics import compute_metrics, simple_returns
 from crucible.analytics.trades import EPISODE_SCHEMA, build_episodes
 from crucible.core.errors import ConfigurationError, CrucibleError
+from crucible.core.stats import per_period_sharpe
 from crucible.core.types import DatasetId, RealismLevel, TimestampNs
 from crucible.data.calendars import get_trading_calendar
 from crucible.data.quality import run_quality_checks
@@ -56,7 +57,7 @@ from crucible.strategy_spec import (
     uses_time,
     warmup_bars,
 )
-from crucible.validation.dsr import deflated_sharpe_ratio, per_period_sharpe
+from crucible.validation.dsr import deflated_sharpe_ratio
 from crucible.validation.trial_registry import DuckDBTrialRegistry, frequency_mismatch
 from crucible.vectorized.engine import VectorizedBacktestEngine, VectorizedConfig, VectorizedResult
 
@@ -117,37 +118,11 @@ def _to_minute(ts_ns: int) -> str:
     return dt.datetime.fromtimestamp(ts_ns / 1e9, dt.UTC).strftime("%Y-%m-%dT%H:%MZ")
 
 
-SESSIONS_PER_YEAR = {"24/7": 365.0}
-"""Sessions per year by calendar; every exchange calendar uses 252 (the existing convention)."""
+# One definition, in the data layer: the experiments runner needs the same rule (ADR-0072,
+# 2026-10 audit M5). Re-exported here so existing imports keep working.
+from crucible.data.calendars import bars_per_session, periods_per_year_for  # noqa: E402
 
-
-def bars_per_session(event_times: list[int], calendar: str) -> int:
-    """Median number of bars per trading session, each bar assigned to the first session close
-    at or after its ``event_time`` (an intraday bar never ends after its session's close, the
-    provider clips it). 1 for daily bars. Used to annualize per-bar statistics (ADR-0072)."""
-    if not event_times:
-        return 1
-    stamps = np.sort(np.asarray(event_times, dtype=np.int64))
-    week = 7 * _NS_PER_DAY
-    cal = get_trading_calendar(
-        calendar,
-        start=TimestampNs(int(stamps[0]) - week),
-        end=TimestampNs(int(stamps[-1]) + week),
-    )
-    closes = np.asarray(
-        cal.session_closes(TimestampNs(int(stamps[0])), TimestampNs(int(stamps[-1]) + week)),
-        dtype=np.int64,
-    )
-    session = np.searchsorted(closes, stamps, side="left")
-    _, counts = np.unique(session, return_counts=True)
-    return max(1, round(float(np.median(counts))))
-
-
-def periods_per_year_for(event_times: list[int], calendar: str) -> float:
-    """Bars per year: sessions per year (252 on an exchange calendar, 365 on 24/7) times the
-    median bars per session. Exactly the old 252 / 365 for daily bars (ADR-0072)."""
-    sessions = SESSIONS_PER_YEAR.get(calendar, 252.0)
-    return sessions * bars_per_session(event_times, calendar)
+__all__ = ["bars_per_session", "periods_per_year_for"]
 
 
 def _side(equity: pl.DataFrame, metrics: dict[str, MetricValue], capital: float) -> Side:

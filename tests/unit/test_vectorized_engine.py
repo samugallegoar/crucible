@@ -240,6 +240,84 @@ def test_refuses_a_signal_function_missing_the_score_column(tmp_path: Path) -> N
         VectorizedBacktestEngine().run(config)
 
 
+def _run_with_signal(store: ParquetDataStore, signal: object, end: int, lag_bars: int = 1) -> None:
+    VectorizedBacktestEngine().run(
+        VectorizedConfig(
+            store=store,
+            bars_dataset=BARS_DATASET,
+            signal=signal,  # type: ignore[arg-type]
+            params={},
+            initial_cash=Decimal("1000"),
+            realism_level=RealismLevel.FRICTIONLESS,
+            start=TimestampNs(1),
+            end=TimestampNs(end),
+            lag_bars=lag_bars,
+        )
+    )
+
+
+def test_refuses_a_signal_that_drops_bars(tmp_path: Path) -> None:
+    """A signal that emits only the rows it trades is a common optimisation, and a silent
+    one: the lag shifts the *score frame* by rows, so a dropped bar moves every later weight
+    one row earlier (and the inner join drops that bar's return, compressing the equity curve
+    into fewer, larger periods). Before this refusal the run reported a different strategy
+    without saying so."""
+
+    def sparse_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
+        return bars.filter(pl.col("event_time") != 3).select(
+            symbol="symbol", ts=pl.col("event_time"), score=pl.lit(1.0)
+        )
+
+    store = _store(tmp_path, [_bar("X", ts, 100.0) for ts in (1, 2, 3, 4)])
+    with pytest.raises(ConfigurationError, match="no score for 1 of 4"):
+        _run_with_signal(store, sparse_signal, 4)
+
+
+def test_refuses_a_signal_with_rows_that_are_not_bars(tmp_path: Path) -> None:
+    def extra_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
+        return pl.concat(
+            [
+                bars.select(symbol="symbol", ts=pl.col("event_time"), score=pl.lit(0.0)),
+                pl.DataFrame({"symbol": ["X"], "ts": [99], "score": [1.0]}).lazy(),
+            ]
+        )
+
+    store = _store(tmp_path, [_bar("X", ts, 100.0) for ts in (1, 2)])
+    with pytest.raises(ConfigurationError, match="not bars of dataset"):
+        _run_with_signal(store, extra_signal, 2)
+
+
+def test_refuses_a_signal_with_duplicated_rows(tmp_path: Path) -> None:
+    def duplicated_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:
+        single = bars.select(symbol="symbol", ts=pl.col("event_time"), score=pl.lit(1.0))
+        return pl.concat([single, single.filter(pl.col("ts") == 2)])
+
+    store = _store(tmp_path, [_bar("X", ts, 100.0) for ts in (1, 2)])
+    with pytest.raises(ConfigurationError, match="duplicated"):
+        _run_with_signal(store, duplicated_signal, 2)
+
+
+def test_refuses_a_bars_dataset_with_a_duplicated_bar(tmp_path: Path) -> None:
+    """The quality gate refuses this for a run; the engine refuses it too, because a
+    duplicated bar would be assigned two weights and two returns under one timestamp."""
+    from crucible.core.errors import DataQualityError
+
+    frame = pl.from_dicts(
+        [
+            _bar("X", 1, 100.0),
+            _bar("X", 2, 101.0),
+            {**_bar("X", 2, 101.0), "available_at": 3},  # a revised second version
+        ],
+        schema=BAR_SCHEMA,
+    )
+    build_dataset(
+        tmp_path, BARS_DATASET, frame, schema=BAR_SCHEMA, sort_keys=BAR_SORT_KEYS, source="test"
+    )
+    store = ParquetDataStore(tmp_path)
+    with pytest.raises(DataQualityError, match="duplicated"):
+        _run_with_signal(store, _constant_long_signal, 3)
+
+
 def test_result_carries_a_per_symbol_gross_pnl_frame(tmp_path: Path) -> None:
     """Same data as the hand-computed compounding test: closes 100, 110, 121, 108.9 and a constant
     long score, so the lagged weights are 0, 1, 1, 1. Gross pnl per bar is prior equity * weight *

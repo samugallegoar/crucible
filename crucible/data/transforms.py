@@ -173,7 +173,13 @@ def shuffle_bar_returns(bars: pl.DataFrame, rng: np.random.Generator) -> pl.Data
     """The "shuffled returns" null test: independently per symbol, permutes whole bars
     (overnight gap, intraday return, both wicks and volume together) after the first,
     destroying the order of daily moves while preserving the multiset of close-to-close
-    returns, and so the final close, exactly (see the module table)."""
+    returns, and so the final close, exactly (see the module table).
+
+    Known limitation (2026-10 audit): each symbol is permuted **independently**, so the null
+    keeps every symbol's own return distribution but destroys cross-sectional correlation (two
+    symbols correlated at 0.96 come out at ~0.01). For a single-symbol strategy that is the
+    intended null; for a portfolio or statistical-arbitrage strategy it is a weaker null than it
+    looks, and a common time-index permutation is the follow-up (not implemented)."""
 
     def _shuffle(parts: BarComponents, *, symbol: str) -> BarComponents:
         return parts.take(_permute_tail(len(parts.gap), rng))

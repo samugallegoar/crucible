@@ -339,3 +339,59 @@ def test_a_margin_call_flattens_a_futures_book_when_equity_falls_below_maintenan
     ).run()
     assert result.final_snapshot.position(ES) is None
     assert len(result.fill_rows) == 2  # the entry and the flatten
+
+
+def test_delisting_a_futures_position_settles_the_price_delta_not_the_notional(
+    tmp_path: Path,
+) -> None:
+    """Regression (2026-10 audit): the delisting path booked ``qty * mark`` as cash, i.e. the
+    whole notional (+9040 for 2 ES at 4520) instead of the price delta since the last daily
+    settlement. Long 2 ES @4500, marks 4500 / 4510 / 4520, delisting after day 4:
+
+        day 3 settlement  (4510-4500)*2*50 = +1000
+        day 4 delisting   (4520-4510)*2*50 = +1000
+        equity            100000 + 2000 = 102000
+
+    not 110040. Nothing is refused for a futures symbol today, and a delisting row is the only
+    way to settle an expiring contract (there is no expiry field yet).
+    """
+    from crucible.data.contracts import CORPORATE_ACTION_SCHEMA, CORPORATE_ACTION_SORT_KEYS
+
+    _build_single(tmp_path, opens=[4500.0, 4500.0, 4510.0, 4520.0])
+    corp = DatasetId("futures_actions")
+    build_dataset(
+        tmp_path,
+        corp,
+        pl.DataFrame(
+            {
+                "symbol": ["ES"],
+                "action": ["delisting"],
+                "effective_at": [4 * DAY],
+                "event_time": [4 * DAY],
+                "available_at": [4 * DAY],
+                "value": [None],
+                "pay_at": [None],
+            },
+            schema=CORPORATE_ACTION_SCHEMA,
+        ),
+        schema=CORPORATE_ACTION_SCHEMA,
+        sort_keys=CORPORATE_ACTION_SORT_KEYS,
+        source="test",
+    )
+    engine = BacktestEngine(
+        store=ParquetDataStore(tmp_path),
+        bars_dataset=BARS,
+        corporate_actions_dataset=corp,
+        strategy=OpenOnSessionOne(),
+        params={},
+        initial_cash=Decimal("100000"),
+        base_currency=USD,
+        realism_level=RealismLevel.BASIC_FRICTION,
+        start=TimestampNs(DAY),
+        end=TimestampNs(4 * DAY),
+        futures_specs={ES: FuturesSpec(multiplier=MULT)},
+    )
+    result = engine.run()
+    final = result.final_snapshot
+    assert final.equity(USD) == Decimal("102000")
+    assert final.position(ES) is None or final.position(ES).qty == 0

@@ -8,6 +8,64 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Audit fixes: result integrity, execution, accounting and statistics (ADR-0079)
+- **Experimental provenance no longer depends on the working directory.** `commit` and
+  `env_lock_hash` were resolved relative to the process cwd, so a run from a notebook, a
+  worktree or an installed wheel recorded `unknown` for both, silently. They are now resolved
+  from the checkout that contains the loaded package, and every manifest also records
+  `crucible_version` (additive; `schema_version` stays 1).
+- **A finished run is not silently overwritten by different code.** The experiment id hashes
+  the config and the data, not the code, so re-running after a code change wrote into the same
+  directory. A new `code_fingerprint` (HEAD + `git status` + the working-tree diff) is recorded
+  and compared; a different fingerprint raises `ExperimentError` before any file or trial is
+  written, with `--overwrite` (CLI) to replace it on purpose.
+- **A degenerate return series no longer invents a Sharpe of ~1e14.** A constant per-period
+  return has float-dust standard deviation, which `std == 0.0` missed; the value was then
+  stored in the append-only trial registry and deflated every later trial in the family. The
+  Sharpe/volatility estimators share one definition (`crucible/core/stats.py`), report `0.0`
+  for a series with no dispersion, and the runners record `NULL` instead of a Sharpe for it.
+- **Futures delisting booked the whole notional as cash** (2 ES at 4520 credited +9040 instead
+  of the price delta, leaving equity 8040 too high). The liquidation now realizes
+  `price_delta * multiplier` like any futures close, with no settlement lag, and a cash
+  dividend on a futures symbol is refused.
+- **Annualization**: an experiment config that leaves `periods_per_year` unset now derives it
+  from the bars (252 sessions x median bars per session; 365 for `24/7`) instead of assuming the
+  daily 252. Intraday Sharpe/volatility/CAGR were understated by `sqrt(bars per session)`
+  (hourly on XNYS: 0.81 vs 2.13 for the same series); set the field explicitly to keep the old
+  value. The one-step product already derived it; now both paths share the rule in
+  `crucible.data.calendars`. Bars are counted by distinct time, not by row: with several symbols
+  the rule counted every symbol's row, so two symbols on daily bars were annualized with 504
+  instead of 252 (Sharpe and volatility too large by sqrt(2)), in the one-step product too.
+- **`equity.parquet.cash` is every currency converted to the base**, as documented; it was the
+  base-currency wallet only, so `cash + positions` disagreed with equity in a multi-currency
+  run. `fees_paid` has the same fix (`PortfolioBalances.fees_by_currency`, converted at the mid
+  instead of adding dollars to euros); a past fee is valued at the snapshot's rate. A zero balance no longer demands an FX rate, and a non-finite or non-positive mid rate
+  is refused instead of silently zeroing or inverting equity.
+- **Execution:** a partially filled OCO leg now cancels its sibling (the take-profit used to
+  fill afterwards, taking a 100-lot pair to -110); a DAY order expires after the one full bar
+  ADR-0010 specifies (it survived two); a participation cap whose ADV history is too short
+  rejects the order instead of killing the run; an algo slice is no longer labelled
+  "liquidity constrained"; a fill clamped into `[low, high]` now records the spread/slippage it
+  dropped in the order's reason trail.
+- **Vectorized engine:** a signal function that drops, duplicates or invents rows is refused
+  (the lag is by row, so a sparse score frame silently re-timed every later weight and
+  compressed the equity curve); a bars dataset with a duplicated `(symbol, event_time)` row is
+  refused too.
+- **`crucible walk-forward`** (ADR-0081): a first out-of-sample evaluation command. Each fold
+  selects a 1-D parameter on its train window and reports only the following test window, with
+  the per-fold table, the mean/spread across folds, the share of positive folds and an optional
+  protected holdout; summary in `<artifacts>/walk_forward.json`. Test runs do not record trials,
+  so the per-fold selection is not deflated (stated in the output). The concatenated
+  out-of-fold series and its DSR are the next increment.
+- **Invariant I2 is registered** (ADR-0080): at every mark, equity must tie out to
+  `initial + realized + unrealized − fees + dividends/borrow/financing` (1e-9 relative, for the
+  Decimal average-cost residue). `docs/INVARIANTS.md` called I2 "derived" while it was neither
+  registered nor true once a dividend was paid; the futures-delisting defect above passed
+  I1/I3/I4 and would have tripped this check. The fold gains `income_by_currency`.
+- **Statistics:** `optimize` applies the same frequency-mismatch gate as the runners before
+  reporting a DSR (it used to deflate across daily and hourly trials), and ranks
+  `volatility`/`max_drawdown` by the smallest value rather than the largest.
+
 ### Shuffled-returns test: 1,000 shuffles by default (ADR-0078)
 - `null_iterations` defaults to 1,000 (it was 100) in `crucible backtest` and the MCP tool: the
   Monte Carlo p-value's standard error drops from about 0.04 to 0.013 at p = 0.2. **Behaviour

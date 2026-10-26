@@ -90,6 +90,14 @@ class PositionState:
             self.avg_cost = price
 
 
+_NON_PNL_FLOWS = frozenset(
+    {TransactionType.DIVIDEND, TransactionType.BORROW, TransactionType.FINANCING}
+)
+"""Cash movements that change equity without changing realized or unrealized PnL: they are the
+"other income" term of I2.pnl_reconciliation (2026-10 audit, M7). A DELISTING liquidation is *not*
+one of them: it is position-bearing, so its realized part is already in ``realized_pnl``."""
+
+
 @dataclass(slots=True)
 class PortfolioBalances:
     """Result of folding the ledger: cash per currency + positions.
@@ -106,6 +114,15 @@ class PortfolioBalances:
     positions: dict[Symbol, PositionState]
     fees_paid: Decimal
     ts: TimestampNs
+    fees_by_currency: dict[Currency, Decimal] = field(default_factory=dict)
+    income_by_currency: dict[Currency, Decimal] = field(default_factory=dict)
+    """Cash movements that are neither a fill nor a fee -- dividends (+), borrow (-), financing
+    (-) -- per currency, signed like the cash they moved. ``I2.pnl_reconciliation`` needs them:
+    they change equity without changing realized or unrealized PnL (2026-10 audit, M7)."""
+    """Fees paid so far, **per currency** (positive). ``fees_paid`` is their raw arithmetic sum,
+    which is only meaningful for a single-currency book; a reporting layer converts these at the
+    mid rate (``PortfolioSnapshot.fees_paid``) instead of adding dollars to euros (2026-10
+    audit)."""
 
 
 @dataclass(slots=True)
@@ -121,7 +138,8 @@ class _FoldCache:
     cash: dict[Currency, Decimal]
     available_cash: dict[Currency, Decimal]
     positions: dict[Symbol, PositionState]
-    fees: Decimal
+    fees: dict[Currency, Decimal]
+    income: dict[Currency, Decimal]
     last_ts: TimestampNs
     pending: list[TransactionRecord]
 
@@ -201,8 +219,10 @@ class InMemoryLedger:
                 symbol: PositionState(pos.qty, pos.avg_cost, pos.realized_pnl)
                 for symbol, pos in sorted(cache.positions.items())
             },
-            fees_paid=cache.fees,
+            fees_paid=sum(cache.fees.values(), Decimal("0")),
             ts=cache.last_ts,
+            fees_by_currency=dict(cache.fees),
+            income_by_currency=dict(cache.income),
         )
 
     def _new_cache(self, up_to: TimestampNs) -> _FoldCache:
@@ -212,7 +232,8 @@ class InMemoryLedger:
             cash=dict(self._initial_cash),
             available_cash=dict(self._initial_cash),
             positions={},
-            fees=Decimal("0"),
+            fees=dict.fromkeys(self._initial_cash, Decimal("0")),
+            income={},
             last_ts=self._start,
             pending=[],
         )
@@ -250,7 +271,11 @@ class InMemoryLedger:
             assert txn.price is not None
             cache.positions.setdefault(txn.symbol, PositionState()).apply(txn.qty, txn.price)
         if txn.type is TransactionType.FEE:
-            cache.fees += -sum(txn.amounts.values(), Decimal("0"))
+            for ccy, amount in txn.amounts.items():
+                cache.fees[ccy] = cache.fees.get(ccy, Decimal("0")) - amount
+        elif txn.type in _NON_PNL_FLOWS:
+            for ccy, amount in txn.amounts.items():
+                cache.income[ccy] = cache.income.get(ccy, Decimal("0")) + amount
         cache.last_ts = txn.ts
 
     def _fold_full(self, up_to: TimestampNs | None) -> PortfolioBalances:
@@ -259,7 +284,8 @@ class InMemoryLedger:
         cash = dict(self._initial_cash)
         available_cash = dict(self._initial_cash)
         positions: dict[Symbol, PositionState] = {}
-        fees = Decimal("0")
+        fees: dict[Currency, Decimal] = {}
+        income: dict[Currency, Decimal] = {}
         last_ts = self._start
         for txn in self._txns:
             if up_to is not None and txn.ts > up_to:
@@ -276,15 +302,21 @@ class InMemoryLedger:
                     raise InvariantViolation(msg)
                 positions.setdefault(txn.symbol, PositionState()).apply(txn.qty, txn.price)
             if txn.type is TransactionType.FEE:
-                fees += -sum(txn.amounts.values(), Decimal("0"))
+                for ccy, amount in txn.amounts.items():
+                    fees[ccy] = fees.get(ccy, Decimal("0")) - amount
+            elif txn.type in _NON_PNL_FLOWS:
+                for ccy, amount in txn.amounts.items():
+                    income[ccy] = income.get(ccy, Decimal("0")) + amount
             last_ts = txn.ts
         positions = dict(sorted(positions.items()))
         return PortfolioBalances(
             cash=cash,
             available_cash=available_cash,
             positions=positions,
-            fees_paid=fees,
+            fees_paid=sum(fees.values(), Decimal("0")),
             ts=last_ts,
+            fees_by_currency=fees,
+            income_by_currency=income,
         )
 
     def snapshot(self) -> dict[str, object]:
@@ -292,12 +324,23 @@ class InMemoryLedger:
         return {"txns": list(self._txns)}
 
     def restore(self, state: Mapping[str, object]) -> None:
-        """Replaces the transactions in place; refuses non-``TransactionRecord`` entries."""
+        """Replaces the transactions in place; refuses non-``TransactionRecord`` entries and an
+        out-of-order list.
+
+        ``append`` refuses a transaction older than the last one; a checkpoint carrying one used
+        to be accepted here and folded anyway, so a restored run could differ from the one that
+        wrote the checkpoint (2026-10 audit)."""
         txns: list[TransactionRecord] = []
         for raw in ckpt.field_list(state, "txns"):
             if not isinstance(raw, TransactionRecord):
                 msg = (
                     f"checkpoint ledger entry must be a TransactionRecord, got {type(raw).__name__}"
+                )
+                raise CheckpointError(msg)
+            if txns and raw.ts < txns[-1].ts:
+                msg = (
+                    f"checkpoint ledger is not in time order: txn {raw.id} at ts={raw.ts} after "
+                    f"ts={txns[-1].ts}. Refusing to restore it (append enforces the same rule)"
                 )
                 raise CheckpointError(msg)
             txns.append(raw)

@@ -47,7 +47,10 @@ when every statistical guard passes.
   with a config file, which counts every point and reports the probability of overfitting).
 - Spec rules are the indicators listed in the [spec reference](strategy-spec.md): no ranking of a
   universe, no volatility targeting, no per-symbol weights.
-- Walk-forward and out-of-sample splits are engine features that need a config.
+- Walk-forward evaluation exists (`crucible walk-forward`, ADR-0081) but is a first slice:
+  it selects one parameter per fold and reports only out-of-fold metrics. It does not yet
+  report the concatenated out-of-fold equity series or its deflated Sharpe, and the
+  selection inside a fold is not deflated (the summary says so).
 
 ## Scale
 

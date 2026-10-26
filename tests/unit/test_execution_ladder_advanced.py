@@ -403,3 +403,63 @@ def test_known_gap_cost_beyond_the_bar_range_is_clamped_away() -> None:
     _live(manager, sim)
     [fill], _ = sim.on_bar(_bar(100, 100.0, 100.0, 95.0, 100.0, open_time=50))
     assert fill.price == 100.0  # not 101.0
+
+
+# ------------------------------------------------------- OCO partial fills
+
+
+def test_a_partially_filled_oco_leg_cancels_its_sibling() -> None:
+    """An OCO pair is either/or. A participation-capped partial fill used to leave the
+    sibling resting, so the other leg could fill later and take the book to -110 on a
+    100-lot pair (the ADR-0012 rule was only applied on a *full* fill)."""
+    manager = InMemoryOrderManager()
+    sim = _ladder(
+        manager,
+        level=RealismLevel.LIQUIDITY,
+        participation=ParticipationLimits(max_bar_vol=0.1),
+    )
+    take = _live(manager, sim, side=OrderSide.SELL, type_=OrderType.LIMIT, limit=105.0, qty="100")
+    stop = _live(
+        manager,
+        sim,
+        side=OrderSide.SELL,
+        type_=OrderType.STOP,
+        stop=95.0,
+        qty="100",
+        oco_with=take.id,
+    )
+    manager.link_oco(take.id, stop.id)
+
+    # both legs trigger; the adverse (stop) wins, but only 10 shares fit in the bar
+    fills, closed = sim.on_bar(_bar(100, 100.0, 106.0, 94.0, 100.0, open_time=50, volume=100.0))
+    assert [(f.order_id, f.qty) for f in fills] == [(stop.id, Decimal("10"))]
+    assert [(c.order_id, c.state) for c in closed] == [(take.id, OrderState.CANCELLED)]
+    assert take.state is OrderState.CANCELLED
+
+    # the sibling is gone, so the take-profit cannot fill on a later bar
+    fills, _ = sim.on_bar(_bar(200, 100.0, 108.0, 99.0, 106.0, open_time=100, volume=1e6))
+    assert fills == []
+
+
+def test_an_algo_slice_is_not_reported_as_liquidity_constrained() -> None:
+    manager = InMemoryOrderManager()
+    sim = _ladder(manager)
+    order = _live(manager, sim, type_=OrderType.TWAP, qty="10", algo_bars=2)
+    fills, _ = sim.on_bar(_bar(100, 100.0, 101.0, 99.0, 100.0, open_time=50))
+    assert [f.qty for f in fills] == [Decimal("5")]
+    reasons = [reason for _, reason in sim.why_not_filled(order.id)]
+    assert any("scheduled slice" in reason for reason in reasons)
+    assert not any("liquidity/participation" in reason for reason in reasons)
+
+
+def test_a_clamped_fill_records_the_cost_it_dropped() -> None:
+    """I5 wins over the cost model, but the discarded amount used to be invisible. It is now in
+    the order's reason trail, so a run whose spread/impact model was neutralised on gap bars can
+    be diagnosed from the artifacts (2026-10 audit, M3)."""
+    manager = InMemoryOrderManager()
+    sim = _ladder(manager, spread_bps=200.0)  # half-spread would put the buy at 101 on a 100 high
+    order = _live(manager, sim)
+    [fill], _ = sim.on_bar(_bar(100, 100.0, 100.0, 95.0, 100.0, open_time=50))
+    assert fill.price == 100.0
+    reasons = [reason for _, reason in sim.why_not_filled(order.id)]
+    assert any("clamped into [low, high]" in reason for reason in reasons)

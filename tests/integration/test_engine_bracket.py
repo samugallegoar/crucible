@@ -14,6 +14,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 from crucible.core.engine import BacktestEngine, BacktestResult
 from crucible.core.events import BarEvent
@@ -116,3 +117,29 @@ def test_bracket_lifecycle_with_adverse_intrabar_resolution(tmp_path: Path) -> N
 
     # the dropped take-profit leg carries its why-not-filled explanation
     assert any("OCO ambiguity" in reason for _, reason in result.order_reasons.get(tp_id, []))
+
+
+def test_an_opposite_side_oco_pair_is_refused(tmp_path: Path) -> None:
+    """Regression (2026-10 audit, LOW): an OCO pair with one buy and one sell leg was accepted,
+    and the adverse-leg rule (a signed cash-flow comparison) always executed the buy. The pair
+    is meaningless, so it is refused with the fix instead of being resolved arbitrarily."""
+    from crucible.core.errors import ConfigurationError
+
+    _build(tmp_path)
+    engine = BacktestEngine(
+        store=ParquetDataStore(tmp_path),
+        bars_dataset=BARS,
+        corporate_actions_dataset=None,
+        strategy=BracketOnce(),
+        params={},
+        initial_cash=Decimal("100000"),
+        base_currency=USD,
+        realism_level=RealismLevel.BASIC_FRICTION,
+        start=TimestampNs(0),
+        end=TimestampNs(4 * DAY),
+    )
+    with pytest.raises(ConfigurationError, match="same side"):
+        engine.submit_oco(
+            OrderSpec(symbol=AAA, side=OrderSide.BUY, qty=Decimal("10")),
+            OrderSpec(symbol=AAA, side=OrderSide.SELL, qty=Decimal("10")),
+        )

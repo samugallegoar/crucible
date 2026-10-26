@@ -23,11 +23,13 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import polars as pl
 
+from crucible import __version__ as crucible_version
 from crucible.analytics.interfaces import MetricValue
 from crucible.analytics.metrics import compute_metrics, simple_returns
 from crucible.analytics.plots import plot_equity_drawdown
@@ -38,8 +40,9 @@ from crucible.core.checkpoint import read_checkpoint
 from crucible.core.engine import BacktestEngine, BacktestResult
 from crucible.core.errors import ConfigurationError, CrucibleError, ExperimentError
 from crucible.core.instruments import FuturesSpec
+from crucible.core.stats import is_degenerate_returns, per_period_sharpe
 from crucible.core.types import Currency, DatasetId, ExperimentId, Symbol, TimestampNs
-from crucible.data.calendars import get_trading_calendar
+from crucible.data.calendars import get_trading_calendar, periods_per_year_for
 from crucible.data.contracts import BAR_QUOTE_SCHEMA
 from crucible.data.quality import run_quality_checks
 from crucible.data.store import ParquetDataStore, price_basis_of
@@ -63,7 +66,7 @@ from crucible.experiments.config import (
 from crucible.risk import registry as risk_registry
 from crucible.risk.engine import CompositeRiskEngine
 from crucible.validation.contamination import check_contamination
-from crucible.validation.dsr import DsrResult, deflated_sharpe_ratio, per_period_sharpe
+from crucible.validation.dsr import DsrResult, deflated_sharpe_ratio
 from crucible.validation.monte_carlo import (
     BlockBootstrapTest,
     ReturnOrderShuffleTest,
@@ -82,7 +85,6 @@ Runtime = Literal["backtest", "paper", "live"]
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from decimal import Decimal
-    from pathlib import Path
 
     from numpy.typing import NDArray
 
@@ -138,34 +140,169 @@ def _load_strategy(entrypoint: str) -> Strategy:
     return strategy
 
 
-def _git_provenance() -> tuple[str, bool]:
+def _resolution_root() -> Path:
+    """The directory the loaded package lives in: the repository root in a source checkout
+    (``crucible/experiments/runner.py`` is two levels down), ``site-packages`` when installed.
+
+    Provenance is anchored here, not to the process's working directory, so that a run started
+    from another directory (or from an installed package) still records the code that produced
+    its numbers instead of silently writing ``unknown`` (AGENTS.md §10)."""
+    from pathlib import Path as _P
+
+    return _P(__file__).resolve().parents[2]
+
+
+def _git_root(start: Path) -> Path | None:
+    """The nearest directory at or above ``start`` that holds a ``.git`` entry (a directory, or
+    a file for a worktree/submodule checkout). ``None`` outside a checkout."""
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _git_state(root: Path) -> tuple[str, bool] | None:
+    """``(HEAD commit, working tree dirty)`` for the checkout at ``root``; ``None`` when git is
+    unavailable or ``root`` is not a checkout."""
     try:
         commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+            ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
         ).stdout.strip()
         dirty = bool(
             subprocess.run(
-                ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
+                ["git", "status", "--porcelain"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
             ).stdout.strip()
         )
     except (OSError, subprocess.CalledProcessError):
-        return "unknown", True  # pessimism: unknown provenance counts as dirty
-    return commit, dirty
+        return None
+    return (commit, dirty) if commit else None
+
+
+def _git_provenance() -> tuple[str, bool]:
+    """``(HEAD commit, dirty)`` of the checkout Crucible itself runs from.
+
+    Best effort, in order: the checkout that contains the loaded package, then the working
+    directory's (a config and strategy may live in a different checkout than the library).
+    No checkout at all (a wheel install outside any repository) is ``("unknown", True)``:
+    honest, and unknown provenance counts as dirty (pessimism)."""
+    for start in (_resolution_root(), Path.cwd()):
+        root = _git_root(start)
+        if root is None:
+            continue
+        state = _git_state(root)
+        if state is not None:
+            return state
+    return "unknown", True
+
+
+def _lockfile() -> Path | None:
+    """``uv.lock`` of the checkout the code runs from, then of the working directory; ``None``
+    when neither has one (an installed package does not ship the lockfile)."""
+    for start in (_resolution_root(), Path.cwd()):
+        root = _git_root(start) or start
+        lock = root / "uv.lock"
+        if lock.is_file():
+            return lock
+    return None
 
 
 def _env_lock_hash() -> str:
-    from pathlib import Path as _P
-
-    lock = _P("uv.lock")
-    if not lock.is_file():
+    lock = _lockfile()
+    if lock is None:
         return "unknown"
     return sha256(lock.read_bytes()).hexdigest()
+
+
+def _code_fingerprint() -> str:
+    """SHA-256 over ``HEAD``, ``git status --porcelain`` and ``git diff HEAD --binary``.
+
+    Unlike the commit alone this changes when the working tree changes, so an uncommitted edit
+    between two runs of the same config is visible to the overwrite guard (ADR-0079). It is
+    best effort: a checkout that git cannot read, or no checkout at all, gives ``"unknown"``
+    (the guard then falls back to commit + dirty). ``git`` does not diff untracked files, so a
+    brand-new untracked strategy file is represented by its path, not its contents.
+    """
+    for start in (_resolution_root(), Path.cwd()):
+        root = _git_root(start)
+        if root is None:
+            continue
+        try:
+            commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
+            ).stdout.strip()
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+            diff = subprocess.run(
+                ["git", "diff", "HEAD", "--binary"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError):
+            continue
+        return sha256(f"{commit}\n{status}\n{diff}".encode()).hexdigest()
+    return "unknown"
 
 
 def experiment_id(config: ExperimentConfig, data_hashes: dict[str, str]) -> ExperimentId:
     """Deterministic id: same config + same data ⇒ same id ⇒ same artifacts."""
     basis = config_hash(config) + "|" + "|".join(f"{k}={v}" for k, v in sorted(data_hashes.items()))
     return ExperimentId("EXP-" + sha256(basis.encode("utf-8")).hexdigest()[:12])
+
+
+def _refuse_overwrite(
+    out_dir: Path, *, commit: str, dirty: bool, fingerprint: str, overwrite: bool
+) -> None:
+    """Refuse to replace a finished run written by different code (ADR-0079).
+
+    The experiment id hashes the config and the data, not the code, so re-running the same
+    config after a code change resolves to the same directory; writing unconditionally would
+    replace the earlier numbers with no trace that they came from other code. A re-run with the
+    same code fingerprint (the commit plus the working tree's diff) is idempotent and allowed.
+    ``overwrite=True`` (``--overwrite``) replaces it on purpose.
+    """
+    if overwrite:
+        return
+    manifest_path = out_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return
+    try:
+        previous: dict[str, object] = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        msg = (
+            f"run directory {out_dir} holds a manifest that cannot be read ({exc}); refusing to "
+            "overwrite it. Move it aside, or pass --overwrite to replace it"
+        )
+        raise ExperimentError(msg) from exc
+    previous_commit = str(previous.get("commit", "unknown"))
+    previous_dirty = bool(previous.get("dirty", True))
+    previous_fingerprint = previous.get("code_fingerprint")
+    if isinstance(previous_fingerprint, str) and fingerprint != "unknown":
+        same_code = previous_fingerprint == fingerprint
+    else:
+        # an artifact written before the fingerprint existed: commit + dirty is the best it has
+        same_code = previous_commit == commit and previous_dirty == dirty
+    if same_code:
+        return
+    msg = (
+        f"experiment {out_dir.name} already exists, written by commit={previous_commit} "
+        f"dirty={previous_dirty}, but this run is commit={commit} dirty={dirty} with a "
+        "different code fingerprint. The experiment id covers the config and the data, not the "
+        "code, so writing here would replace the earlier results with numbers from different "
+        f"code and leave no trace of them. Delete {out_dir}, use a different --artifacts root, "
+        "or pass --overwrite to replace it on purpose"
+    )
+    raise ExperimentError(msg)
 
 
 def _write_parquet(frame: pl.DataFrame, path: Path) -> None:
@@ -326,10 +463,11 @@ class _PendingRun:
     trades: pl.DataFrame
     metrics: dict[str, MetricValue]
     returns: NDArray[np.float64]
-    this_sharpe: float
+    this_sharpe: float | None
     monte_carlo: dict[str, dict[str, float]]
     commit: str
     dirty: bool
+    code_fingerprint: str
     runtime: str  # which runtime built the engine (ADR-0051)
 
 
@@ -389,6 +527,7 @@ class _Prepared:
     checks_ran: list[str]
     data_hashes: dict[str, str]
     resumed_boundary: int | None
+    periods_per_year: float
 
 
 def _utc_iso(ts: int) -> str:
@@ -470,7 +609,28 @@ def _prepare_run(
     engine = _build_engine(config, store, runtime)
     if resume_from is not None:
         engine.resume_from(resume_from)  # refuses a different setup or data
-    return _Prepared(engine, checks_ran, data_hashes, boundary)
+    return _Prepared(engine, checks_ran, data_hashes, boundary, _periods_per_year(config, store))
+
+
+def _periods_per_year(config: ExperimentConfig, store: ParquetDataStore) -> float:
+    """The annualization factor the metrics use.
+
+    The config's own value when the author set it; otherwise derived from the bars' spacing and
+    the calendar (252 sessions a year times the median bars per session; 365 for ``24/7``). The
+    field's default is the *daily* 252, so an intraday config that never set it used to annualize
+    a per-bar Sharpe by 1/sqrt(bars_per_session) too little -- hourly on XNYS: 0.81 instead of
+    2.13 for the same series (2026-10 audit, M5). The derivation is one column scan, only when the
+    field is untouched."""
+    if "periods_per_year" in config.model_fields_set:
+        return float(config.periods_per_year)
+    stamps = (
+        store.read(DatasetId(config.data.bars), config.end_ns)
+        .select("event_time")
+        .collect()
+        .get_column("event_time")
+        .to_list()
+    )
+    return periods_per_year_for(stamps, config.data.calendar)
 
 
 def _check_periodic(
@@ -618,10 +778,10 @@ def _run_experiment_compute(
     equity = pl.from_dicts(result.equity_rows, schema=EQUITY_SCHEMA)
     trades = build_trades(result.fill_rows)
     rng = np.random.default_rng(config.experiment.seed)
-    metrics = compute_metrics(equity, trades, rng=rng, periods_per_year=config.periods_per_year)
+    metrics = compute_metrics(equity, trades, rng=rng, periods_per_year=prepared.periods_per_year)
 
     returns = simple_returns(equity)
-    this_sharpe = per_period_sharpe(returns)
+    this_sharpe = None if is_degenerate_returns(returns) else per_period_sharpe(returns)
 
     # Monte Carlo (ADR-0017): reuses the same seeded rng
     # stream compute_metrics already advanced -- deterministic given the
@@ -651,11 +811,14 @@ def _run_experiment_compute(
         monte_carlo=monte_carlo,
         commit=commit,
         dirty=dirty,
+        code_fingerprint=_code_fingerprint(),
         runtime=runtime,
     )
 
 
-def _finalize_experiment(pending: _PendingRun, *, record_trial: bool) -> RunArtifacts:
+def _finalize_experiment(
+    pending: _PendingRun, *, record_trial: bool, overwrite: bool = False
+) -> RunArtifacts:
     """The trial-registry-touching half of ``run_experiment`` (ADR-0038).
     DuckDB supports only one process holding a database file at a time
     (fails fast with a locking error otherwise) -- ``run_experiment_parallel``
@@ -679,6 +842,15 @@ def _finalize_experiment(pending: _PendingRun, *, record_trial: bool) -> RunArti
     checks_ran = pending.checks_ran
     monte_carlo = pending.monte_carlo
     commit, dirty = pending.commit, pending.dirty
+
+    # before the trial registry and before any file: a refused overwrite must write nothing
+    _refuse_overwrite(
+        out_dir,
+        commit=commit,
+        dirty=dirty,
+        fingerprint=pending.code_fingerprint,
+        overwrite=overwrite,
+    )
 
     # Trial registry + DSR (ADR-0008/0014/0015). This trial's own per-period
     # Sharpe must be recorded before trial_sharpes() is read, so its own
@@ -722,8 +894,10 @@ def _finalize_experiment(pending: _PendingRun, *, record_trial: bool) -> RunArti
         "schema_version": SCHEMA_VERSION,
         "experiment_id": str(exp_id),
         "config_hash": config_hash(config),
+        "crucible_version": crucible_version,
         "commit": commit,
         "dirty": dirty,
+        "code_fingerprint": pending.code_fingerprint,
         "data_manifests": data_hashes,
         # the bars' declared price basis (ADR-0071): adjusted prices are a research series, not
         # the quotes that traded; "undeclared" for a dataset that does not say
@@ -857,6 +1031,7 @@ def run_experiment(
     resume_from: Path | None = None,
     checkpoint_path: Path | None = None,
     checkpoint_every_ns: int | None = None,
+    overwrite: bool = False,
 ) -> RunArtifacts:
     """``runtime`` picks how the engine is built (backtest, paper, live) and must
     agree with ``live.enabled`` (ADR-0051); paper and live runs never record a
@@ -888,7 +1063,7 @@ def run_experiment(
         checkpoint_path=checkpoint_path,
         checkpoint_every_ns=checkpoint_every_ns,
     )
-    return _finalize_experiment(pending, record_trial=record_trial)
+    return _finalize_experiment(pending, record_trial=record_trial, overwrite=overwrite)
 
 
 def run_experiment_parallel(
@@ -897,6 +1072,7 @@ def run_experiment_parallel(
     *,
     max_workers: int | None = None,
     record_trial: bool = True,
+    overwrite: bool = False,
 ) -> list[RunArtifacts]:
     """Runs every config's expensive simulation+metrics phase
     (``_run_experiment_compute``) in a process pool, then records trials
@@ -927,7 +1103,10 @@ def run_experiment_parallel(
         pending_runs = list(
             pool.map(_run_experiment_compute, configs, [artifacts_root] * len(configs))
         )
-    return [_finalize_experiment(pending, record_trial=record_trial) for pending in pending_runs]
+    return [
+        _finalize_experiment(pending, record_trial=record_trial, overwrite=overwrite)
+        for pending in pending_runs
+    ]
 
 
 # ------------------------------------------------------- scenario fan-out

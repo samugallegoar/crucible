@@ -18,7 +18,11 @@ the best in-sample score the selection is a uniformly random pick among them, an
 when the selected trial's out-of-sample score ties others its rank is uniform over
 the tied block. Each split contributes the probability that it is overfit under that
 random tie-breaking, a number in [0, 1]. A panel of identical trials therefore gets a
-PBO of about 0.5 (selection is a coin flip), not 1.0, which a strict ``<`` count gave.
+PBO of ``(N + 1) / (2 N)`` -- exactly 0.5 for an even trial count, but 0.6 at N = 5 and
+0.556 at N = 9, because the comparison is against the rank boundary ``2 r <= N + 1``.
+It is not 1.0, which a strict ``<`` count gave, and it is not always 0.5 either: a
+sweep of five identical parameter values sits above the "PBO > 0.5" overfit rule even
+though nothing was selected (2026-10 audit).
 
 Requires a full trials x periods returns panel, not a single run's
 returns. `crucible optimize` assembles the panel;

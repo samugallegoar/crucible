@@ -242,6 +242,18 @@ class LadderExecutionSimulator:
         if level is RealismLevel.MICROSTRUCTURE:
             msg = "Level 5 (order-book replay) is not supported"
             raise ConfigurationError(msg)
+        if level is RealismLevel.FRICTIONLESS and not (
+            isinstance(spread, NoSpread)
+            and isinstance(slippage, NoSlippage)
+            and isinstance(commission, NoCommission)
+        ):
+            msg = (
+                "Level 0 (FRICTIONLESS) cannot carry a cost model: it fills at the bar's close "
+                "with zero commission, so a configured spread, slippage or commission would be "
+                "silently ignored (2026-10 audit). Use realism_level BASIC_FRICTION or higher, "
+                "or pass the no-op models"
+            )
+            raise ConfigurationError(msg)
         if participation is not None and level < RealismLevel.LIQUIDITY:
             msg = (
                 f"participation caps are Level 3+; configured level is {level.name}. "
@@ -377,6 +389,16 @@ class LadderExecutionSimulator:
         low, high = bar.fill_range()
         clamped = min(max(adjusted, low), high)
         validate_fill_within_bar(clamped, bar, order.id)
+        if abs(adjusted - clamped) > 1e-9 * max(1.0, abs(adjusted)):
+            # I5 wins, but the discarded cost is no longer silent: a spread/impact model priced
+            # this fill outside what the bar traded, and the clamp threw that amount away
+            # (2026-10 audit, M3; docs/modules/execution.md)
+            self._note(
+                order.id,
+                bar.ts,
+                f"clamped into [low, high] at {clamped}: the spread/slippage models priced it "
+                f"at {adjusted:.6f}, so {abs(adjusted - clamped):.6f} per unit was dropped (I5)",
+            )
         return clamped
 
     def _adversity(self, order: ManagedOrder, price: float, qty: Decimal) -> float:
@@ -466,7 +488,7 @@ class LadderExecutionSimulator:
                 candidates.append(candidate)
             elif full_bar:
                 pending.full_bars_rested += 1
-                if order.tif is TimeInForce.DAY and pending.full_bars_rested >= 2:
+                if order.tif is TimeInForce.DAY and pending.full_bars_rested >= 1:
                     self._manager.transition(order_id, OrderState.EXPIRED, bar.ts)
                     del self._pending[order_id]
                     reason = "DAY order rested one full bar without executing"
@@ -799,9 +821,15 @@ class LadderExecutionSimulator:
             order = candidate.order
             qty = candidate.qty
             if self._participation is not None and self._participation.max_adv is not None:
-                adv_cap = price_to_decimal(self._participation.max_adv) * price_to_decimal(
-                    self._stats.adv(order.symbol)
-                )
+                try:
+                    adv_cap = price_to_decimal(self._participation.max_adv) * price_to_decimal(
+                        self._stats.adv(order.symbol)
+                    )
+                except InsufficientHistory as exc:
+                    # the same refusal _evaluate makes: a model that cannot size the order
+                    # rejects it, it does not kill the run (ADR-0012, docs/CONVENTIONS.md)
+                    self._end(order, OrderState.REJECTED, bar, closed, f"rejected: {exc}")
+                    continue
                 qty = min(qty, adv_cap)
             if bar_budget is not None:
                 qty = min(qty, bar_budget)
@@ -840,6 +868,11 @@ class LadderExecutionSimulator:
                     passive=candidate.passive,
                 )
             )
+            # an OCO leg that executes at all -- partially or fully -- takes the sibling out:
+            # the pair is an either/or instruction, and letting the other leg keep resting
+            # after a participation-capped partial fill fills both sides of the pair (ADR-0012)
+            if order.oco_with is not None:
+                self._cancel_oco_sibling(order, bar, closed)
             if order.state is OrderState.FILLED:
                 del self._pending[order.id]
                 self._on_full_fill(order, bar, closed)
@@ -848,27 +881,34 @@ class LadderExecutionSimulator:
                     order.id,
                     bar.ts,
                     f"partial fill {qty} (remaining {order.remaining_qty}): "
-                    "liquidity/participation constrained",
+                    + (
+                        "liquidity/participation constrained"
+                        if candidate.exhausts_order
+                        else "scheduled slice"
+                    ),
                 )
         return fills
 
+    def _cancel_oco_sibling(
+        self, order: ManagedOrder, bar: BarEvent, closed: list[OrderClosed]
+    ) -> None:
+        """A leg that executed cancels its OCO sibling, whatever size it executed."""
+        assert order.oco_with is not None  # caller checked
+        sibling = self._manager.get(order.oco_with)
+        if sibling.state in (
+            OrderState.FILLED,
+            OrderState.CANCELLED,
+            OrderState.REJECTED,
+            OrderState.EXPIRED,
+        ):
+            return
+        self._manager.transition(sibling.id, OrderState.CANCELLED, bar.ts)
+        self.remove_pending(sibling.id)
+        reason = f"OCO sibling {order.id} filled"
+        self._note(sibling.id, bar.ts, reason)
+        closed.append(OrderClosed(order_id=sibling.id, state=OrderState.CANCELLED, reason=reason))
+
     def _on_full_fill(self, order: ManagedOrder, bar: BarEvent, closed: list[OrderClosed]) -> None:
-        # OCO: a fully filled leg cancels its sibling
-        if order.oco_with is not None:
-            sibling = self._manager.get(order.oco_with)
-            if sibling.state not in (
-                OrderState.FILLED,
-                OrderState.CANCELLED,
-                OrderState.REJECTED,
-                OrderState.EXPIRED,
-            ):
-                self._manager.transition(sibling.id, OrderState.CANCELLED, bar.ts)
-                self.remove_pending(sibling.id)
-                reason = f"OCO sibling {order.id} filled"
-                self._note(sibling.id, bar.ts, reason)
-                closed.append(
-                    OrderClosed(order_id=sibling.id, state=OrderState.CANCELLED, reason=reason)
-                )
         # OTO/bracket: children waiting on this parent go live now
         for child in self._manager.all_orders():
             if child.parent_id == order.id and child.state is OrderState.CREATED:

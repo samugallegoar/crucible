@@ -216,6 +216,28 @@ checkpoint it (ADR-0042/0048).
 - `dirty: true` in the manifest means the working tree had uncommitted changes when the run was
   made: it is not reproducible from the recorded `commit`.
 
+## 9. Out-of-sample evaluation (walk-forward)
+
+`crucible walk-forward` chooses a parameter on each fold's **train** window and reports only the
+following **test** window (ADR-0081):
+
+```bash
+crucible walk-forward experiments/my_config.yaml \
+  --param lookback --values 10,20,40 \
+  --train 26w --test 13w --step 13w --holdout 26w
+```
+
+Spans use `s/m/h/d/w` (months and years vary in length, so they are refused). Each fold runs
+every candidate on train, picks the best by `--metric` (higher-is-better only -- `volatility` and
+`max_drawdown` are refused), then runs that value on test and keeps the test metrics. The summary
+(`<artifacts>/walk_forward.json` and the terminal table) lists the chosen value per fold, the
+out-of-fold metric, its mean and spread across folds, and the share of positive folds. With
+`--holdout` the tail window never takes part in selection and is evaluated once at the end.
+
+Read it honestly: the only out-of-sample number is the test column. Test runs do not record
+trials, so the per-fold selection is **not** deflated by DSR, and the fold spread matters more
+than the mean. `--max-runs` (default 250) refuses a plan that would run for hours.
+
 ## Known gaps
 
 - No Python API to *list* experiments in an artifact root; use `crucible compare <family>` or

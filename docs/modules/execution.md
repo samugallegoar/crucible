@@ -43,7 +43,14 @@ vectorized result and an event-driven result of the same rules are different cla
 Where OHLC cannot say what happened inside a bar the ladder takes the worse case: a stop
 that the open gaps through fills at the open; a limit must trade *through*, not touch; when
 both legs of an OCO trigger in one bar the adverse leg executes; a mid-bar arrival gets no
-intrabar credit. These are tested in `tests/unit/test_execution_ladder*.py`.
+intrabar credit. An OCO leg that executes *at all* — including a participation-capped partial
+fill — cancels its sibling (it used to cancel only on a full fill, so the other leg could fill
+later and take a 100-lot pair to -110; 2026-10 audit). A `DAY` order expires after the one full
+bar without a fill that ADR-0010 §6 specifies (it used to survive two). A fill the cost models
+price outside the bar's `[low, high]` is still clamped into it (I5 wins), but the amount thrown
+away is now written to the order's reason trail, so a run whose spread/impact model was
+neutralised on gap bars can be diagnosed from the artifacts (2026-10 audit). These are tested in
+`tests/unit/test_execution_ladder*.py`.
 
 **Validated scope.** Bar-based simulation only. No fill model has been compared with real
 quotes, trade prints or order-book data (none is available to the project), so fill realism is

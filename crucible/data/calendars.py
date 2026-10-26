@@ -170,3 +170,44 @@ def get_trading_calendar(
     if name == "24/7":
         return AlwaysOpenCalendar()
     return ExchangeCalendarAdapter(name, start=start, end=end)
+
+
+SESSIONS_PER_YEAR = {"24/7": 365.0}
+"""Sessions per year by calendar; every exchange calendar uses 252 (the project's convention)."""
+
+
+def bars_per_session(event_times: list[int], calendar: str) -> int:
+    """Median number of bars per trading session, each bar assigned to the first session close at
+    or after its ``event_time`` (a provider clips an intraday bar inside its session). 1 for daily
+    bars. Used to annualize per-bar statistics (ADR-0072)."""
+    import numpy as np
+
+    if not event_times:
+        return 1
+    # distinct bar times: a dataset holds one row per symbol per bar, and counting rows would
+    # multiply the factor by the number of symbols (two symbols on daily bars gave 504)
+    stamps = np.unique(np.asarray(event_times, dtype=np.int64))
+    week = 7 * _DAY_NS
+    cal = get_trading_calendar(
+        calendar,
+        start=TimestampNs(int(stamps[0]) - week),
+        end=TimestampNs(int(stamps[-1]) + week),
+    )
+    closes = np.asarray(
+        cal.session_closes(TimestampNs(int(stamps[0])), TimestampNs(int(stamps[-1]) + week)),
+        dtype=np.int64,
+    )
+    session = np.searchsorted(closes, stamps, side="left")
+    _, counts = np.unique(session, return_counts=True)
+    return max(1, round(float(np.median(counts))))
+
+
+def periods_per_year_for(event_times: list[int], calendar: str) -> float:
+    """Bars per year: sessions per year (252 on an exchange calendar, 365 on 24/7) times the
+    median bars per session. Exactly 252 / 365 for daily bars (ADR-0072).
+
+    One definition, in the data layer, because the one-step product and the experiments runner
+    both need it (2026-10 audit, M5: the runner used to annualize intraday runs with the daily
+    default 252, a factor 1/sqrt(bars_per_session) too small)."""
+    sessions = SESSIONS_PER_YEAR.get(calendar, 252.0)
+    return sessions * bars_per_session(event_times, calendar)

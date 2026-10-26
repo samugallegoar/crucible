@@ -125,8 +125,11 @@ bootstrap CIs, contamination flagging.
   computed on the integer rank, so no logarithm and no infinite logit).
   Ties are resolved by expectation under uniform random tie-breaking, both
   among in-sample co-winners and in the out-of-sample ranking, so a panel
-  of identical trials scores about 0.5, not 1.0; `n_tied_splits` counts the
-  splits that depended on a tie. Refuses NaN/infinite returns, a partition
+  of identical trials scores `(N + 1) / (2N)` — 0.5 for an even trial count, 0.6 at
+  N = 5, 0.556 at N = 9 — not 1.0; `n_tied_splits` counts the
+  splits that depended on a tie. Read a PBO above 0.5 together with the trial
+  count: an odd, small, fully tied panel can cross the rule without any selection
+  (2026-10 audit). Refuses NaN/infinite returns, a partition
   shorter than two observations, and a constant non-zero row (undefined
   Sharpe); a flat all-zero row scores Sharpe 0. Selection uses only each
   split's in-sample columns. Tested against an exhaustive

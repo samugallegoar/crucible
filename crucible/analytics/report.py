@@ -144,7 +144,8 @@ def render_report(
 <div class="warn"><strong>Statistical validity (gate 4):</strong>
 DSR: {esc(validation_summary["dsr"])}. PBO: {esc(validation_summary["pbo"])}.
 Trial count {esc(header["trial_count"])} in family {esc(header["trial_family"])}.
-Treat every metric below as in-sample until gate 4 exists.</div>
+Metrics without a CI are named as such; the DSR/PBO rows are the multiple-testing evidence, and
+none of them is a forecast: a backtest describes this data, not future returns.</div>
 <h2>Metrics (with 95% bootstrap CI where estimated)</h2>
 <table><tr><th>metric</th><th>value</th><th>CI</th></tr>{"".join(metric_rows)}</table>
 <h2>Equity and drawdown</h2>
