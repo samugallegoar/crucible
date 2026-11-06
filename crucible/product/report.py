@@ -86,6 +86,72 @@ def line_chart(dates: list[str], series: list[Series], *, kind: str, title: str)
     )
 
 
+def fan_chart(dates: list[str], fan: dict[str, list[float]], *, title: str) -> str:
+    """The percentile fan of simulated equity paths as inline SVG: shaded 5-95 and 25-75 bands and
+    the median line, in dollars, on the dates of the real history. ``fan`` maps ``p05`` ...
+    ``p95`` to one dollar value per date."""
+    n = len(dates)
+    if n < 2:
+        return f"<p><em>{html.escape(title)}: not enough data to draw.</em></p>"
+    flat = [v for series in fan.values() for v in series]
+    lo, hi = min(flat), max(flat)
+    if hi == lo:
+        hi = lo + 1.0
+    span = hi - lo
+    lo -= span * 0.05
+    hi += span * 0.05
+    plot_w = _W - _PAD_L - _PAD_R
+    plot_h = _H - _PAD_T - _PAD_B
+
+    def x(i: int) -> float:
+        return _PAD_L + plot_w * i / (n - 1)
+
+    def y(v: float) -> float:
+        return _PAD_T + plot_h * (1.0 - (v - lo) / (hi - lo))
+
+    parts = [
+        f'<svg viewBox="0 0 {_W} {_H}" role="img" aria-label="{html.escape(title)}" '
+        'xmlns="http://www.w3.org/2000/svg">'
+    ]
+    for k in range(5):
+        value = lo + (hi - lo) * k / 4
+        yy = y(value)
+        parts.append(
+            f'<line class="grid" x1="{_PAD_L}" x2="{_W - _PAD_R}" y1="{yy:.1f}" y2="{yy:.1f}"/>'
+            f'<text class="tick" x="{_PAD_L - 6}" y="{yy + 4:.1f}" text-anchor="end">'
+            f"{_fmt_axis(value, 'usd')}</text>"
+        )
+    last_year = ""
+    for i, d in enumerate(dates):
+        if d[:4] != last_year:
+            last_year = d[:4]
+            if i % max(1, n // 8) < max(1, n // 8) and len(last_year) == 4:
+                parts.append(
+                    f'<text class="tick" x="{x(i):.1f}" y="{_H - 8}" text-anchor="middle">'
+                    f"{last_year}</text>"
+                )
+
+    def band(upper: str, lower: str, css: str) -> str:
+        top = [f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(fan[upper])]
+        bottom = [f"{x(i):.1f},{y(v):.1f}" for i, v in reversed(list(enumerate(fan[lower])))]
+        return f'<polygon class="{css}" points="{" ".join(top + bottom)}"/>'
+
+    parts.append(band("p95", "p05", "band outer"))
+    parts.append(band("p75", "p25", "band inner"))
+    points = " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(fan["p50"]))
+    parts.append(f'<polyline class="line strategy" points="{points}" fill="none"/>')
+    parts.append("</svg>")
+    legend = (
+        '<span class="key strategy">median path</span>'
+        '<span class="key swatch inner">25th to 75th percentile</span>'
+        '<span class="key swatch outer">5th to 95th percentile</span>'
+    )
+    return (
+        f"<figure><figcaption>{html.escape(title)}</figcaption>{''.join(parts)}"
+        f'<div class="legend">{legend}</div></figure>'
+    )
+
+
 def downsample(
     values: list[float], dates: list[str], limit: int = 400
 ) -> tuple[list[str], list[float]]:
@@ -124,6 +190,8 @@ figure{margin:1em 0}figcaption{font-weight:600;margin-bottom:.3em}svg{width:100%
 .grid{stroke:var(--line);stroke-width:1}.tick{fill:var(--muted);font-size:11px}
 .line{stroke-width:2}.line.strategy{stroke:var(--strategy)}
 .line.benchmark{stroke:var(--benchmark);stroke-dasharray:6 4}
+.band{stroke:none;fill:var(--strategy)}.band.outer{fill-opacity:.12}.band.inner{fill-opacity:.24}
+.key.swatch::before{height:10px;border:0;background:var(--strategy)}.key.swatch.inner::before{opacity:.45}.key.swatch.outer::before{opacity:.2}
 .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:.9rem}
 .key::before{content:"";display:inline-block;width:22px;height:0;border-top:3px solid;
 margin-right:6px;vertical-align:middle}
@@ -154,6 +222,35 @@ def _table(headers: list[str], rows: list[list[str]], numeric_from: int = 1) -> 
         for row in rows
     )
     return f'<div class="scroll"><table><tr>{head}</tr>{body}</table></div>'
+
+
+def _sequence_section(doc: dict[str, object], charts: dict[str, object]) -> str:
+    """The return-sequence risk section: the fan chart of simulated equity paths and the fixed
+    table, under a heading that says what it is and is not (ADR-0083)."""
+    block = doc.get("sequence_risk")
+    table = doc.get("sequence_table")
+    if not isinstance(block, dict) or not isinstance(table, dict):
+        return ""
+    request = doc["request"]
+    assert isinstance(request, dict)
+    capital = float(request["capital"])
+    bars = block.get("bars")
+    chart = ""
+    if isinstance(bars, dict):
+        stamps = [str(d) for d in charts["dates"]]  # type: ignore[attr-defined]
+        steps = [int(s) for s in bars["fan_steps"]]
+        dates = [stamps[min(s, len(stamps) - 1)] for s in steps]
+        fan = {key: [capital * float(v) for v in values] for key, values in bars["fan"].items()}
+        chart = fan_chart(
+            dates, fan, title="Where the account could have been, resampling the history"
+        )
+    rows = [[str(r["label"]), str(r["bars"]), str(r["trades"])] for r in table["rows"]]
+    return (
+        "<h2>How the result could have gone (return-sequence risk)</h2>"
+        f'<p class="muted">{_esc(table["note"])}</p>'
+        f"{chart}"
+        f"{_table(['', 'Resampled bars', 'Resampled trades'], rows)}"
+    )
 
 
 def render_html(doc: dict[str, object], charts: dict[str, object]) -> str:
@@ -204,6 +301,8 @@ def render_html(doc: dict[str, object], charts: dict[str, object]) -> str:
     table_rows = table["rows"]
     assert isinstance(table_rows, list)
     rows = [[str(r["label"]), str(r["strategy"]), str(r["benchmark"])] for r in table_rows]
+
+    sequence_html = _sequence_section(doc, charts)
 
     flags = summary["flags"]
     assert isinstance(flags, list)
@@ -277,6 +376,8 @@ def render_html(doc: dict[str, object], charts: dict[str, object]) -> str:
 {bullets(summary["versus_benchmark"])}
 {equity_chart}
 {drawdown_chart}
+
+{sequence_html}
 
 <h2>What the strategy did</h2>
 {bullets(summary["what_happened"])}

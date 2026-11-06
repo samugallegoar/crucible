@@ -133,7 +133,7 @@ def test_the_document_carries_the_fixed_results_table(doc: dict[str, object]) ->
 
 def test_the_report_is_self_contained_and_shows_the_benchmark(doc: dict[str, object]) -> None:
     page = Path(str(doc["report"])).read_text(encoding="utf-8")
-    assert page.count("<svg") == 2  # equity and drawdown, inline
+    assert page.count("<svg") == 3  # equity, drawdown and the sequence-risk fan, inline
     assert "Buy and hold" in page
     assert "Verdict" in page
     assert "<script" not in page
@@ -428,3 +428,110 @@ def test_another_instrument_is_another_family_but_the_home_wide_count_sees_both(
     assert (v1["home_trial_count"], v2["home_trial_count"]) == (1, 2)
     assert v1["dsr_home_wide"] == pytest.approx(v1["dsr"])  # one trial: the same deflation
     assert v2["dsr_home_wide"] is not None
+
+
+def test_the_cost_stress_grid_matches_a_real_rerun_at_the_stressed_costs(home: Home) -> None:
+    """The grid prices the run at 2x costs without re-running it; the engine, asked to run at 2x
+    costs, must agree to the cent (same trades, costs linear in turnover)."""
+    base = run_backtest(request(home, cost_preset="standard", null_iterations=0))
+    standard = base["request"]["costs"]  # type: ignore[index]
+    doubled = run_backtest(
+        request(
+            home,
+            cost_preset="standard",
+            slippage_bps=2 * standard["slippage_bps"],
+            commission_bps=2 * standard["commission_bps"],
+            null_iterations=0,
+        )
+    )
+    grid = {row["multiplier"]: row for row in base["diagnostics"]["cost_stress"]}  # type: ignore[index]
+    strategy = base["results"]["strategy"]  # type: ignore[index]
+    assert grid[1.0]["final_equity"] == pytest.approx(strategy["final_equity"], abs=0.02)
+    stressed = doubled["results"]["strategy"]  # type: ignore[index]
+    assert grid[2.0]["final_equity"] == pytest.approx(stressed["final_equity"], abs=0.02)
+    assert grid[2.0]["sharpe"] == pytest.approx(stressed["sharpe"], abs=2e-3)
+    assert grid[1.0]["sharpe"] > grid[2.0]["sharpe"] > grid[5.0]["sharpe"]
+    free = run_backtest(request(home, cost_preset="none", null_iterations=0))
+    assert free["diagnostics"]["cost_stress"] is None  # type: ignore[index]
+    rows = {r["id"]: r for r in free["results_table"]["rows"]}  # type: ignore[index]
+    assert rows["cost_stress"]["strategy"].startswith("n/a")
+
+
+def test_the_document_carries_the_sequence_risk_block_and_its_table(doc: dict[str, object]) -> None:
+    """ADR-0083: resampled outcomes of this history, centred on the realized result and labelled
+    as sequence risk, not as evidence of an edge; drawn in the report as a fan."""
+    from crucible.product.sequence import ROW_IDS
+
+    block = doc["sequence_risk"]
+    assert isinstance(block, dict)
+    assert block["kind"] == "return_sequence_risk"
+    bars = block["bars"]
+    assert isinstance(bars, dict)
+    realized = doc["results"]["strategy"]["final_equity"]  # type: ignore[index]
+    capital = doc["request"]["capital"]  # type: ignore[index]
+    median = capital * bars["terminal_multiple"]["p50"]
+    assert median == pytest.approx(realized, rel=0.25)  # centred on what happened, not on an edge
+    assert bars["terminal_multiple"]["p05"] <= bars["terminal_multiple"]["p50"]
+    assert bars["terminal_multiple"]["p50"] <= bars["terminal_multiple"]["p95"]
+    table = doc["sequence_table"]
+    assert isinstance(table, dict)
+    assert [r["id"] for r in table["rows"]] == list(ROW_IDS)
+    assert "not evidence of an edge" in table["markdown"]
+    page = Path(str(doc["report"])).read_text(encoding="utf-8")
+    assert "return-sequence risk" in page
+    assert "<polygon" in page  # the fan's shaded bands
+
+
+def _simulate(args: list[str], capsys: pytest.CaptureFixture[str]) -> dict[str, object]:
+    from crucible.cli.main import main
+
+    capsys.readouterr()
+    assert main(["simulate-paths", *args, "--json"]) == 0
+    return json.loads(capsys.readouterr().out)  # type: ignore[no-any-return]
+
+
+def test_simulate_paths_resamples_a_finished_run_and_exports_on_request(
+    home: Home, doc: dict[str, object], capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    import numpy as np
+    import polars as pl
+
+    from crucible.analytics.metrics import simple_returns
+
+    exp_id = str(doc["experiment_id"])
+    home_arg = ["--home", str(home.root)]
+    first = _simulate([exp_id, "--paths", "200", *home_arg], capsys)
+    again = _simulate([exp_id, "--paths", "200", *home_arg], capsys)
+    other = _simulate([exp_id, "--paths", "200", "--seed", "2", *home_arg], capsys)
+    assert first == again  # same seed, same distribution
+    assert first["terminal_multiple"] != other["terminal_multiple"]
+    assert first["kind"] == "return_sequence_risk"
+    assert first["exported_paths"] is None  # no paths are stored unless asked for
+
+    run_dir = home.experiments / exp_id
+    returns = simple_returns(pl.read_parquet(run_dir / "equity.parquet"))
+    assert first["horizon"] == len(returns)
+
+    target = tmp_path / "out" / "paths.parquet"
+    exported = _simulate(
+        [str(run_dir), "--paths", "50", "--mean-block", "5", "--export-paths", str(target)],
+        capsys,
+    )
+    assert exported["exported_paths"] == str(target.resolve())
+    frame = pl.read_parquet(target)
+    assert frame.columns == ["path", "step", "multiple"]
+    assert frame.height == 50 * (len(returns) + 1)
+    first_path = frame.filter(pl.col("path") == 0).sort("step").get_column("multiple").to_numpy()
+    assert first_path[0] == 1.0
+    steps = first_path[1:] / first_path[:-1] - 1.0
+    assert set(np.round(steps, 10)) <= set(np.round(returns, 10))  # only the run's real returns
+
+
+def test_simulate_paths_refuses_a_run_it_cannot_find(
+    home: Home, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from crucible.cli.main import main
+
+    capsys.readouterr()
+    assert main(["simulate-paths", "EXP-doesnotexist", "--home", str(home.root)]) == 1
+    assert "no equity.parquet found" in capsys.readouterr().err

@@ -722,6 +722,15 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
                     ),
                     "dsr_error": result.best_dsr_error,
                 },
+                "reality_check": (
+                    None
+                    if result.reality_check is None
+                    else {
+                        **result.reality_check.as_dict(),
+                        "best_value": result.values[result.reality_check.best_index],
+                    }
+                ),
+                "reality_check_error": result.reality_check_error,
             }
         )
         return 0
@@ -734,6 +743,16 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
         f"(n_combinations={result.pbo.n_combinations}, n_trials={result.pbo.n_trials}, "
         f"n_tied_splits={result.pbo.n_tied_splits})\n"
     )
+    check = result.reality_check
+    if check is None:
+        sys.stdout.write(f"reality check: not computable: {result.reality_check_error}\n")
+    else:
+        sys.stdout.write(
+            f"reality check over {check.n_candidates} values (does the best beat zero after the "
+            f"search?): White p={check.p_value_rc:.4f}, Hansen SPA p={check.p_value_spa:.4f}; best "
+            f"by mean return: {args.param} {result.values[check.best_index]} "
+            f"(n_periods={check.n_periods}, block={check.mean_block:.1f})\n"
+        )
     if result.best_dsr is None:
         sys.stdout.write(
             f"best: {result.best_experiment_id} DSR not computable: {result.best_dsr_error}\n"

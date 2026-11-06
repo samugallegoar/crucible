@@ -55,6 +55,9 @@ def test_cli_optimize_prints_a_pbo_result(
     out = capsys.readouterr().out
     assert "PBO: " in out
     assert out.count("lookback=") == 3
+    assert "reality check over 3 values" in out
+    assert "White p=" in out
+    assert "Hansen SPA p=" in out
 
 
 def test_cli_compare_lists_trials_recorded_by_optimize(

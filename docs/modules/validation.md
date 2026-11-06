@@ -10,6 +10,10 @@ Gate 4 statistics. Detail sections follow.
   `per_period_sharpe`. `pbo.py` — `probability_of_backtest_overfitting`.
 - `sensitivity.py` — `sensitivity_surface_1d`, `sensitivity_surface_2d`.
 - `monte_carlo.py` — `ReturnOrderShuffleTest`, `StartDateShiftTest`, `BlockBootstrapTest`.
+- `resampling.py` — `stationary_bootstrap_indices`, `optimal_block_length` (ADR-0083).
+  `paths.py` — `simulate_return_paths`, `simulate_trade_paths`, `PathSummary`: **return-sequence
+  risk**. `reality_check.py` — `reality_check`, `RealityCheckResult`: **edge evidence after the
+  search** (White's Reality Check, Hansen's SPA).
 - `null_tests.py` — `compare_to_null` (Monte Carlo), `compare_to_single_null`; `factor_regression.py` — `factor_regression`;
   `contamination.py` — `check_contamination`.
 - `interfaces.py` — `Split` and the Protocols `Splitter`, `TrialRegistry`, `ResamplingTest`.
@@ -170,6 +174,43 @@ bootstrap CIs, contamination flagging.
   every report the way this trio is, since it needs the caller to choose
   which field to perturb.
 
+## Sequence risk versus edge evidence (ADR-0083)
+
+Two different questions share the word "Monte Carlo"; the code keeps them apart and tags each
+result (`kind`).
+
+- **Return-sequence risk** (`paths.py`, `kind = "return_sequence_risk"`): resample the *realized*
+  returns (or trades) and look at the spread of the outcomes: terminal equity percentiles, the
+  max-drawdown distribution, the probability of finishing below the start, of touching a ruin level
+  (checked at every step, default: down 50%) and of a drawdown beyond a threshold, and a fan of
+  percentile bands. The resampled history is centred on the realized result, so a low probability
+  of loss only says the realized mean was positive relative to its sampling noise, which a lucky or
+  overfit backtest also shows. It is **not** evidence of an edge.
+  - `simulate_return_paths(returns, rng, n_paths, horizon, mean_block, ruin_loss, ...)`: the
+    stationary bootstrap (`resampling.py`); `mean_block` defaults to the Politis-White estimate
+    (about 1 for white noise, tens for a persistent series), 1 is the i.i.d. bootstrap. Its effective
+    sample is the number of blocks.
+  - `simulate_trade_paths(trade_returns, rng, ...)`: an i.i.d. bootstrap of per-trade returns on
+    equity, compounded trade after trade; the honest unit when positions last many bars. Sees closed
+    trades only and assumes constant sizing and independent trades.
+  - Paths are generated and summarized in chunks; `keep_paths=True` returns them and is refused
+    above 25 million values. Drawdown is `core.drawdown`'s definition (a test checks it path by path).
+- **Edge evidence after the search** (`reality_check.py`, `kind = "edge_evidence_after_search"`):
+  `reality_check(panel, rng, benchmark=None, n_bootstrap=1000, mean_block=None)` on a candidates x
+  periods return panel. Null: no candidate has a positive expected return over the benchmark.
+  `p_value_rc` is White's (2000) Reality Check, `p_value_spa` Hansen's (2005) SPA with the
+  consistent recentering (more powerful when many hopeless candidates dilute the search); both use
+  `(k + 1) / (B + 1)`. The stationary bootstrap resamples the same time indices for every candidate,
+  so near-identical parameterizations are not counted as independent chances. A candidate that never
+  varies (never traded) is left out of the maximum (`n_active`). `N` is the candidates in the panel,
+  not every variant ever tried (the deflated Sharpe's lower bound too). Wired into
+  `crucible optimize` (`OptimizeResult.reality_check`).
+  - Calibration (tests): with 20 zero-edge candidates the naive best-candidate t-test rejects 5%
+    nominal at 65%, White at 4.8%, SPA at 5.8%; with one modest edge among 60 poor candidates SPA
+    detects it 69% of the time, White 24%.
+- The *other* edge evidence stays where it is: the shuffled-returns test (`null_tests.py`), the
+  Sharpe interval, the deflated Sharpe, PBO.
+
 ## Implementations (`crucible/validation/null_tests.py`)
 - `compare_to_null(real_value, null_values) -> NullTestResult` — pure
   statistics, no engine access: a one-sided Monte Carlo test with
@@ -227,6 +268,12 @@ implement `Splitter`. All stochastic components take an explicit
 `numpy.random.Generator` (none of the three splitters are stochastic).
 
 ## Known gaps
+- Not built, deliberately (ADR-0083): a default store of every simulated path (recomputable from
+  the seed; export on request), a regime-conditioned bootstrap (regime labels leak the future or add
+  a tunable degree of freedom), a bootstrap test of "mean return = 0" (the Sharpe interval is it),
+  a random-entry null (same question as the shuffled-returns test), HMM nulls.
+- The bootstrap keeps short-range dependence, not long memory or regime shifts; a reality check over
+  a multi-parameter or multi-strategy sweep is not wired (only the 1-D `optimize` panel feeds it).
 - Factor regression is available through `crucible validate --factors`; it is not part of the default
   run report.
 - `overlapping_optimization_trials` is a raw date-range overlap check; it

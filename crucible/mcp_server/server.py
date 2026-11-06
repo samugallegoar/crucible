@@ -256,7 +256,9 @@ def build_server() -> MCPServer:
 
         Returns one document: `results_table.markdown` (the metric table: paste it as it is,
         never rebuild, reorder, rename, add or drop rows; a value that does not exist already
-        reads `n/a`), `summary` (headline, verdict, flags in words, next steps),
+        reads `n/a`), `sequence_table.markdown` (resampled outcomes of this one history: paste it
+        unchanged under the metric table; it is sequence risk, never evidence of an edge),
+        `summary` (headline, verdict, flags in words, next steps),
         `results.strategy` and `results.benchmark` (every Sharpe with its 95% range), `validation`
         (trial count, deflated Sharpe, null test, realism level), `trades`, `strategy_explained`
         and the absolute `report` path. Tell the person `summary.verdict` and its flags; never say

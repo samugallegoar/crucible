@@ -84,3 +84,35 @@ def test_optimize_with_workers_matches_sequential(
     assert [_manifest(r.path)["trial_count"] for r in parallel_runs] == [
         _manifest(r.path)["trial_count"] for r in sequential_runs
     ]
+
+
+def test_optimize_reports_the_reality_check_over_the_same_panel(
+    store: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """ADR-0083: the sweep's evidence of an edge after the search, computed from the swept
+    variants' own return series; reproducible from the experiment seed."""
+    import numpy as np
+    import polars as pl
+
+    from crucible.analytics.metrics import simple_returns
+
+    config = _config(store)
+    values = [40.0, 60.0, 80.0]
+    result, runs = optimize_1d(
+        config, "lookback", values, tmp_path_factory.mktemp("a"), pbo_groups=4
+    )
+    check = result.reality_check
+    assert check is not None
+    assert result.reality_check_error is None
+    assert check.kind == "edge_evidence_after_search"
+    assert check.n_candidates == 3
+    assert 0.0 < check.p_value_rc <= 1.0
+    assert 0.0 < check.p_value_spa <= 1.0
+    # the best candidate by mean return, recomputed here from the stored equity curves
+    means = [
+        float(simple_returns(pl.read_parquet(run.path / "equity.parquet")).mean()) for run in runs
+    ]
+    assert check.best_index == int(np.argmax(means))
+    assert check.best_mean_per_period == pytest.approx(max(means))
+    again, _ = optimize_1d(config, "lookback", values, tmp_path_factory.mktemp("b"), pbo_groups=4)
+    assert again.reality_check == check  # same seed, same panel, same answer

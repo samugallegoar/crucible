@@ -47,6 +47,7 @@ from crucible.product import diagnostics, nulltest
 from crucible.product.data import ensure_dataset, normalize_symbols, parse_day
 from crucible.product.home import Home, resolve_home
 from crucible.product.report import render_html
+from crucible.product.sequence import build_sequence_risk, build_sequence_table
 from crucible.product.summary import Side, SummaryInputs, build_summary
 from crucible.product.table import build_results_table
 from crucible.strategy_spec import (
@@ -174,12 +175,13 @@ def _parameter_hints(spec: StrategySpec) -> tuple[str, ...]:
 
 def _episodes_to_trades(
     episodes: pl.DataFrame, bars: pl.DataFrame, limit: int, *, intraday: bool = False
-) -> tuple[list[dict[str, object]], float | None, list[float]]:
+) -> tuple[list[dict[str, object]], float | None, list[float], list[float]]:
     """Readable trade rows (price change, bars held), the average bars held and the signed price
-    change in percent of *every* trade (the rows are capped at ``limit``). Intraday rows also
-    carry ``entry_time``/``exit_time`` (UTC, to the minute)."""
+    change in percent of *every* trade (the rows are capped at ``limit``) with the average
+    fraction of equity each held. Intraday rows also carry ``entry_time``/``exit_time`` (UTC, to
+    the minute)."""
     if episodes.height == 0:
-        return [], None, []
+        return [], None, [], []
     indexed = (
         bars.select("symbol", "event_time", "close")
         .sort(["symbol", "event_time"])
@@ -195,12 +197,14 @@ def _episodes_to_trades(
     rows: list[dict[str, object]] = []
     held: list[float] = []
     changes: list[float] = []
+    held_weights: list[float] = []
     for row in joined.iter_rows(named=True):
         sign = 1.0 if row["side"] == "long" else -1.0
         change = sign * (float(row["exit_close"]) / float(row["entry_close"]) - 1.0) * 100.0
         bars_held = int(row["exit_bar"]) - int(row["entry_bar"])
         held.append(float(bars_held))
         changes.append(change)
+        held_weights.append(float(row["avg_abs_weight"]))
         trade: dict[str, object] = {
             "symbol": row["symbol"],
             "side": row["side"],
@@ -214,7 +218,7 @@ def _episodes_to_trades(
             trade["entry_time"] = _to_minute(int(row["entry_ts"]))
             trade["exit_time"] = _to_minute(int(row["exit_ts"]))
         rows.append(trade)
-    return rows[:limit], float(np.mean(held)), changes
+    return rows[:limit], float(np.mean(held)), changes, held_weights
 
 
 def _diagnostics(
@@ -276,6 +280,16 @@ def _diagnostics(
                 net_returns, bench[1:] / bench[:-1] - 1.0, periods_per_year
             ).items()
         },
+        "cost_stress": (
+            None
+            if gross_result is None
+            else [
+                {k: (round(v, 4) if isinstance(v, float) else v) for k, v in row.items()}
+                for row in diagnostics.cost_stress(
+                    gross_returns, net_returns, capital, years, periods_per_year
+                )
+            ]
+        ),
         "return_per_exposure_pct": _round(
             net_cagr / (time_in_market / 100.0) if time_in_market > 0 else None, 4
         ),
@@ -537,7 +551,7 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
 
     bars = store.read(dataset, config.end_ns).collect()
     episodes = build_episodes(strategy_result.weights, strategy_result.pnl)
-    trades, avg_held, trade_changes_pct = _episodes_to_trades(
+    trades, avg_held, trade_changes_pct, trade_weights = _episodes_to_trades(
         episodes, bars, limit=500, intraday=intraday
     )
 
@@ -777,6 +791,16 @@ def _run(request: BacktestRequest, home: Home) -> dict[str, Any]:
 
     doc["diagnostics"] = diag
     doc["results_table"] = build_results_table(doc)
+    # return-sequence risk (ADR-0083): resamples this history; not evidence of an edge
+    curve = np.asarray(strategy_curve, dtype=float)
+    doc["sequence_risk"] = build_sequence_risk(
+        curve[1:] / curve[:-1] - 1.0,
+        trade_changes_pct,
+        trade_weights,
+        slippage + commission,
+        request.seed,
+    )
+    doc["sequence_table"] = build_sequence_table(doc["sequence_risk"], request.capital)
 
     charts = {
         "dates": stamps,

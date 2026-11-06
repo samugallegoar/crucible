@@ -25,6 +25,7 @@ evidence is too thin to tell skill from luck.
   Cost drag per year                      0.1%                          -
   Turnover per year (x capital)           7.2x                          -
   Break-even cost per side                112.8 bps (assumed 1.5)       -
+  Sharpe at 2x / 3x / 5x costs            0.73 / 0.72 / 0.70            -
   Volatility (per year)                   10.9%                         17.8%
   Worst fall from a peak                  -17.8%                        -33.7%
   Sharpe ratio (95% range)                0.74 (0.10 to 1.34)           0.80 (0.28 to 1.44)
@@ -87,6 +88,9 @@ No agent? `crucible backtest --entry "sma(10) crosses_above sma(30)" --exit "sma
 
 - **Strategy next to buy-and-hold**, same instruments, period and costs: return, worst fall,
   Sharpe ratio, number of trades.
+- **How the result could have gone**: the one history resampled 1,000 times (final value, worst
+  fall, chance of loss), clearly labelled as sequence risk and not as evidence of an edge, and the
+  Sharpe re-priced at 2x / 3x / 5x costs.
 - **An approximate 95% range on the Sharpe ratio** (a block bootstrap; the return and drawdown
   figures are point estimates without one), and the **trial count**: how many variants you have
   tried on these symbols. Try enough and one looks great by luck; Crucible counts the ones it ran

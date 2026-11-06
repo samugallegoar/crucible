@@ -2,6 +2,19 @@
 
 Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
 
+- **return-sequence risk** — how much a backtest's outcome (final value, drawdown, chance of
+  loss or ruin) depends on the sample and the order of the returns, estimated by resampling the
+  realized history (`validation/paths.py`, ADR-0083). Centred on the realized result, so it is
+  **not** evidence of an edge.
+- **stationary bootstrap** — a resampling of a time series in blocks whose lengths are geometric
+  (Politis & Romano 1994): keeps short-range dependence and the resampled series is stationary; the
+  mean block length can be estimated from the data (Politis & White 2004).
+- **fan chart** — the P5, P25, P50, P75 and P95 percentile bands of simulated equity paths over time.
+- **risk of ruin** — here: the probability that a simulated path ever touches a ruin level (default:
+  down 50% from the start), checked at every step.
+- **Reality Check / SPA** — White's (2000) and Hansen's (2005) bootstrap tests that the best of
+  several candidate strategies beats a benchmark once the search over the candidates is paid for
+  (`validation/reality_check.py`, ADR-0083): evidence about an edge, unlike a sequence-risk fan.
 - **ADV** — Average Daily Volume; participation caps are expressed against it.
 - **arrival rules** — which bar an order may first interact with under
   latency, and whether that interaction is full-bar or mid-bar (ADR-0012).

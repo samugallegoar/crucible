@@ -32,6 +32,7 @@ few-dozen-trade backtests will say "not conclusive", and that is the honest answ
 | Worst fall from a peak (max drawdown) | the biggest loss from a high to a later low: what you would have had to sit through. A strategy that earns less but falls much less can still be the one you could actually hold. |
 | Sharpe ratio, with its 95% range | return per unit of risk. The range is the honest part: if it is wide or includes zero, the data cannot tell skill from luck. It is an approximate bootstrap interval: on synthetic data with known answers it held the true Sharpe about 91-93% of the time with one year of daily data or with heavy-tailed returns, and about 94-95% with five years of well-behaved returns, so read it as the least uncertainty there is. The other rows have no range. |
 | Completed trades | round trips. A position still open at the end is not counted. |
+| Sharpe at 2x / 3x / 5x costs | the Sharpe ratio if every cost per trade were two, three or five times what was assumed (the same trades, re-priced). A number that falls quickly means the edge is thin against costs; if it is still well above zero at 5x, costs are not what decides it. It does not model costs that rise in a fast market. |
 | Cost drag, turnover, break-even cost per side | what costs took off the annual return, how many times the capital changed hands per year, and the cost per side (in basis points) at which the strategy would earn nothing. If the break-even is only a little above the assumed cost, a slightly worse fill erases the result: this is the first thing to check on an intraday strategy. |
 | Alpha vs buy and hold, beta, return per unit of exposure | the part of the return not explained by moving with the benchmark (with a t-statistic: below about 2 it is indistinguishable from zero), how much it moves with it, and the annual return scaled to being fully invested. A strategy that is invested a third of the time is not "worse" for earning less than buy-and-hold. |
 | Winning trades (after costs), net expectancy, profit factor, average win / average loss | how often a trade made money after costs, the average result per trade in basis points with a 95% range (if it includes zero there is no proven edge per trade), gross wins over gross losses, and the size of an average win against an average loss. A high win rate with a small payoff ratio is a few big losses waiting to happen. |
@@ -43,6 +44,32 @@ The table always has these rows in this order; a number that cannot be computed 
 
 Buy-and-hold uses the same instruments, window, capital and costs. With several symbols it is equal
 weight. Both curves are drawn together, then both drawdowns.
+
+## How the result could have gone (return-sequence risk)
+
+Below the charts there is a second table and a fan chart. They resample this one history (its bars,
+and separately its trades) 1,000 times and show how much of the result is the luck of *which*
+returns came in *what order*: the spread of the final value (5th, median and 95th percentile), the
+worst fall, the chance of finishing below the start, of ever being down 50% and of a fall worse
+than 30%. The shaded bands in the chart are the same spread over time.
+
+How to read it, and how not to:
+
+- It answers "how fragile is this result to the sample?". Wide bands, a deep 5th-percentile fall or
+  a real chance of ending below the start mean the history was short or lucky.
+- It does **not** answer "does the strategy have an edge?". The resampled histories are made of the
+  same returns, so they are centred on the result you got: a lucky or overfit backtest shows a low
+  chance of loss here too. For the edge, read the Sharpe range, the deflated Sharpe, the
+  shuffled-returns p-value and the cost rows.
+- The bar column keeps short-range patterns (blocks of consecutive bars; the block length is chosen
+  from the data) and treats the number of *blocks* as the amount of information. The trade column
+  treats each trade as one independent draw: it shows how much a trade count of this size can swing,
+  sees only closed trades, and assumes the same position size every time.
+- To get the individual paths, run `crucible simulate-paths RUN --export-paths paths.parquet`.
+- When you sweep a parameter with `crucible optimize`, the **reality check** line answers the
+  question this section cannot: if none of the values tried had an edge, how often would the best
+  of them look this good? A small White or Hansen p-value is evidence of an edge *after* paying for
+  the search; a large one says the best value could be the luckiest of the values tried.
 
 ## How much to trust this
 

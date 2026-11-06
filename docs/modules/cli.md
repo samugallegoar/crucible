@@ -3,7 +3,7 @@
 ## What exists
 
 The `crucible` command (`crucible/cli/main.py`: `build_parser`, `main`). Every command, with its
-options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `spec check`, `spec templates`,
+options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-paths`, `spec check`, `spec templates`,
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `data build`, `data fetch`, `data check`, `data list`. Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1. stdout and
@@ -22,6 +22,12 @@ stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never
   buy-and-hold, the warnings and the report path; `--json` prints the result document. `--spec`
   also accepts a YAML/JSON text.
 - `crucible results [--home DIR] [--limit N] [--json]` — earlier one-step backtests, newest first.
+- `crucible simulate-paths RUN [--home DIR] [--paths N] [--seed N] [--horizon BARS] [--mean-block B]
+  [--ruin-loss F] [--export-paths FILE] [--json]` — resamples a finished run (a folder holding
+  `equity.parquet`, or an experiment id in the home) with the stationary bootstrap and prints the
+  distribution of final value, worst fall, chance of loss and of ruin (ADR-0083). **Return-sequence
+  risk, not evidence of an edge.** Individual paths are written only with `--export-paths` (Parquet:
+  `path`, `step`, `multiple`; refused above 25 million values).
 - `crucible spec check` (the same strategy options) validates a spec and prints it back in plain
   language; `crucible spec templates [--name NAME]` lists ready-made specs or prints one.
 - `crucible config show [--home DIR]` prints the resolved home folder, its subfolders, the settings
@@ -67,6 +73,8 @@ The `crucible` command.
   deterministic replay from the run's stored config: prints the event
   stream up to TS (ISO or raw ns), then cash/positions, order states, and
   `why_not_filled` reason trails.
+- `crucible optimize` also prints and emits (`reality_check`) White's Reality Check and Hansen's SPA over
+  the sweep's return panel (ADR-0083): does the best swept value beat zero once the search is paid for?
 - `crucible optimize <config.yaml> --param NAME --values "v1,v2,..." [--metric
   sharpe] [--pbo-groups N] [--workers N] [--vectorized] [--artifacts DIR]` — 1D parameter
   sweep (`experiments.optimize.optimize_1d`, ADR-0022); every point
