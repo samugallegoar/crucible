@@ -1,4 +1,4 @@
-"""The product commands: ``backtest``, ``spec`` and ``config`` (ADR-0068).
+"""The product commands: ``backtest``, ``spec``, ``config`` and ``simulate-paths`` (ADR-0068).
 
 Handlers stay thin: they turn arguments into a ``BacktestRequest`` (or a spec) and print what the
 product layer returns. Every command has ``--json``; the text form is for people at a terminal.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from crucible.cli import machine
 
@@ -141,6 +142,46 @@ def add_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     results.add_argument("--home", default=None)
     results.add_argument("--limit", type=int, default=20)
     _add_json(results)
+
+    paths = subparsers.add_parser(
+        "simulate-paths",
+        help="Resample a finished run's returns into simulated equity paths (sequence risk)",
+        description=(
+            "Bootstraps the per-bar returns of a finished run (any folder holding equity.parquet, "
+            "or an experiment id in the home) with the stationary bootstrap and reports the "
+            "distribution of final value, worst drawdown, chance of loss and of ruin. This is "
+            "return-sequence risk: how much the result depends on the sample and its order. It "
+            "is NOT evidence that the strategy has an edge (use the null test, the deflated "
+            "Sharpe or `crucible optimize`'s reality check for that). Individual paths are "
+            "written only with --export-paths."
+        ),
+    )
+    paths.add_argument("run", help="A run folder, or an experiment id (EXP-...) in the home")
+    paths.add_argument("--home", default=None)
+    paths.add_argument("--paths", type=int, default=1_000, help="Number of simulated paths")
+    paths.add_argument("--seed", type=int, default=1, help="Seed of the resampling")
+    paths.add_argument(
+        "--horizon", type=int, default=None, help="Bars per path (default: the run's length)"
+    )
+    paths.add_argument(
+        "--mean-block",
+        type=float,
+        default=None,
+        help="Mean block length of the bootstrap (default: chosen from the data; 1 = i.i.d.)",
+    )
+    paths.add_argument(
+        "--ruin-loss",
+        type=float,
+        default=0.5,
+        help="Fraction of the start that counts as ruin when touched (default 0.5)",
+    )
+    paths.add_argument(
+        "--export-paths",
+        default=None,
+        metavar="FILE",
+        help="Also write every simulated path to this Parquet file (columns path, step, multiple)",
+    )
+    _add_json(paths)
 
     config = subparsers.add_parser("config", help="Where Crucible keeps its data and runs")
     config_sub = config.add_subparsers(dest="config_command", required=True)
@@ -415,6 +456,84 @@ def run_results_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_folder(run: str, home_arg: str | None) -> Path:
+    from crucible.core.errors import ConfigurationError
+    from crucible.product.home import resolve_home
+
+    direct = Path(run)
+    if (direct / "equity.parquet").is_file():
+        return direct
+    in_home = resolve_home(home_arg).experiments / run
+    if (in_home / "equity.parquet").is_file():
+        return in_home
+    msg = (
+        f"no equity.parquet found for {run!r}: looked in {direct} and {in_home}. Pass a run "
+        "folder, or an experiment id from `crucible results`"
+    )
+    raise ConfigurationError(msg)
+
+
+def run_simulate_paths_command(args: argparse.Namespace) -> int:
+    import numpy as np
+    import polars as pl
+
+    from crucible.analytics.metrics import simple_returns
+    from crucible.validation import paths
+
+    folder = _run_folder(args.run, args.home)
+    returns = simple_returns(pl.read_parquet(folder / "equity.parquet"))
+    summary = paths.simulate_return_paths(
+        returns,
+        np.random.default_rng(np.random.SeedSequence([args.seed, 83, 3])),
+        n_paths=args.paths,
+        horizon=args.horizon,
+        mean_block=args.mean_block,
+        ruin_loss=args.ruin_loss,
+        keep_paths=args.export_paths is not None,
+    )
+    exported: str | None = None
+    if args.export_paths is not None and summary.paths is not None:
+        n_paths, points = summary.paths.shape
+        target = Path(args.export_paths)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        pl.DataFrame(
+            {
+                "path": np.repeat(np.arange(n_paths, dtype=np.int32), points),
+                "step": np.tile(np.arange(points, dtype=np.int32), n_paths),
+                "multiple": summary.paths.ravel(),
+            }
+        ).write_parquet(target, compression="uncompressed", statistics=False)
+        exported = str(target.resolve())
+    doc = {**summary.as_dict(), "run": str(folder), "seed": args.seed, "exported_paths": exported}
+    if args.json:
+        machine.emit(doc)
+        return 0
+    final, drawdown = summary.terminal_multiple, summary.max_drawdown
+    out = sys.stdout.write
+    out(f"{summary.n_paths} {summary.method} paths of {summary.horizon} bars from {folder}\n")
+    out(f"(mean block {summary.mean_block:.1f}; resamples this history: sequence risk, not edge)\n")
+    out(
+        "final value (x start)  5th/50th/95th: "
+        f"{final['p05']:.3f} / {final['p50']:.3f} / {final['p95']:.3f}\n"
+    )
+    out(
+        "worst fall             median / 5th:  "
+        f"{drawdown['p50'] * 100:.1f}% / {drawdown['p05'] * 100:.1f}%\n"
+    )
+    out(f"chance of finishing below the start: {summary.prob_loss * 100:.1f}%\n")
+    out(
+        f"chance of ever being down {summary.ruin_loss * 100:.0f}%: "
+        f"{summary.prob_ruin * 100:.1f}%\n"
+    )
+    out(
+        f"chance of a fall worse than {abs(summary.drawdown_threshold) * 100:.0f}%: "
+        f"{summary.prob_drawdown_worse_than_threshold * 100:.1f}%\n"
+    )
+    if exported is not None:
+        out(f"paths written to {exported}\n")
+    return 0
+
+
 def dispatch(command: str, args: argparse.Namespace) -> int | None:
     """The exit code if ``command`` is a product command, else ``None``."""
     if command == "backtest":
@@ -425,4 +544,6 @@ def dispatch(command: str, args: argparse.Namespace) -> int | None:
         return run_config_command(args)
     if command == "results":
         return run_results_command(args)
+    if command == "simulate-paths":
+        return run_simulate_paths_command(args)
     return None

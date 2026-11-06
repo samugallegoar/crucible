@@ -39,6 +39,20 @@ statistics (a round trip pays the per-side cost twice), and an OLS of the strate
 the benchmark's gives beta and annual alpha with a Newey-West t-statistic. Per-trade statistics treat
 trades as independent and use the price change on adjusted prices; the alpha is arithmetic.
 
+### Return-sequence risk and cost stress (ADR-0083)
+
+`product/sequence.py` builds the `sequence_risk` block (`kind: "return_sequence_risk"`) from the run's
+per-bar returns (stationary bootstrap, mean block chosen from the data) and its trades (a trade's
+return on equity is its price change less the round-trip cost, times the fraction of equity it held),
+1,000 paths each, seeded from the experiment seed, and the fixed `sequence_table` (the same six rows
+every run, `n/a` where a resampling could not run: fewer than 10 trades or bars). It is a distribution
+of outcomes of *this* history, centred on the realized result: it says how fragile the result is to
+the sample, not whether the strategy has an edge, and the table carries that sentence. The HTML report
+draws the percentile fan (5-95 and 25-75 bands and the median) in dollars on the real dates. A failure
+is recorded (`bars_error`/`trades_error`), never raised. `diagnostics.cost_stress` re-prices the run at
+1x/2x/3x/5x its costs without re-running (net = gross - k x cost, exact for the vectorized engine; a
+test checks 2x against a real re-run); the main table shows the Sharpe at 2x / 3x / 5x.
+
 ### The flow
 
 1. Parse the spec (refuse with a location and a fix); normalize symbols; resolve the home.
@@ -68,7 +82,8 @@ repaired rows, warnings, quality checks), `results` (`strategy`, `benchmark`, `e
 `years`), `validation` (realism level, engine, trial family, `trial_family_source`, count,
 `trial_count_scope`, DSR, `dsr_error`, `home_trial_count`, `dsr_home_wide`, `dsr_home_wide_error`, null test with `p_value` = (k+1)/(B+1), `exceedances`,
 `invalid_iterations` and `p_value_method`, contamination, `realism_check`), `summary`, `trades`,
-`provenance` (including `price_basis_note` and `execution_assumptions`), plus `report`,
+`provenance` (including `price_basis_note` and `execution_assumptions`), `results_table`,
+`diagnostics` (including `cost_stress`), `sequence_risk` and `sequence_table` (ADR-0077, ADR-0083), plus `report`,
 `technical_report`, `artifacts`, `summary_json`, `home`. Every Sharpe carries an approximate
 nominal-95 % block-bootstrap interval (`sharpe_low`/`sharpe_high`; measured coverage in ADR-0070);
 no other figure has one. Percentages are in percent. `schema_version` 2 (ADR-0070: the null-test

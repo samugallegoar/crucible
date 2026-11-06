@@ -8,6 +8,32 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Return-sequence risk, a reality check and cost stress (ADR-0083)
+- **Two kinds of statement, kept apart.** *Return-sequence risk* resamples the one history a
+  backtest produced: how much the final value, the worst drawdown, the chance of finishing below
+  the start or of touching a ruin level depend on the sample and its order. It is centred on the
+  realized result, so a lucky or overfit run also looks safe; it is **not** evidence of an edge.
+  *Edge evidence* is the nulls and the corrections for the search.
+- `validation/resampling.py`: the stationary bootstrap and an automatic block length (Politis-White).
+  `validation/paths.py`: bootstrap equity paths of per-bar returns or of per-trade returns, with
+  terminal-value, max-drawdown, probability-of-loss, ruin and drawdown-threshold distributions and a
+  P5/P25/P50/P75/P95 fan; paths are kept only on request.
+- **The one-step backtest** gains `sequence_risk` and a fixed `sequence_table` (with the note that
+  it is not evidence of an edge) in its document, and a fan chart in the report (additive; golden
+  unchanged; one more row, `cost_stress`, in the results table, now 24 rows).
+- **`crucible simulate-paths RUN`** resamples any finished run (folder or experiment id) and, with
+  `--export-paths FILE`, writes every simulated path to Parquet (path, step, multiple).
+- **`validation/reality_check.py` and `crucible optimize`**: White's Reality Check and Hansen's SPA
+  over the sweep's return panel, printed and emitted (`reality_check`) beside PBO and the deflated
+  Sharpe: does the best swept value beat zero once the search is paid for? Calibrated by simulation
+  (with 20 zero-edge candidates the naive best-candidate test rejects 65% of the time, White 4.8%,
+  Hansen 5.8% at a nominal 5%).
+- **Cost stress**: `diagnostics.cost_stress` re-prices the run at 1x, 2x, 3x and 5x its costs (the
+  engine's costs are linear in turnover, so no re-run), verified against a real re-run at doubled
+  costs; the table shows the Sharpe at 2x / 3x / 5x.
+- Evaluated and not built (reasons in the ADR): a default store of every path, a regime-conditioned
+  bootstrap, a bootstrap test of the mean, a random-entry null, an event-driven stress grid.
+
 ### Audit fixes: result integrity, execution, accounting and statistics (ADR-0079)
 - **Experimental provenance no longer depends on the working directory.** `commit` and
   `env_lock_hash` were resolved relative to the process cwd, so a run from a notebook, a

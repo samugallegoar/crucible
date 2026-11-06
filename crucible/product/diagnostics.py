@@ -49,6 +49,53 @@ def break_even_bps(
     return assumed_bps_per_side * mean_gross / mean_cost
 
 
+STRESS_MULTIPLIERS: tuple[float, ...] = (1.0, 2.0, 3.0, 5.0)
+"""Cost multiples of the grid: the assumed cost, then 2x, 3x and 5x of it."""
+
+
+def cost_stress(
+    gross_returns: np.ndarray,
+    net_returns: np.ndarray,
+    capital: float,
+    years: float,
+    periods_per_year: float,
+    multipliers: tuple[float, ...] = STRESS_MULTIPLIERS,
+) -> list[dict[str, float | None]]:
+    """The run re-priced at several multiples of its own costs, without re-running it.
+
+    The engine charges ``turnover x (slippage + commission)`` each bar, so the net return of a
+    bar at ``k`` times the costs is exactly ``gross - k * (gross - net)``; compounding that gives
+    the final equity and annual return, and the annualized Sharpe uses the same formula as the
+    headline metrics. Returns one row per multiplier with ``sharpe``, ``cagr_pct`` and
+    ``final_equity`` (``None`` for a row that would lose everything). It is a *linear* stress: it
+    scales the assumed cost per unit traded, so it does not model costs that rise with size or in
+    a fast market, and it holds the trades fixed.
+    """
+    cost = gross_returns - net_returns
+    rows: list[dict[str, float | None]] = []
+    for k in multipliers:
+        stressed = gross_returns - k * cost
+        if stressed.size == 0 or np.any(stressed <= -1.0):
+            rows.append({"multiplier": k, "sharpe": None, "cagr_pct": None, "final_equity": None})
+            continue
+        final = float(capital * np.prod(1.0 + stressed))
+        degenerate = stressed.size < 2 or float(np.std(stressed, ddof=1)) == 0.0
+        sharpe = (
+            0.0
+            if degenerate
+            else float(stressed.mean() / stressed.std(ddof=1) * math.sqrt(periods_per_year))
+        )
+        rows.append(
+            {
+                "multiplier": k,
+                "sharpe": sharpe,
+                "cagr_pct": annual_return_pct(final, capital, years),
+                "final_equity": final,
+            }
+        )
+    return rows
+
+
 def turnover_per_year(abs_weight_changes: float, years: float) -> float | None:
     """Traded notional per year as a multiple of capital (absolute weight changes / years)."""
     return None if years <= 0 else abs_weight_changes / years

@@ -146,7 +146,9 @@ inputs ⇒ identical experiment id ⇒ byte-identical artifacts (golden-tested).
   `config.experiment.mode` is already `optimization`, then reads each
   trial's own returns back from its `equity.parquet` and assembles the
   trials × periods panel `validation.pbo.probability_of_backtest_overfitting`
-  needs. `DEFAULT_PBO_GROUPS = 6` (untuned default).
+  needs. `DEFAULT_PBO_GROUPS = 6` (untuned default). The same panel feeds
+  `validation.reality_check.reality_check` (ADR-0083): `OptimizeResult.reality_check` /
+  `reality_check_error`, seeded from the experiment seed.
   `OptimizeResult.best_dsr`/`best_experiment_id`: the winning trial's
   Deflated Sharpe, recomputed against the *full completed sweep's* trial
   history — each trial's own `manifest.json["dsr"]` only reflects the

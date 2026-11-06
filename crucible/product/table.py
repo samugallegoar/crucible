@@ -26,6 +26,7 @@ ROW_IDS: tuple[str, ...] = (
     "cost_drag_per_year",
     "turnover_per_year",
     "break_even_cost",
+    "cost_stress",
     "volatility_per_year",
     "worst_fall",
     "sharpe",
@@ -89,6 +90,17 @@ def _break_even(diag: dict[str, Any]) -> str:
     if float(value) <= 0:
         return f"0.0 bps (loses money before costs; assumed {float(assumed):.1f})"
     return f"{float(value):.1f} bps (assumed {float(assumed):.1f})"
+
+
+def _cost_stress(diag: dict[str, Any]) -> str:
+    rows = diag.get("cost_stress")
+    if not rows:
+        return f"{NOT_AVAILABLE} (no costs assumed)"
+    by_k = {float(r["multiplier"]): r.get("sharpe") for r in rows}
+    cells = [
+        NOT_AVAILABLE if by_k.get(k) is None else f"{float(by_k[k]):.2f}" for k in (2.0, 3.0, 5.0)
+    ]
+    return " / ".join(cells)
 
 
 def _expectancy(trade: dict[str, Any]) -> str:
@@ -160,6 +172,7 @@ def build_results_table(doc: dict[str, Any]) -> dict[str, Any]:
             dash,
         ),
         "break_even_cost": ("Break-even cost per side", _break_even(diag), dash),
+        "cost_stress": ("Sharpe at 2x / 3x / 5x costs", _cost_stress(diag), dash),
         "volatility_per_year": (
             "Volatility (per year)",
             _pct(strat["volatility_pct"]),
@@ -230,16 +243,24 @@ def build_results_table(doc: dict[str, Any]) -> dict[str, Any]:
     return {"columns": list(COLUMNS), "rows": rows, "markdown": to_markdown(rows)}
 
 
-def to_markdown(rows: list[dict[str, str]]) -> str:
-    """A pipe table with aligned columns; the same rows always give the same text."""
-    grid = [list(COLUMNS)] + [[r["label"], r["strategy"], r["benchmark"]] for r in rows]
-    widths = [max(len(line[i]) for line in grid) for i in range(3)]
+def to_grid_markdown(grid: list[list[str]]) -> str:
+    """A pipe table with aligned columns from a header row plus body rows; the same grid always
+    gives the same text."""
+    width = len(grid[0])
+    widths = [max(len(line[i]) for line in grid) for i in range(width)]
 
     def line(cells: list[str]) -> str:
         return "| " + " | ".join(c.ljust(w) for c, w in zip(cells, widths, strict=True)) + " |"
 
     separator = "| " + " | ".join("-" * w for w in widths) + " |"
     return "\n".join([line(grid[0]), separator, *(line(g) for g in grid[1:])])
+
+
+def to_markdown(rows: list[dict[str, str]]) -> str:
+    """The main results table as a pipe table; the same rows always give the same text."""
+    return to_grid_markdown(
+        [list(COLUMNS)] + [[r["label"], r["strategy"], r["benchmark"]] for r in rows]
+    )
 
 
 def to_text(rows: list[dict[str, str]]) -> str:

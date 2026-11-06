@@ -107,6 +107,7 @@ The response is one JSON document. The parts you use:
 | Key | Use |
 |---|---|
 | `results_table.markdown` | **the metric table: show it exactly as it is** (see below) |
+| `sequence_table.markdown` | **the sequence-risk table with its note: show it unchanged, under the metric table, and never as evidence of an edge** (see below) |
 | `summary.headline` | the first sentence to say |
 | `summary.verdict`, `summary.verdict_level` | the honest conclusion (`not_conclusive`, `no_edge_detected`, `some_evidence`) |
 | `summary.versus_benchmark` | strategy against buy-and-hold: return and worst fall |
@@ -118,13 +119,25 @@ The response is one JSON document. The parts you use:
 | `report` | absolute path of the HTML report to point the person to |
 | `data.warnings`, `data.repaired_rows` | data caveats; mention them if non-empty |
 
-**The table is fixed.** `results_table.markdown` has the same 23 rows, in the same order, with the
+**The table is fixed.** `results_table.markdown` has the same 24 rows, in the same order, with the
 same labels and number formats, in every run (`results_table.rows` has them one by one, each with a
 stable `id`). Paste it as it is, then add your own words around it. Do not rebuild the table from
 `results.*`, do not drop, reorder or rename a row, and do not reformat a number: people compare runs
 side by side and a table that changes shape between runs hides the comparison. A value that does not
 exist reads `n/a` (it is a row you must still show). If you want to stress something, say it in a
 sentence below the table.
+
+**Sequence risk is not evidence of an edge.** `sequence_table.markdown` (and the fan chart in the
+report) resamples this one history. It says how much the result depends on the sample and its
+order, and it is centred on the result that was realized, so a lucky or overfit backtest also shows
+a low chance of loss. Never say "there is only a 1% chance this loses money" or "the strategy is
+safe" from it. Say what it measures ("if the same returns had come in another order or sample, the
+final value would have been between X and Y 90% of the time"), then say whether there is evidence of
+an edge from the evidence rows (the Sharpe range, the deflated Sharpe, the shuffled-returns p-value,
+the cost rows). The `Sharpe at 2x / 3x / 5x costs` row is a re-pricing of the same trades at higher
+costs: quote it when the person asks whether costs could kill the result. When you sweep a parameter
+(`crucible optimize`), quote the reality check's White and SPA p-values: they answer whether the best
+value beats zero once the search is paid for. Both outputs name their `kind`.
 
 When a result looks promising (`not_conclusive` with `realism_not_checked` as the only blocker, or
 `some_evidence`-class numbers), run it again with `realism_check: true` (about 30 seconds more): the

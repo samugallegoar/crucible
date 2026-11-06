@@ -60,6 +60,7 @@ further, not a basis for real money.
   Cost drag per year                      0.1%                          -
   Turnover per year (x capital)           7.2x                          -
   Break-even cost per side                112.8 bps (assumed 1.5)       -
+  Sharpe at 2x / 3x / 5x costs            0.73 / 0.72 / 0.70            -
   Volatility (per year)                   10.9%                         17.8%
   Worst fall from a peak                  -17.8%                        -33.7%
   Sharpe ratio (95% range)                0.74 (0.10 to 1.34)           0.80 (0.28 to 1.44)
