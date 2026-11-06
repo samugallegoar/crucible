@@ -30,6 +30,7 @@ from crucible.experiments.vectorized_runner import (
 )
 from crucible.validation.dsr import deflated_sharpe_ratio
 from crucible.validation.pbo import probability_of_backtest_overfitting
+from crucible.validation.reality_check import RealityCheckResult, reality_check
 from crucible.validation.splits import CombinatorialPurgedCVSplitter
 from crucible.validation.trial_registry import DuckDBTrialRegistry, frequency_mismatch
 
@@ -63,7 +64,11 @@ class OptimizeResult:
     has no way to know how many more trials would follow it; only after
     the sweep completes is the search's true trial count known).
     ``best_dsr`` is None when the family cannot support a DSR (mixed return
-    frequencies, or a degenerate return series); ``best_dsr_error`` says why."""
+    frequencies, or a degenerate return series); ``best_dsr_error`` says why.
+    ``reality_check`` is White's Reality Check / Hansen's SPA over the whole sweep (ADR-0083):
+    the evidence that *some* swept value beats zero once the search is paid for. It is None
+    when the panel cannot support it (``reality_check_error`` says why); it ranks by mean
+    return, so ``reality_check.best_index`` can differ from the winner of ``metric``."""
 
     param_name: str
     values: tuple[float, ...]
@@ -74,6 +79,8 @@ class OptimizeResult:
     best_experiment_id: str
     best_dsr: DsrResult | None
     best_dsr_error: str | None = None
+    reality_check: RealityCheckResult | None = None
+    reality_check_error: str | None = None
 
 
 def optimize_1d(
@@ -167,6 +174,17 @@ def optimize_1d(
         except CrucibleError as exc:
             dsr_error = str(exc)
 
+    # the data-snooping test over the same panel: seeded from the experiment seed, so a re-run
+    # reproduces it (ADR-0083); a panel it cannot test is reported, not hidden
+    check: RealityCheckResult | None = None
+    check_error: str | None = None
+    try:
+        check = reality_check(
+            panel, np.random.default_rng(np.random.SeedSequence([config.experiment.seed, 83]))
+        )
+    except CrucibleError as exc:
+        check_error = str(exc)
+
     result = OptimizeResult(
         param_name=param_name,
         values=tuple(values),
@@ -177,5 +195,7 @@ def optimize_1d(
         best_experiment_id=str(runs[best_idx].experiment_id),
         best_dsr=best_dsr,
         best_dsr_error=dsr_error,
+        reality_check=check,
+        reality_check_error=check_error,
     )
     return result, runs
