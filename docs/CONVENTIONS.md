@@ -146,3 +146,10 @@ Documented exceptions to "subclass `CrucibleError`":
   engine code paths.
 - The CLI turns any `CrucibleError` into `refused: <message>` on stderr and exit
   code 1 (`crucible/cli/main.py`); other exceptions are bugs and surface as tracebacks.
+- **Machine-readable errors (ADR-0084).** Under `--json` the refusal is also one JSON document on
+  stdout: `{"error": {"schema_version", "code", "type", "message", "location"}}`. `code` is the
+  snake_case class name (`ExperimentError` -> `experiment_error`), so a consumer branches on it and
+  **renaming an error class is a compatibility change** (changelog line). `location` says where: attach
+  it with `raise ExperimentError(msg).at(path=..., symbol=..., order_id=...)`, and the CLI adds
+  `command`. The message stays the human-readable what/where/how-to-fix; the `location` keys are
+  structured copies of the facts the message already states.

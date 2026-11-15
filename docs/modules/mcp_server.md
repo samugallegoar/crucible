@@ -9,7 +9,10 @@ the core install; start it with `crucible-mcp` or `python -m crucible.mcp_server
   process (stdin closed, `PYTHONUTF8=1`, no inherited `VIRTUAL_ENV`) and return the JSON document.
   `ainvoke` is cancellable: a cancelled task or a timeout kills the child. A non-zero exit, an
   argparse error (the last lines of its output, where the actionable `error:` line is) or a timeout
-  becomes `ToolRefusal`.
+  becomes `ToolRefusal`; when the command printed its structured error document (every
+  `CrucibleError` under `--json`) `ToolRefusal.envelope` holds it and the tool error text is that
+  JSON (`code`, `message`, `location`), prefixed by the SDK's `Error executing tool <name>: `
+  (ADR-0084).
 - `server.py` — `build_argv` (values attached with `=`, positionals after `--`), `absolute`/`workdir`
   (path resolution), `build_server()` registering the tools, a resource and a prompt, and `main()`.
 
@@ -26,7 +29,9 @@ Product tools (for a person who does not code; descriptions are written for an a
 | `crucible_results` | earlier backtests, newest first |
 | `crucible_status` | the home folder (absolute), cache, provider availability, version |
 
-Engine tools (advanced; all return the command's `--json` document): `crucible_schema`,
+Engine tools (advanced; all return the command's `--json` document): `crucible_schema` (`kind`:
+the config, a spec, or an output document), `crucible_artifact` (a run by artifact id: compact,
+`detail`, or `verify`),
 `crucible_run`, `crucible_run_vectorized`, `crucible_validate`, `crucible_optimize`,
 `crucible_compare`, `crucible_report`, `crucible_promote`, `crucible_debug`, `crucible_data_list`,
 `crucible_data_check`, `crucible_data_build`, `crucible_data_fetch`.

@@ -8,9 +8,36 @@ sanity-check failure.
 
 from __future__ import annotations
 
+import re
+from typing import TYPE_CHECKING, Self
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
 
 class CrucibleError(Exception):
-    """Base class for every error raised by the engine."""
+    """Base class for every error raised by the engine.
+
+    ``code`` is the machine-readable name of the error class (``ExperimentError`` ->
+    ``experiment_error``): stable, never reused for another meaning, safe to branch on. ``location``
+    is an optional mapping saying where the error arose (a path, symbol, timestamp, order id);
+    attach it with ``raise SomeError(message).at(path=...)``. The message stays the human and LLM
+    readable explanation of what happened and how to fix it (ADR-0084).
+    """
+
+    location: Mapping[str, object] | None = None
+
+    @property
+    def code(self) -> str:
+        """The stable snake_case name of this error's class."""
+        return _CAMEL_BOUNDARY.sub("_", type(self).__name__).lower()
+
+    def at(self, **location: object) -> Self:
+        """Records where the error arose and returns it, so it can be raised in one expression."""
+        self.location = {**(self.location or {}), **location}
+        return self
 
 
 class LookaheadError(CrucibleError):

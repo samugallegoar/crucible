@@ -198,6 +198,44 @@ MANIFEST_FIELDS: dict[str, ManifestField] = {
         "string", False, "The recorded reason for the skips (empty if none).", paths="event-driven"
     ),
     "env_lock_hash": ManifestField("string", False, "SHA-256 of `uv.lock` (the environment)."),
+    "datasets": ManifestField(
+        "object",
+        False,
+        "Role (`bars`, `fx_rates`, ...) -> `{dataset, source, schema_version, content_hash, "
+        "row_count}` as the store recorded the dataset (ADR-0084).",
+    ),
+    "window": ManifestField(
+        "object", False, "`{start_ns, end_ns}`: the evaluated window, UTC nanoseconds (ADR-0084)."
+    ),
+    "execution": ManifestField(
+        "object",
+        False,
+        "What shaped the fills: `engine`, `realism_level`, the `execution` models, the `risk` "
+        "limits, and the vectorized engine's `lag_bars` (ADR-0084).",
+    ),
+    "expression": ManifestField(
+        "object",
+        False,
+        "`{kind, canonical, hash}` of what generates the signals: `strategy_spec` (canonical spec "
+        "JSON) or `entrypoint` (entrypoint + params); SHA-256 of the canonical text (ADR-0084).",
+    ),
+    "results_digest": ManifestField(
+        "string",
+        False,
+        "SHA-256 over `config.yaml`, `metrics.json` and every `*.parquet` (names and bytes).",
+    ),
+    "artifact_id": ManifestField(
+        "string",
+        False,
+        "`ART-<16 hex>`: SHA-256 of the manifest (minus `artifact_id`, `created_at`, "
+        "`factor_regression`) and `results_digest`. Same inputs and code, same id (ADR-0084).",
+    ),
+    "created_at": ManifestField(
+        "string",
+        False,
+        "UTC time the artifact was first sealed (`YYYY-MM-DDTHH:MM:SSZ`); outside the hash, and "
+        "kept when an idempotent re-run reproduces the same `artifact_id`.",
+    ),
     "factor_regression": ManifestField(
         "object",
         False,

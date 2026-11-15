@@ -238,6 +238,28 @@ Read it honestly: the only out-of-sample number is the test column. Test runs do
 trials, so the per-fold selection is **not** deflated by DSR, and the fold spread matters more
 than the mean. `--max-runs` (default 250) refuses a plan that would run for hours.
 
+## 10. Finding a run by its artifact id
+
+A finished run has two ids: `EXP-<12 hex>` (config + data; the directory name) and
+`ART-<16 hex>`, the **artifact id**, which also covers the manifest and the result files
+(ADR-0084). The same code, config, data and seed give the same one.
+
+```bash
+uv run crucible run config.yaml --artifacts experiments --json            # prints artifact_id
+uv run crucible artifact show ART-0123456789abcdef --artifacts experiments --json
+uv run crucible artifact show ART-0123456789abcdef --artifacts experiments --detail --json
+uv run crucible artifact verify ART-0123456789abcdef --artifacts experiments
+uv run crucible schema --kind run      # also: verification, error, manifest
+```
+
+`show` prints the compact document (ids, headline fields, every metric with its interval);
+`--detail` adds the full manifest and the file inventory. `verify` recomputes the id from the
+files and refuses (exit 1) if a result file or the manifest was edited. A refusal under `--json`
+prints `{"error": {"code", "message", "location", ...}}`; branch on `code`.
+
+From Python: `crucible.experiments.artifact_id.find_artifact(root, id)` returns the directory and
+`verify_artifact(dir)` the id; `RunArtifacts.artifact_id` is set on every finished run.
+
 ## Known gaps
 
 - No Python API to *list* experiments in an artifact root; use `crucible compare <family>` or

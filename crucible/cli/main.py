@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from crucible import __version__
 from crucible.cli import machine, product_commands
 from crucible.core.errors import ConfigurationError, CrucibleError
+from crucible.experiments.contracts import OUTPUT_SCHEMAS, output_json_schema
 from crucible.experiments.optimize import DEFAULT_PBO_GROUPS
 
 if TYPE_CHECKING:
@@ -25,6 +26,15 @@ if TYPE_CHECKING:
 
     from crucible.core.types import TimestampNs
     from crucible.data.interfaces import DatasetManifest
+
+
+def _add_detail(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="With --json: add the full manifest and the file inventory to the document "
+        "(the default document is compact: ids, headline fields and metrics; ADR-0084)",
+    )
 
 
 def _add_json(parser: argparse.ArgumentParser) -> None:
@@ -116,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
         "(same commit + same working-tree diff is replaced without this flag; ADR-0079)",
     )
     _add_json(run)
+    _add_detail(run)
     _add_override(run)
     run_vec = subparsers.add_parser(
         "run-vectorized", help="Run an experiment on the vectorized engine (Levels 0-1)"
@@ -128,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace an existing experiment directory written by different code (ADR-0079)",
     )
     _add_json(run_vec)
+    _add_detail(run_vec)
     _add_override(run_vec)
 
     promote = subparsers.add_parser(
@@ -239,16 +251,36 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--artifacts", default="experiments")
     _add_json(compare)
 
+    artifact = subparsers.add_parser(
+        "artifact", help="Show or verify a finished run by its artifact id (ADR-0084)"
+    )
+    artifact_sub = artifact.add_subparsers(dest="artifact_command", required=True)
+    show = artifact_sub.add_parser(
+        "show", help="Print a run by artifact id (ART-...) or experiment id (EXP-...)"
+    )
+    show.add_argument("artifact_id", help="Artifact id (ART-...) or experiment id (EXP-...)")
+    show.add_argument("--artifacts", default="experiments")
+    _add_detail(show)
+    _add_json(show)
+    verify = artifact_sub.add_parser(
+        "verify", help="Recompute the artifact id from the files and refuse if it differs"
+    )
+    verify.add_argument("artifact_id", help="Artifact id (ART-...) or experiment id (EXP-...)")
+    verify.add_argument("--artifacts", default="experiments")
+    _add_json(verify)
+
     schema = subparsers.add_parser(
         "schema",
-        help="Print a JSON Schema: the experiment config (default) or a strategy spec",
+        help="Print a JSON Schema: the experiment config (default), a strategy spec, or an "
+        "output document",
     )
     schema.add_argument("--out", default=None, help="Write the schema here (default: stdout)")
     schema.add_argument(
         "--kind",
-        choices=["experiment", "strategy-spec"],
+        choices=["experiment", "strategy-spec", *OUTPUT_SCHEMAS],
         default="experiment",
-        help="which schema: the experiment config, or the no-code strategy spec (ADR-0067)",
+        help="which schema: the experiment config, the no-code strategy spec (ADR-0067), or an "
+        "output document: run, verification, error, manifest (ADR-0084)",
     )
 
     data = subparsers.add_parser("data", help="Dataset tooling: check | build | fetch | list")
@@ -453,7 +485,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         overwrite=args.overwrite,
     )
     if args.json:
-        machine.emit(machine.run_payload(artifacts))
+        machine.emit(machine.run_payload(artifacts, detail=args.detail))
         return 0
     sys.stdout.write(
         f"{artifacts.experiment_id}\n"
@@ -470,7 +502,7 @@ def _cmd_run_vectorized(args: argparse.Namespace) -> int:
     config = load_config(Path(args.config), args.override)
     artifacts = run_vectorized_experiment(config, Path(args.artifacts), overwrite=args.overwrite)
     if args.json:
-        machine.emit(machine.run_payload(artifacts))
+        machine.emit(machine.run_payload(artifacts, detail=args.detail))
         return 0
     sys.stdout.write(
         f"{artifacts.experiment_id}\n"
@@ -939,12 +971,44 @@ def _manifest_row(manifest: DatasetManifest) -> dict[str, object]:
     }
 
 
+def _cmd_artifact(args: argparse.Namespace) -> int:
+    """``crucible artifact show|verify``: a run by its artifact id (ADR-0084)."""
+    from crucible.experiments.artifact_id import find_artifact, verify_artifact
+    from crucible.experiments.contracts import run_document, verification_document
+
+    run_dir = find_artifact(Path(args.artifacts), args.artifact_id)
+    if args.artifact_command == "verify":
+        verified = verify_artifact(run_dir)
+        if args.json:
+            machine.emit(verification_document(verified, run_dir))
+            return 0
+        sys.stdout.write(f"verified: {verified}\n")
+        return 0
+    doc = run_document(run_dir, detail=args.detail)
+    if args.json:
+        machine.emit(doc)
+        return 0
+    metrics = doc["metrics"]
+    assert isinstance(metrics, dict)
+    lines = [
+        f"{doc['artifact_id'] or '(no artifact id: written before ADR-0084)'}  "
+        f"({doc['experiment_id']})",
+        f"artifacts: {doc['artifacts']}",
+    ]
+    for name, metric in metrics.items():
+        lines.append(f"{name}: {metric['value']}")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
 def _cmd_schema(args: argparse.Namespace) -> int:
     """Prints the experiment config's JSON Schema: what a valid config may contain."""
     if args.kind == "strategy-spec":
         from crucible.strategy_spec import spec_json_schema
 
         schema = spec_json_schema()
+    elif args.kind in OUTPUT_SCHEMAS:
+        schema = output_json_schema(args.kind)
     else:
         from crucible.experiments.config import config_json_schema
 
@@ -1144,10 +1208,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_data(args)
         if args.command == "schema":
             return _cmd_schema(args)
+        if args.command == "artifact":
+            return _cmd_artifact(args)
     except CrucibleError as exc:
         sys.stderr.write(f"refused: {exc}\n")
         if getattr(args, "json", False):
-            machine.emit(machine.error_payload(exc))
+            machine.emit(machine.error_payload(exc, command=str(args.command)))
         return 1
 
     build_parser().error(f"unknown command {args.command!r}")

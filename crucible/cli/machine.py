@@ -12,27 +12,12 @@ import math
 import sys
 from typing import TYPE_CHECKING
 
+from crucible.core.errors import CrucibleError
+from crucible.experiments.contracts import OUTPUT_SCHEMA_VERSION, run_document
+
 if TYPE_CHECKING:
     from crucible.experiments.runner import RunArtifacts
     from crucible.experiments.vectorized_runner import VectorizedRunArtifacts
-
-# The headline set that must travel together (AGENTS.md §9): CI-bearing metrics, trial count,
-# DSR/PBO and the realism level, plus what identifies the run.
-_MANIFEST_KEYS = (
-    "config_hash",
-    "contamination",
-    "contamination_reason",
-    "dsr",
-    "dsr_benchmark_sharpe",
-    "dsr_error",
-    "mode",
-    "pbo",
-    "realism_level",
-    "runtime",
-    "seed",
-    "trial_count",
-    "trial_family",
-)
 
 
 def _clean(value: object) -> object:
@@ -58,21 +43,29 @@ def emit(payload: dict[str, object]) -> None:
     sys.stdout.write(render(payload))
 
 
-def error_payload(exc: BaseException) -> dict[str, object]:
-    """The ``--json`` form of a refusal: the exception class and its actionable message."""
-    return {"error": {"type": type(exc).__name__, "message": str(exc)}}
-
-
-def run_payload(artifacts: RunArtifacts | VectorizedRunArtifacts) -> dict[str, object]:
-    """A finished run: where it is, every metric with its CI, and the headline manifest fields."""
-    manifest = json.loads((artifacts.path / "manifest.json").read_text(encoding="utf-8"))
+def error_payload(exc: BaseException, *, command: str | None = None) -> dict[str, object]:
+    """The ``--json`` form of a refusal (ADR-0084): ``code`` (stable, branch on it), ``type`` (the
+    class name), the actionable ``message`` and ``location`` (where it arose: whatever the error
+    recorded with ``.at(...)`` plus the ``command`` that raised it)."""
+    code = exc.code if isinstance(exc, CrucibleError) else "unexpected_error"
+    where: dict[str, object] = dict(getattr(exc, "location", None) or {})
+    if command is not None:
+        where.setdefault("command", command)
     return {
-        "experiment_id": str(artifacts.experiment_id),
-        "artifacts": str(artifacts.path),
-        "report": str(artifacts.report_path),
-        "manifest": {key: manifest.get(key) for key in _MANIFEST_KEYS},
-        "metrics": {
-            name: {"value": m.value, "ci_low": m.ci_low, "ci_high": m.ci_high}
-            for name, m in sorted(artifacts.metrics.items())
-        },
+        "error": {
+            "schema_version": OUTPUT_SCHEMA_VERSION,
+            "code": code,
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "location": where,
+        }
     }
+
+
+def run_payload(
+    artifacts: RunArtifacts | VectorizedRunArtifacts, *, detail: bool = False
+) -> dict[str, object]:
+    """A finished run (ADR-0084): ids, where it is, the headline manifest fields and every metric
+    with its CI; ``detail`` adds the full manifest and the file inventory. One builder, so
+    ``crucible artifact show`` prints the same document."""
+    return run_document(artifacts.path, detail=detail, report=artifacts.report_path)

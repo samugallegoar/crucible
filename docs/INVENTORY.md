@@ -17,6 +17,8 @@
 
 | Command | Arguments and options | Help |
 |---|---|---|
+| `crucible artifact show` | `<artifact_id> --artifacts --detail --json` | Print a run by artifact id (ART-...) or experiment id (EXP-...) |
+| `crucible artifact verify` | `<artifact_id> --artifacts --json` | Recompute the artifact id from the files and refuse if it differs |
 | `crucible backtest` | `--calendar --capital --commission-bps --costs --direction --end --entry --entry-window --exit --exit-at --family --flat-by-close --fraction --home --interval --json --market-on-close --max-holding-bars --name --null-iterations --offline --price-basis --provider --realism-check --short-entry --short-exit --slippage-bps --spec --start --stop-loss-pct --symbols --take-profit-pct` | One step: fetch data if needed, run a strategy spec, compare with buy-and-hold |
 | `crucible compare` | `<family> --artifacts --json` | Compare every recorded trial in a family from the trial registry |
 | `crucible config set-home` | `<path> --json` | Remember a home folder for every run |
@@ -30,9 +32,9 @@
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
 | `crucible report` | `<experiment_id> --artifacts --json` | Re-render the report for a finished experiment |
 | `crucible results` | `--home --json --limit` | List earlier one-step backtests, newest first |
-| `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --json --override --overwrite --resume --runtime --stop-at` | Run an experiment from a YAML config |
-| `crucible run-vectorized` | `<config> --artifacts --json --override --overwrite` | Run an experiment on the vectorized engine (Levels 0-1) |
-| `crucible schema` | `--kind --out` | Print a JSON Schema: the experiment config (default) or a strategy spec |
+| `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --detail --json --override --overwrite --resume --runtime --stop-at` | Run an experiment from a YAML config |
+| `crucible run-vectorized` | `<config> --artifacts --detail --json --override --overwrite` | Run an experiment on the vectorized engine (Levels 0-1) |
+| `crucible schema` | `--kind --out` | Print a JSON Schema: the experiment config (default), a strategy spec, or an output document |
 | `crucible simulate-paths` | `<run> --export-paths --home --horizon --json --mean-block --paths --ruin-loss --seed` | Resample a finished run's returns into simulated equity paths (sequence risk) |
 | `crucible spec check` | `--direction --entry --entry-window --exit --exit-at --flat-by-close --fraction --json --market-on-close --max-holding-bars --name --short-entry --short-exit --spec --stop-loss-pct --take-profit-pct` | Validate a spec and read it back in plain language |
 | `crucible spec templates` | `--json --name` | List ready-made specs to start from |

@@ -24,6 +24,7 @@ from crucible.mcp_server.server import build_server
 from examples.momentum.build_data import build_all
 
 EXPECTED_TOOLS = {
+    "crucible_artifact",
     "crucible_schema",
     "crucible_run",
     "crucible_run_vectorized",
@@ -217,6 +218,8 @@ def _captured_calls() -> list[list[str]]:
             },
             "crucible_compare": {"family": "fam", "artifacts": "a"},
             "crucible_report": {"experiment_id": "EXP-1", "artifacts": "a"},
+            "crucible_artifact": {"artifact_id": "ART-1", "detail": True, "artifacts": "a"},
+            "crucible_schema": {"kind": "manifest"},
             "crucible_data_list": {"store": "s"},
             "crucible_data_check": {
                 "store": "s",
@@ -281,7 +284,7 @@ def test_every_tool_builds_an_argv_the_real_parser_accepts() -> None:
     from crucible.cli.main import build_parser
 
     calls = _captured_calls()
-    assert len(calls) == 17
+    assert len(calls) == 19
     for argv in calls:
         build_parser().parse_args(argv)  # a mistyped flag would exit(2) here
 

@@ -44,8 +44,16 @@ from crucible.core.stats import is_degenerate_returns, per_period_sharpe
 from crucible.core.types import DatasetId, ExperimentId, RealismLevel
 from crucible.data.calendars import periods_per_year_for
 from crucible.data.store import ParquetDataStore, price_basis_of
+from crucible.experiments.artifact_id import read_seal, seal_artifact, write_manifest
 from crucible.experiments.artifacts import SCHEMA_VERSION
 from crucible.experiments.config import ExperimentConfig, canonical_yaml, config_hash
+from crucible.experiments.provenance import (
+    dataset_roles,
+    datasets_block,
+    execution_block,
+    expression_block,
+    window_block,
+)
 from crucible.experiments.runner import (
     _code_fingerprint,
     _env_lock_hash,
@@ -79,6 +87,8 @@ class VectorizedRunArtifacts:
     path: Path
     metrics: dict[str, MetricValue]
     report_path: Path
+    artifact_id: str = ""
+    """``ART-...``: the identity of the sealed artifact (ADR-0084)."""
 
 
 def _refuse_out_of_scope(config: ExperimentConfig) -> None:
@@ -231,6 +241,8 @@ class _PendingVectorizedRun:
     commit: str
     dirty: bool
     code_fingerprint: str
+    lag_bars: int
+    """The engine's signal lag in bars (``VectorizedConfig.lag_bars``), recorded in the manifest."""
 
 
 def _periods_per_year(config: ExperimentConfig, store: ParquetDataStore) -> float:
@@ -298,6 +310,7 @@ def _run_vectorized_compute(
         commit=commit,
         dirty=dirty,
         code_fingerprint=_code_fingerprint(),
+        lag_bars=vec_config.lag_bars,
     )
 
 
@@ -322,6 +335,7 @@ def _finalize_vectorized(
         fingerprint=pending.code_fingerprint,
         overwrite=overwrite,
     )
+    prior_seal = read_seal(out_dir)  # an idempotent re-run keeps the first created_at
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # this trial's own per-period Sharpe is recorded before trial_sharpes() is read, so its own
@@ -388,11 +402,18 @@ def _finalize_vectorized(
         "contamination_reason": contamination.reason,
         "contamination_overlapping_trials": list(contamination.overlapping_trials),
         "env_lock_hash": _env_lock_hash(),
+        # what was run (ADR-0084): the manifest alone identifies the inputs
+        "datasets": datasets_block(
+            ParquetDataStore(config.data.store), dataset_roles(config, vectorized=True)
+        ),
+        "window": window_block(config),
+        "execution": execution_block(
+            config, engine="vectorized", extra={"lag_bars": pending.lag_bars}
+        ),
+        "expression": expression_block(config),
     }
     (out_dir / "config.yaml").write_text(canonical_yaml(config), encoding="utf-8", newline="\n")
-    (out_dir / "manifest.json").write_text(
-        json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8", newline="\n"
-    )
+    write_manifest(out_dir, manifest)
     _write_parquet(result.equity, out_dir / "equity.parquet")
     _write_parquet(result.weights, out_dir / "weights.parquet")
     _write_parquet(result.scores, out_dir / "scores.parquet")
@@ -406,6 +427,8 @@ def _finalize_vectorized(
         encoding="utf-8",
         newline="\n",
     )
+    # every result file is on disk: seal the manifest with the artifact id (ADR-0084)
+    artifact_id = seal_artifact(out_dir, prior=prior_seal)
     plot_equity_drawdown(result.equity, out_dir / "equity.svg")
 
     header = {
@@ -448,7 +471,11 @@ def _finalize_vectorized(
         trades_label=EPISODE_LABEL,
     )
     return VectorizedRunArtifacts(
-        experiment_id=exp_id, path=out_dir, metrics=metrics, report_path=report_path
+        experiment_id=exp_id,
+        path=out_dir,
+        metrics=metrics,
+        report_path=report_path,
+        artifact_id=artifact_id,
     )
 
 

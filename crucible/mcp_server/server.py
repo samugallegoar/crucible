@@ -181,7 +181,7 @@ def build_server() -> MCPServer:
         try:
             return await ainvoke(argv, timeout=_timeout(), cwd=workdir())
         except ToolRefusal as refusal:
-            raise ToolError(str(refusal)) from refusal
+            raise ToolError(refusal.tool_text()) from refusal
 
     # ----------------------------------------------------------------- the product tools
 
@@ -377,9 +377,31 @@ def build_server() -> MCPServer:
     # ------------------------------------------------------- the engine's advanced commands
 
     @server.tool()
-    async def crucible_schema() -> dict[str, object]:
-        """The JSON Schema of the experiment config: every valid field and its type."""
-        return await run_cli(["schema"])
+    async def crucible_schema(kind: str = "experiment") -> dict[str, object]:
+        """A JSON Schema: the experiment config (default, `experiment`), the strategy spec
+        (`strategy-spec`), or an output document Crucible prints: `run`, `verification`, `error`,
+        `manifest`."""
+        return await run_cli(build_argv("schema", [], {"kind": kind}))
+
+    @server.tool()
+    async def crucible_artifact(
+        artifact_id: str,
+        detail: bool = False,
+        verify: bool = False,
+        artifacts: str | None = None,
+    ) -> dict[str, object]:
+        """Fetch a finished run by its artifact id (`ART-...`, or an `EXP-...` id): the compact
+        document (ids, headline fields, every metric with its interval) by default, the full
+        manifest and file list with `detail`. With `verify`, recompute the id from the files on
+        disk and refuse if the artifact was edited."""
+        options: dict[str, Option] = {
+            "artifacts": absolute(artifacts) or _home_paths()[0],
+            "json": True,
+        }
+        if verify:
+            return await run_cli(build_argv(["artifact", "verify"], [artifact_id], options))
+        options["detail"] = detail
+        return await run_cli(build_argv(["artifact", "show"], [artifact_id], options))
 
     @server.tool()
     async def crucible_run(
