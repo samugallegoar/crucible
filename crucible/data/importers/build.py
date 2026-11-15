@@ -11,10 +11,11 @@ from typing import TYPE_CHECKING
 from crucible.core.errors import ConfigurationError
 from crucible.core.types import DatasetId, TimestampNs
 from crucible.data.calendars import get_trading_calendar
+from crucible.data.importers.databento import import_databento
 from crucible.data.importers.ohlcv import import_ohlcv
 from crucible.data.importers.polymarket import import_polymarket
 from crucible.data.importers.report import DatasetOutput, ImportReport, ImportResult
-from crucible.data.importers.spec import OhlcvSpec, load_spec
+from crucible.data.importers.spec import DatabentoSpec, OhlcvSpec, load_spec
 from crucible.data.quality import run_quality_checks
 from crucible.data.store import build_dataset
 
@@ -74,11 +75,13 @@ def build_from_spec(
     ``start``/``end`` (UTC ns) and ``max_contracts`` apply to Polymarket sources only.
     """
     spec = load_spec(spec_path)
-    if isinstance(spec, OhlcvSpec):
+    if isinstance(spec, OhlcvSpec | DatabentoSpec):
         if start is not None or end is not None or max_contracts is not None:
             msg = "--start, --end and --max-contracts apply to polymarket sources only"
             raise ConfigurationError(msg)
-        result: ImportResult = import_ohlcv(spec)
+        result: ImportResult = (
+            import_databento(spec) if isinstance(spec, DatabentoSpec) else import_ohlcv(spec)
+        )
     else:
         result = import_polymarket(spec, start=start, end=end, max_contracts=max_contracts)
     manifests = write_import_result(result, store_root, max_rows=max_rows)

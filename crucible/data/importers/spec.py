@@ -105,6 +105,43 @@ class OhlcvSpec(_Frozen):
     quality_skip_reason: str = ""
 
 
+class DatabentoSpec(_Frozen):
+    """A Databento DBN file of OHLCV bars for futures (ADR-0085): one raw dataset per root.
+
+    ``dataset`` is a template with ``{root}`` (``"{root}_1m_raw"`` -> ``es_1m_raw``). Prices are
+    the individual contracts', unadjusted, so ``price_basis`` is always ``raw``; the continuous
+    series are built from them (a later step). ``expected_sha256`` is the provider's checksum of
+    ``input`` (its ``manifest.json``); when given the file is hashed and a mismatch refuses.
+    """
+
+    kind: Literal["databento_dbn"]
+    dataset: str = Field(min_length=1)
+    input: str = Field(min_length=1)
+    roots: tuple[str, ...] = Field(min_length=1)
+    price_basis: Literal["raw"]
+    expected_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    feed_latency_s: int = Field(default=0, ge=0)
+    rows: RowsSpec = RowsSpec()
+    quality_calendar: str | None = None
+    quality_skip: tuple[str, ...] = ()
+    quality_skip_reason: str = ""
+
+    @model_validator(mode="after")
+    def _template_and_roots(self) -> DatabentoSpec:
+        if "{root}" not in self.dataset:
+            msg = (
+                "dataset must contain {root}: one dataset is written per root (e.g. {root}_1m_raw)"
+            )
+            raise ValueError(msg)
+        if len({r.upper() for r in self.roots}) != len(self.roots):
+            msg = "roots must be distinct"
+            raise ValueError(msg)
+        if any(not re.fullmatch(r"[A-Z]{1,3}", r) for r in self.roots):
+            msg = "each root is 1-3 uppercase letters (ES, NQ, YM, RTY, NKD)"
+            raise ValueError(msg)
+        return self
+
+
 class PolymarketSpec(_Frozen):
     kind: Literal["polymarket_csv", "polymarket_parquet"]
     dataset: str = Field(min_length=1)
@@ -125,14 +162,15 @@ class PolymarketSpec(_Frozen):
         return self
 
 
-_MODELS: dict[str, type[OhlcvSpec] | type[PolymarketSpec]] = {
+_MODELS: dict[str, type[OhlcvSpec] | type[PolymarketSpec] | type[DatabentoSpec]] = {
     "ohlcv_csv": OhlcvSpec,
+    "databento_dbn": DatabentoSpec,
     "polymarket_csv": PolymarketSpec,
     "polymarket_parquet": PolymarketSpec,
 }
 
 
-def load_spec(path: Path) -> OhlcvSpec | PolymarketSpec:
+def load_spec(path: Path) -> OhlcvSpec | PolymarketSpec | DatabentoSpec:
     """Reads and validates an import spec; every problem is a ``ConfigurationError``."""
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -149,7 +187,7 @@ def load_spec(path: Path) -> OhlcvSpec | PolymarketSpec:
     if model is None:
         msg = (
             f"import spec {path}: unknown kind {raw.get('kind')!r}; use ohlcv_csv, "
-            "polymarket_csv or polymarket_parquet"
+            "databento_dbn, polymarket_csv or polymarket_parquet"
         )
         raise ConfigurationError(msg)
     try:

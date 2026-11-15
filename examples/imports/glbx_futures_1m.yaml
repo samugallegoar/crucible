@@ -1,0 +1,17 @@
+# CME Globex futures, 1-minute OHLCV bars, Databento batch job GLBX-20261112-L9CGA6XKRR:
+# '<data-dir>/glbx-mdp3-20100606-20261110.ohlcv-1m.dbn.zst' (the provider's file, kept as delivered).
+# Requested as ES/NQ/YM/RTY/NKD.FUT with stype_in=parent, so the file holds every individual contract
+# AND the calendar spreads; the importer keeps the outright contracts of `roots`, one raw dataset per
+# root ({root}_1m_raw -> es_1m_raw, ...), symbol = contract with its expiry year (ESH2024).
+# Timestamps are bar OPEN times in UTC; event_time is the close (open + 1m). Prices are unadjusted.
+# Needs the optional extra: uv sync --extra databento. Documented in docs/data/glbx-futures-1m.md.
+kind: databento_dbn
+dataset: '{root}_1m_raw'
+input: '<data-dir>/glbx-mdp3-20100606-20261110.ohlcv-1m.dbn.zst'
+expected_sha256: 86d2cc3fcab57e8e9f6c801b7755c4c1ef830791d163ca0f8cd2751912ef3a91  # the provider's manifest.json
+roots: [ES, NQ, YM, RTY, NKD]
+price_basis: raw
+quality_skip: [calendar_coverage]
+quality_skip_reason: >-
+  1-minute CME Globex bars: calendar_coverage asks for a bar at every daily session close, which
+  illiquid back-month contracts do not have; the minute-level integrity report replaces it

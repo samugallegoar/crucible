@@ -8,6 +8,16 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C2a: Databento futures ingestion (ADR-0085)
+- **`kind: databento_dbn`** for `crucible data build`: reads `ohlcv-1s|1m|1h` DBN files into one raw
+  dataset per root (`{root}_1m_raw`), one symbol per individual contract with its expiry year
+  (`ESH2024`). `event_time` is the bar close (Databento stamps the open); calendar spreads and
+  other products are dropped and counted; `instrument_id` is resolved by date (the provider reuses
+  ids); `expected_sha256` verifies the provider's checksum. Example spec
+  `examples/imports/glbx_futures_1m.yaml`.
+- **`databento` is an optional extra** (`uv sync --extra databento`), imported only by the importer
+  (its decoder is Rust; AGENTS.md §9 keeps that out of the core).
+
 ### Fathom C1: the artifact contract (ADR-0084)
 - **`artifact_id`** (`ART-<16 hex>`) beside `experiment_id` (unchanged): SHA-256 over the canonical
   manifest and a digest of `config.yaml`, `metrics.json` and every `*.parquet`. Both runners seal the

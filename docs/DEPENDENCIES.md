@@ -39,6 +39,12 @@
 | `mcp` | 2.3 (`<3`) | **Core dependency since ADR-0068** (the `mcp` extra remains as an alias): the official Model Context Protocol SDK for the stdio server (ADR-0066), so `uvx`/`uv tool install` give a working server | `mcp_server/` only (imported inside `build_server`) | Pinned to 2.x (`MCPServer`, `mcp.Client`); 1.x lacks these APIs. A major bump may need a change in `mcp_server/server.py`. Pulls in an HTTP stack (uvicorn, starlette) that the stdio server does not use. |
 | `matplotlib` | 3.11.2 | The deterministic SVG equity/drawdown plot in reports | `analytics/plots.py` only | Backend must stay non-interactive; SVG metadata is pinned so bytes are stable (ADR-0011). |
 
+### Optional extras (`[project.optional-dependencies]`)
+
+| Extra | Package | Why | Where | Watch-outs |
+|-------|---------|-----|-------|------------|
+| `databento` | `databento` >= 0.40 | Reads Databento DBN files (`crucible data build` with `kind: databento_dbn`, ADR-0085) | `data/importers/databento.py` only, imported when a DBN file is opened; a missing install raises `ConfigurationError` with `uv sync --extra databento` | Its decoder (`databento-dbn`) is Rust: that is why it is an extra and not core (AGENTS.md §9). Pulls pandas, pyarrow, aiohttp, requests and zstandard; the importer reads numpy arrays and never imports pandas. |
+
 ## 3. Development dependencies (`[dependency-groups].dev`)
 
 | Package | Why | Where |
@@ -64,7 +70,7 @@ The standard library carries the rest: `decimal`, `dataclasses`, `hashlib`,
 | **pandas** imported directly in `crucible/` | **Forbidden** | Polars is the dataframe. pandas is present only because `exchange-calendars` needs it; it must not cross the `data/calendars.py` boundary. |
 | **numba** | **Gated** — needs an ADR and a measured hot path with golden/property coverage first (ADR-0003, AGENTS.md §1.1) | JIT constrains style and complicates debugging; it must sit behind an existing Protocol and be optional. |
 | **scipy, scikit-learn, statsmodels** | **Forbidden** without an ADR | The statistical routines are implemented and unit-tested in `validation/` from named formulas (DSR, PBO, CSCV); a black-box replacement would move results and hide assumptions. |
-| **Network clients / broker or vendor SDKs** (`requests`, `httpx`, `ib_insync`, ...) in the core install | **Forbidden** in `[project].dependencies`, with two recorded exceptions: `yfinance` (the default price provider) and `mcp` (the MCP server) are core since ADR-0068 so the product works after one install; no other network client or broker SDK may be added | Live adapters live at the I/O boundary behind the `live.enabled` flag and, when they exist, ship as optional extras (`docs/modules/live.md`). |
+| **Network clients / broker or vendor SDKs** (`requests`, `httpx`, `ib_insync`, `databento`, ...) in the core install | **Forbidden** in `[project].dependencies` (`databento` ships as an optional extra, ADR-0085), with two recorded exceptions: `yfinance` (the default price provider) and `mcp` (the MCP server) are core since ADR-0068 so the product works after one install; no other network client or broker SDK may be added | Live adapters live at the I/O boundary behind the `live.enabled` flag and, when they exist, ship as optional extras (`docs/modules/live.md`). |
 | A **second dataframe or storage engine** (Dask, Spark, SQLite stores, pickle/feather artifacts) | **Forbidden** without an ADR superseding ADR-0002 | Byte-identical artifacts depend on one deterministic writer. |
 | Anything that **reads the wall clock or a global RNG** in simulation code (`freezegun`-style patches, `random`, `np.random.*` module functions) | **Forbidden** | AGENTS.md §5/§9. Tests use fixed timestamps and seeded generators. |
 | `pip install` / another package manager | **Forbidden** | `uv` and the lockfile are the environment. |
