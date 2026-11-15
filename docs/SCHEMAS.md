@@ -491,6 +491,24 @@ Feature flag for the live runtime (ADR-0043). ``LiveRuntime`` refuses to constru
 | `ohlc_repair` | `"refuse"` \| `"clamp"` | no | `"refuse"` |  |
 | `max_dropped_fraction` | number | no | `0.05` | ≥ 0.0; ≤ 1.0 |
 
+#### `DatabentoSpec`
+
+A Databento DBN file of OHLCV bars for futures (ADR-0085): one raw dataset per root.
+
+| Field | Type | Required | Default | Constraints / meaning |
+|---|---|---|---|---|
+| `kind` | `"databento_dbn"` | yes |  |  |
+| `dataset` | string | yes |  | min length 1 |
+| `input` | string | yes |  | min length 1 |
+| `roots` | array<string> | yes |  |  |
+| `price_basis` | `"raw"` | yes |  |  |
+| `expected_sha256` | string \| null | no | `null` | pattern `^[0-9a-f]{64}$` |
+| `feed_latency_s` | integer | no | `0` | ≥ 0 |
+| `rows` | `RowsSpec` | no | the model's own defaults |  |
+| `quality_calendar` | string \| null | no | `null` |  |
+| `quality_skip` | array<string> | no | `[]` |  |
+| `quality_skip_reason` | string | no | `""` |  |
+
 #### `PolymarketSpec`
 
 | Field | Type | Required | Default | Constraints / meaning |

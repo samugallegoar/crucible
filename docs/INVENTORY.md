@@ -219,6 +219,7 @@ Gate 4 and the data gates: what a researcher calls to judge a result. Splitters,
 
 | Kind | Spec model |
 |---|---|
+| `databento_dbn` | `DatabentoSpec` |
 | `ohlcv_csv` | `OhlcvSpec` |
 | `polymarket_csv` | `PolymarketSpec` |
 | `polymarket_parquet` | `PolymarketSpec` |

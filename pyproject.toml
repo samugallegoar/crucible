@@ -34,6 +34,9 @@ dependencies = [
 # since ADR-0068 (a user who installs the product gets the data provider and the MCP server).
 yfinance = ["yfinance>=0.2.40"]
 mcp = ["mcp>=2.3,<3"]
+databento = [
+    "databento>=0.40",
+]
 
 [project.urls]
 Homepage = "https://github.com/samugallegoar/crucible"

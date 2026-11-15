@@ -12,7 +12,7 @@ SPECS = sorted(Path("examples/imports").glob("*.yaml"))
 
 
 def test_the_example_specs_exist() -> None:
-    assert len(SPECS) == 11
+    assert len(SPECS) == 12
 
 
 @pytest.mark.parametrize("path", SPECS, ids=[p.name for p in SPECS])

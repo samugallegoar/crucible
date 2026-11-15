@@ -16,8 +16,8 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
 - `transforms.py` — the null-test bar transforms (`shuffle_bar_returns`, `shuffle_intrabar_returns`,
   `shuffle_overnight_gaps`, `sign_flip_returns`, `synthetic_gbm_like`; `BarComponents`,
   `decompose`, `reconstruct`).
-- `importers/` — spec-driven `ohlcv_csv`, `polymarket_csv`, `polymarket_parquet` importers behind
-  `crucible data build`.
+- `importers/` — spec-driven `ohlcv_csv`, `databento_dbn`, `polymarket_csv`, `polymarket_parquet`
+  importers behind `crucible data build`.
 - `providers/` — price providers behind one interface (`PriceProvider`, ADR-0063): the `tiingo` and `yfinance`
   adapters, and `fetch.py` behind `crucible data fetch`, the shared normalizer, settings (API keys),
   HTTP retry and the raw-response cache. See "Data providers" below.
@@ -132,6 +132,14 @@ is 0 on Polymarket data; the bars also carry the bucket's first and last bid/ask
 optional on any bar dataset) so `spread: quoted` can fill at the quote (ADR-0060).
 The `quote_consistency` check (null, or all four present with `0 <= bid <= ask`)
 runs only on frames that carry the columns. Per-source facts and counts: `docs/data/`.
+
+**Databento futures (ADR-0085).** `importers/databento.py` (`kind: databento_dbn`, optional extra
+`databento`) reads `ohlcv-1s|1m|1h` DBN files into one raw dataset per root, symbol = individual
+contract with its expiry year (`ESH2024`). `event_time` is the bar *close* (Databento stamps the
+open), `available_at` adds `feed_latency_s`; spreads and other products are dropped and counted;
+`instrument_id` is resolved **by date** (the provider reuses ids); `expected_sha256` verifies the
+provider's checksum before reading; prices are raw. `DbnSource` is the seam tests use. Counts and
+the re-run command: `docs/data/glbx-futures-1m.md`.
 
 Importer guards (ADR-0052): a Polymarket snapshot whose `ts` is null or not finite is dropped and
 counted `invalid_ts`; a missing or non-numeric `start_time` refuses naming the contract;
