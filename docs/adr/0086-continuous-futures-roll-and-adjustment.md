@@ -1,8 +1,8 @@
 # ADR-0086: Continuous futures — a causal volume roll, ratio adjustment for research, unadjusted for fills
 
-Status: **proposed** (2026-11-14). It changes results, so by AGENTS.md §10 it is written and reviewed
-before the builder exists; the choices below are the conservative ones, and the four the owner should
-confirm are listed at the end.
+Status: accepted (2026-11-15). Proposed 2026-11-14; the owner confirmed the four points listed at the
+end on 2026-11-15. It changes results, so by AGENTS.md §10 it was written and reviewed before the
+builder exists; the choices below are the conservative ones.
 
 ## Context
 
@@ -147,7 +147,7 @@ expired and the switch is forced.
   must reproduce the switch counts, the timing table and the gap table from its own output as an
   acceptance test, so these numbers stop being a claim of this document and become a check.
 
-## For the owner to confirm
+## Confirmed by the owner (2026-11-15)
 
 1. The causal volume rule on the previous session, with `threshold` 1.0 and no hysteresis.
 2. `backstop_sessions` = 1 (never hold a contract into its final session).
