@@ -171,8 +171,10 @@ expired and the switch is forced.
 3. Ratio adjustment for research, unadjusted for fills, and no difference adjustment.
 4. A position across a roll pays a full round trip.
 
-Point 3 was confirmed on evidence that contained an error (see the Erratum); the decision still
-follows from the corrected evidence, and its reconfirmation was requested.
+Point 3 was first confirmed on evidence that contained an error (see the Erratum). The decision still
+follows from the corrected evidence, and the owner **reconfirmed point 3 on 2026-11-15, after reading
+the correction** (the difference adjustment rescales early-year percent returns; the ratio one does
+not).
 
 ## Erratum (2026-11-15)
 
