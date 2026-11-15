@@ -112,5 +112,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0083](0083-return-sequence-risk-and-edge-evidence.md) | Return-sequence risk, edge evidence after the search, and cost stress | accepted | Evaluated and implemented |
 | [0084](0084-artifact-contract.md) | The artifact contract — `artifact_id`, versioned output documents, structured errors | ? | `artifact_id` is added beside `experiment_id`; the latter does not change |
 | [0085](0085-databento-futures-ingestion.md) | Databento futures ingestion — raw outright contracts, bar close, optional extra | ? | `databento` is an optional extra (`uv sync --extra databento`), imported only in `data/importers/databento.py` at the moment a DBN file is opened; without it the importer refuses with that command |
+| [0086](0086-continuous-futures-roll-and-adjustment.md) | Continuous futures — a causal volume roll, ratio adjustment for research, unadjusted for fills | ? | The roll rule is the causal volume rule above, with an expiry backstop |
 
 <!-- END GENERATED: adr-index -->
