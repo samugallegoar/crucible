@@ -25,6 +25,7 @@
 | `crucible config show` | `--home --json` | Print the resolved home folder and its subfolders |
 | `crucible data build` | `<spec> --end --json --max-contracts --max-rows --start --store` | Build datasets from an import spec (ADR-0052) |
 | `crucible data check` | `--calendar --dataset --json --skip --skip-reason --store` | Run quality checks on a dataset |
+| `crucible data continuous` | `--backstop-sessions --json --raw --roots --store --threshold` | Build the continuous futures series of each root from its raw contracts (ADR-0086) |
 | `crucible data fetch` | `--allow-partial --cache-dir --calendar --dataset --end --interval --json --max-rows --no-cache --ohlc-repair --price-basis --provider --refresh --start --store --symbols` | Fetch prices from a data provider into a dataset (ADR-0063) |
 | `crucible data list` | `--json --store` | List datasets and manifest hashes |
 | `crucible debug` | `<experiment_id> --artifacts --at --json --order` | Replay a recorded experiment, stepping the event loop |

@@ -49,6 +49,27 @@ ordered by `ts_event` (checked: 0 backwards steps in 30,684,423 records). The sy
   2026-11-11T00:00:00Z.
 - 364 outright contracts appear in the symbology, 320 have bars in the window.
 
+## Continuous series (ADR-0086)
+
+Built from the raw datasets with `crucible data continuous --store data/processed --roots
+es,nq,ym,rty,nkd` (defaults: threshold 1.0, backstop 1 session). Per root three datasets:
+`<root>_1m_cont_v1` (unadjusted), `<root>_1m_cont_ratio_v1` (ratio-adjusted) and
+`<root>_1m_rolls_v1`.
+
+| Root | Bars | Sessions | Rolls | Roll reasons | First contract |
+|---|---|---|---|---|---|
+| ES | 5,745,344 | 4,288 | 66 | volume 66 | ESM2010 |
+| NQ | 5,571,616 | 4,288 | 66 | volume 66 | NQM2010 |
+| YM | 5,537,939 | 4,293 | 66 | volume 66 | YMM2010 |
+| RTY | 3,096,715 | 2,415 | 37 | volume 37 | RTYU2017 |
+| NKD | 3,648,750 | 4,278 | 66 | backstop 58, volume 8 | NKDM2010 |
+
+NKD rolls on the contract's final session (its volume leaves the front in the last one or two
+sessions); the equity indices roll about four calendar days before the old contract's last bar.
+Oldest-data multiplier of the ratio adjustment: ES 1.0400, NQ 1.1923, YM 0.9695, RTY 1.1607, NKD
+0.9678. The opt-in acceptance test `tests/bench/test_continuous_real_data.py` reproduces these
+figures: `uv run pytest -m bench tests/bench/test_continuous_real_data.py`.
+
 ## Cleaning applied
 
 | Step | Rows |

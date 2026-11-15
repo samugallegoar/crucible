@@ -18,6 +18,9 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   `decompose`, `reconstruct`).
 - `importers/` — spec-driven `ohlcv_csv`, `databento_dbn`, `polymarket_csv`, `polymarket_parquet`
   importers behind `crucible data build`.
+- `continuous.py` — continuous futures series from raw per-contract bars (ADR-0086):
+  `build_continuous`, `build_continuous_datasets`, `write_continuous`, `RollParams`,
+  `trade_date_expr`, `dataset_names`; behind `crucible data continuous`.
 - `providers/` — price providers behind one interface (`PriceProvider`, ADR-0063): the `tiingo` and `yfinance`
   adapters, and `fetch.py` behind `crucible data fetch`, the shared normalizer, settings (API keys),
   HTTP retry and the raw-response cache. See "Data providers" below.
@@ -141,6 +144,22 @@ open), `available_at` adds `feed_latency_s`; spreads and other products are drop
 provider's checksum before reading; prices are raw. `DbnSource` is the seam tests use. Counts and
 the re-run command: `docs/data/glbx-futures-1m.md`.
 
+**Continuous futures (ADR-0086).** `continuous.py` turns the raw per-contract bars of a root into
+three datasets: `{root}_1m_cont_v1` (the held contract's own bars, a `contract` column, real prices,
+`price_basis=raw`; the only series fills and money are computed on), `{root}_1m_cont_ratio_v1`
+(every earlier bar multiplied by the compounded `next / front` ratio, `price_basis=adjusted`; safe
+only for scale-invariant use) and `{root}_1m_rolls_v1` (one row per roll: contracts, effective
+trade date, `decided_at`, reference minute and prices, `ratio`, `gap_points`, `reason`). The roll is
+causal: hold one contract, look only at its successor in the quarterly chain, switch from the
+first bar of trade date `d` when the successor's volume on `d-1` exceeds `threshold` x the held
+contract's, or when the held contract is in its final session (`backstop_sessions`); never switch
+back. Trade date = `date(open + 2h)` (a Globex session opens 17:00 Central the evening before).
+A contract still trading on the dataset's last session has no observed expiry, so no backstop
+applies. Refusals: a symbol that is not a root contract, a chain with a hole, a roll whose
+contracts never shared a traded minute. Parameters are in each manifest's `source`; a rebuild
+reproduces the content hashes. Schemas: `docs/SCHEMAS.md` (`CONTINUOUS_BAR_SCHEMA`,
+`ROLL_SCHEMA`).
+
 Importer guards (ADR-0052): a Polymarket snapshot whose `ts` is null or not finite is dropped and
 counted `invalid_ts`; a missing or non-numeric `start_time` refuses naming the contract;
 `unresolved_contract_rows` counts only contracts inside `--start/--end`; ties on `ts` inside a bucket
@@ -178,6 +197,10 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
   refuses it rather than mislabel (Yahoo's `Close` is split-adjusted, so it will offer `adjusted` only).
 
 ## Known gaps
+- Continuous futures take a contract's scheduled last session from its last observed bar (ADR-0086,
+  decision 2): exact for liquid contracts, an approximation for thin ones; a contract specification
+  table and the `CMES` calendar replace it. The `trade_date` two-hour shift must agree with `CMES`
+  sessions when they land. The roll cost at each roll is not charged yet (milestone C3).
 Provider adapters: `tiingo` and `yfinance` exist (ADR-0063). `data fetch` takes the provider from a flag or the environment, not from a spec file; intraday Tiingo is not offered.
 Missingness reason column (ADR-0005) is not materialized — bars are
 dense by construction. Abnormal-jump and tz-mismatch checks pending.

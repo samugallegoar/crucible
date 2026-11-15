@@ -707,6 +707,8 @@ SCHEMA_CONSTANTS: tuple[tuple[str, str], ...] = (
     ("crucible.data.contracts", "UNIVERSE_SCHEMA"),
     ("crucible.data.contracts", "CORPORATE_ACTION_SCHEMA"),
     ("crucible.data.contracts", "FX_RATE_SCHEMA"),
+    ("crucible.data.contracts", "CONTINUOUS_BAR_SCHEMA"),
+    ("crucible.data.contracts", "ROLL_SCHEMA"),
     ("crucible.experiments.artifacts", "LEDGER_SCHEMA"),
     ("crucible.experiments.artifacts", "ORDER_SCHEMA"),
     ("crucible.experiments.artifacts", "FILL_SCHEMA"),
@@ -727,6 +729,12 @@ def _dataset_contracts_block() -> str:
             "Corporate actions (`CORPORATE_ACTION_SCHEMA`)",
         ),
         ("FX_RATE_SCHEMA", "FX_RATE_SORT_KEYS", "FX rates (`FX_RATE_SCHEMA`)"),
+        (
+            "CONTINUOUS_BAR_SCHEMA",
+            "CONTINUOUS_BAR_SORT_KEYS",
+            "Continuous futures bars (`CONTINUOUS_BAR_SCHEMA`, ADR-0086)",
+        ),
+        ("ROLL_SCHEMA", "ROLL_SORT_KEYS", "Futures rolls (`ROLL_SCHEMA`, ADR-0086)"),
     ):
         contracts = importlib.import_module("crucible.data.contracts")
         keys = ", ".join(f"`{key}`" for key in getattr(contracts, sort_keys))

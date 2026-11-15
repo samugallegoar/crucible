@@ -68,3 +68,34 @@ FX_RATE_SCHEMA: dict[str, pl.DataType] = {
     "ask": pl.Float64(),  # trading role: adverse side when buying the pair's first currency
 }
 FX_RATE_SORT_KEYS = ["available_at", "symbol", "event_time"]
+
+CONTINUOUS_BAR_SCHEMA: dict[str, pl.DataType] = {
+    # a continuous futures series (ADR-0086): BAR_SCHEMA plus the contract that printed the bar
+    "symbol": pl.String(),  # the continuous instrument, i.e. the root (ES); one per dataset
+    "event_time": pl.Int64(),  # bar close (UTC ns)
+    "available_at": pl.Int64(),  # close + feed latency (UTC ns, >= event_time; ADR-0007)
+    "open": pl.Float64(),  # first price of the bar: the contract's own, or ratio-adjusted
+    "high": pl.Float64(),  # highest price of the bar
+    "low": pl.Float64(),  # lowest price of the bar
+    "close": pl.Float64(),  # last price of the bar; the mark
+    "volume": pl.Float64(),  # contracts traded in the bar by the held contract; never adjusted
+    "contract": pl.String(),  # the individual contract held when the bar printed (ESH2024)
+}
+CONTINUOUS_BAR_SORT_KEYS = ["available_at", "symbol", "event_time"]
+
+ROLL_SCHEMA: dict[str, pl.DataType] = {
+    # one row per contract switch of a continuous series (ADR-0086)
+    "symbol": pl.String(),  # the continuous instrument, i.e. the root (ES)
+    "event_time": pl.Int64(),  # end of the deciding session (UTC ns): when the roll became knowable
+    "available_at": pl.Int64(),  # same instant: the roll is knowable once the deciding session ends
+    "from_contract": pl.String(),  # the contract held before the roll
+    "to_contract": pl.String(),  # the contract held from the effective session on
+    "effective_trade_date": pl.String(),  # first Globex trade date (YYYY-MM-DD) of the new contract
+    "reference_time": pl.Int64(),  # close (UTC ns) of the last minute both contracts traded before
+    "from_price": pl.Float64(),  # the old contract's close at reference_time
+    "to_price": pl.Float64(),  # the new contract's close at reference_time
+    "ratio": pl.Float64(),  # to_price / from_price: what earlier bars are multiplied by
+    "gap_points": pl.Float64(),  # to_price - from_price: the jump in the unadjusted series
+    "reason": pl.String(),  # volume (the next contract led), backstop (expiry) or expired (no bars)
+}
+ROLL_SORT_KEYS = ["available_at", "symbol", "event_time"]

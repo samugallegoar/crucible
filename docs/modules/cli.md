@@ -5,8 +5,8 @@
 The `crucible` command (`crucible/cli/main.py`: `build_parser`, `main`). Every command, with its
 options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-paths`, `spec check`, `spec templates`,
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
-`validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data fetch`,
-`data check`, `data list`. Handlers are
+`validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
+`data fetch`, `data check`, `data list`. Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
 stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
@@ -122,6 +122,11 @@ The `crucible` command.
   `examples/imports/`, sources in `docs/data/`). The quality battery and
   the `--max-rows` guard (default 5,000,000) run before anything is
   written; `--start/--end/--max-contracts` apply to Polymarket specs only.
+- `crucible data continuous --store S --roots es,nq,... [--raw {root}_1m_raw] [--threshold 1.0]
+  [--backstop-sessions 1]` — builds each root's continuous futures series, ratio-adjusted series and
+  rolls table from its raw per-contract dataset (`data.continuous.build_continuous_datasets`,
+  ADR-0086; counts in `docs/data/glbx-futures-1m.md`). A root whose build refuses writes nothing
+  and stops the command; roots before it are kept.
 - `crucible data fetch --store S --dataset D --symbols A,B --start YYYY-MM-DD --end YYYY-MM-DD
   [--provider yfinance|tiingo] [--interval 1d] [--price-basis adjusted|raw] [--calendar XNYS]
   [--allow-partial] [--cache-dir P | --no-cache] [--refresh] [--ohlc-repair refuse|clamp]
