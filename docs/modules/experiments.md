@@ -11,6 +11,12 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
 - `artifacts.py` — the artifact schemas (`LEDGER_SCHEMA`, `ORDER_SCHEMA`, `FILL_SCHEMA`,
   `EQUITY_SCHEMA`), `MANIFEST_FIELDS`, `SCHEMA_VERSION`, and the reader `load_experiment` /
   `compare_metrics` (`docs/USAGE.md`).
+- `artifact_id.py` — the artifact identity (ADR-0084): `canonical_json`, `manifest_basis`,
+  `results_digest`, `compute_artifact_id`, `seal_artifact`, `verify_artifact`, `find_artifact`,
+  `read_seal`, `write_manifest`; `provenance.py` — the manifest blocks that say what was run
+  (`datasets_block`, `window_block`, `execution_block`, `expression_block`); `contracts.py` — the
+  versioned output documents and their JSON Schemas (`run_document`, `RunDocument`,
+  `VerificationDocument`, `ErrorDocument`, `manifest_json_schema`, `OUTPUT_SCHEMA_VERSION`).
 - `vectorized_runner.py` — `run_vectorized_experiment`, `run_vectorized_experiment_parallel`; `promotion.py` — `promote_config`,
   `PromotedSignalStrategy`.
 - `optimize.py` (`optimize_1d`), `sensitivity.py` (`sweep_1d`), `perturbation.py`
@@ -24,6 +30,17 @@ Reproducibility: frozen hashed configs, the runner, the filesystem artifact
 store. An experiment = config hash + code commit (+ dirty) + data manifest
 hashes + seed + env lock hash + realism level + trial family. Identical
 inputs ⇒ identical experiment id ⇒ byte-identical artifacts (golden-tested).
+
+**Artifact identity (ADR-0084).** The experiment id names the directory and covers config + data.
+`artifact_id` (`ART-<16 hex>`) covers the manifest and the result files: SHA-256 over the canonical
+manifest (minus `artifact_id`, `created_at`, `factor_regression` and the trial-registry statistics
+`trial_count`, `dsr*`, `contamination*`) and a digest of `config.yaml`, `metrics.json` and every
+`*.parquet`. Both runners seal the manifest after the last result file is written; `created_at` is
+outside the hash and a re-run that reproduces the id keeps it. `verify_artifact` recomputes the id
+from the files and refuses an edited artifact; `find_artifact(root, id)` returns the directory.
+The manifest also records `datasets`, `window`, `execution` and `expression` (what was run); the
+dataset range and provider registry, the fill-policy name and the DSL expression kind come with
+milestones C2-C4.
 
 ## Implementations
 - `config.py`: frozen Pydantic tree (`ExperimentConfig` = experiment header
@@ -201,6 +218,8 @@ in their phase; hash coverage extends automatically because the hash is over
 the whole model.
 
 ## Known gaps
+- `artifact_id` is verified, not enforced: nothing stops a process with disk access from editing an
+  artifact and re-sealing it (ADR-0084). Runs written before it have no id (`verify` says so).
 - `ArtifactStore` and `RunRegistry` are stub Protocols: `run_experiment` writes the layout itself and `crucible compare` reads the trial registry directly.
 - Adding any config field renames every experiment id (the hash covers defaults); see `docs/COMPATIBILITY.md` §2 for the open decision.
 Checkpoint/resume (E7) is library API only (`BacktestEngine.run_until`/`checkpoint`/`resume_from`); no runner integration, auto-checkpointing or CLI. `report.html`/`equity.svg` sit

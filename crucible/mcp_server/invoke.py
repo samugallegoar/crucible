@@ -31,7 +31,23 @@ def _child_env() -> dict[str, str]:
 
 
 class ToolRefusal(Exception):
-    """The command refused or failed; the message is the CLI's own, actionable one."""
+    """The command refused or failed; the message is the CLI's own, actionable one.
+
+    ``envelope`` is the CLI's structured ``{"error": {schema_version, code, type, message,
+    location}}`` document when the command printed one (every ``CrucibleError`` under ``--json``);
+    it is ``None`` for an argument error or a crash, which only have text (ADR-0084).
+    """
+
+    def __init__(self, message: str, *, envelope: dict[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.envelope = envelope
+
+    def tool_text(self) -> str:
+        """What the MCP client reads: the CLI's own structured error document when there is one
+        (so the code and location survive), else the plain text."""
+        if self.envelope is not None:
+            return json.dumps(self.envelope, sort_keys=True, indent=2)
+        return str(self)
 
 
 def invoke(
@@ -104,11 +120,22 @@ def _document(argv: Sequence[str], returncode: int, stdout: str, stderr: str) ->
     except ValueError:
         payload = None
     if returncode != 0:
-        raise ToolRefusal(_message(payload, stderr, stdout, returncode))
+        raise ToolRefusal(
+            _message(payload, stderr, stdout, returncode), envelope=_envelope(payload)
+        )
     if not isinstance(payload, dict):
         msg = f"crucible {argv[0]} printed no JSON document (stdout: {stdout[:200]!r})"
         raise ToolRefusal(msg)
     return payload
+
+
+def _envelope(payload: object) -> dict[str, object] | None:
+    """The CLI's error document when ``payload`` is one: ``{"error": {"code", "message", ...}}``."""
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict) and "code" in error and "message" in error:
+            return payload
+    return None
 
 
 def _message(payload: object, stderr: str, stdout: str, code: int) -> str:

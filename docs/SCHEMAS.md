@@ -618,6 +618,13 @@ Current `schema_version`: **1**.
 | `quality_checks_skipped` | array<string> | no | event-driven | Checks skipped via `data.quality_skip`. |
 | `quality_skip_reason` | string | no | event-driven | The recorded reason for the skips (empty if none). |
 | `env_lock_hash` | string | no | both | SHA-256 of `uv.lock` (the environment). |
+| `datasets` | object | no | both | Role (`bars`, `fx_rates`, ...) -> `{dataset, source, schema_version, content_hash, row_count}` as the store recorded the dataset (ADR-0084). |
+| `window` | object | no | both | `{start_ns, end_ns}`: the evaluated window, UTC nanoseconds (ADR-0084). |
+| `execution` | object | no | both | What shaped the fills: `engine`, `realism_level`, the `execution` models, the `risk` limits, and the vectorized engine's `lag_bars` (ADR-0084). |
+| `expression` | object | no | both | `{kind, canonical, hash}` of what generates the signals: `strategy_spec` (canonical spec JSON) or `entrypoint` (entrypoint + params); SHA-256 of the canonical text (ADR-0084). |
+| `results_digest` | string | no | both | SHA-256 over `config.yaml`, `metrics.json` and every `*.parquet` (names and bytes). |
+| `artifact_id` | string | no | both | `ART-<16 hex>`: SHA-256 of the manifest (minus `artifact_id`, `created_at`, `factor_regression`) and `results_digest`. Same inputs and code, same id (ADR-0084). |
+| `created_at` | string | no | both | UTC time the artifact was first sealed (`YYYY-MM-DDTHH:MM:SSZ`); outside the hash, and kept when an idempotent re-run reproduces the same `artifact_id`. |
 | `factor_regression` | object | no | both, optional | Alpha, t-stat, loadings; added by `crucible validate --factors` (ADR-0022). |
 
 <!-- END GENERATED: artifact-manifest -->

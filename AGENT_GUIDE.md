@@ -188,7 +188,9 @@ count (`validation.trial_count`) and the realism level. Never quote a Sharpe alo
 
 ## Errors
 
-A refusal is a tool error whose text says what is wrong and how to fix it. Common ones:
+A refusal is a tool error whose text says what is wrong and how to fix it. For an engine tool
+the text is a JSON document `{"error": {"code", "message", "location"}}`: read `message` for the
+fix and branch on `code`. Common ones:
 
 - *end is not in the past*: use yesterday or earlier.
 - *offline mode ... no stored data*: run once without `offline`.
@@ -199,7 +201,9 @@ A refusal is a tool error whose text says what is wrong and how to fix it. Commo
 
 ## Other tools
 
-`crucible_results` lists earlier backtests; `crucible_status` shows where data and runs are kept
+`crucible_artifact` fetches a finished engine run by its `ART-...` id (compact by default,
+`detail` for the full manifest, `verify` to check it was not edited); `crucible_results` lists
+earlier backtests; `crucible_status` shows where data and runs are kept
 and which data provider is available; `crucible_compare`, `crucible_optimize`, `crucible_promote`
 and the rest are the engine's advanced commands, for a person who asks for a parameter sweep or
 for realistic fills (Level 2+ needs a configuration file; ask a human).

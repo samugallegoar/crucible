@@ -8,6 +8,25 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C1: the artifact contract (ADR-0084)
+- **`artifact_id`** (`ART-<16 hex>`) beside `experiment_id` (unchanged): SHA-256 over the canonical
+  manifest and a digest of `config.yaml`, `metrics.json` and every `*.parquet`. Both runners seal the
+  manifest after the last result file; `RunArtifacts.artifact_id`. The identity excludes `created_at`,
+  `factor_regression` and the trial-registry statistics (`trial_count`, `dsr*`, `contamination*`), so
+  a run keeps its id when the family grows. `created_at` is kept by an idempotent re-run.
+- **The manifest says what was run**: new keys `datasets`, `window`, `execution`, `expression`,
+  `results_digest`, `artifact_id`, `created_at`. Additive: run-artifact `schema_version` stays 1.
+- **`crucible artifact show|verify`** and `crucible_artifact` (MCP): a run by artifact id, compact by
+  default, `--detail` for the full manifest and file inventory; `verify` recomputes the id from the
+  files and refuses an edited artifact. `run` and `run-vectorized` take `--detail`.
+- **Versioned documents and schemas**: the run document gains `schema_version`, `kind`, `artifact_id`;
+  `crucible schema --kind run|verification|error|manifest` (generated from the models and
+  `MANIFEST_FIELDS`); `crucible_schema(kind)`.
+- **Structured errors**: `CrucibleError.code` (snake_case class name) and `.at(**location)`; the
+  `--json` envelope is `{"error": {schema_version, code, type, message, location}}`. MCP tool errors
+  for a `CrucibleError` are now that JSON document (was `Type: message`). Renaming an error class now
+  changes its `code`.
+
 ### Return-sequence risk, a reality check and cost stress (ADR-0083)
 - **Two kinds of statement, kept apart.** *Return-sequence risk* resamples the one history a
   backtest produced: how much the final value, the worst drawdown, the chance of finishing below

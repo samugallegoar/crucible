@@ -5,8 +5,14 @@
 The `crucible` command (`crucible/cli/main.py`: `build_parser`, `main`). Every command, with its
 options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-paths`, `spec check`, `spec templates`,
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
-`validate`, `compare`, `schema`, `data build`, `data fetch`, `data check`, `data list`. Handlers are
-thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1. stdout and
+`validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data fetch`,
+`data check`, `data list`. Handlers are
+thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
+also the structured `{"error": {schema_version, code, type, message, location}}` document on
+stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
+the `--json` document); `artifact show <ART-.../EXP-...>` prints the same document for a finished
+run, `artifact verify` recomputes its id from the files; `schema --kind` also serves `run`,
+`verification`, `error` and `manifest`. stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
 `UnicodeEncodeError` on a legacy Windows code page.
 

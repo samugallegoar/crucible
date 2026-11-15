@@ -49,6 +49,7 @@ from crucible.data.store import ParquetDataStore, price_basis_of
 from crucible.execution import registry
 from crucible.execution.ladder import ExecutionSetup, ParticipationLimits
 from crucible.execution.models import MarketStats
+from crucible.experiments.artifact_id import read_seal, seal_artifact, write_manifest
 from crucible.experiments.artifacts import (
     EQUITY_SCHEMA,
     FILL_SCHEMA,
@@ -62,6 +63,13 @@ from crucible.experiments.config import (
     RiskConfig,
     canonical_yaml,
     config_hash,
+)
+from crucible.experiments.provenance import (
+    dataset_roles,
+    datasets_block,
+    execution_block,
+    expression_block,
+    window_block,
 )
 from crucible.risk import registry as risk_registry
 from crucible.risk.engine import CompositeRiskEngine
@@ -102,6 +110,8 @@ class RunArtifacts:
     path: Path
     metrics: dict[str, MetricValue]
     report_path: Path
+    artifact_id: str = ""
+    """``ART-...``: the identity of the sealed artifact (ADR-0084)."""
 
 
 def import_entrypoint(entrypoint: str) -> object:
@@ -851,6 +861,7 @@ def _finalize_experiment(
         fingerprint=pending.code_fingerprint,
         overwrite=overwrite,
     )
+    prior_seal = read_seal(out_dir)  # an idempotent re-run keeps the first created_at
 
     # Trial registry + DSR (ADR-0008/0014/0015). This trial's own per-period
     # Sharpe must be recorded before trial_sharpes() is read, so its own
@@ -926,16 +937,19 @@ def _finalize_experiment(
         "quality_checks_skipped": sorted(config.data.quality_skip),
         "quality_skip_reason": config.data.quality_skip_reason,
         "env_lock_hash": _env_lock_hash(),
+        # what was run (ADR-0084): the manifest alone identifies the inputs
+        "datasets": datasets_block(
+            ParquetDataStore(config.data.store), dataset_roles(config, vectorized=False)
+        ),
+        "window": window_block(config),
+        "execution": execution_block(config, engine="event_driven"),
+        "expression": expression_block(config),
     }
 
     # newline="\n" everywhere: platform newline translation would silently
     # change artifact bytes between Windows and Linux (ADR-0011)
     (out_dir / "config.yaml").write_text(canonical_yaml(config), encoding="utf-8", newline="\n")
-    (out_dir / "manifest.json").write_text(
-        json.dumps(manifest, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_manifest(out_dir, manifest)
     _write_parquet(equity, out_dir / "equity.parquet")
     _write_parquet(trades, out_dir / "trades.parquet")
     _write_parquet(
@@ -975,6 +989,8 @@ def _finalize_experiment(
         newline="\n",
     )
     result.log.write(out_dir / "logs" / "run.jsonl")
+    # every result file is on disk: seal the manifest with the artifact id (ADR-0084)
+    artifact_id = seal_artifact(out_dir, prior=prior_seal)
 
     plot_equity_drawdown(equity, out_dir / "equity.svg")
     header = {
@@ -1018,7 +1034,11 @@ def _finalize_experiment(
         monte_carlo=monte_carlo,
     )
     return RunArtifacts(
-        experiment_id=exp_id, path=out_dir, metrics=metrics, report_path=report_path
+        experiment_id=exp_id,
+        path=out_dir,
+        metrics=metrics,
+        report_path=report_path,
+        artifact_id=artifact_id,
     )
 
 

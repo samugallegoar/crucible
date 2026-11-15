@@ -110,5 +110,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0081](0081-walk-forward-command.md) | An out-of-sample walk-forward command | ? | Add one command, `crucible walk-forward CONFIG`, that runs a 1-D selection over time folds and reports only out-of-fold metrics: |
 | [0082](0082-intrabar-stop-fills.md) | Intrabar stop and take-profit fills in the strategy-spec path | ? | `risk.stop_fill` (new, default `level`) selects the model: |
 | [0083](0083-return-sequence-risk-and-edge-evidence.md) | Return-sequence risk, edge evidence after the search, and cost stress | accepted | Evaluated and implemented |
+| [0084](0084-artifact-contract.md) | The artifact contract — `artifact_id`, versioned output documents, structured errors | ? | `artifact_id` is added beside `experiment_id`; the latter does not change |
 
 <!-- END GENERATED: adr-index -->
