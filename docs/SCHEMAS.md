@@ -97,6 +97,41 @@ Stored sort order: `available_at`, `symbol`, `event_time`.
 | `bid` | `Float64` | no | trading role: adverse side when selling the pair's first currency |
 | `ask` | `Float64` | no | trading role: adverse side when buying the pair's first currency |
 
+#### Continuous futures bars (`CONTINUOUS_BAR_SCHEMA`, ADR-0086)
+
+Stored sort order: `available_at`, `symbol`, `event_time`.
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `symbol` | `String` | no | the continuous instrument, i.e. the root (ES); one per dataset |
+| `event_time` | `Int64` | no | bar close (UTC ns) |
+| `available_at` | `Int64` | no | close + feed latency (UTC ns, >= event_time; ADR-0007) |
+| `open` | `Float64` | no | first price of the bar: the contract's own, or ratio-adjusted |
+| `high` | `Float64` | no | highest price of the bar |
+| `low` | `Float64` | no | lowest price of the bar |
+| `close` | `Float64` | no | last price of the bar; the mark |
+| `volume` | `Float64` | no | contracts traded in the bar by the held contract; never adjusted |
+| `contract` | `String` | no | the individual contract held when the bar printed (ESH2024) |
+
+#### Futures rolls (`ROLL_SCHEMA`, ADR-0086)
+
+Stored sort order: `available_at`, `symbol`, `event_time`.
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `symbol` | `String` | no | the continuous instrument, i.e. the root (ES) |
+| `event_time` | `Int64` | no | end of the deciding session (UTC ns): when the roll became knowable |
+| `available_at` | `Int64` | no | same instant: the roll is knowable once the deciding session ends |
+| `from_contract` | `String` | no | the contract held before the roll |
+| `to_contract` | `String` | no | the contract held from the effective session on |
+| `effective_trade_date` | `String` | no | first Globex trade date (YYYY-MM-DD) of the new contract |
+| `reference_time` | `Int64` | no | close (UTC ns) of the last minute both contracts traded before |
+| `from_price` | `Float64` | no | the old contract's close at reference_time |
+| `to_price` | `Float64` | no | the new contract's close at reference_time |
+| `ratio` | `Float64` | no | to_price / from_price: what earlier bars are multiplied by |
+| `gap_points` | `Float64` | no | to_price - from_price: the jump in the unadjusted series |
+| `reason` | `String` | no | volume (the next contract led), backstop (expiry) or expired (no bars) |
+
 <!-- END GENERATED: dataset-contracts -->
 
 Corporate-action semantics: `effective_at` is the run timestamp of the event; for a

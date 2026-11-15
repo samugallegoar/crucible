@@ -283,7 +283,9 @@ def build_parser() -> argparse.ArgumentParser:
         "output document: run, verification, error, manifest (ADR-0084)",
     )
 
-    data = subparsers.add_parser("data", help="Dataset tooling: check | build | fetch | list")
+    data = subparsers.add_parser(
+        "data", help="Dataset tooling: check | build | continuous | fetch | list"
+    )
     data_sub = data.add_subparsers(dest="data_command", required=True)
     check = data_sub.add_parser("check", help="Run quality checks on a dataset")
     check.add_argument("--store", required=True, help="Data store root")
@@ -315,6 +317,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="refuse to write more rows than this",
     )
     _add_json(build)
+    continuous = data_sub.add_parser(
+        "continuous",
+        help="Build the continuous futures series of each root from its raw contracts (ADR-0086)",
+    )
+    continuous.add_argument("--store", required=True, help="Data store root (read and write)")
+    continuous.add_argument(
+        "--roots", required=True, help="Comma-separated roots, e.g. es,nq,ym,rty,nkd"
+    )
+    continuous.add_argument(
+        "--raw",
+        default="{root}_1m_raw",
+        help="Raw dataset name, with {root} (default {root}_1m_raw, ADR-0085)",
+    )
+    continuous.add_argument(
+        "--threshold",
+        type=float,
+        default=1.0,
+        help="the next contract must exceed this multiple of the held contract's volume",
+    )
+    continuous.add_argument(
+        "--backstop-sessions",
+        type=int,
+        default=1,
+        help="never hold a contract into its final session (1); 0 disables the backstop",
+    )
+    _add_json(continuous)
     fetch = data_sub.add_parser(
         "fetch", help="Fetch prices from a data provider into a dataset (ADR-0063)"
     )
@@ -1075,6 +1103,8 @@ def _cmd_data(args: argparse.Namespace) -> int:
         return 0
     if args.data_command == "fetch":
         return _cmd_data_fetch(args)
+    if args.data_command == "continuous":
+        return _cmd_data_continuous(args)
     from crucible.data.importers.build import build_from_spec
     from crucible.experiments.config import parse_when
 
@@ -1096,6 +1126,46 @@ def _cmd_data(args: argparse.Namespace) -> int:
             f"{manifest.dataset}  rows={manifest.row_count}  hash={manifest.content_hash[:12]}  "
             f"source={manifest.source}\n"
         )
+    return 0
+
+
+def _cmd_data_continuous(args: argparse.Namespace) -> int:
+    """Raw per-contract bars -> unadjusted, ratio-adjusted and rolls datasets, per root
+    (ADR-0086). Nothing is written for a root whose build refuses; roots before it are kept."""
+    from crucible.core.errors import ConfigurationError
+    from crucible.data.continuous import RollParams, build_continuous_datasets
+
+    roots = [r.strip().upper() for r in str(args.roots).split(",") if r.strip()]
+    if not roots:
+        msg = "--roots is empty; pass roots such as es,nq,ym,rty,nkd"
+        raise ConfigurationError(msg)
+    if "{root}" not in args.raw:
+        msg = f"--raw {args.raw!r} must contain {{root}} (default {{root}}_1m_raw)"
+        raise ConfigurationError(msg)
+    params = RollParams(threshold=args.threshold, backstop_sessions=args.backstop_sessions)
+    reports: list[dict[str, object]] = []
+    for root in roots:
+        series, manifests = build_continuous_datasets(
+            Path(args.store), root, raw_dataset=args.raw.format(root=root.lower()), params=params
+        )
+        reports.append(
+            {**series.summary(), "datasets": [_manifest_row(manifest) for manifest in manifests]}
+        )
+    if args.json:
+        machine.emit({"parameters": params.describe(), "roots": reports})
+        return 0
+    for report in reports:
+        sys.stdout.write(
+            f"{report['root']}: {report['rolls']} rolls {report['rolls_by_reason']}, "
+            f"{report['bars']} bars, {report['sessions']} sessions, "
+            f"first contract {report['first_contract']}\n"
+        )
+        datasets = report["datasets"]
+        assert isinstance(datasets, list)
+        for row in datasets:
+            sys.stdout.write(
+                f"  {row['dataset']}  rows={row['rows']}  hash={str(row['content_hash'])[:12]}\n"
+            )
     return 0
 
 

@@ -8,6 +8,19 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C2b: continuous futures series (ADR-0086)
+- **`crucible data continuous`** builds, per root, `{root}_1m_cont_v1` (the held contract's own
+  bars, `price_basis=raw`), `{root}_1m_cont_ratio_v1` (ratio back-adjusted, `price_basis=adjusted`)
+  and `{root}_1m_rolls_v1`, from the raw per-contract datasets. The roll is causal: previous-session
+  volume of the successor vs the held contract (`--threshold`, default 1.0), plus a backstop that
+  keeps the series out of a contract's final session (`--backstop-sessions`, default 1); one-way.
+  New schemas `CONTINUOUS_BAR_SCHEMA` and `ROLL_SCHEMA`; `contract`-tagged bars.
+- **ADR-0086** records the decision and an erratum: the evidence it was written from had the sign
+  of the adjustment reversed (a difference adjustment adds the gaps; it does not give NQ negative
+  prices) and the expiry proxy invented a roll on contracts still trading at the end of the data.
+  The decision stands on the corrected evidence (the difference adjustment rescales early-year
+  percent returns, the ratio one does not).
+
 ### Fathom C2a: Databento futures ingestion (ADR-0085)
 - **`kind: databento_dbn`** for `crucible data build`: reads `ohlcv-1s|1m|1h` DBN files into one raw
   dataset per root (`{root}_1m_raw`), one symbol per individual contract with its expiry year

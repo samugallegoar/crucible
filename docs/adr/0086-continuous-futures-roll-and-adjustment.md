@@ -57,17 +57,27 @@ expired and the switch is forced.
   | NQ | -1.12 pts (-0.020%) | 1.37% | +3,772.2 |
   | YM | -60.50 pts (-0.298%) | 1.14% | +2,762.0 |
   | RTY | +5.30 pts (+0.341%) | 1.18% | +322.4 |
-  | NKD | -20.00 pts (-0.098%) | 1.31% | -1,310.0 |
+  | NKD | -20.00 pts (-0.098%) | 1.31% | -1,310.0 (volume rule only; -995.0 with the backstop) |
 
-- **What each adjustment does to the oldest data:**
+- **What each adjustment does to the oldest data** (corrected 2026-11-15, see the Erratum; measured
+  on the datasets the builder wrote, with the rule as decided, i.e. with the backstop). A back
+  adjustment brings the history up to the level of the *current* contract, so both adjustments move the
+  oldest bar in the direction of the accumulated carry: the difference adjustment **adds** the sum of
+  the gaps, the ratio adjustment **multiplies** by the product of the ratios.
 
-  | Root | Difference adjustment moves the oldest bar by | Ratio adjustment multiplies it by |
-  |---|---|---|
-  | ES | -670 pts (-61.5% of its 1,090 level) | 0.9616 |
-  | NQ | **-3,772 pts (-204.6% of its 1,844 level: negative prices)** | 0.8387 |
-  | YM | -2,762 pts (-27.1%) | 1.0315 |
-  | RTY | -322 pts (-23.0%) | 0.8616 |
-  | NKD | +1,310 pts (+13.5%) | 1.0397 |
+  | Root | First open | Difference adjustment adds (points, % of the first open) | Ratio adjustment multiplies it by | Percent returns of the oldest contract after a difference / ratio adjustment |
+  |---|---|---|---|---|
+  | ES | 1,064.00 | +670.0 (+63.0%) | 1.0400 | x0.614 / x1 |
+  | NQ | 1,831.75 | +3,772.2 (+205.9%) | 1.1923 | x0.327 / x1 |
+  | YM | 9,924.00 | +2,762.0 (+27.8%) | 0.9695 | x0.782 / x1 |
+  | RTY | 1,414.00 | +322.4 (+22.8%) | 1.1607 | x0.814 / x1 |
+  | NKD | 9,610.00 | -995.0 (-10.4%) | 0.9678 | x1.115 / x1 |
+
+  Neither adjustment produces a negative price on this data (the lowest NQ low after a difference
+  adjustment is 5,472.0). What a difference adjustment does is shift old prices by a constant in points,
+  so the *percent* returns and volatility of the early years shrink or grow by the ratio of the old
+  level to the shifted one (NQ's oldest contract to a third of its true percent returns); the ratio
+  adjustment leaves them exactly unchanged.
 
 ## Decision
 
@@ -79,12 +89,16 @@ expired and the switch is forced.
    session that opens at 17:00 CT, an hour after `d-1`'s close), so the decision is known before the first
    bar it governs. The first contract is the one with the most volume on the first session. The
    backstop keeps the series out of a contract's final session (NKD would otherwise be held through it);
-   it never triggers for ES, NQ, YM or RTY on this data, where volume leaves five sessions earlier.
+   it never triggers for ES, NQ, YM or RTY on this data, where volume leaves five sessions earlier
+   (all 66, 66, 66 and 37 of their rolls are `volume`). For NKD it is the rule in practice: 58 of its 66
+   rolls are `backstop` and 8 are `volume`, so NKD rolls on the contract's final session.
 2. **Expiry comes from contract metadata, not from the price path.** The scheduled last trading session
    of each contract is the date of its last observed bar (the exchange publishes it in advance; the
    specification, not the price, fixes it). This is a documented approximation: a contract specification
    table (and the `CMES` calendar) replaces it, and it is exact for liquid contracts, where 65 of 66 last
-   bars fall on the third Friday.
+   bars fall on the third Friday. **A contract still printing bars on the dataset's last session has no
+   observed expiry** (the download simply ended there), so no backstop applies to it; treating that
+   session as an expiry invented a roll in every root on the first build (Erratum).
 3. **Two series from one rule, with the same timestamps.**
    - **Unadjusted** (`{root}_1m_cont_v1`): each bar is the held contract's own bar, carrying a `contract`
      column; prices are real traded prices; volume is the held contract's. It jumps at a roll. This is the
@@ -96,9 +110,11 @@ expired and the switch is forced.
    - **Rolls** (`{root}_1m_rolls_v1`): one row per roll: from and to contract, the effective trade date,
      `decided_at` (end of the deciding session, when the decision became knowable), the reference time, the
      two reference prices, `ratio`, `gap_points` and `reason` (`volume` or `backstop`).
-4. **No difference (Panama) adjustment.** It moves NQ's oldest data by -204.6% of its level, so the
-   earliest adjusted NQ prices are negative on this data, which breaks any return, ratio or log feature;
-   the ratio series keeps every price positive (the largest factor on the oldest data is 0.8387).
+4. **No difference (Panama) adjustment.** It shifts the oldest data by the sum of the roll gaps in
+   points (+205.9% of NQ's first open, +63.0% of ES's), which changes the percent returns and volatility
+   of the early years (NQ's oldest contract keeps a third of its returns), so any return-, ratio- or
+   volatility-based feature would mean different things in different eras. The ratio series preserves
+   every percent return exactly (the largest factor on the oldest data is 1.1923, NQ).
 5. **A position held across a roll is closed in the old contract and opened in the new one, and pays for
    both.** The jump in the unadjusted series is not P&L; the rolls table says where it is. C3 charges a
    round trip at each roll (the worse outcome for the strategy; AGENTS.md §1.4).
@@ -133,7 +149,8 @@ expired and the switch is forced.
 ## Consequences
 
 - The builder, three dataset schemas (`contract` column and the rolls table), and the C3 roll-cost charge
-  are new work; none exists yet. This ADR changes no code and no result.
+  are new work. This ADR itself changed no code; the builder (`data/continuous.py`) and the schemas
+  implement it, and the C3 roll-cost charge is still to do.
 - ES, NQ, YM and RTY roll about four calendar days before the old contract's last bar, which is a
   property of the data and of this rule, not a parameter of the exchange.
 - The backstop is **not calibrated**: the data cannot say whether one session or two is better for NKD
@@ -153,3 +170,29 @@ expired and the switch is forced.
 2. `backstop_sessions` = 1 (never hold a contract into its final session).
 3. Ratio adjustment for research, unadjusted for fills, and no difference adjustment.
 4. A position across a roll pays a full round trip.
+
+Point 3 was confirmed on evidence that contained an error (see the Erratum); the decision still
+follows from the corrected evidence, and its reconfirmation was requested.
+
+## Erratum (2026-11-15)
+
+Found while writing the acceptance test of the builder; the builder's output was measured against the
+analysis that this ADR was written from.
+
+1. **The sign of the adjustment was reversed in the analysis.** A back adjustment *adds* the sum of the
+   gaps (difference) or *multiplies* by the product of the ratios (ratio) to the oldest data; the analysis
+   subtracted and divided. The table above is corrected. Consequently the claim that a difference
+   adjustment leaves NQ with **negative prices was false**: it moves NQ's oldest data *up* by +205.9%, and
+   the lowest adjusted low is 5,472.0. The builder itself adds the gap and multiplies by the ratio, in the
+   right direction (a unit test pins that the adjusted old close equals the new contract's close at the
+   reference minute).
+2. **The reason for rejecting the difference adjustment changed, the conclusion did not.** The remaining
+   reason is the one now in decision 4: a constant shift in points rescales the percent returns of the
+   early years (x0.327 for NQ's oldest contract, x0.614 for ES), where the ratio adjustment preserves
+   them exactly.
+3. **The expiry proxy invented a roll at the end of the data.** A contract still trading on the
+   dataset's last session has no expiry; the first build rolled out of it by the backstop (67 rolls in
+   ES instead of 66) and refused YM (the successor had no bars on the last session). Decision 2 now
+   says so, and a regression test covers it.
+4. **The figures in the acceptance test are the builder's own** (`tests/bench/test_continuous_real_data.py`,
+   opt-in): 66 rolls in ES, NQ, YM and NKD, 37 in RTY; the ratio multipliers above.
