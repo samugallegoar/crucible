@@ -41,6 +41,7 @@ import polars as pl
 
 from crucible.core.errors import ConfigurationError, DataQualityError
 from crucible.core.types import DatasetId, TimestampNs
+from crucible.data.calendars import cme_trade_date_expr
 from crucible.data.contracts import (
     BAR_SCHEMA,
     CONTINUOUS_BAR_SCHEMA,
@@ -60,7 +61,8 @@ if TYPE_CHECKING:
 _NS_PER_S = 1_000_000_000
 _MONTH_CODES = "FGHJKMNQUVXZ"
 _PRICES = ("open", "high", "low", "close")
-_TRADE_DATE_SHIFT_HOURS = 2
+DATASET_VERSION = "v2"
+"""Suffix of the continuous dataset ids; bumped when the builder's output changes (ADR-0087)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,10 +133,7 @@ class ContinuousSeries:
 
 def trade_date_expr(bar_seconds: int) -> pl.Expr:
     """Globex trade date of a bar from its close ``event_time`` (see the module docstring)."""
-    opened = pl.col("event_time") - bar_seconds * _NS_PER_S
-    return (
-        pl.from_epoch(opened, time_unit="ns") + pl.duration(hours=_TRADE_DATE_SHIFT_HOURS)
-    ).dt.date()
+    return cme_trade_date_expr(pl.col("event_time") - bar_seconds * _NS_PER_S)
 
 
 def _key(symbol: str, root: str) -> int:
@@ -336,9 +335,13 @@ def build_continuous(
 
 
 def dataset_names(root: str, params: RollParams) -> tuple[str, str, str]:
-    """``(unadjusted, ratio-adjusted, rolls)`` dataset ids for ``root``: ``es_1m_cont_v1`` ..."""
+    """``(unadjusted, ratio-adjusted, rolls)`` dataset ids for ``root``: ``es_1m_cont_v2`` ...
+
+    ``v2``: the trade date became the Chicago wall clock + 7 h (ADR-0087); ``v1`` datasets, built
+    with a fixed ``+2 h UTC`` shift, are superseded and may differ in a few roll dates."""
     stem = f"{root.lower()}_{params.interval_label}"
-    return f"{stem}_cont_v1", f"{stem}_cont_ratio_v1", f"{stem}_rolls_v1"
+    version = DATASET_VERSION
+    return f"{stem}_cont_{version}", f"{stem}_cont_ratio_{version}", f"{stem}_rolls_{version}"
 
 
 def write_continuous(
@@ -370,7 +373,7 @@ def write_continuous(
             series.unadjusted,
             schema=CONTINUOUS_BAR_SCHEMA,
             sort_keys=CONTINUOUS_BAR_SORT_KEYS,
-            source=f"continuous:v1;price_basis=raw;adjustment=none;{origin}",
+            source=f"continuous:{DATASET_VERSION};price_basis=raw;adjustment=none;{origin}",
         ),
         build_dataset(
             store_root,
@@ -378,7 +381,7 @@ def write_continuous(
             series.adjusted,
             schema=CONTINUOUS_BAR_SCHEMA,
             sort_keys=CONTINUOUS_BAR_SORT_KEYS,
-            source=f"continuous:v1;price_basis=adjusted;adjustment=ratio;{origin}",
+            source=f"continuous:{DATASET_VERSION};price_basis=adjusted;adjustment=ratio;{origin}",
         ),
         build_dataset(
             store_root,
@@ -386,7 +389,7 @@ def write_continuous(
             series.rolls,
             schema=ROLL_SCHEMA,
             sort_keys=ROLL_SORT_KEYS,
-            source=f"continuous:v1;rolls;{origin}",
+            source=f"continuous:{DATASET_VERSION};rolls;{origin}",
         ),
     ]
 

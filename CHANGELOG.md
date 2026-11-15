@@ -8,6 +8,17 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C2c: CME trade date from the Chicago wall clock (ADR-0087)
+- **Corrects ADR-0086's trade-date rule.** `date(open + 2h UTC)` sent the last 13-15 minutes of every
+  Friday of 2012-12..2015-03 (the session then closed at 16:15 CT) to a Saturday: 49 stub "sessions",
+  and a one-hour error in winter generally. The trade date is now the Chicago date of the open's wall
+  clock + 7 h (`crucible.data.calendars.cme_trade_date_expr`, hand-computed cases across both DST
+  transitions in `tests/unit/test_cme_trade_date.py`).
+- **The continuous datasets are `v2`** (`{root}_1m_cont_v2`, `_cont_ratio_v2`, `_rolls_v2`;
+  `continuous.DATASET_VERSION`, manifest `source` tag `continuous:v2`). The roll sequence of ES, NQ, YM
+  and RTY is unchanged; a few effective roll dates move (ES 5, NQ 4, YM 4, NKD 4) and NKD's reasons go
+  from 58 backstop + 8 volume to 62 + 4. `v1` is superseded; no golden fixture changed.
+
 ### Fathom C2b: continuous futures series (ADR-0086)
 - **`crucible data continuous`** builds, per root, `{root}_1m_cont_v1` (the held contract's own
   bars, `price_basis=raw`), `{root}_1m_cont_ratio_v1` (ratio back-adjusted, `price_basis=adjusted`)

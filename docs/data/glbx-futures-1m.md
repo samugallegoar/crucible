@@ -53,21 +53,25 @@ ordered by `ts_event` (checked: 0 backwards steps in 30,684,423 records). The sy
 
 Built from the raw datasets with `crucible data continuous --store data/processed --roots
 es,nq,ym,rty,nkd` (defaults: threshold 1.0, backstop 1 session). Per root three datasets:
-`<root>_1m_cont_v1` (unadjusted), `<root>_1m_cont_ratio_v1` (ratio-adjusted) and
-`<root>_1m_rolls_v1`.
+`<root>_1m_cont_v2` (unadjusted), `<root>_1m_cont_ratio_v2` (ratio-adjusted) and
+`<root>_1m_rolls_v2`.
 
 | Root | Bars | Sessions | Rolls | Roll reasons | First contract |
 |---|---|---|---|---|---|
-| ES | 5,745,344 | 4,288 | 66 | volume 66 | ESM2010 |
-| NQ | 5,571,616 | 4,288 | 66 | volume 66 | NQM2010 |
-| YM | 5,537,939 | 4,293 | 66 | volume 66 | YMM2010 |
+| ES | 5,745,346 | 4,233 | 66 | volume 66 | ESM2010 |
+| NQ | 5,571,600 | 4,233 | 66 | volume 66 | NQM2010 |
+| YM | 5,537,936 | 4,238 | 66 | volume 66 | YMM2010 |
 | RTY | 3,096,715 | 2,415 | 37 | volume 37 | RTYU2017 |
-| NKD | 3,648,750 | 4,278 | 66 | backstop 58, volume 8 | NKDM2010 |
+| NKD | 3,650,106 | 4,233 | 66 | backstop 62, volume 4 | NKDM2010 |
+
+The trade date is the Chicago wall clock + 7 h (ADR-0087): the first build used a fixed `+2h` UTC
+shift, which made 49 Saturday "sessions" of 13-15 bars out of the last minutes of the Fridays of
+2012-12..2015-03 (the close was 16:15 CT then), and its `_v1` datasets are superseded by `_v2`.
 
 NKD rolls on the contract's final session (its volume leaves the front in the last one or two
 sessions); the equity indices roll about four calendar days before the old contract's last bar.
-Oldest-data multiplier of the ratio adjustment: ES 1.0400, NQ 1.1923, YM 0.9695, RTY 1.1607, NKD
-0.9678. The opt-in acceptance test `tests/bench/test_continuous_real_data.py` reproduces these
+Oldest-data multiplier of the ratio adjustment: ES 1.0405, NQ 1.1915, YM 0.9687, RTY 1.1607, NKD
+0.9667 (`v1`: 1.0400, 1.1923, 0.9695, 1.1607, 0.9678). The opt-in acceptance test `tests/bench/test_continuous_real_data.py` reproduces these
 figures: `uv run pytest -m bench tests/bench/test_continuous_real_data.py`.
 
 ## Cleaning applied
