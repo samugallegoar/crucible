@@ -74,6 +74,30 @@ Oldest-data multiplier of the ratio adjustment: ES 1.0405, NQ 1.1915, YM 0.9687,
 0.9667 (`v1`: 1.0400, 1.1923, 0.9695, 1.1607, 0.9678). The opt-in acceptance test `tests/bench/test_continuous_real_data.py` reproduces these
 figures: `uv run pytest -m bench tests/bench/test_continuous_real_data.py`.
 
+## Integrity report (ADR-0088)
+
+`crucible data integrity --store data/processed --dataset es_1m_cont_v2 --calendar CMES` on the five
+continuous datasets: no row breaks the data contract (no duplicates, nulls, non-positive prices,
+OHLC violations, `available_at < event_time` or negative volume). Findings, from the observed
+minutes:
+
+| Root | Absent minutes in the session span | Share | Sessions with a gap | Largest hole (min) | Short sessions | Weekend sessions |
+|---|---|---|---|---|---|---|
+| ES | 72,300 | 1.2% | 3,089 / 4,233 | 645 | 10 | 1 |
+| NQ | 245,626 | 4.2% | 2,946 / 4,233 | 645 | 14 | 1 |
+| YM | 284,659 | 4.9% | 4,100 / 4,238 | 645 | 15 | 1 |
+| RTY | 213,072 | 6.4% | 2,389 / 2,415 | 645 | 33 | 0 |
+| NKD | 2,114,840 | 36.7% | 4,232 / 4,233 | 660 | 316 | 1 |
+
+An absent minute is a minute without a trade as far as the file can say (Databento's OHLCV-1m has no
+empty bars): it is liquidity, mostly in the overnight hours, and the thin NKD shows it most. A short
+session is under half the symbol's median bars: half days (2012-04-06, 2025-11-28), the partial last
+session 2026-11-11 and, for RTY, its first sessions in 2017-07. The one weekend-dated session in ES,
+NQ, YM and NKD is 2018-08-05: a single bar opening 16:59 Chicago on the Sunday, a minute before the
+reopen. Against `CMES` session dates the data has 8 sessions the calendar lacks (RTY 5) and the
+calendar has 15 the data lacks (YM 10, RTY 0); the calendar side is holidays such as 2013-01-21
+and 2013-07-04.
+
 ## Cleaning applied
 
 | Step | Rows |

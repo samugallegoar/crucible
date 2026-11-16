@@ -295,6 +295,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip", action="append", default=[], help="quality check to skip (repeatable)"
     )
     check.add_argument("--skip-reason", default="", help="why the checks are skipped (required)")
+    integrity = data_sub.add_parser(
+        "integrity",
+        help="Minute-level integrity report of a bar dataset: gaps, short sessions, contract "
+        "violations (ADR-0088)",
+    )
+    integrity.add_argument("--store", required=True, help="Data store root")
+    integrity.add_argument("--dataset", required=True)
+    integrity.add_argument(
+        "--bar-seconds", type=_positive_int, default=60, help="bar length (default 60)"
+    )
+    integrity.add_argument(
+        "--session",
+        choices=["cme", "utc"],
+        default="cme",
+        help="how a bar gets its session: cme = Globex trade date (ADR-0087), utc = UTC day",
+    )
+    integrity.add_argument(
+        "--calendar",
+        default=None,
+        help="exchange_calendars name (e.g. CMES) to compare session dates with",
+    )
+    integrity.add_argument(
+        "--top", type=int, default=10, help="examples listed per finding (default 10)"
+    )
+    _add_json(integrity)
     listing = data_sub.add_parser("list", help="List datasets and manifest hashes")
     listing.add_argument("--store", required=True)
     _add_json(listing)
@@ -1101,6 +1126,8 @@ def _cmd_data(args: argparse.Namespace) -> int:
             return 0
         sys.stdout.write(f"OK: {args.dataset} passed {len(ran)} checks: {', '.join(ran)}\n")
         return 0
+    if args.data_command == "integrity":
+        return _cmd_data_integrity(args)
     if args.data_command == "fetch":
         return _cmd_data_fetch(args)
     if args.data_command == "continuous":
@@ -1127,6 +1154,42 @@ def _cmd_data(args: argparse.Namespace) -> int:
             f"source={manifest.source}\n"
         )
     return 0
+
+
+def _cmd_data_integrity(args: argparse.Namespace) -> int:
+    """Integrity report of one dataset (ADR-0088). Exit 1 when a row breaks the data contract
+    (``ok`` false); gaps and short sessions are findings and leave the exit code at 0."""
+    from crucible.core.types import DatasetId, TimestampNs
+    from crucible.data.integrity import integrity_report
+    from crucible.data.store import ParquetDataStore
+
+    store = ParquetDataStore(Path(args.store))
+    report = integrity_report(
+        store.read(DatasetId(args.dataset), TimestampNs(2**63 - 1)),
+        bar_seconds=args.bar_seconds,
+        session=args.session,
+        calendar=args.calendar,
+        top=args.top,
+    )
+    exit_code = 0 if report["ok"] else 1
+    if args.json:
+        machine.emit({"dataset": args.dataset, **report})
+        return exit_code
+    symbols = report["symbols"]
+    assert isinstance(symbols, list)
+    sys.stdout.write(
+        f"{args.dataset}: {'OK' if report['ok'] else 'CONTRACT VIOLATIONS'} "
+        f"({len(symbols)} symbols, session rule {report['session_rule']}); "
+        f"errors {report['errors']}\n"
+    )
+    for sym in symbols:
+        sys.stdout.write(
+            f"  {sym['symbol']}: {sym['rows']} bars, {sym['sessions']} sessions, "
+            f"{sym['missing_minutes']} missing minutes in {sym['sessions_with_gaps']} sessions "
+            f"(largest hole {sym['largest_gap_minutes']} min), {sym['short_sessions']} short, "
+            f"{sym['weekend_sessions']} weekend\n"
+        )
+    return exit_code
 
 
 def _cmd_data_continuous(args: argparse.Namespace) -> int:

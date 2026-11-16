@@ -8,6 +8,18 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C2d: minute-level integrity report (ADR-0088)
+- **`crucible data integrity --store S --dataset D`** (and the MCP tool `crucible_data_integrity`):
+  per symbol and per session (Globex trade date, or the UTC day) it reports the bars, the minutes
+  absent inside the session's own span, the largest hole, sessions under half the median bars,
+  weekend-dated sessions and zero-volume bars, plus an optional comparison of session dates with an
+  `exchange_calendars` calendar (`--calendar CMES`). Rows that break the data contract (duplicates,
+  nulls, non-positive prices, OHLC outside its bounds, `available_at < event_time`, negative volume)
+  set `ok: false` and exit code 1; gaps are findings and never fail it. Read-only: nothing is
+  repaired, filled or dropped.
+- `ExchangeCalendarAdapter.session_dates(start, end)` lists session labels. Real-data results for the
+  five continuous datasets: `docs/data/glbx-futures-1m.md`.
+
 ### Fathom C2c: CME trade date from the Chicago wall clock (ADR-0087)
 - **Corrects ADR-0086's trade-date rule.** `date(open + 2h UTC)` sent the last 13-15 minutes of every
   Friday of 2012-12..2015-03 (the session then closed at 16:15 CT) to a Saturday: 49 stub "sessions",

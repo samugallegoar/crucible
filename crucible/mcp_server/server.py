@@ -571,6 +571,30 @@ def build_server() -> MCPServer:
         return await run_cli(build_argv(["data", "check"], [], options))
 
     @server.tool()
+    async def crucible_data_integrity(
+        dataset: str,
+        store: str | None = None,
+        bar_seconds: int = 60,
+        session: str = "cme",
+        calendar: str | None = None,
+        top: int = 10,
+    ) -> dict[str, object]:
+        """Minute-level integrity report of a bar dataset: per symbol the bars, sessions, missing
+        minutes, largest hole, short sessions and weekend sessions, plus rows that break the data
+        contract (`ok` is false only for those). `session` is `cme` (Globex trade date) or `utc`;
+        `calendar` (e.g. CMES) adds a comparison of session dates."""
+        options: dict[str, Option] = {
+            "store": absolute(store) or _home_paths()[1],
+            "dataset": dataset,
+            "bar_seconds": _text(bar_seconds),
+            "session": session,
+            "calendar": calendar,
+            "top": _text(top),
+            "json": True,
+        }
+        return await run_cli(build_argv(["data", "integrity"], [], options))
+
+    @server.tool()
     async def crucible_data_build(
         spec: str,
         store: str | None = None,

@@ -54,6 +54,14 @@ class ExchangeCalendarAdapter:
     def is_open(self, ts: TimestampNs) -> bool:
         return bool(self._cal.is_open_on_minute(_from_ns(ts)))
 
+    def session_dates(self, start: dt.date, end: dt.date) -> list[dt.date]:
+        """Session labels (``exchange_calendars`` dates) from ``start`` to ``end`` inclusive.
+
+        For ``CMES`` the label is the Globex trade date (``cme_trade_date_expr``): the session
+        labelled D opens the evening of D-1. A calendar knows holidays but not early closes or the
+        maintenance break, so use it for session dates only (ADR-0087)."""
+        return [session.date() for session in self._cal.sessions if start <= session.date() <= end]
+
     def session_closes(self, start: TimestampNs, end: TimestampNs) -> list[TimestampNs]:
         closes = self._cal.closes
         out: list[TimestampNs] = []
