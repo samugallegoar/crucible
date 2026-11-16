@@ -457,7 +457,7 @@ def test_the_datasets_are_written_with_their_price_basis_and_parameters(tmp_path
         store, "es", raw_dataset="es_1m_raw", params=params
     )
     assert [str(m.dataset) for m in manifests] == list(dataset_names("ES", params))
-    assert dataset_names("ES", params) == ("es_1m_cont_v1", "es_1m_cont_ratio_v1", "es_1m_rolls_v1")
+    assert dataset_names("ES", params) == ("es_1m_cont_v2", "es_1m_cont_ratio_v2", "es_1m_rolls_v2")
     plain, adjusted, rolls = manifests
     assert price_basis_of(plain) == "raw"
     assert price_basis_of(adjusted) == "adjusted"
@@ -466,7 +466,7 @@ def test_the_datasets_are_written_with_their_price_basis_and_parameters(tmp_path
         assert "threshold=1.0;backstop_sessions=1;bar_seconds=60;chain_months=3" in manifest.source
     assert plain.row_count == series.unadjusted.height
     assert rolls.row_count == series.rolls.height
-    read = ParquetDataStore(store).read(DatasetId("es_1m_rolls_v1"), TimestampNs(END_AT_OPEN))
+    read = ParquetDataStore(store).read(DatasetId("es_1m_rolls_v2"), TimestampNs(END_AT_OPEN))
     assert read.collect().height == series.rolls.height
 
 

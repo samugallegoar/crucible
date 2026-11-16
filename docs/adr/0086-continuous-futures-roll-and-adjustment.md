@@ -17,6 +17,9 @@ adjusted. This ADR measures both on the actual data (read-only analysis of the b
 Central. Adding two hours to a bar's UTC open puts the evening open on the next calendar date and the
 16:00 CT close on the same date, in both standard and daylight time, so `trade_date = date(open + 2h)`.
 (The CME calendar milestone replaces this with `CMES` sessions and must agree with it.)
+**Superseded by ADR-0087 (2026-11-15):** the rule is wrong for the 16:15 CT close of 2012-12..2015-03
+(49 Saturday stubs) and in winter generally; the trade date is the Chicago wall clock + 7 h. The roll
+rule below is unchanged; the datasets are `v2`, and the tables in this ADR were measured with `+2h`.
 
 **What the data says.** A causal state machine was run on every root: hold one contract; on trade date
 `d` look only at the *next* contract in the quarterly chain; switch when its volume on `d-1` exceeds the

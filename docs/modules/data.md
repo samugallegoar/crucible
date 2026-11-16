@@ -145,15 +145,15 @@ provider's checksum before reading; prices are raw. `DbnSource` is the seam test
 the re-run command: `docs/data/glbx-futures-1m.md`.
 
 **Continuous futures (ADR-0086).** `continuous.py` turns the raw per-contract bars of a root into
-three datasets: `{root}_1m_cont_v1` (the held contract's own bars, a `contract` column, real prices,
-`price_basis=raw`; the only series fills and money are computed on), `{root}_1m_cont_ratio_v1`
+three datasets: `{root}_1m_cont_v2` (the held contract's own bars, a `contract` column, real prices,
+`price_basis=raw`; the only series fills and money are computed on), `{root}_1m_cont_ratio_v2`
 (every earlier bar multiplied by the compounded `next / front` ratio, `price_basis=adjusted`; safe
-only for scale-invariant use) and `{root}_1m_rolls_v1` (one row per roll: contracts, effective
+only for scale-invariant use) and `{root}_1m_rolls_v2` (one row per roll: contracts, effective
 trade date, `decided_at`, reference minute and prices, `ratio`, `gap_points`, `reason`). The roll is
 causal: hold one contract, look only at its successor in the quarterly chain, switch from the
 first bar of trade date `d` when the successor's volume on `d-1` exceeds `threshold` x the held
 contract's, or when the held contract is in its final session (`backstop_sessions`); never switch
-back. Trade date = `date(open + 2h)` (a Globex session opens 17:00 Central the evening before).
+back. Trade date = the Chicago date of `open wall clock + 7h` (ADR-0087; a Globex session opens 17:00 Central the evening before).
 A contract still trading on the dataset's last session has no observed expiry, so no backstop
 applies. Refusals: a symbol that is not a root contract, a chain with a hole, a roll whose
 contracts never shared a traded minute. Parameters are in each manifest's `source`; a rebuild

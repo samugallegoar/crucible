@@ -11,6 +11,7 @@ import datetime as dt
 import functools
 
 import exchange_calendars as xcals
+import polars as pl
 
 from crucible.core.errors import ConfigurationError
 from crucible.core.types import NS_PER_S, TimestampNs
@@ -170,6 +171,32 @@ def get_trading_calendar(
     if name == "24/7":
         return AlwaysOpenCalendar()
     return ExchangeCalendarAdapter(name, start=start, end=end)
+
+
+CME_TIMEZONE = "America/Chicago"
+_CME_TRADE_DATE_SHIFT_HOURS = 7  # the trade date rolls at 17:00 Chicago wall clock (17 + 7 = 24)
+
+
+def cme_trade_date_expr(opened_ns: pl.Expr) -> pl.Expr:
+    """CME Globex trade date (a ``pl.Date``) of a bar from its OPEN time (UTC int64 ns).
+
+    A Globex session runs from 17:00 Chicago wall clock of the previous calendar day to the
+    17:00 maintenance break of its own date, so the trade date is the Chicago date of
+    ``wall clock + 7 h`` (17:00 + 7 h = midnight). The shift is done on the NAIVE wall clock, so
+    daylight-saving transitions cannot move it. A fixed UTC shift is wrong: ``+2 h UTC`` is exact
+    in summer only, and sent the last 13-15 minutes of every Friday of 2012-12..2015-03 (the
+    session then ended at 16:15 CT = 22:15 UTC in winter) to a Saturday (ADR-0087).
+
+    ``opened_ns`` is the open, not the close: a bar closing at 17:00 belongs to the session that
+    ended there. Timing: knowable from the bar's own timestamp, no data lookup.
+    """
+    wall = (
+        pl.from_epoch(opened_ns, time_unit="ns")
+        .dt.replace_time_zone("UTC")
+        .dt.convert_time_zone(CME_TIMEZONE)
+        .dt.replace_time_zone(None)
+    )
+    return (wall + pl.duration(hours=_CME_TRADE_DATE_SHIFT_HOURS)).dt.date()
 
 
 SESSIONS_PER_YEAR = {"24/7": 365.0}

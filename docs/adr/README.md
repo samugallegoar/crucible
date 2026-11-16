@@ -113,5 +113,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0084](0084-artifact-contract.md) | The artifact contract — `artifact_id`, versioned output documents, structured errors | ? | `artifact_id` is added beside `experiment_id`; the latter does not change |
 | [0085](0085-databento-futures-ingestion.md) | Databento futures ingestion — raw outright contracts, bar close, optional extra | ? | `databento` is an optional extra (`uv sync --extra databento`), imported only in `data/importers/databento.py` at the moment a DBN file is opened; without it the importer refuses with that command |
 | [0086](0086-continuous-futures-roll-and-adjustment.md) | Continuous futures — a causal volume roll, ratio adjustment for research, unadjusted for fills | ? | The roll rule is the causal volume rule above, with an expiry backstop |
+| [0087](0087-cme-trade-date-chicago-wall-clock.md) | CME trade date from the Chicago wall clock, not a fixed UTC shift | ? | The trade date of a bar is the Chicago date of `open wall clock + 7 h`: convert the bar's open (UTC) to `America/Chicago`, drop the zone, add 7 hours, take the date |
 
 <!-- END GENERATED: adr-index -->
