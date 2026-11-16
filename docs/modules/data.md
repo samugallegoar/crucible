@@ -21,6 +21,12 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
 - `continuous.py` — continuous futures series from raw per-contract bars (ADR-0086):
   `build_continuous`, `build_continuous_datasets`, `write_continuous`, `RollParams`,
   `trade_date_expr`, `dataset_names`; behind `crucible data continuous`.
+- `integrity.py` — the minute-level integrity report (`integrity_report`, ADR-0088): per symbol and
+  session, bars, minutes absent inside the session's span, largest hole, short and weekend sessions,
+  contract violations (`ok`), optional session-date comparison with a calendar; behind
+  `crucible data integrity` and the MCP tool `crucible_data_integrity`. Read-only.
+- `calendars.py` also holds `cme_trade_date_expr` (Globex trade date = Chicago wall clock + 7 h,
+  ADR-0087) and `ExchangeCalendarAdapter.session_dates`.
 - `providers/` — price providers behind one interface (`PriceProvider`, ADR-0063): the `tiingo` and `yfinance`
   adapters, and `fetch.py` behind `crucible data fetch`, the shared normalizer, settings (API keys),
   HTTP retry and the raw-response cache. See "Data providers" below.
@@ -199,8 +205,12 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
 ## Known gaps
 - Continuous futures take a contract's scheduled last session from its last observed bar (ADR-0086,
   decision 2): exact for liquid contracts, an approximation for thin ones; a contract specification
-  table and the `CMES` calendar replace it. The `trade_date` two-hour shift must agree with `CMES`
-  sessions when they land. The roll cost at each roll is not charged yet (milestone C3).
+  table replaces it. `CMES` is used for session dates only: it models a 24 h block with no
+  maintenance break or early closes (ADR-0087, ADR-0088). The roll cost at each roll is not charged
+  yet (milestone C3).
+- The integrity report cannot tell a minute with no trade from a minute the source lost (Databento's
+  OHLCV-1m omits empty minutes); it reports the absent minutes and leaves the judgement to the caller
+  (ADR-0088). There is no dataset registry (range, provider) yet.
 Provider adapters: `tiingo` and `yfinance` exist (ADR-0063). `data fetch` takes the provider from a flag or the environment, not from a spec file; intraday Tiingo is not offered.
 Missingness reason column (ADR-0005) is not materialized — bars are
 dense by construction. Abnormal-jump and tz-mismatch checks pending.

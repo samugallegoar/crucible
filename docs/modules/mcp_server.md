@@ -34,7 +34,8 @@ the config, a spec, or an output document), `crucible_artifact` (a run by artifa
 `detail`, or `verify`),
 `crucible_run`, `crucible_run_vectorized`, `crucible_validate`, `crucible_optimize`,
 `crucible_compare`, `crucible_report`, `crucible_promote`, `crucible_debug`, `crucible_data_list`,
-`crucible_data_check`, `crucible_data_build`, `crucible_data_fetch`.
+`crucible_data_check`, `crucible_data_integrity` (minute-level integrity report, ADR-0088),
+`crucible_data_build`, `crucible_data_fetch`.
 
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
 (`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).
