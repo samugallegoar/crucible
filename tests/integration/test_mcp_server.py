@@ -37,6 +37,7 @@ EXPECTED_TOOLS = {
     "crucible_data_list",
     "crucible_data_check",
     "crucible_data_integrity",
+    "crucible_data_catalog",
     "crucible_data_build",
     "crucible_data_fetch",
     "crucible_backtest",
@@ -237,6 +238,12 @@ def _captured_calls() -> list[list[str]]:
                 "calendar": "CMES",
                 "top": 3,
             },
+            "crucible_data_catalog": {
+                "store": "s",
+                "datasets": ["a", "b"],
+                "verify": True,
+                "top": 3,
+            },
             "crucible_data_build": {
                 "spec": "spec.yaml",
                 "store": "s",
@@ -293,7 +300,7 @@ def test_every_tool_builds_an_argv_the_real_parser_accepts() -> None:
     from crucible.cli.main import build_parser
 
     calls = _captured_calls()
-    assert len(calls) == 20
+    assert len(calls) == 21
     for argv in calls:
         build_parser().parse_args(argv)  # a mistyped flag would exit(2) here
 

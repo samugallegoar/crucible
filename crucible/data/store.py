@@ -120,6 +120,11 @@ class ParquetDataStore:
             pl.col("available_at") <= int(as_of)
         )
 
+    def data_path(self, dataset: DatasetId) -> Path:
+        """Where the dataset's Parquet file is. For integrity and catalog tooling (hashing,
+        metadata) only: rows are read with :meth:`read`, which applies ``as_of``."""
+        return self._dir(dataset) / _DATA_NAME
+
     def manifest(self, dataset: DatasetId) -> DatasetManifest:
         raw = json.loads((self._dir(dataset) / _MANIFEST_NAME).read_text(encoding="utf-8"))
         return DatasetManifest(

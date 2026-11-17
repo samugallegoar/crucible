@@ -320,6 +320,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--top", type=int, default=10, help="examples listed per finding (default 10)"
     )
     _add_json(integrity)
+    catalog = data_sub.add_parser(
+        "catalog",
+        help="Dataset registry: identity, origin, lineage, contract and range of every dataset "
+        "(ADR-0089)",
+    )
+    catalog.add_argument("--store", required=True, help="Data store root")
+    catalog.add_argument(
+        "--dataset", action="append", default=[], help="restrict to this dataset (repeatable)"
+    )
+    catalog.add_argument(
+        "--verify", action="store_true", help="recompute each data file's SHA-256 (slow)"
+    )
+    catalog.add_argument(
+        "--top", type=int, default=10, help="symbols listed per dataset (default 10)"
+    )
+    _add_json(catalog)
     listing = data_sub.add_parser("list", help="List datasets and manifest hashes")
     listing.add_argument("--store", required=True)
     _add_json(listing)
@@ -1128,6 +1144,8 @@ def _cmd_data(args: argparse.Namespace) -> int:
         return 0
     if args.data_command == "integrity":
         return _cmd_data_integrity(args)
+    if args.data_command == "catalog":
+        return _cmd_data_catalog(args)
     if args.data_command == "fetch":
         return _cmd_data_fetch(args)
     if args.data_command == "continuous":
@@ -1189,6 +1207,38 @@ def _cmd_data_integrity(args: argparse.Namespace) -> int:
             f"(largest hole {sym['largest_gap_minutes']} min), {sym['short_sessions']} short, "
             f"{sym['weekend_sessions']} weekend\n"
         )
+    return exit_code
+
+
+def _cmd_data_catalog(args: argparse.Namespace) -> int:
+    """The dataset registry of a store (ADR-0089). Exit 1 when an entry has an error (a manifest
+    that disagrees with its data file); stale lineage and superseded builders are findings."""
+    from crucible.core.types import DatasetId
+    from crucible.data.catalog import dataset_catalog
+    from crucible.data.store import ParquetDataStore
+
+    catalog = dataset_catalog(
+        ParquetDataStore(Path(args.store)),
+        datasets=[DatasetId(d) for d in args.dataset] or None,
+        verify=args.verify,
+        top=args.top,
+    )
+    exit_code = 0 if catalog["ok"] else 1
+    if args.json:
+        machine.emit(catalog)
+        return exit_code
+    entries = catalog["datasets"]
+    assert isinstance(entries, list)
+    for entry in entries:
+        span = entry["range"] or {}
+        sys.stdout.write(
+            f"{entry['dataset']}  {'OK' if entry['ok'] else 'ERROR'}  {entry['contract']}  "
+            f"rows={entry['rows']}  hash={str(entry['content_hash'])[:12]}  "
+            f"{span.get('first')}..{span.get('last')}  symbols={span.get('symbols')}  "
+            f"origin={entry['root_origin']}\n"
+        )
+        for line in [*entry["errors"], *entry["findings"]]:
+            sys.stdout.write(f"    {line}\n")
     return exit_code
 
 
