@@ -25,6 +25,10 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   session, bars, minutes absent inside the session's span, largest hole, short and weekend sessions,
   contract violations (`ok`), optional session-date comparison with a calendar; behind
   `crucible data integrity` and the MCP tool `crucible_data_integrity`. Read-only.
+- `futures_specs.py` — the versioned futures contract specification table (ADR-0090): per root the
+  tick size, point value and tick value, currency, exchange, source and effective date range
+  (`FuturesContractSpec`, `SPEC_TABLE`, `futures_spec`, `spec_table_document`, `spec_table_hash`).
+  ES, NQ, YM, RTY, NKD; values supplied by the owner, tick grids verified on every raw bar.
 - `catalog.py` — the dataset registry (`dataset_catalog`, `parse_source`, ADR-0089), derived from
   each manifest and data file at query time: identity, origin and root origin (the provider),
   price basis, lineage through `from=<dataset>@<hash>`, data contract, range (first/last

@@ -16,6 +16,42 @@ The realism ladder (Levels 0-4) and its pluggable models. Detail sections follow
 - `backend.py` — the `ExecutionBackend` Protocol and `ExecutionContext`.
 - `interfaces.py` — `ProposedFill` and the Protocols `SpreadModel`, `LatencyModel`, `SlippageModel`,
   `CommissionModel` and `FillModel` (a stub, see Known gaps).
+- `futures_sim.py` — the futures execution simulator in contracts and dollars (ADR-0090), a path of
+  its own beside the ladder: `simulate_futures`, `CostSchedule`, `SessionCostOverride`,
+  `ExecutionPolicy`, `FuturesSimResult`, `execution_policy`, `SIMULATOR_VERSION`. See "Futures
+  execution simulator" below.
+
+## Futures execution simulator (ADR-0090)
+
+`simulate_futures(bars=, targets=, rolls=, raw=, spec=, costs=, initial_capital=, policy=)` takes
+one unadjusted continuous series (`CONTINUOUS_BAR_SCHEMA`), its rolls table, the raw per-contract
+bars and a **signed whole-contract target per bar**, decided at that bar's close. It returns per
+bar the held contract, position, realized and unrealized P&L, fees, spread, slippage, balance and
+equity in USD (`Decimal(38, 6)`), plus a fills table and a rolls table. No compounding.
+
+- **Fill timing.** `next_eligible_bar_open` (default): the next open at which the held contract
+  trades; a gap belongs to the position held through it. `signal_bar_close` is the declared,
+  optimistic alternative.
+- **Costs per contract per side:** `commission + exchange_fee + clearing_fee + regulatory_fee +
+  (spread_ticks / 2 + slippage_ticks) x tick_value`. Commission is required; spread and slippage
+  default to 1 tick each and are flagged uncalibrated; session windows (Chicago wall clock) can
+  override them; `prices_include_spread` forces `spread_ticks = 0`. A target (limit) fill pays the
+  fees only.
+- **Brackets** in ticks from the fill price, evaluated intrabar from the fill bar on: a bar touching
+  both exits at the stop; a gapped stop fills at the open; a target needs a trade through
+  (`target_fill_through_ticks`, default 1) and fills at the limit. Re-entry after a bracket exit:
+  `require_signal_reset` (default) or `allow_immediate`.
+- **Rolls** are two trades. `causal` (default, strict): both legs at the opens of the first minute at
+  or after the roll's decision in which both contracts traded in the raw data; until then the
+  position stays in the old contract, marked and bracketed on its raw bars; no such minute refuses.
+  `reference_approximation` values the roll at `reference_time` prices and makes
+  `strict_execution` False. The rolls table reports every roll's execution and the approximation
+  error in ticks and USD per contract.
+- **Exactness.** Prices in integer ticks (a price off the tick grid is refused: an adjusted series
+  can drive signals, never fills), money in integer micro-dollars.
+- `execution_policy()` records every assumption, with the spec table's version and SHA-256.
+- Tests: `tests/unit/test_futures_sim.py` (hand-computed ledgers); on the real data,
+  `tests/bench/test_futures_sim_real_data.py` (opt-in).
 
 ## Responsibility
 The realism ladder, Levels 0-4. Enforces in code: fills within
@@ -143,6 +179,11 @@ and changes state during a run is refused at `checkpoint()` by name. Restore is 
 the engine and simulator share one RNG object, so its state is restored into that object.
 
 ## Known gaps
+- The futures simulator (ADR-0090) is not wired to the strategy spec, the CLI or the run manifest
+  yet (the second step of milestone C3), handles one root per call, and is a sequential Python loop
+  (about 20 s for 5.7 million bars). Its spread and slippage defaults are uncalibrated; a bracket
+  fill is priced at the bar's open time for session costs, since OHLC does not say when inside the
+  bar it happened.
 - A spread or slippage that would put a fill outside the bar's range is clamped into it (I5),
   so the cost is erased when the open is the bar's extreme: slightly optimistic. Pinned by
   `test_known_gap_cost_beyond_the_bar_range_is_clamped_away` (ADR-0070).
