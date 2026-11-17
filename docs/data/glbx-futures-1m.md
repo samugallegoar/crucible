@@ -107,6 +107,17 @@ hash still matches the one recorded at build time; the `*_v1` datasets are repor
 the `v2` builder (ADR-0087). The raw batch job and file path are on this page only: the importer does
 not write them into the manifest.
 
+## Execution (ADR-0090)
+
+Every open, high, low and close of the five `*_1m_raw` datasets lies on its contract's tick grid
+(ES/NQ 0.25, YM 1.00, RTY 0.10, NKD 5.00). The futures simulator executes each roll causally: at
+the first minute at or after the decision (the end of the deciding session) in which both contracts
+traded. That minute exists for all 301 rolls; it is the first bar of the effective session except
+for 1 NQ, 1 YM and 1 RTY roll (1-2 minutes later) and 35 NKD rolls (up to 87 minutes later). Valuing
+the rolls at `reference_time` prices instead would be off per contract by a mean absolute $28.79
+(ES), $61.52 (NQ), $51.06 (YM), $47.84 (RTY) and $67.80 (NKD), at most $450 (NKD). Reproduce with
+`CRUCIBLE_DATA_STORE=data/processed uv run pytest -m bench tests/bench/test_futures_sim_real_data.py`.
+
 ## Cleaning applied
 
 | Step | Rows |

@@ -240,6 +240,13 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   current mark. Roll: closing an expiring contract and opening the next
   — needs no dedicated mechanism, since each contract month is its own
   `Symbol` and a roll is just two ordinary orders.
+- **tick size / tick value / point value** — the smallest price step of a futures contract, its
+  dollar value per contract, and the dollars per 1.0 of price (ES: 0.25, $12.50, $50). The table
+  is `crucible/data/futures_specs.py` (ADR-0090).
+- **causal roll** — a roll executed as two trades (close the old contract, open the new one) at the
+  first minute at or after the roll decision in which both contracts traded, on raw prices; the
+  default of the futures simulator. Its labelled alternative is the reference-price approximation
+  (ADR-0090).
 - **session open** — the start of the trading session containing a timestamp
   (`session_open_at`); the dividend holder-of-record cutoff (ADR-0046).
 - **settlement lag / available cash** — T+N delay before sale

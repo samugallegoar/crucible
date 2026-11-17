@@ -134,7 +134,8 @@ crucible/
   orders/      state machine + validate_transition (I7), InMemoryOrderManager
   execution/   models.py (spreads, latency, slippage/impact, commissions, MarketStats),
                ladder.py (LadderExecutionSimulator Levels 0-4, ExecutionSetup), registry.py
-               (string keys -> factories, level gating), backend.py (ExecutionBackend seam)
+               (string keys -> factories, level gating), backend.py (ExecutionBackend seam),
+               futures_sim.py (contract/dollar futures simulator with causal rolls, ADR-0090)
   accounting/  TransactionRecord, InMemoryLedger (append-only; fold = source of truth),
                PortfolioSnapshot, FX conversion, mark invariants I1/I3/I4/I12
   portfolio/   six PortfolioConstructors + registry; TargetSetter (ctx.targets)

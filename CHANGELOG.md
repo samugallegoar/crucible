@@ -8,6 +8,25 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C3a: futures execution simulator in contracts and dollars (ADR-0090)
+- **`crucible.execution.futures_sim.simulate_futures`**: signed whole-contract targets decided at
+  each bar's close, filled at the next eligible bar's open by default (`signal_bar_close` is the
+  declared, optimistic alternative); costs per contract per side (`commission` required, exchange,
+  clearing and regulatory fees, `spread_ticks / 2 + slippage_ticks` times the tick value, flagged
+  uncalibrated, with Chicago-time session overrides); stop/target brackets in ticks from the fill
+  price, stop first when a bar touches both, a target only on a trade through and at its limit;
+  re-entry `require_signal_reset` by default. Per bar: realized and unrealized P&L, costs by kind,
+  balance and equity in USD as exact `Decimal(38, 6)` (integer ticks and micro-dollars inside).
+- **Rolls are two causal trades**: both legs at the raw opens of the first minute at or after the
+  roll decision in which both contracts traded; strict mode refuses a roll it cannot execute so;
+  `reference_approximation` is labelled and makes `strict_execution` False. Each roll reports its
+  approximation error in ticks and USD per contract (real data: mean $28.79 ES to $67.80 NKD).
+- **`crucible.data.futures_specs`**: the versioned contract specification table for ES, NQ, YM,
+  RTY, NKD (tick size, point value, tick value, source, effective dates, version and SHA-256);
+  execution prices off the tick grid are refused.
+- `execution_policy()` records every execution assumption. The prop-firm rule engine stays a
+  separate component (milestone C7); the wiring to the strategy spec, CLI and run manifest is next.
+
 ### Fathom C2e: dataset registry derived from manifests (ADR-0089)
 - **`crucible data catalog --store S`** (and the MCP tool `crucible_data_catalog`): per dataset the
   identity (schema version, content hash, rows, build time), origin and root origin (the provider,
