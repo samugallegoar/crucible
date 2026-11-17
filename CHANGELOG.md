@@ -8,6 +8,15 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C2e: dataset registry derived from manifests (ADR-0089)
+- **`crucible data catalog --store S`** (and the MCP tool `crucible_data_catalog`): per dataset the
+  identity (schema version, content hash, rows, build time), origin and root origin (the provider,
+  reached through the `from=<dataset>@<hash>` lineage), price basis, data contract and range (first
+  and last `event_time`, symbols). Derived at query time, never stored. A manifest that disagrees
+  with its data file (row count, name, missing file; SHA-256 with `--verify`) sets `ok: false` and
+  exit code 1; a rebuilt or missing parent and a superseded continuous builder are findings.
+- `ParquetDataStore.data_path(dataset)`: the data file's path, for hashing and metadata.
+
 ### Fathom C2d: minute-level integrity report (ADR-0088)
 - **`crucible data integrity --store S --dataset D`** (and the MCP tool `crucible_data_integrity`):
   per symbol and per session (Globex trade date, or the UTC day) it reports the bars, the minutes

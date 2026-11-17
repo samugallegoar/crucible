@@ -98,6 +98,15 @@ reopen. Against `CMES` session dates the data has 8 sessions the calendar lacks 
 calendar has 15 the data lacks (YM 10, RTY 0); the calendar side is holidays such as 2013-01-21
 and 2013-07-04.
 
+## Catalog (ADR-0089)
+
+`crucible data catalog --store data/processed --dataset es_1m_cont_v2 --json` gives each dataset's
+contract, range, lineage and root origin. Every `*_1m_cont_v2`, `*_1m_cont_ratio_v2` and
+`*_1m_rolls_v2` dataset resolves to `import:databento_dbn` through its `*_1m_raw` parent, whose
+hash still matches the one recorded at build time; the `*_v1` datasets are reported as superseded by
+the `v2` builder (ADR-0087). The raw batch job and file path are on this page only: the importer does
+not write them into the manifest.
+
 ## Cleaning applied
 
 | Step | Rows |

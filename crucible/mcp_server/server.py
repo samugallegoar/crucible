@@ -595,6 +595,27 @@ def build_server() -> MCPServer:
         return await run_cli(build_argv(["data", "integrity"], [], options))
 
     @server.tool()
+    async def crucible_data_catalog(
+        store: str | None = None,
+        datasets: list[str] | None = None,
+        verify: bool = False,
+        top: int = 10,
+    ) -> dict[str, object]:
+        """Dataset registry of a data store: per dataset its identity (schema version, content
+        hash, rows, build time), origin and root origin, price basis, lineage (parent datasets),
+        data contract and range (first/last event_time, symbols). `ok` is false only when a
+        manifest disagrees with its data file; a rebuilt parent or a superseded builder is a
+        finding. `verify` recomputes every SHA-256 (slow); `datasets` restricts the listing."""
+        options: dict[str, Option] = {
+            "store": absolute(store) or _home_paths()[1],
+            "dataset": datasets,
+            "verify": verify,
+            "top": _text(top),
+            "json": True,
+        }
+        return await run_cli(build_argv(["data", "catalog"], [], options))
+
+    @server.tool()
     async def crucible_data_build(
         spec: str,
         store: str | None = None,

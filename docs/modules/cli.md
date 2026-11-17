@@ -6,7 +6,7 @@ The `crucible` command (`crucible/cli/main.py`: `build_parser`, `main`). Every c
 options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-paths`, `spec check`, `spec templates`,
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
-`data fetch`, `data check`, `data integrity`, `data list`. Handlers are
+`data fetch`, `data check`, `data integrity`, `data catalog`, `data list`. Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
 stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
@@ -132,6 +132,11 @@ The `crucible` command.
   (`data.integrity.integrity_report`, ADR-0088): bars, absent minutes, largest hole, short and weekend
   sessions per symbol. Exit 1 only when a row breaks the data contract (`ok` false); gaps are findings
   and leave the exit code at 0. Figures for the Databento datasets: `docs/data/glbx-futures-1m.md`.
+- `crucible data catalog --store S [--dataset D ...] [--verify] [--top 10] [--json]` — the dataset
+  registry (`data.catalog.dataset_catalog`, ADR-0089): per dataset identity, origin and root origin,
+  price basis, lineage, contract and range. Exit 1 only when a manifest disagrees with its data file
+  (row count, name, missing file, or the SHA-256 with `--verify`); a rebuilt parent or a superseded
+  continuous builder is a finding.
 - `crucible data fetch --store S --dataset D --symbols A,B --start YYYY-MM-DD --end YYYY-MM-DD
   [--provider yfinance|tiingo] [--interval 1d] [--price-basis adjusted|raw] [--calendar XNYS]
   [--allow-partial] [--cache-dir P | --no-cache] [--refresh] [--ohlc-repair refuse|clamp]

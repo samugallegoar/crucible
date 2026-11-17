@@ -25,6 +25,13 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   session, bars, minutes absent inside the session's span, largest hole, short and weekend sessions,
   contract violations (`ok`), optional session-date comparison with a calendar; behind
   `crucible data integrity` and the MCP tool `crucible_data_integrity`. Read-only.
+- `catalog.py` — the dataset registry (`dataset_catalog`, `parse_source`, ADR-0089), derived from
+  each manifest and data file at query time: identity, origin and root origin (the provider),
+  price basis, lineage through `from=<dataset>@<hash>`, data contract, range (first/last
+  `event_time`, symbols); errors (manifest vs file, `--verify` checksum) and findings (rebuilt or
+  missing parent, superseded continuous builder). Behind `crucible data catalog` and the MCP tool
+  `crucible_data_catalog`. `ParquetDataStore.data_path` gives it the file path; rows are still read
+  only through `read(as_of)`.
 - `calendars.py` also holds `cme_trade_date_expr` (Globex trade date = Chicago wall clock + 7 h,
   ADR-0087) and `ExchangeCalendarAdapter.session_dates`.
 - `providers/` — price providers behind one interface (`PriceProvider`, ADR-0063): the `tiingo` and `yfinance`
@@ -210,7 +217,10 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
   yet (milestone C3).
 - The integrity report cannot tell a minute with no trade from a minute the source lost (Databento's
   OHLCV-1m omits empty minutes); it reports the absent minutes and leaves the judgement to the caller
-  (ADR-0088). There is no dataset registry (range, provider) yet.
+  (ADR-0088).
+- The catalog's lineage stops at the import: importers do not record the raw file's path or hash, so
+  the raw source is documented in `docs/data/` only. The range is scanned from the data on every
+  query (about 36 s for the whole real store on a cold disk cache; ADR-0089).
 Provider adapters: `tiingo` and `yfinance` exist (ADR-0063). `data fetch` takes the provider from a flag or the environment, not from a spec file; intraday Tiingo is not offered.
 Missingness reason column (ADR-0005) is not materialized — bars are
 dense by construction. Abnormal-jump and tz-mismatch checks pending.
