@@ -375,15 +375,13 @@ def assign_bars(
     step = bar_seconds * _NS_PER_S
     first_wall = utc_ns_to_chicago_wall([int(ends.min() - step)])[0]
     last_wall = utc_ns_to_chicago_wall([int(ends.max())])[0]
-    first = max(calendar.first, first_wall.date())
-    last = min(calendar.last, last_wall.date() + dt.timedelta(days=3))
-    edge_first = calendar.sessions(
-        calendar.first, min(calendar.last, calendar.first + dt.timedelta(days=6))
-    )
-    edge_last = calendar.sessions(
-        max(calendar.first, calendar.last - dt.timedelta(days=6)), calendar.last
-    )
-    if int(ends.min()) - step < edge_first[0].open_ns or int(ends.max()) > edge_last[-1].close_ns:
+    # a session opens up to four days before its trade date (Monday's on the Thursday of a
+    # Friday holiday) and an off-schedule print needs the session that opened before it, so load
+    # a week on both sides
+    first = max(calendar.first, first_wall.date() - dt.timedelta(days=7))
+    last = min(calendar.last, last_wall.date() + dt.timedelta(days=7))
+    span_open, span_close = coverage_span(calendar)
+    if int(ends.min()) - step < span_open or int(ends.max()) > span_close:
         msg = (
             f"{calendar.root} bars run from {first_wall:%Y-%m-%d %H:%M} to "
             f"{last_wall:%Y-%m-%d %H:%M} Chicago, outside the CME session calendar "
@@ -416,6 +414,40 @@ def trade_date_of(
     """The Globex trade date of each bar (by its end), None for an off-schedule bar."""
     placed = assign_bars(calendar, bar_ends, bar_seconds)
     return [placed.sessions[i].trade_date if i >= 0 else None for i in placed.session_index]
+
+
+def coverage_span(calendar: SessionCalendar) -> tuple[int, int]:
+    """``(open, close)`` UTC ns of the first and last covered sessions of ``calendar``: a bar
+    ``[end - bar_seconds, end)`` can be placed only when it lies within this span."""
+    head = calendar.sessions(calendar.first, min(calendar.last, calendar.first + dt.timedelta(6)))
+    tail = calendar.sessions(max(calendar.first, calendar.last - dt.timedelta(6)), calendar.last)
+    return head[0].open_ns, tail[-1].close_ns
+
+
+def session_trade_dates(
+    calendar: SessionCalendar, bar_ends: NDArray[np.int64], bar_seconds: int = 60
+) -> tuple[NDArray[np.datetime64], NDArray[np.bool_]]:
+    """The Globex trade date of every bar (by its end, UTC ns) and whether it is on schedule.
+
+    A bar inside a scheduled segment takes that session's trade date. An off-schedule bar (the
+    print in the minute after a close, or the one ending exactly at a reopen) takes the trade
+    date of the last session that opened at or before the bar's start: it is kept, never moved
+    forward in time, and its ``on_schedule`` is False so that execution refuses to trade on it
+    (ADR-0091, decision 7). Refuses bars outside the calendar's coverage (``assign_bars``).
+    Timing: the schedule is published in advance, so this uses no data after the bar.
+    """
+    ends = np.asarray(bar_ends, dtype=np.int64)
+    placed = assign_bars(calendar, ends, bar_seconds)
+    if ends.size == 0:
+        return np.zeros(0, dtype="datetime64[D]"), np.zeros(0, dtype=np.bool_)
+    opens = np.asarray([s.open_ns for s in placed.sessions], dtype=np.int64)
+    days = np.asarray([s.trade_date for s in placed.sessions], dtype="datetime64[D]")
+    before = np.searchsorted(opens, ends - bar_seconds * _NS_PER_S, side="right") - 1
+    index = np.where(placed.session_index >= 0, placed.session_index, before)
+    if (index < 0).any():  # unreachable after the coverage check; kept as a hard guard
+        msg = f"{calendar.root}: a bar precedes every session of the CME calendar"
+        raise DataQualityError(msg)
+    return days[index], placed.on_schedule
 
 
 # --- session rules on the trade-date clock -----------------------------------------------------
@@ -680,8 +712,10 @@ __all__ = [
     "UnscheduledEvent",
     "UnsourcedWindow",
     "assign_bars",
+    "coverage_span",
     "schedule_report",
     "session_rule_masks",
+    "session_trade_dates",
     "table_document",
     "table_hash",
     "table_summary",

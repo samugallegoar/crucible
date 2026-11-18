@@ -57,9 +57,10 @@ class ExchangeCalendarAdapter:
     def session_dates(self, start: dt.date, end: dt.date) -> list[dt.date]:
         """Session labels (``exchange_calendars`` dates) from ``start`` to ``end`` inclusive.
 
-        For ``CMES`` the label is the Globex trade date (``cme_trade_date_expr``): the session
-        labelled D opens the evening of D-1. A calendar knows holidays but not early closes or the
-        maintenance break, so use it for session dates only (ADR-0087)."""
+        For ``CMES`` the label is the Globex trade date: the session labelled D opens the evening
+        of D-1. A calendar knows holidays but not early closes or the maintenance break, so use it
+        for session dates only (ADR-0087); the scheduled sessions of the equity-index futures are
+        in ``cme_sessions`` (ADR-0091)."""
         return [session.date() for session in self._cal.sessions if start <= session.date() <= end]
 
     def session_closes(self, start: TimestampNs, end: TimestampNs) -> list[TimestampNs]:
@@ -182,29 +183,6 @@ def get_trading_calendar(
 
 
 CME_TIMEZONE = "America/Chicago"
-_CME_TRADE_DATE_SHIFT_HOURS = 7  # the trade date rolls at 17:00 Chicago wall clock (17 + 7 = 24)
-
-
-def cme_trade_date_expr(opened_ns: pl.Expr) -> pl.Expr:
-    """CME Globex trade date (a ``pl.Date``) of a bar from its OPEN time (UTC int64 ns).
-
-    A Globex session runs from 17:00 Chicago wall clock of the previous calendar day to the
-    17:00 maintenance break of its own date, so the trade date is the Chicago date of
-    ``wall clock + 7 h`` (17:00 + 7 h = midnight). The shift is done on the NAIVE wall clock, so
-    daylight-saving transitions cannot move it. A fixed UTC shift is wrong: ``+2 h UTC`` is exact
-    in summer only, and sent the last 13-15 minutes of every Friday of 2012-12..2015-03 (the
-    session then ended at 16:15 CT = 22:15 UTC in winter) to a Saturday (ADR-0087).
-
-    ``opened_ns`` is the open, not the close: a bar closing at 17:00 belongs to the session that
-    ended there. Timing: knowable from the bar's own timestamp, no data lookup.
-    """
-    wall = (
-        pl.from_epoch(opened_ns, time_unit="ns")
-        .dt.replace_time_zone("UTC")
-        .dt.convert_time_zone(CME_TIMEZONE)
-        .dt.replace_time_zone(None)
-    )
-    return (wall + pl.duration(hours=_CME_TRADE_DATE_SHIFT_HOURS)).dt.date()
 
 
 def chicago_wall_to_utc_ns(walls: list[dt.datetime]) -> list[int]:

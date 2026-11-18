@@ -12,7 +12,7 @@ built datasets live in `data/processed/` (gitignored). Import specs are in `exam
 | Polymarket BTC 5m, 2-second CSV | `polymarket_btc5m_csv_v1` (+ `_actions`) | [polymarket-btc5m-csv.md](polymarket-btc5m-csv.md) |
 | Polymarket BTC 5m, sub-second ticks | `polymarket_btc5m_ticks_v1` (+ `_actions`) | [polymarket-btc5m-ticks.md](polymarket-btc5m-ticks.md) |
 | CME Globex futures 1m, Databento (ES, NQ, YM, RTY, NKD), raw contracts | `es_1m_raw`, `nq_1m_raw`, `ym_1m_raw`, `rty_1m_raw`, `nkd_1m_raw` | [glbx-futures-1m.md](glbx-futures-1m.md) |
-| CME Globex futures 1m, continuous (unadjusted, ratio-adjusted, rolls) | `<root>_1m_cont_v2`, `<root>_1m_cont_ratio_v2`, `<root>_1m_rolls_v2` | [glbx-futures-1m.md](glbx-futures-1m.md#continuous-series-adr-0086) |
+| CME Globex futures 1m, continuous (unadjusted, ratio-adjusted, rolls) | `<root>_1m_cont_v3`, `<root>_1m_cont_ratio_v3`, `<root>_1m_rolls_v3` | [glbx-futures-1m.md](glbx-futures-1m.md#continuous-series-adr-0086) |
 | CME Globex session calendar (equity-index futures), a table in code | — | [cme-globex-sessions.md](cme-globex-sessions.md) |
 | Free providers (yfinance, Tiingo), fetched on demand | whatever `--dataset` names | [providers.md](providers.md) |
 

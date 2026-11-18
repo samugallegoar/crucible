@@ -18,9 +18,12 @@ sessions of its last session (never hold a contract into its final session); nev
 The switch is effective from the first bar of ``d`` (the evening session opens an hour after
 ``d-1`` closes, so the decision is known before the first bar it governs).
 
-Trade date: a Globex session opens 17:00 Central the evening before its date and closes 16:00
-Central; two hours added to a bar's UTC open put the evening open on the next calendar date and
-the 16:00 CT close on the same date, in standard and daylight time alike.
+Trade date: taken from the CME session calendar (``cme_sessions``, ADR-0091), never from a clock
+rule: a bar belongs to the trade date whose scheduled segment holds it, and an off-schedule print
+(the minute after a close) to the last session that opened before it. The 17:00 rule of ADR-0087
+was wrong before 2012-11-19 (the session opened at 15:30) and on the Friday sessions booked to a
+Monday trade date (ADR-0092). Bars outside the calendar's coverage are refused, or dropped and
+counted when the caller asks for ``trim_to_calendar``.
 
 Expiry: a contract's scheduled last trading session is taken as its last observed bar's trade
 date (the exchange publishes it in advance; the specification, not the price, fixes it). An
@@ -41,7 +44,13 @@ import polars as pl
 
 from crucible.core.errors import ConfigurationError, DataQualityError
 from crucible.core.types import DatasetId, TimestampNs
-from crucible.data.calendars import cme_trade_date_expr
+from crucible.data.cme_session_table import cme_session_table
+from crucible.data.cme_sessions import (
+    SessionCalendar,
+    coverage_span,
+    session_trade_dates,
+    table_summary,
+)
 from crucible.data.contracts import (
     BAR_SCHEMA,
     CONTINUOUS_BAR_SCHEMA,
@@ -61,8 +70,9 @@ if TYPE_CHECKING:
 _NS_PER_S = 1_000_000_000
 _MONTH_CODES = "FGHJKMNQUVXZ"
 _PRICES = ("open", "high", "low", "close")
-DATASET_VERSION = "v2"
-"""Suffix of the continuous dataset ids; bumped when the builder's output changes (ADR-0087)."""
+DATASET_VERSION = "v3"
+"""Suffix of the continuous dataset ids; bumped when the builder's output changes (ADR-0087,
+ADR-0092)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +127,10 @@ class ContinuousSeries:
     rolls: pl.DataFrame
     sessions: int
     first_contract: str
+    calendar: str = ""
+    """``<table version>@<sha256 prefix>`` of the session calendar that assigned the trade dates."""
+    trimmed_rows: int = 0
+    """Raw rows dropped because they precede the calendar's coverage (``trim_to_calendar``)."""
 
     def summary(self) -> dict[str, object]:
         """Counts for the CLI report: rolls by reason, bars, sessions."""
@@ -128,12 +142,41 @@ class ContinuousSeries:
             "rolls": self.rolls.height,
             "rolls_by_reason": {str(reason): int(count) for reason, count in reasons},
             "first_contract": self.first_contract,
+            "calendar": self.calendar,
+            "trimmed_rows": self.trimmed_rows,
         }
 
 
-def trade_date_expr(bar_seconds: int) -> pl.Expr:
-    """Globex trade date of a bar from its close ``event_time`` (see the module docstring)."""
-    return cme_trade_date_expr(pl.col("event_time") - bar_seconds * _NS_PER_S)
+def calendar_for(root: str) -> SessionCalendar:
+    """The CME session calendar of ``root`` (ES, NQ, YM, RTY, NKD; ADR-0091)."""
+    return SessionCalendar(cme_session_table(), root.upper())
+
+
+def calendar_label(calendar: SessionCalendar) -> str:
+    """``<table version>@<sha256 prefix>``: what a manifest records about the calendar used."""
+    summary = table_summary(calendar.table)
+    return f"{summary['version']}@{str(summary['sha256'])[:16]}"
+
+
+def trade_dates(event_time: pl.Series, calendar: SessionCalendar, bar_seconds: int) -> pl.Series:
+    """The Globex trade date (``pl.Date``) of each bar from its close ``event_time`` (UTC ns), in
+    the input order (see the module docstring)."""
+    unique = event_time.unique().sort()
+    days, _ = session_trade_dates(calendar, unique.to_numpy(), bar_seconds)
+    lookup = pl.DataFrame({"event_time": unique, "trade_date": pl.Series(days).cast(pl.Date)})
+    out = pl.DataFrame({"event_time": event_time}).join(
+        lookup, on="event_time", how="left", maintain_order="left"
+    )
+    return out["trade_date"]
+
+
+def outside_calendar(
+    event_time: pl.Series, calendar: SessionCalendar, bar_seconds: int
+) -> pl.Series:
+    """True for a bar (by its close) that lies outside the calendar's coverage."""
+    first_open, last_close = coverage_span(calendar)
+    start = event_time - bar_seconds * _NS_PER_S
+    return (start < first_open) | (event_time > last_close)
 
 
 def _key(symbol: str, root: str) -> int:
@@ -230,15 +273,23 @@ def _reference(
 
 
 def build_continuous(
-    raw: pl.DataFrame, *, root: str, params: RollParams | None = None
+    raw: pl.DataFrame,
+    *,
+    root: str,
+    params: RollParams | None = None,
+    calendar: SessionCalendar | None = None,
+    trimmed_rows: int = 0,
 ) -> ContinuousSeries:
     """The continuous series of ``root`` from its raw per-contract bars (``BAR_SCHEMA``).
 
     Refuses a raw frame with no rows, a symbol that is not a ``root`` contract, a chain with a hole
     (a held contract past its last session with no successor), and a roll whose contracts never
-    shared a traded minute: each says what is wrong and how to fix it.
+    shared a traded minute, and bars outside the session calendar's coverage: each says what is
+    wrong and how to fix it. ``calendar`` defaults to the CME table of ``root``; ``trimmed_rows``
+    is recorded only (``build_continuous_datasets`` drops them).
     """
     params = params or RollParams()
+    calendar = calendar or calendar_for(root)
     missing = [column for column in BAR_SCHEMA if column not in raw.columns]
     if missing:
         msg = f"raw bars for {root} lack columns {missing}; expected the BAR_SCHEMA columns"
@@ -246,8 +297,18 @@ def build_continuous(
     if raw.height == 0:
         msg = f"raw bars for {root} are empty; nothing to build a continuous series from"
         raise DataQualityError(msg)
-    frame = raw.select(list(BAR_SCHEMA)).with_columns(
-        trade_date=trade_date_expr(params.bar_seconds)
+    outside = int(outside_calendar(raw["event_time"], calendar, params.bar_seconds).sum())
+    if outside:
+        msg = (
+            f"{root}: {outside} raw bars lie outside the CME session calendar "
+            f"{calendar.table.version} coverage [{calendar.first}, {calendar.last}], so their "
+            "trade dates are unknown. Source the missing schedule (ADR-0091), or build with "
+            "trim_to_calendar (CLI --trim-to-calendar) to drop and count them"
+        )
+        raise DataQualityError(msg)
+    frame = raw.select(list(BAR_SCHEMA))
+    frame = frame.with_columns(
+        trade_date=trade_dates(frame["event_time"], calendar, params.bar_seconds)
     )
     symbols = sorted(frame["symbol"].unique().to_list())
     keys = {symbol: _key(symbol, root) for symbol in symbols}
@@ -331,14 +392,16 @@ def build_continuous(
         rolls=rolls.sort(ROLL_SORT_KEYS),
         sessions=len(dates),
         first_contract=first,
+        calendar=calendar_label(calendar),
+        trimmed_rows=trimmed_rows,
     )
 
 
 def dataset_names(root: str, params: RollParams) -> tuple[str, str, str]:
-    """``(unadjusted, ratio-adjusted, rolls)`` dataset ids for ``root``: ``es_1m_cont_v2`` ...
+    """``(unadjusted, ratio-adjusted, rolls)`` dataset ids for ``root``: ``es_1m_cont_v3`` ...
 
-    ``v2``: the trade date became the Chicago wall clock + 7 h (ADR-0087); ``v1`` datasets, built
-    with a fixed ``+2 h UTC`` shift, are superseded and may differ in a few roll dates."""
+    ``v3``: trade dates come from the CME session calendar (ADR-0092); ``v2`` used the 17:00
+    wall-clock rule (ADR-0087), ``v1`` a fixed ``+2 h UTC`` shift. Both are superseded."""
     stem = f"{root.lower()}_{params.interval_label}"
     version = DATASET_VERSION
     return f"{stem}_cont_{version}", f"{stem}_cont_ratio_{version}", f"{stem}_rolls_{version}"
@@ -360,7 +423,10 @@ def write_continuous(
     continuous 1-minute series has no bar for a minute nothing traded).
     """
     unadjusted, adjusted, rolls = dataset_names(series.root, params)
-    origin = f"root={series.root};from={raw_dataset}@{raw_hash[:16]};{params.describe()}"
+    origin = (
+        f"root={series.root};from={raw_dataset}@{raw_hash[:16]};{params.describe()};"
+        f"calendar={series.calendar};trimmed_rows={series.trimmed_rows}"
+    )
     reason = "continuous minute bars: calendar_coverage is a daily-session check"
     for frame in (series.unadjusted, series.adjusted):
         run_quality_checks(
@@ -395,13 +461,29 @@ def write_continuous(
 
 
 def build_continuous_datasets(
-    store_root: Path, root: str, *, raw_dataset: str, params: RollParams | None = None
+    store_root: Path,
+    root: str,
+    *,
+    raw_dataset: str,
+    params: RollParams | None = None,
+    trim_to_calendar: bool = False,
 ) -> tuple[ContinuousSeries, list[DatasetManifest]]:
-    """Reads ``raw_dataset`` from the store, builds ``root``'s continuous series and writes it."""
+    """Reads ``raw_dataset`` from the store, builds ``root``'s continuous series and writes it.
+
+    ``trim_to_calendar`` drops the raw bars outside the CME session calendar's coverage (NKD
+    before 2012-11-19) instead of refusing; the count goes in the manifests (ADR-0092)."""
     params = params or RollParams()
     store = ParquetDataStore(store_root)
     raw = store.read(DatasetId(raw_dataset), TimestampNs(END_AT_OPEN)).collect()
-    series = build_continuous(raw, root=root.upper(), params=params)
+    calendar = calendar_for(root)
+    trimmed = 0
+    if trim_to_calendar:
+        keep = ~outside_calendar(raw["event_time"], calendar, params.bar_seconds)
+        trimmed = raw.height - int(keep.sum())
+        raw = raw.filter(keep)
+    series = build_continuous(
+        raw, root=root.upper(), params=params, calendar=calendar, trimmed_rows=trimmed
+    )
     manifests = write_continuous(
         store_root,
         series,

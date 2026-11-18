@@ -8,6 +8,38 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C3b-1b: Globex trade dates from the session calendar; continuous datasets v3 (ADR-0092)
+- **Behaviour change (data).**
+  - The continuous builder and the integrity report's `cme` rule now date bars by the CME session
+    calendar (ADR-0091) instead of the 17:00 wall-clock rule of ADR-0087, which was wrong in
+    three cases:
+    - before trade date 2012-11-19, when the session opened at 15:30;
+    - on holiday Mondays and Thanksgiving, which it made into 87 false short sessions;
+    - on the Fridays booked to a Monday trade date.
+  - `calendars.cme_trade_date_expr` is removed. `continuous.DATASET_VERSION` is `v3`, and the
+    `*_v2` datasets are reported as superseded.
+  - On the real store, ES re-dates 123,953 of 5,745,346 bars and has 4,146 sessions instead of
+    4,233. No roll of ES, NQ, YM or RTY moves.
+- **Out-of-coverage bars are refused.**
+  - Raw bars outside the calendar's coverage are refused.
+  - `crucible data continuous --trim-to-calendar` (or `build_continuous_datasets(trim_to_calendar=True)`)
+    drops and counts them. The manifests record `trimmed_rows` and the calendar version and hash.
+  - `nkd_*_v3` starts at NKD's coverage (contract NKDZ2012, 314,040 raw bars trimmed). It has 56
+    rolls; the futures-simulator acceptance figures for NKD become 56 rolls, 31 delayed and a
+    mean reference error of $77.23.
+- **Integrity report.**
+  - Under `cme`, the root is read from the symbols.
+  - A root without a calendar is refused, with a hint to use `--session utc`.
+  - Bars outside the calendar are counted per symbol in `outside_calendar_bars` and are not dated.
+- **New functions.**
+  - `cme_sessions.session_trade_dates`: an off-schedule print takes the last session that opened
+    before it, and is flagged.
+  - `cme_sessions.coverage_span`.
+  - `continuous.trade_dates`, `continuous.calendar_for` and `continuous.outside_calendar`.
+- **Fix in `cme_sessions.assign_bars`.** It now loads a week of sessions on both sides of the bars.
+  Before, a lone bar in a session that opened four days before its trade date (Monday's on the
+  Thursday of a Friday holiday) was left off schedule.
+
 ### Fathom C3b-1: CME Globex session calendar (ADR-0091)
 - **`crucible.data.cme_session_table`**: a versioned table (`cme-equity-sessions-1`, hashed) of the
   Globex sessions of ES, NQ, YM, RTY and NKD from 2010-06 to 2027-12, transcribed from CME

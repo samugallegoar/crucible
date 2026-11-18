@@ -20,7 +20,8 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   importers behind `crucible data build`.
 - `continuous.py` — continuous futures series from raw per-contract bars (ADR-0086):
   `build_continuous`, `build_continuous_datasets`, `write_continuous`, `RollParams`,
-  `trade_date_expr`, `dataset_names`; behind `crucible data continuous`.
+  `trade_dates`, `calendar_for`, `outside_calendar`, `dataset_names`; behind
+  `crucible data continuous` (`--trim-to-calendar`, ADR-0092).
 - `integrity.py` — the minute-level integrity report (`integrity_report`, ADR-0088): per symbol and
   session, bars, minutes absent inside the session's span, largest hole, short and weekend sessions,
   contract violations (`ok`), optional session-date comparison with a calendar; behind
@@ -36,8 +37,8 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   missing parent, superseded continuous builder). Behind `crucible data catalog` and the MCP tool
   `crucible_data_catalog`. `ParquetDataStore.data_path` gives it the file path; rows are still read
   only through `read(as_of)`.
-- `calendars.py` also holds `cme_trade_date_expr` (Globex trade date = Chicago wall clock + 7 h,
-  ADR-0087), `ExchangeCalendarAdapter.session_dates`, and the Chicago wall-clock <-> UTC ns
+- `calendars.py` also holds `ExchangeCalendarAdapter.session_dates` and the Chicago
+  wall-clock <-> UTC ns
   converters `chicago_wall_to_utc_ns` / `utc_ns_to_chicago_wall` (refuse DST-ambiguous times).
 - `cme_sessions.py` + `cme_session_table.py` — the CME Globex session calendar of the equity-index
   futures (ADR-0091). The table: regimes, per-trade-date overrides, no-trade dates, unsourced
@@ -172,15 +173,18 @@ provider's checksum before reading; prices are raw. `DbnSource` is the seam test
 the re-run command: `docs/data/glbx-futures-1m.md`.
 
 **Continuous futures (ADR-0086).** `continuous.py` turns the raw per-contract bars of a root into
-three datasets: `{root}_1m_cont_v2` (the held contract's own bars, a `contract` column, real prices,
-`price_basis=raw`; the only series fills and money are computed on), `{root}_1m_cont_ratio_v2`
+three datasets: `{root}_1m_cont_v3` (the held contract's own bars, a `contract` column, real prices,
+`price_basis=raw`; the only series fills and money are computed on), `{root}_1m_cont_ratio_v3`
 (every earlier bar multiplied by the compounded `next / front` ratio, `price_basis=adjusted`; safe
-only for scale-invariant use) and `{root}_1m_rolls_v2` (one row per roll: contracts, effective
+only for scale-invariant use) and `{root}_1m_rolls_v3` (one row per roll: contracts, effective
 trade date, `decided_at`, reference minute and prices, `ratio`, `gap_points`, `reason`). The roll is
 causal: hold one contract, look only at its successor in the quarterly chain, switch from the
 first bar of trade date `d` when the successor's volume on `d-1` exceeds `threshold` x the held
 contract's, or when the held contract is in its final session (`backstop_sessions`); never switch
-back. Trade date = the Chicago date of `open wall clock + 7h` (ADR-0087; a Globex session opens 17:00 Central the evening before).
+back. Trade date = the CME session calendar's (ADR-0092): the session whose scheduled
+segment holds the bar, an off-schedule print the last session that opened before it; raw bars
+outside the calendar's coverage are refused or, with `trim_to_calendar`, dropped and counted
+(`trimmed_rows` in the manifest, with the calendar version and hash).
 A contract still trading on the dataset's last session has no observed expiry, so no backstop
 applies. Refusals: a symbol that is not a root contract, a chain with a hole, a roll whose
 contracts never shared a traded minute. Parameters are in each manifest's `source`; a rebuild
@@ -227,9 +231,8 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
 - The CME session calendar (ADR-0091) leaves unsourced the 2023 holidays other than Labor Day,
   Christmas and New Year, Martin Luther King Day 2024, and NKD on the 2023-2025 holiday dates
   taken from ES-only captures; those sessions are built from the regime and flagged unverified.
-  It covers the five equity-index roots only. The continuous series and the integrity report still
-  assign trade dates with the ADR-0087 17:00 rule, which is wrong before 2012-11-19 and on the
-  Friday-to-Monday holiday sessions (ADR-0091, "Findings").
+  It covers the five equity-index roots only, and NKD only from trade date 2012-11-19: the
+  `nkd_*_v3` continuous datasets start there (314,040 earlier raw bars trimmed, ADR-0092).
 - Continuous futures take a contract's scheduled last session from its last observed bar (ADR-0086,
   decision 2): exact for liquid contracts, an approximation for thin ones; a contract specification
   table replaces it. `CMES` is used for session dates only: it models a 24 h block with no

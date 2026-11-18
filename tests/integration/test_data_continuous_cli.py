@@ -70,12 +70,12 @@ def test_the_command_builds_three_datasets_per_root(
     assert report["rolls"] == 1
     assert report["rolls_by_reason"] == {"volume": 1}
     assert [d["dataset"] for d in report["datasets"]] == [
-        "es_1m_cont_v2",
-        "es_1m_cont_ratio_v2",
-        "es_1m_rolls_v2",
+        "es_1m_cont_v3",
+        "es_1m_cont_ratio_v3",
+        "es_1m_rolls_v3",
     ]
     names = {str(d) for d in ParquetDataStore(store).list_datasets()}
-    assert {"es_1m_cont_v2", "es_1m_cont_ratio_v2", "es_1m_rolls_v2"} <= names
+    assert {"es_1m_cont_v3", "es_1m_cont_ratio_v3", "es_1m_rolls_v3"} <= names
 
 
 def test_the_text_output_names_each_dataset(
@@ -84,7 +84,7 @@ def test_the_text_output_names_each_dataset(
     assert main(["data", "continuous", "--store", str(store), "--roots", "ES"]) == 0
     out = capsys.readouterr().out
     assert "ES: 1 rolls" in out
-    assert "es_1m_cont_ratio_v2" in out
+    assert "es_1m_cont_ratio_v3" in out
 
 
 def test_a_missing_raw_dataset_is_a_structured_error(

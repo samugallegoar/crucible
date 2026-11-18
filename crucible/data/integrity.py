@@ -7,25 +7,27 @@ span, the largest hole, the sessions far shorter than the symbol's usual one (ha
 stubs), sessions on a weekend, and the rows that break the data contract. It never repairs or drops
 anything and it never decides that a gap is acceptable: the caller reads the numbers.
 
-Timing: a bar's ``event_time`` is its close (UTC ns); its session is a function of its own open
-only, so the report needs no lookahead. A trading calendar is optional and is used for session
-*dates* only (``CMES`` models a 24 h block with no maintenance break or early closes, ADR-0087).
+Timing: a bar's ``event_time`` is its close (UTC ns); its session is a function of its own
+timestamp and the published CME schedule, so the report needs no lookahead. Under the ``cme``
+rule the trade date comes from the CME session calendar (``cme_sessions``, ADR-0092); bars outside
+the calendar's coverage get no session and are counted (``outside_calendar_bars``), never dated by
+a guess. An ``exchange_calendars`` calendar is optional and is compared for session *dates* only
+(``CMES`` models a 24 h block with no maintenance break or early closes, ADR-0087).
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 
 from crucible.core.errors import ConfigurationError
 from crucible.core.types import NS_PER_S, TimestampNs
-from crucible.data.calendars import (
-    ExchangeCalendarAdapter,
-    cme_trade_date_expr,
-    get_trading_calendar,
-)
+from crucible.data.calendars import ExchangeCalendarAdapter, get_trading_calendar
+from crucible.data.cme_session_table import cme_session_table
+from crucible.data.cme_sessions import SessionCalendar, coverage_span, session_trade_dates
 
 if TYPE_CHECKING:
     from crucible.data.calendars import AlwaysOpenCalendar
@@ -48,11 +50,62 @@ def _iso(ns: int) -> str:
     return dt.datetime.fromtimestamp(ns / NS_PER_S, tz=dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _session_expr(rule: SessionRule, bar_seconds: int) -> pl.Expr:
-    opened = pl.col("event_time") - bar_seconds * NS_PER_S
-    if rule == "cme":
-        return cme_trade_date_expr(opened)
-    return pl.from_epoch(opened, time_unit="ns").dt.date()
+_ROOT = re.compile(r"([A-Z0-9]+?)(?:[FGHJKMNQUVXZ]\d{4})?")
+
+
+def _root_of(symbol: str) -> str:
+    """The futures root of a contract (``ESH2024`` -> ``ES``) or continuous (``ES``) symbol."""
+    match = _ROOT.fullmatch(symbol)
+    return match.group(1) if match else symbol
+
+
+def _with_sessions(frame: pl.LazyFrame, rule: SessionRule, bar_seconds: int) -> pl.LazyFrame:
+    """``frame`` plus a ``session`` date column; null for a bar outside the CME calendar."""
+    bar_ns = bar_seconds * NS_PER_S
+    if rule == "utc":
+        return frame.with_columns(
+            session=pl.from_epoch(pl.col("event_time") - bar_ns, time_unit="ns").dt.date()
+        )
+    table = cme_session_table()
+    roots = frame.select(pl.col("symbol").unique()).collect()["symbol"].to_list()
+    by_root: dict[str, list[str]] = {}
+    for symbol in roots:
+        by_root.setdefault(_root_of(str(symbol)), []).append(str(symbol))
+    lookups: list[pl.DataFrame] = []
+    for root, symbols in sorted(by_root.items()):
+        if root not in table.coverage:
+            msg = (
+                f"symbol {symbols[0]!r} (root {root!r}) is not in the CME session calendar "
+                f"{table.version} (roots {sorted(table.coverage)}); use session='utc' "
+                "(CLI --session utc) for a dataset that is not a CME equity-index future"
+            )
+            raise ConfigurationError(msg)
+        calendar = SessionCalendar(table, root)
+        ends = (
+            frame.filter(pl.col("symbol").is_in(symbols))
+            .select(pl.col("event_time").unique().sort())
+            .collect()["event_time"]
+        )
+        first_open, last_close = coverage_span(calendar)
+        inside = ends.filter((ends - bar_ns >= first_open) & (ends <= last_close))
+        days, _ = session_trade_dates(calendar, inside.to_numpy(), bar_seconds)
+        lookups.append(
+            pl.DataFrame(
+                {
+                    "_root": [root] * inside.len(),
+                    "event_time": inside,
+                    "session": pl.Series(days).cast(pl.Date),
+                }
+            )
+        )
+    lookup = pl.concat(lookups) if lookups else None
+    root_of = {symbol: root for root, symbols in by_root.items() for symbol in symbols}
+    keyed = frame.with_columns(
+        _root=pl.col("symbol").replace_strict(root_of, return_dtype=pl.String)
+    )
+    if lookup is None:
+        return keyed.with_columns(session=pl.lit(None, dtype=pl.Date)).drop("_root")
+    return keyed.join(lookup.lazy(), on=["_root", "event_time"], how="left").drop("_root")
 
 
 def integrity_report(
@@ -67,7 +120,9 @@ def integrity_report(
 
     ``bar_seconds`` is the bar length (``event_time`` is the close, so the open is
     ``event_time - bar_seconds``); ``session`` is how a bar is assigned to a session: ``cme`` is
-    the Globex trade date (Chicago wall clock + 7 h, ADR-0087), ``utc`` the UTC date of the open.
+    the Globex trade date from the CME session calendar (ADR-0092; the root is read from the
+    symbols, bars outside the calendar's coverage are counted in ``outside_calendar_bars`` and
+    left out of the session statistics), ``utc`` the UTC date of the open.
     ``calendar`` (an ``exchange_calendars`` name such as ``CMES``) adds a comparison of session
     dates. ``top`` bounds the examples listed per finding.
 
@@ -111,8 +166,16 @@ def integrity_report(
         msg = "the dataset has no rows; build it before checking its integrity"
         raise ConfigurationError(msg)
 
+    dated = _with_sessions(frame, session, bar_seconds)
+    outside = dict(
+        dated.filter(pl.col("session").is_null())
+        .group_by("symbol")
+        .agg(pl.len())
+        .collect()
+        .iter_rows()
+    )
     sessions = (
-        frame.with_columns(session=_session_expr(session, bar_seconds))
+        dated.filter(pl.col("session").is_not_null())
         .group_by(["symbol", "session"])
         .agg(
             bars=pl.col("event_time").n_unique(),
@@ -149,6 +212,7 @@ def integrity_report(
                 "first": _iso(int(row["first"])),
                 "last": _iso(int(row["last"])),
                 "sessions": mine.height,
+                "outside_calendar_bars": int(outside.get(row["symbol"], 0)),
                 "errors": errors,
                 "zero_volume_bars": int(row["zero_volume_bars"]),
                 "missing_minutes": int(mine["missing"].sum()),

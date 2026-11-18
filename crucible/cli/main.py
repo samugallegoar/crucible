@@ -309,7 +309,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--session",
         choices=["cme", "utc"],
         default="cme",
-        help="how a bar gets its session: cme = Globex trade date (ADR-0087), utc = UTC day",
+        help="how a bar gets its session: cme = Globex trade date from the CME session "
+        "calendar (ADR-0092), utc = UTC day",
     )
     integrity.add_argument(
         "--calendar",
@@ -382,6 +383,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         help="never hold a contract into its final session (1); 0 disables the backstop",
+    )
+    continuous.add_argument(
+        "--trim-to-calendar",
+        action="store_true",
+        help="drop (and count) raw bars outside the CME session calendar's coverage instead of "
+        "refusing, e.g. NKD before 2012-11-19 (ADR-0092)",
     )
     _add_json(continuous)
     fetch = data_sub.add_parser(
@@ -1259,7 +1266,11 @@ def _cmd_data_continuous(args: argparse.Namespace) -> int:
     reports: list[dict[str, object]] = []
     for root in roots:
         series, manifests = build_continuous_datasets(
-            Path(args.store), root, raw_dataset=args.raw.format(root=root.lower()), params=params
+            Path(args.store),
+            root,
+            raw_dataset=args.raw.format(root=root.lower()),
+            params=params,
+            trim_to_calendar=args.trim_to_calendar,
         )
         reports.append(
             {**series.summary(), "datasets": [_manifest_row(manifest) for manifest in manifests]}
@@ -1271,7 +1282,8 @@ def _cmd_data_continuous(args: argparse.Namespace) -> int:
         sys.stdout.write(
             f"{report['root']}: {report['rolls']} rolls {report['rolls_by_reason']}, "
             f"{report['bars']} bars, {report['sessions']} sessions, "
-            f"first contract {report['first_contract']}\n"
+            f"first contract {report['first_contract']}, calendar {report['calendar']}, "
+            f"trimmed {report['trimmed_rows']} raw rows\n"
         )
         datasets = report["datasets"]
         assert isinstance(datasets, list)

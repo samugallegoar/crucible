@@ -123,14 +123,18 @@ The `crucible` command.
   the `--max-rows` guard (default 5,000,000) run before anything is
   written; `--start/--end/--max-contracts` apply to Polymarket specs only.
 - `crucible data continuous --store S --roots es,nq,... [--raw {root}_1m_raw] [--threshold 1.0]
-  [--backstop-sessions 1]` — builds each root's continuous futures series, ratio-adjusted series and
-  rolls table from its raw per-contract dataset (`data.continuous.build_continuous_datasets`,
-  ADR-0086; counts in `docs/data/glbx-futures-1m.md`). A root whose build refuses writes nothing
-  and stops the command; roots before it are kept.
+  [--backstop-sessions 1] [--trim-to-calendar]` — builds each root's continuous futures series,
+  ratio-adjusted series and rolls table from its raw per-contract dataset
+  (`data.continuous.build_continuous_datasets`, ADR-0086; trade dates from the CME session calendar,
+  ADR-0092; counts in `docs/data/glbx-futures-1m.md`). Raw bars outside the calendar's coverage are
+  refused; `--trim-to-calendar` drops them and reports the count. A root whose build refuses writes
+  nothing and stops the command; roots before it are kept.
 - `crucible data integrity --store S --dataset D [--bar-seconds 60] [--session cme|utc]
   [--calendar CMES] [--top 10] [--json]` — the minute-level integrity report
   (`data.integrity.integrity_report`, ADR-0088): bars, absent minutes, largest hole, short and weekend
-  sessions per symbol. Exit 1 only when a row breaks the data contract (`ok` false); gaps are findings
+  sessions per symbol. `--session cme` dates bars by the CME session calendar of the symbols' root
+  (ADR-0092) and counts bars outside it (`outside_calendar_bars`); it refuses a root the calendar
+  does not cover. Exit 1 only when a row breaks the data contract (`ok` false); gaps are findings
   and leave the exit code at 0. Figures for the Databento datasets: `docs/data/glbx-futures-1m.md`.
 - `crucible data catalog --store S [--dataset D ...] [--verify] [--top 10] [--json]` — the dataset
   registry (`data.catalog.dataset_catalog`, ADR-0089): per dataset identity, origin and root origin,

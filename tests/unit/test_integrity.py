@@ -160,8 +160,9 @@ def test_symbols_are_reported_separately_and_sorted() -> None:
 
 
 def test_the_calendar_comparison_lists_session_dates_on_either_side() -> None:
-    # data sessions (CME trade dates): Mon 2013-01-14, Tue 01-15 and a Saturday 01-19. CMES has
-    # sessions Mon 14, Tue 15, Wed 16, Thu 17, Fri 18 in that range and none on Saturday.
+    # data sessions (UTC dates; under the CME calendar a Saturday bar is an off-schedule print
+    # dated Friday): Mon 2013-01-14, Tue 01-15 and a Saturday 01-19. CMES has sessions Mon 14,
+    # Tue 15, Wed 16, Thu 17, Fri 18 in that range and none on Saturday.
     def bar_on(opened: str) -> dict[str, object]:
         return _bar(_ns(opened) + _MIN)
 
@@ -170,7 +171,7 @@ def test_the_calendar_comparison_lists_session_dates_on_either_side() -> None:
         bar_on("2013-01-15T15:00:00"),
         bar_on("2013-01-19T15:00:00"),
     ]
-    report = integrity_report(_frame(rows), session="cme", calendar="CMES")
+    report = integrity_report(_frame(rows), session="utc", calendar="CMES")
     cal = report["calendar"]
     assert isinstance(cal, dict)
     assert cal["range"] == ["2013-01-14", "2013-01-19"]
@@ -207,3 +208,37 @@ def test_an_empty_dataset_is_refused() -> None:
 def test_the_report_does_not_depend_on_row_order() -> None:
     rows = [_bar(T0 + m * _MIN) for m in (0, 1, 2, 6, 7)]
     assert _run(rows) == _run(list(reversed(rows)))
+
+
+def test_the_cme_rule_dates_bars_from_the_session_calendar() -> None:
+    """ADR-0092: before 2012-11-19 the ES session opened 15:30 Chicago, so a bar opening
+    2011-03-15 15:45 CDT (20:45 UTC) is trade date 03-16; a Saturday print takes Friday's date
+    (no weekend session); contract symbols map to their root."""
+    rows = [
+        _bar(_ns("2011-03-15T20:45:00") + _MIN, symbol="ESM2011"),
+        _bar(_ns("2013-01-19T15:00:00") + _MIN, symbol="ESH2013"),
+    ]
+    report = integrity_report(_frame(rows), session="cme")
+    symbols = report["symbols"]
+    assert isinstance(symbols, list)
+    assert [s["worst_gaps"] for s in symbols] == [[], []]
+    sessions = {s["symbol"]: (s["sessions"], s["weekend_sessions"]) for s in symbols}
+    assert sessions == {"ESH2013": (1, 0), "ESM2011": (1, 0)}
+
+
+def test_bars_outside_the_calendar_are_counted_not_dated() -> None:
+    """NKD is covered from trade date 2012-11-19: a 2011 bar gets no session."""
+    rows = [
+        _bar(_ns("2011-03-15T15:00:00") + _MIN, symbol="NKDM2011"),
+        _bar(_ns("2013-01-15T15:00:00") + _MIN, symbol="NKDH2013"),
+    ]
+    report = integrity_report(_frame(rows), session="cme")
+    symbols = report["symbols"]
+    assert isinstance(symbols, list)
+    got = {s["symbol"]: (s["sessions"], s["outside_calendar_bars"]) for s in symbols}
+    assert got == {"NKDH2013": (1, 0), "NKDM2011": (0, 1)}
+
+
+def test_the_cme_rule_refuses_a_root_without_a_calendar() -> None:
+    with pytest.raises(ConfigurationError, match="--session utc"):
+        integrity_report(_frame([_bar(T0, symbol="CLF2024")]), session="cme")

@@ -244,6 +244,16 @@ def test_friday_holiday_session_belongs_to_monday() -> None:
     ]
 
 
+def test_a_lone_bar_finds_a_session_opened_four_days_earlier() -> None:
+    """Regression (ADR-0092): ``assign_bars`` loaded sessions to the bars' date + 3 days, so the
+    first bar of Monday 2026-06-22's session (Thursday 06-18 17:00) and a Friday-morning bar were
+    left off schedule. A print before the Sunday reopen needs Friday's session, a week back."""
+    ends = np.asarray(
+        [utc("2026-06-18 17:01"), utc("2026-06-19 10:01"), utc("2026-06-21 17:00")], dtype=np.int64
+    )
+    assert trade_date_of(ES, ends) == [d("2026-06-22"), d("2026-06-22"), None]
+
+
 def test_july_4_2025_is_its_own_short_trade_date() -> None:
     assert walls(ES.session(d("2025-07-03")).segments)[-1] == "2025-07-03 12:15"
     assert walls(ES.session(d("2025-07-04")).segments) == ["2025-07-03 17:00", "2025-07-04 12:00"]

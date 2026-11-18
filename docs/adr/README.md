@@ -118,5 +118,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0089](0089-derived-dataset-catalog.md) | The dataset registry is a catalog derived from manifests and data, never a stored file | ? | Derived, not stored. `crucible data catalog` (`crucible/data/catalog.py::dataset_catalog`) builds every entry from the dataset's manifest and its data file at query time |
 | [0090](0090-futures-execution-simulator.md) | A futures execution simulator in contracts and dollars: causal fills, tick costs, brackets, causal rolls | ? | A dedicated contract-based simulator, `crucible/execution/futures_sim.py` |
 | [0091](0091-cme-globex-session-calendar.md) | A versioned CME Globex session calendar transcribed from published schedules | ? | One table, transcribed from documents. `crucible/data/cme_session_table.py` holds: |
+| [0092](0092-trade-dates-from-the-session-calendar.md) | Globex trade dates come from the session calendar (continuous datasets v3) | ? | The calendar is the only source of the trade date |
 
 <!-- END GENERATED: adr-index -->

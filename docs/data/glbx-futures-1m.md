@@ -52,60 +52,90 @@ ordered by `ts_event` (checked: 0 backwards steps in 30,684,423 records). The sy
 ## Continuous series (ADR-0086)
 
 Built from the raw datasets with `crucible data continuous --store data/processed --roots
-es,nq,ym,rty,nkd` (defaults: threshold 1.0, backstop 1 session). Per root three datasets:
-`<root>_1m_cont_v2` (unadjusted), `<root>_1m_cont_ratio_v2` (ratio-adjusted) and
-`<root>_1m_rolls_v2`.
+es,nq,ym,rty,nkd --trim-to-calendar` (defaults: threshold 1.0, backstop 1 session). Per root three
+datasets: `<root>_1m_cont_v3` (unadjusted), `<root>_1m_cont_ratio_v3` (ratio-adjusted) and
+`<root>_1m_rolls_v3`.
 
 | Root | Bars | Sessions | Rolls | Roll reasons | First contract |
 |---|---|---|---|---|---|
-| ES | 5,745,346 | 4,233 | 66 | volume 66 | ESM2010 |
-| NQ | 5,571,600 | 4,233 | 66 | volume 66 | NQM2010 |
-| YM | 5,537,936 | 4,238 | 66 | volume 66 | YMM2010 |
-| RTY | 3,096,715 | 2,415 | 37 | volume 37 | RTYU2017 |
-| NKD | 3,650,106 | 4,233 | 66 | backstop 62, volume 4 | NKDM2010 |
+| ES | 5,745,346 | 4,146 | 66 | volume 66 | ESM2010 |
+| NQ | 5,571,600 | 4,146 | 66 | volume 66 | NQM2010 |
+| YM | 5,537,936 | 4,151 | 66 | volume 66 | YMM2010 |
+| RTY | 3,096,715 | 2,363 | 37 | volume 37 | RTYU2017 |
+| NKD | 3,348,325 | 3,536 | 56 | backstop 52, volume 4 | NKDZ2012 |
 
-The trade date is the Chicago wall clock + 7 h (ADR-0087): the first build used a fixed `+2h` UTC
-shift, which made 49 Saturday "sessions" of 13-15 bars out of the last minutes of the Fridays of
-2012-12..2015-03 (the close was 16:15 CT then), and its `_v1` datasets are superseded by `_v2`.
+**Trade dates come from the CME session calendar** (ADR-0091, ADR-0092), which every manifest
+names (`calendar=cme-equity-sessions-1@<hash>`).
+- **`v2` (the 17:00 Chicago rule of ADR-0087).** It gave the 15:30-17:00 bars before 2012-11-19 to
+  the wrong date. It also made each holiday Monday and Thanksgiving a short session of its own; CME
+  books them to the next trade date. In ES, 123,953 bars move and 87 false sessions go.
+- **`v1` (a fixed `+2h` UTC shift).** It made 49 Saturday "sessions" out of the last Friday minutes
+  of 2012-12..2015-03.
+- **What did not change.** No roll of ES, NQ, YM or RTY moved between `v2` and `v3`.
+- **NKD.** It starts at its calendar coverage, trade date 2012-11-19: 314,040 earlier raw bars are
+  trimmed (`trimmed_rows` in the manifest), and the ten 2010-2012 rolls go with them.
 
-NKD rolls on the contract's final session (its volume leaves the front in the last one or two
-sessions); the equity indices roll about four calendar days before the old contract's last bar.
-Oldest-data multiplier of the ratio adjustment: ES 1.0405, NQ 1.1915, YM 0.9687, RTY 1.1607, NKD
-0.9667 (`v1`: 1.0400, 1.1923, 0.9695, 1.1607, 0.9678). The opt-in acceptance test `tests/bench/test_continuous_real_data.py` reproduces these
-figures: `uv run pytest -m bench tests/bench/test_continuous_real_data.py`.
+**Rolls and the ratio adjustment.** NKD rolls on the contract's final session (its volume leaves the
+front in the last one or two sessions). The equity indices roll about four calendar days before the
+old contract's last bar. Oldest-data multiplier of the ratio adjustment:
+
+| Root | `v3` | `v1` |
+|---|---|---|
+| ES | 1.0405 | 1.0400 |
+| NQ | 1.1915 | 1.1923 |
+| YM | 0.9687 | 0.9695 |
+| RTY | 1.1607 | 1.1607 |
+| NKD | 0.9712 (from 2012-11) | 0.9678 |
+
+The opt-in acceptance test `tests/bench/test_continuous_real_data.py` reproduces these figures:
+`uv run pytest -m bench tests/bench/test_continuous_real_data.py`.
 
 ## Integrity report (ADR-0088)
 
-`crucible data integrity --store data/processed --dataset es_1m_cont_v2 --calendar CMES` on the five
-continuous datasets: no row breaks the data contract (no duplicates, nulls, non-positive prices,
-OHLC violations, `available_at < event_time` or negative volume). Findings, from the observed
-minutes:
+`crucible data integrity --store data/processed --dataset es_1m_cont_v3 --calendar CMES` on the five
+`v3` continuous datasets (sessions from the CME calendar, ADR-0092).
+
+**No row breaks the data contract:** no duplicates, nulls, non-positive prices, OHLC violations,
+`available_at < event_time` or negative volume.
+
+**Findings, from the observed minutes:**
 
 | Root | Absent minutes in the session span | Share | Sessions with a gap | Largest hole (min) | Short sessions | Weekend sessions |
 |---|---|---|---|---|---|---|
-| ES | 72,300 | 1.2% | 3,089 / 4,233 | 645 | 10 | 1 |
-| NQ | 245,626 | 4.2% | 2,946 / 4,233 | 645 | 14 | 1 |
-| YM | 284,659 | 4.9% | 4,100 / 4,238 | 645 | 15 | 1 |
-| RTY | 213,072 | 6.4% | 2,389 / 2,415 | 645 | 33 | 0 |
-| NKD | 2,114,840 | 36.7% | 4,232 / 4,233 | 660 | 316 | 1 |
+| ES | 123,955 | 2.1% | 3,045 / 4,146 | 3,180 | 8 | 0 |
+| NQ | 297,432 | 5.1% | 2,917 / 4,146 | 3,180 | 11 | 0 |
+| YM | 337,049 | 5.7% | 4,021 / 4,151 | 3,180 | 12 | 0 |
+| RTY | 237,310 | 7.1% | 2,338 / 2,363 | 3,180 | 31 | 0 |
+| NKD | 1,619,159 | 32.6% | 3,536 / 3,536 | 3,191 | 37 | 0 |
 
-An absent minute is a minute without a trade as far as the file can say (Databento's OHLCV-1m has no
-empty bars): it is liquidity, mostly in the overnight hours, and the thin NKD shows it most. A short
-session is under half the symbol's median bars: half days (2012-04-06, 2025-11-28), the partial last
-session 2026-11-11 and, for RTY, its first sessions in 2017-07. The one weekend-dated session in ES,
-NQ, YM and NKD is 2018-08-05: a single bar opening 16:59 Chicago on the Sunday, a minute before the
-reopen. Against `CMES` session dates the data has 8 sessions the calendar lacks (RTY 5) and the
-calendar has 15 the data lacks (YM 10, RTY 0); the calendar side is holidays such as 2013-01-21
-and 2013-07-04.
+How to read the table:
+- **Absent minutes.** The span of a session runs from its first to its last bar. A holiday merged
+  into the next trade date includes its scheduled halt: Friday 12:00 to Sunday 17:00 is 3,180
+  minutes, the largest hole. The absent minutes therefore count those halts too, and they are not
+  all missing data. `cme_sessions.schedule_report` separates scheduled from missing minutes.
+- **The rest is liquidity.** Databento's OHLCV-1m has no empty bars, so a minute without a trade
+  is absent. That is mostly the overnight hours, and the thin NKD shows it most.
+- **Short sessions.** A short session has under half the symbol's median bars. The examples are:
+  the partial last session 2026-11-11; the 2014-09 and 2014 year-end data gaps; the half days
+  around Christmas and New Year; and RTY's first sessions in 2017-07.
+- **No weekend sessions.** The calendar has no weekend trade date, and a Sunday print before the
+  reopen takes Friday's date.
+- **Against `CMES` session dates:**
+  - The data has 7 sessions that `CMES` lacks (RTY 5, NKD 6): the Good Friday short sessions and
+    the mourning days of 2018 and 2025.
+  - `CMES` has about 100 that the data lacks (RTY 52, NKD 75): mostly the holiday Mondays, which
+    `CMES` lists as sessions and CME books to Tuesday.
 
 ## Catalog (ADR-0089)
 
-`crucible data catalog --store data/processed --dataset es_1m_cont_v2 --json` gives each dataset's
-contract, range, lineage and root origin. Every `*_1m_cont_v2`, `*_1m_cont_ratio_v2` and
-`*_1m_rolls_v2` dataset resolves to `import:databento_dbn` through its `*_1m_raw` parent, whose
-hash still matches the one recorded at build time; the `*_v1` datasets are reported as superseded by
-the `v2` builder (ADR-0087). The raw batch job and file path are on this page only: the importer does
-not write them into the manifest.
+`crucible data catalog --store data/processed --dataset es_1m_cont_v3 --json` gives each dataset's
+contract, range, lineage and root origin.
+- Every `*_1m_cont_v3`, `*_1m_cont_ratio_v3` and `*_1m_rolls_v3` dataset resolves to
+  `import:databento_dbn` through its `*_1m_raw` parent, whose hash still matches the one recorded
+  at build time.
+- The `*_v1` and `*_v2` datasets are reported as superseded by the `v3` builder (ADR-0092).
+- The raw batch job and file path are on this page only: the importer does not write them into
+  the manifest.
 
 ## Execution (ADR-0090)
 
