@@ -15,7 +15,8 @@ The kernel and the run loop. Detail sections follow.
 - `clock.py`, `queue.py` — `SimulationClock`, `DeterministicEventQueue`.
 - `invariants.py` — the `Invariant` Protocol and the registry (`register`, `all_invariants`).
 - `logging.py` — `RunLogger` (simulation-time JSON lines). `instruments.py` — `FuturesSpec`.
-- `checkpoint.py` — the canonical JSON codec; `setup_fingerprint.py` — `describe`,
+- `canonical.py` — `canonical_json` (the one canonical-JSON implementation the artifact and
+  expression identities hash); `checkpoint.py` — the canonical JSON codec; `setup_fingerprint.py` — `describe`,
   `changed_attributes` (the state-outside-the-snapshot check).
 - `engine.py` — `BacktestEngine` (the run loop; call order in `docs/TIMING.md`) and `BacktestResult`.
 

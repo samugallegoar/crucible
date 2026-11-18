@@ -416,6 +416,32 @@ def _order_type_section() -> Section:
     )
 
 
+def _dsl_operator_section() -> Section:
+    from crucible.dsl.operators import OPERATOR_TABLE_VERSION, OPERATORS
+
+    rows = [
+        Row(
+            (
+                f"`{definition.name}`",
+                f"`{definition.signature}`",
+                definition.result_rule,
+                f"`{definition.semantic_version}`",
+            ),
+            "docs/modules/dsl.md",
+            definition.name,
+        )
+        for definition in sorted(OPERATORS.values(), key=lambda item: item.name)
+    ]
+    return Section(
+        "DSL operators",
+        ("Operator", "Signature", "Result type rule", "Semantic version"),
+        tuple(rows),
+        "Registry: `crucible/dsl/operators.py` "
+        f"(`OPERATOR_TABLE_VERSION = {OPERATOR_TABLE_VERSION!r}`). Signatures and result rules "
+        "only: C4b implements evaluation.",
+    )
+
+
 def _enum_section() -> Section:
     rows = []
     for cls in _enum_classes():
@@ -602,6 +628,7 @@ def inventory_sections() -> list[Section]:
         _metric_section(),
         _validator_section(),
         _order_type_section(),
+        _dsl_operator_section(),
         _enum_section(),
         _importer_section(),
         _strategy_section(),

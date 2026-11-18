@@ -25,6 +25,7 @@ Anti-examples are real temptations, each of which breaks a rule stated in `AGENT
 |----------------|------|------------|---------|--------------|
 | A trading strategy | `examples/<name>/strategy.py` (+ `config.yaml`, `build_data.py`) | a `tests/lookahead/` file, the resume matrix if stateful, `examples/README.md` | `examples/momentum` (`Momentum`) | Putting it under `crucible/` (the library ships mechanisms, not alpha), or keeping state on `self` instead of `ctx.state` |
 | A strategy that composes others | `crucible/strategy/multi.py` | attribution in `analytics/attribution.py`, resume matrix | `MultiStrategy` | A second run loop; a strategy that reaches into another's context |
+| A new operator of the expression language | `dsl/operators.py` (`OperatorDef`, with its semantic version) and `dsl/types.py` (its result-type rule) | `docs/modules/dsl.md`, a bump of `OPERATOR_TABLE_VERSION` if an existing operator's meaning changes | `ts_zscore` | An operator that reads bar `t+1`, or one whose result type ignores the price exponent (ADR-0086) |
 | A new indicator or condition for the no-code spec | `strategy_spec/indicators.py` (`IndicatorDef`) | the poisoned-future harness (`tests/lookahead/test_strategy_spec_poisoned_future.py`), `docs/guide/strategy-spec.md`, `AGENT_GUIDE.md` | `rsi` | An indicator that reads bar `t+1`, or one that is only in a Python strategy |
 | What a non-coder's run reports or how a result is worded | `product/` (`summary.py`, `report.py`, `backtest.py`) | `docs/guide/reading-a-report.md`, a unit test of the new flag | `single_instrument` flag | Free text written by a model; a new headline number without its interval |
 | A vectorized signal | `examples/<name>/vectorized_signal.py` (`SignalFunction`) | vectorized agreement/poison tests | `trend_follower_signal` | Lagging the score yourself (the engine applies the mandatory shift) |
@@ -68,7 +69,8 @@ Allowed imports point **down** this list (the full contract, with the exact modu
 | 3. Orchestration | `experiments` | 4 and below |
 | 4. Engine and gates | `core.engine`, `validation`, `vectorized`, `analytics`, `strategy_spec` | 5 and below (siblings do not import each other) |
 | 5. Domain services | `risk`, `strategy`, `live.*` (venue, feeds, paper) | 6 and below |
-| 6. Execution and portfolio | `execution`, `portfolio` | 7 and below |
+| 6. Execution and portfolio | `execution`, `portfolio` | 6b and below |
+| 6b. Expression language | `dsl` | 7 and below |
 | 7. Ledger, data, orders | `accounting`, `data`, `orders`, `live.rows` | 8 and below |
 | 8. Kernel | `core.clock`, `core.queue`, `core.logging`, `core.checkpoint`, `core.events`, `core.interfaces`, `core.instruments`, `core.types`, `core.errors`, `core.invariants`, `core.setup_fingerprint` | only lower kernel modules |
 

@@ -15,6 +15,8 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
 - **Reality Check / SPA** — White's (2000) and Hansen's (2005) bootstrap tests that the best of
   several candidate strategies beats a benchmark once the search over the candidates is paid for
   (`validation/reality_check.py`, ADR-0083): evidence about an edge, unlike a sequence-risk fan.
+- **structure id / parameterization id (DSL)** — `DSX-…` hashes an expression's canonical shape (operators, features, fixed literals, typed parameter placeholders and their binding pattern) and ignores parameter names and values; `DSP-…` adds each parameter's type, value and bounds; `DSC-…` (C4b) adds the compiler and operator versions and the inputs (ADR-0096).
+- **price exponent (DSL)** — the degree of a DSL node in price (close = 1, close/close = 0); a constant unifies only with degree 0, which enforces ADR-0086 scale invariance node by node.
 - **ADV** — Average Daily Volume; participation caps are expressed against it.
 - **arrival rules** — which bar an order may first interact with under
   latency, and whether that interaction is full-bar or mid-bar (ADR-0012).

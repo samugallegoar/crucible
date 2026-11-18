@@ -20,11 +20,26 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
+from crucible.core.canonical import canonical_json
 from crucible.core.errors import ExperimentError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
+
+__all__ = [
+    "ARTIFACT_PREFIX",
+    "VOLATILE_MANIFEST_KEYS",
+    "Seal",
+    "canonical_json",
+    "compute_artifact_id",
+    "find_artifact",
+    "manifest_basis",
+    "read_seal",
+    "results_digest",
+    "seal_artifact",
+    "verify_artifact",
+]
 
 ARTIFACT_PREFIX = "ART-"
 ARTIFACT_ID_HEX = 16
@@ -54,11 +69,6 @@ VOLATILE_MANIFEST_KEYS = frozenset(
 
 _RESULT_SUFFIXES = (".parquet",)
 _RESULT_NAMES = ("config.yaml", "metrics.json")
-
-
-def canonical_json(value: object) -> str:
-    """Key-sorted, whitespace-free JSON: the same text for the same content, in any key order."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def manifest_basis(manifest: Mapping[str, object]) -> str:
