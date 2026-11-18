@@ -8,6 +8,25 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C3b-1: CME Globex session calendar (ADR-0091)
+- **`crucible.data.cme_session_table`**: a versioned table (`cme-equity-sessions-1`, hashed) of the
+  Globex sessions of ES, NQ, YM, RTY and NKD from 2010-06 to 2027-12, transcribed from CME
+  documents with their URLs and SHA-256s: four regimes (15:30 open and 16:30 maintenance before
+  2012-11-19; 16:15 close and the 15:15-15:30 halt to 2015-09-18; 16:00 close; halt removed from
+  2021-06-28; NKD's own changes), every holiday and early close, and the special closures (Hurricane
+  Sandy 2012, the 2018 and 2025 national days of mourning, U.S. roots only).
+- **`crucible.data.cme_sessions`**: `SessionCalendar` (scheduled segments per trade date; refuses
+  overlaps, a session after a closed weekday without an explicit open, dates outside coverage),
+  `assign_bars` / `trade_date_of`, `session_rule_masks` (`flat_by_close` decided on the penultimate
+  scheduled bar and filled at the final bar's open; `exit_at` and entry windows on the trade-date
+  clock; missing final bars reported, not replaced; off-schedule bars not tradable) and
+  `schedule_report` (observed bars vs the schedule; never changes it).
+- Unsourced: most 2023 holidays, MLK 2024 and NKD on the 2023-2025 ES-only dates; those sessions
+  are flagged unverified. Findings: the table agrees with every raw bar except prints in the minute
+  after a close; the 2012-11..2014-02 holiday morning segments are missing from the Databento
+  batch; the ADR-0087 17:00 trade-date rule is wrong before 2012-11-19 (fix pending).
+- `calendars.chicago_wall_to_utc_ns` / `utc_ns_to_chicago_wall`: the wall-clock boundary converters.
+
 ### Fathom C3a: futures execution simulator in contracts and dollars (ADR-0090)
 - **`crucible.execution.futures_sim.simulate_futures`**: signed whole-contract targets decided at
   each bar's close, filled at the next eligible bar's open by default (`signal_bar_close` is the

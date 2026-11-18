@@ -207,6 +207,36 @@ def cme_trade_date_expr(opened_ns: pl.Expr) -> pl.Expr:
     return (wall + pl.duration(hours=_CME_TRADE_DATE_SHIFT_HOURS)).dt.date()
 
 
+def chicago_wall_to_utc_ns(walls: list[dt.datetime]) -> list[int]:
+    """UTC int64 nanoseconds of naive ``America/Chicago`` wall-clock datetimes (I/O boundary).
+
+    Refuses a wall time that does not exist (the spring-forward hour) or is ambiguous (the
+    fall-back hour): a schedule must name an instant, and CME's session times (05:00-17:00) never
+    fall in the 01:00-03:00 transition window, so a hit means a transcription error."""
+    if not walls:
+        return []
+    series = pl.Series("wall", walls, dtype=pl.Datetime("ns"))
+    try:
+        local = series.dt.replace_time_zone(CME_TIMEZONE, ambiguous="raise", non_existent="raise")
+    except pl.exceptions.ComputeError as exc:
+        msg = f"a Chicago wall time is ambiguous or does not exist (DST transition): {exc}"
+        raise ValueError(msg) from exc
+    return [int(v) for v in local.dt.convert_time_zone("UTC").dt.epoch("ns").to_list()]
+
+
+def utc_ns_to_chicago_wall(values: list[int]) -> list[dt.datetime]:
+    """Naive ``America/Chicago`` wall-clock datetimes of UTC int64 nanoseconds (I/O boundary)."""
+    if not values:
+        return []
+    wall = (
+        pl.Series("t", values, dtype=pl.Int64)
+        .cast(pl.Datetime("ns", "UTC"))
+        .dt.convert_time_zone(CME_TIMEZONE)
+        .dt.replace_time_zone(None)
+    )
+    return list(wall.to_list())
+
+
 SESSIONS_PER_YEAR = {"24/7": 365.0}
 """Sessions per year by calendar; every exchange calendar uses 252 (the project's convention)."""
 

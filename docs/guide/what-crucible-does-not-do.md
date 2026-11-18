@@ -36,6 +36,10 @@ when every statistical guard passes.
   and usually `not_conclusive`. Time-of-day rules: flat by the close (optionally at the closing
   price), exit at a clock time, an entry window and `time` in conditions; no market-on-open orders,
   no day-of-week conditions, and the market-on-close cutoff is the US one (ten minutes).
+- CME Globex session hours (the equity-index futures ES, NQ, YM, RTY, NKD) come from a
+  transcribed, cited schedule table for 2010-06 to 2027-12 (ADR-0091). Most 2023 holidays and
+  Martin Luther King Day 2024 have no archived schedule: those sessions are flagged unverified,
+  not guessed. Other futures have no session calendar yet.
 - No fundamentals, news, filings or alternative data.
 - Survivorship: a ticker you ask for today exists today. A test of a rule on today's index
   constituents over the past is flattered by the companies that were dropped; Crucible does not

@@ -117,5 +117,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0088](0088-minute-level-integrity-report.md) | Minute-level integrity report: observed minutes, gaps are findings, contract violations are errors | ? | Observed minutes only. `crucible data integrity` (`crucible.data.integrity.integrity_report`, MCP tool `crucible_data_integrity`) reads a bar dataset and reports, per symbol and per session (the … |
 | [0089](0089-derived-dataset-catalog.md) | The dataset registry is a catalog derived from manifests and data, never a stored file | ? | Derived, not stored. `crucible data catalog` (`crucible/data/catalog.py::dataset_catalog`) builds every entry from the dataset's manifest and its data file at query time |
 | [0090](0090-futures-execution-simulator.md) | A futures execution simulator in contracts and dollars: causal fills, tick costs, brackets, causal rolls | ? | A dedicated contract-based simulator, `crucible/execution/futures_sim.py` |
+| [0091](0091-cme-globex-session-calendar.md) | A versioned CME Globex session calendar transcribed from published schedules | ? | One table, transcribed from documents. `crucible/data/cme_session_table.py` holds: |
 
 <!-- END GENERATED: adr-index -->
