@@ -167,7 +167,9 @@ _OPERATORS: tuple[OperatorDef, ...] = (
         "cs_rank",
         1,
         "cs_rank(x)",
-        "cross-sectional rank across symbols at the same bar, in [0, 1] (evaluated in C4c)",
+        "rank of x across the panel's symbols at the same event_time: only symbols with a row at "
+        "that timestamp and a non-null x, no forward fill; null when fewer than three members; "
+        "average ranks, normalized to (rank - 1)/(m - 1) in [0, 1]",
         "dimensionless; x must be dimensionless (price and volume degree 0, not time)",
         min_window=1,
     ),

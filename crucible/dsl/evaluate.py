@@ -11,7 +11,8 @@ Two invariants make the result a pure function of the frame and the expression:
 
 - **Causality**: every operator reads only rows up to and including the current one of the
   current stream (``delay``/``delta`` shift backwards, the rolling operators look back, ``ema``
-  recurses forwards). Nothing reads a clock, a registry or a random generator.
+  recurses forwards). Nothing reads a clock, a registry or a random generator. ``cs_rank`` reads
+  the *other* streams of the same bar, never a later one.
 - **Availability (C2 is the single source)**: the frame must carry the C2 row columns
   ``event_time`` and ``available_at`` (``Int64`` UTC ns) and pass :func:`check_availability`, so an
   expression is never evaluated on a bar whose data had not arrived.
@@ -28,6 +29,13 @@ Semantics, shared by every operator (ADR-0098):
   comparisons with null give null; ``and``/``or``/``not`` follow Kleene's three-valued logic;
   ``if(null, a, b)`` is null; ``min``/``max`` propagate null (unlike ``pl.min_horizontal``, which
   skips a null operand).
+- **Cross-section** (``cs_rank``, ADR-0099): the decision timestamp is ``event_time``; the
+  universe at ``t`` is every symbol with a row exactly at ``t`` whose argument value is non-null
+  (an absent symbol is not carried forward, and nothing is forward-filled). With fewer than three
+  members the value is null; otherwise it is ``(average rank - 1) / (m - 1)`` in ``[0, 1]``,
+  ascending, ties averaged. A rank belongs to the whole cross-section, so a rank-dependent row is
+  knowable only when its slowest universe member is: ``decision_at`` is the largest
+  ``available_at`` of the universe (``CrossSection``).
 - **Session features** (``time_of_day``, ``minutes_since_open``, ``minutes_to_close``) are read
   from the CME session calendar (ADR-0091/0092), so an expression that uses one is refused unless
   a ``SessionCalendar`` is passed.
@@ -39,12 +47,14 @@ else dimensionless. Nothing here reads the wall clock.
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Final
 
 import numpy as np
 import polars as pl
 
-from crucible.core.errors import DataQualityError, InvariantViolation
+from crucible.core.errors import ConfigurationError, DataQualityError, InvariantViolation
 from crucible.core.types import NS_PER_S
 from crucible.data.calendars import utc_ns_to_chicago_wall
 from crucible.data.cme_sessions import session_trade_dates
@@ -60,6 +70,7 @@ if TYPE_CHECKING:
 
     from crucible.data.cme_sessions import SessionCalendar
     from crucible.dsl.ast import Expr, Expression
+    from crucible.dsl.compile import CompiledSignal
 
 _AVAILABLE_AT: Final[str] = "available_at"
 _EVENT_TIME: Final[str] = "event_time"
@@ -72,6 +83,18 @@ _WINDOW_PRESERVING: Final[frozenset[str]] = frozenset(
     {"ts_mean", "ts_min", "ts_max", "ts_std", "ts_zscore", "ts_rank", "ema"}
 )
 """Rolling operators: ``base + n - 1`` leading null rows on a gap-free stream."""
+_CS_RANK: Final[str] = "cs_rank"
+_CS_COUNT: Final[str] = "cs_count"
+_CS_UNIVERSE_SCHEMA: Final[Mapping[str, pl.DataType]] = MappingProxyType(
+    {
+        "event_time": pl.Int64(),
+        "node": pl.Int64(),
+        "symbols": pl.List(pl.String()),
+        "count": pl.Int64(),
+    }
+)
+MIN_CS_MEMBERS: Final[int] = 3
+"""The smallest cross-section a rank is defined on (ADR-0099): two members are a comparison."""
 
 
 # ----------------------------------------------------------------------------------- refusals
@@ -196,6 +219,87 @@ def check_availability(frame: pl.DataFrame, *, bar_seconds: int = 60) -> None:
             raise DataQualityError(msg)
 
 
+# ------------------------------------------------------------------------------ cross-section
+
+
+def _event_time_groups(frame: pl.DataFrame) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Distinct ``event_time`` values (ascending) and the frame rows at each, sorted by row."""
+    times = frame.get_column(_EVENT_TIME).to_numpy()
+    unique, inverse = np.unique(times, return_inverse=True)
+    order = np.argsort(inverse, kind="stable")
+    bounds = np.searchsorted(inverse[order], np.arange(unique.size + 1))
+    return unique, [order[bounds[index] : bounds[index + 1]] for index in range(unique.size)]
+
+
+def _average_ranks(values: np.ndarray) -> np.ndarray:
+    """Average-tie ranks of ``values``, normalized to ``(rank - 1) / (m - 1)`` in ``[0, 1]``.
+
+    Ascending: the smallest value gets ``0.0`` and the largest ``1.0``; ties share the mean of the
+    ranks they occupy (the same rule as ``ts_rank``, applied across the cross-section).
+    """
+    size = values.size
+    if size < 2:  # pragma: no cover - guarded by MIN_CS_MEMBERS before this is called
+        msg = f"a cross-sectional rank needs at least two values, got {size}"
+        raise InvariantViolation(msg)
+    order = np.argsort(values, kind="stable")
+    ordered = values[order]
+    ranks = np.empty(size, dtype=np.float64)
+    start = 0
+    for index in range(1, size + 1):
+        if index == size or ordered[index] != ordered[start]:
+            ranks[order[start:index]] = (start + 1 + index) / 2.0
+            start = index
+    return (ranks - 1.0) / (size - 1.0)
+
+
+def _int64_with_nulls(name: str, values: np.ndarray, known: np.ndarray) -> pl.Series:
+    """An ``Int64`` series of ``values``, null wherever ``known`` is false."""
+    if bool(known.all()):
+        return pl.Series(name, values, dtype=pl.Int64)
+    return (
+        pl.DataFrame({"v": values, "k": known})
+        .select(
+            pl.when(pl.col("k"))
+            .then(pl.col("v"))
+            .otherwise(pl.lit(None, dtype=pl.Int64))
+            .cast(pl.Int64)
+            .alias(name)
+        )
+        .get_column(name)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CsRankRecord:
+    """One ``cs_rank`` node's cross-section over one frame (ADR-0099).
+
+    ``node``: the node's index in the canonical root's pre-order, which is the ``node`` column of
+    :func:`cs_universe`. ``counts``: the universe size of every row (the same for every row at one
+    ``event_time``). ``members``: the frame rows of the universe (non-null argument) per
+    ``event_time``; a timestamp with no member is an empty tuple.
+    """
+
+    node: int
+    counts: np.ndarray
+    members: Mapping[int, tuple[int, ...]]
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSection:
+    """The cross-sectional facts of one evaluation (ADR-0099), one value per frame row.
+
+    ``nodes``: the ``cs_rank`` nodes' pre-order indexes (empty when the expression has none).
+    ``count``: the smallest universe size over those nodes (``cs_count``), null when there is no
+    ``cs_rank``. ``decision_at``: the largest ``available_at`` over the universe at the row's
+    ``event_time`` (the union over every ``cs_rank`` node), null at a timestamp whose universe is
+    empty; the row's own ``available_at`` when the expression has no ``cs_rank``.
+    """
+
+    nodes: tuple[int, ...]
+    count: pl.Series
+    decision_at: pl.Series
+
+
 # --------------------------------------------------------------------------- feature columns
 
 
@@ -277,6 +381,13 @@ class _Evaluator:
         self._features: dict[str, str] = {}
         for name in self._used:
             self._features[name] = self._feature(name)
+        self._cs_nodes: dict[int, int] = {
+            id(node): index
+            for index, node in enumerate(ast.walk_preorder(expression.root))
+            if isinstance(node, ast.Call) and node.name == _CS_RANK
+        }
+        self._cs_records: dict[int, CsRankRecord] = {}
+        self._groups: tuple[np.ndarray, list[np.ndarray]] | None = None
 
     # -- helpers
 
@@ -359,6 +470,49 @@ class _Evaluator:
         column = self.evaluate(self._expression.root)
         return self._work.get_column(column)
 
+    def cross_section(self) -> CrossSection:
+        """The per-row cross-sectional facts of this evaluation (:class:`CrossSection`)."""
+        if not self._cs_records:
+            nulls = pl.Series(_CS_COUNT, [None] * self._frame.height, dtype=pl.Int64)
+            return CrossSection(
+                nodes=(),
+                count=nulls,
+                decision_at=self._frame.get_column(_AVAILABLE_AT),
+            )
+        records = sorted(self._cs_records.values(), key=lambda record: record.node)
+        count = np.min(np.stack([record.counts for record in records]), axis=0)
+        times, groups = self._event_times()
+        available = self._frame.get_column(_AVAILABLE_AT).to_numpy()
+        latest = np.zeros(available.shape, dtype=np.int64)
+        known = np.zeros(available.shape, dtype=np.bool_)
+        for event_time, rows in zip(times, groups, strict=True):
+            union = np.unique(
+                np.concatenate(
+                    [
+                        np.asarray(record.members.get(int(event_time), ()), dtype=np.int64)
+                        for record in records
+                    ]
+                )
+            )
+            if union.size:
+                latest[rows] = int(available[union].max())
+                known[rows] = True
+        return CrossSection(
+            nodes=tuple(record.node for record in records),
+            count=pl.Series(_CS_COUNT, count, dtype=pl.Int64),
+            decision_at=_int64_with_nulls("decision_at", latest, known),
+        )
+
+    def _event_times(self) -> tuple[np.ndarray, list[np.ndarray]]:
+        if self._groups is None:
+            self._groups = _event_time_groups(self._frame)
+        return self._groups
+
+    @property
+    def cs_records(self) -> tuple[CsRankRecord, ...]:
+        """Every ``cs_rank`` node's cross-section record, ordered by pre-order index."""
+        return tuple(sorted(self._cs_records.values(), key=lambda record: record.node))
+
     def evaluate(self, node: Expr) -> str:
         key = id(node)
         if key in self._columns:
@@ -424,14 +578,8 @@ class _Evaluator:
 
     def _call(self, node: ast.Call, args: list[str]) -> str:
         name = node.name
-        if name == "cs_rank":
-            msg = "cs_rank is evaluated in C4c"
-            raise ExpressionError(
-                msg,
-                column=node.column,
-                token=name,
-                hint="rank within a cross-section needs the whole bar; it is not part of C4b",
-            )
+        if name == _CS_RANK:
+            return self._add_series(self._cs_rank(node, args[0]))
         if name == "abs":
             return self._add(pl.col(args[0]).abs())
         if name == "sign":
@@ -450,6 +598,44 @@ class _Evaluator:
         return self._add(self._rolling(name, args[0], window))
 
     # -- operator bodies
+
+    def _cs_rank(self, node: ast.Call, child: str) -> pl.Series:
+        """Rank the argument across the panel at each ``event_time`` (ADR-0099).
+
+        No forward fill: a symbol without a row at ``event_time`` is simply not in that bar's
+        universe, and a row whose argument is null gets a null rank. A rank is defined on at
+        least :data:`MIN_CS_MEMBERS` members (two is a comparison, not a rank).
+        """
+        if not self._has_symbol:
+            msg = (
+                "cs_rank needs a panel with a symbol column: a cross-sectional rank compares the "
+                "symbols of one bar, and a frame without `symbol` is a single stream"
+            )
+            raise ExpressionError(
+                msg,
+                column=node.column,
+                token=_CS_RANK,
+                hint="evaluate the expression on a panel (one row per symbol and event_time)",
+            )
+        series = self._series(node.args[0])
+        values = series.to_numpy().astype(np.float64, copy=True)
+        present = series.is_not_null().to_numpy()
+        out = np.full(values.shape, np.nan, dtype=np.float64)
+        counts = np.zeros(values.shape, dtype=np.int64)
+        members: dict[int, tuple[int, ...]] = {}
+        times, groups = self._event_times()
+        for event_time, rows in zip(times, groups, strict=True):
+            chosen = rows[present[rows]]
+            counts[rows] = chosen.size
+            members[int(event_time)] = tuple(int(row) for row in chosen)
+            if chosen.size >= MIN_CS_MEMBERS:
+                out[chosen] = _average_ranks(values[chosen])
+        self._cs_records[id(node)] = CsRankRecord(
+            node=self._cs_nodes[id(node)],
+            counts=counts,
+            members=MappingProxyType(members),
+        )
+        return pl.Series(_CS_RANK, out, dtype=pl.Float64, nan_to_null=True)
 
     def _extreme(self, name: str, first: pl.Expr, second: pl.Expr) -> pl.Expr:
         """Element-wise min/max that propagates null (``min_horizontal`` skips it)."""
@@ -550,6 +736,33 @@ def _ema(values: np.ndarray, window: int) -> np.ndarray:
 # ------------------------------------------------------------------------------ public API
 
 
+def _evaluated(
+    expr: Expression,
+    frame: pl.DataFrame,
+    calendar: SessionCalendar | None,
+    bar_seconds: int,
+) -> tuple[pl.Series, _Evaluator]:
+    """The shared body of :func:`evaluate`, :func:`evaluate_with_cross_section` and
+    :func:`cs_universe`: validate, then evaluate the canonical tree once."""
+    _require_bar_seconds(bar_seconds)
+    expression = canonicalize(expr)
+    check_availability(frame, bar_seconds=bar_seconds)
+    _check_stream_order(frame)
+    session = sorted(set(_features_used(expression.root)) & SESSION_FEATURES)
+    if session and calendar is None:
+        msg = (
+            f"the expression reads {', '.join(session)}, a session feature computed from the CME "
+            "session calendar's schedule and exchange time zone (ADR-0091/0092); evaluate it with "
+            "calendar=calendar_for(root)"
+        )
+        raise ExpressionError(msg, token=session[0], hint="evaluate(expr, bars, calendar=...)")
+    evaluator = _Evaluator(expression, frame, calendar, bar_seconds)
+    values = evaluator.run()
+    if not expression.root_type.is_bool:
+        values = values.cast(pl.Float64)
+    return values, evaluator
+
+
 def evaluate(
     expr: Expression,
     frame: pl.DataFrame,
@@ -569,24 +782,93 @@ def evaluate(
     condition). Evaluation always runs on the canonical form (``canonicalize(expr)``): the
     canonicalization is exact (a property test proves it is bitwise the same, nulls included), so
     ``evaluate(expr)`` and ``evaluate(canonicalize(expr))`` agree row for row.
+
+    ``cs_rank`` reads the panel's other symbols at the same ``event_time`` and needs a ``symbol``
+    column (``ExpressionError`` otherwise); the timing of a rank-dependent value is published by
+    :func:`evaluate_with_cross_section` / :meth:`CompiledSignal.evaluate`, whose ``decision_at``
+    is the universe's slowest ``available_at``.
     """
-    _require_bar_seconds(bar_seconds)
-    expression = canonicalize(expr)
-    check_availability(frame, bar_seconds=bar_seconds)
-    _check_stream_order(frame)
-    session = sorted(set(_features_used(expression.root)) & SESSION_FEATURES)
-    if session and calendar is None:
+    return _evaluated(expr, frame, calendar, bar_seconds)[0]
+
+
+def evaluate_with_cross_section(
+    expr: Expression,
+    frame: pl.DataFrame,
+    *,
+    calendar: SessionCalendar | None = None,
+    bar_seconds: int = 60,
+) -> tuple[pl.Series, CrossSection]:
+    """Like :func:`evaluate`, and also the per-row cross-sectional facts (ADR-0099).
+
+    The second element is the :class:`CrossSection`: the pre-order index of every ``cs_rank``
+    node, the ``cs_count`` series (the smallest universe size over those nodes, null when the
+    expression has none) and the ``decision_at`` series (the universe's largest ``available_at``
+    at the row's ``event_time``; the row's own ``available_at`` without ``cs_rank``).
+    """
+    values, evaluator = _evaluated(expr, frame, calendar, bar_seconds)
+    return values, evaluator.cross_section()
+
+
+def cs_rank_nodes(expr: Expression) -> tuple[ast.Call, ...]:
+    """The expression's ``cs_rank`` calls, in the canonical root's pre-order (their index)."""
+    canonical = canonicalize(expr)
+    return tuple(
+        node
+        for node in ast.walk_preorder(canonical.root)
+        if isinstance(node, ast.Call) and node.name == _CS_RANK
+    )
+
+
+def cs_universe(
+    compiled_or_expr: Expression | CompiledSignal,
+    frame: pl.DataFrame,
+    *,
+    calendar: SessionCalendar | None = None,
+    bar_seconds: int = 60,
+) -> pl.DataFrame:
+    """The universe each ``cs_rank`` node ranked, per decision timestamp (ADR-0099).
+
+    One row per ``(event_time, cs_rank node)`` for every ``event_time`` of the frame, ascending in
+    both columns: ``node`` is the ``cs_rank`` call's index in the canonical root's pre-order,
+    ``symbols`` the sorted symbols with a non-null argument at that ``event_time`` and ``count``
+    their number (``0`` when nothing was rankable). ``compiled_or_expr`` is an ``Expression`` or a
+    ``CompiledSignal``; the expression is evaluated, so the C2 availability contract, the session
+    calendar requirement and the ``symbol`` requirement of :func:`evaluate` apply. Without any
+    ``cs_rank`` the result is empty (the schema is still returned).
+    """
+    expression = _as_expression(compiled_or_expr)
+    _, evaluator = _evaluated(expression, frame, calendar, bar_seconds)
+    records = sorted(evaluator.cs_records, key=lambda record: record.node)
+    if not records:
+        return pl.DataFrame(schema=_CS_UNIVERSE_SCHEMA)
+    symbols = frame.get_column(_SYMBOL).to_numpy()
+    times, _ = _event_time_groups(frame)
+    rows: list[dict[str, object]] = []
+    for event_time in times:
+        for record in records:
+            members = record.members.get(int(event_time), ())
+            rows.append(
+                {
+                    "event_time": int(event_time),
+                    "node": record.node,
+                    "symbols": sorted(str(symbols[row]) for row in members),
+                    "count": len(members),
+                }
+            )
+    return pl.DataFrame(rows, schema=_CS_UNIVERSE_SCHEMA)
+
+
+def _as_expression(compiled_or_expr: object) -> Expression:
+    if isinstance(compiled_or_expr, ast.Expression):
+        return compiled_or_expr
+    root_expression = getattr(compiled_or_expr, "expression", None)
+    if not isinstance(root_expression, ast.Expression):
         msg = (
-            f"the expression reads {', '.join(session)}, a session feature computed from the CME "
-            "session calendar's schedule and exchange time zone (ADR-0091/0092); evaluate it with "
-            "calendar=calendar_for(root)"
+            "cs_universe() takes an Expression or a CompiledSignal, got "
+            f"{type(compiled_or_expr).__name__}"
         )
-        raise ExpressionError(msg, token=session[0], hint="evaluate(expr, bars, calendar=...)")
-    evaluator = _Evaluator(expression, frame, calendar, bar_seconds)
-    values = evaluator.run()
-    if expression.root_type.is_bool:
-        return values
-    return values.cast(pl.Float64)
+        raise ConfigurationError(msg)
+    return root_expression
 
 
 def warmup_bars(expr: Expression) -> int:
@@ -648,8 +930,14 @@ class _BoundParams:
 
 
 __all__ = [
+    "MIN_CS_MEMBERS",
     "SESSION_FEATURES",
+    "CrossSection",
+    "CsRankRecord",
     "check_availability",
+    "cs_rank_nodes",
+    "cs_universe",
     "evaluate",
+    "evaluate_with_cross_section",
     "warmup_bars",
 ]

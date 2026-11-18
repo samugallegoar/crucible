@@ -173,11 +173,11 @@ def test_the_minimum_window_is_enforced_again_by_bind() -> None:
         compile_expression("ts_std(volume, 1) > 1")
 
 
-def test_cs_rank_is_refused_at_evaluation() -> None:
+def test_cs_rank_needs_a_panel_with_a_symbol_column() -> None:
     from crucible.dsl.evaluate import evaluate
 
     expression = parse("cs_rank(close / delay(close, 1))")
-    with pytest.raises(ExpressionError, match="cs_rank is evaluated in C4c"):
+    with pytest.raises(ExpressionError, match="cs_rank needs a panel with a symbol column"):
         evaluate(expression, frame())
 
 
@@ -188,11 +188,13 @@ def test_evaluate_returns_event_time_decision_at_and_value() -> None:
     compiled = compile_expression("ts_zscore(close, 2) > 0")
     bars = frame()
     out = compiled.evaluate(bars, bar_seconds=60)
-    assert out.columns == ["event_time", "decision_at", "value"]
+    assert out.columns == ["event_time", "decision_at", "value", "cs_count"]
     assert out["event_time"].to_list() == bars["event_time"].to_list()
     assert out["decision_at"].to_list() == bars["available_at"].to_list()
     assert out["value"].to_list() == [None, True, True, True]
     assert out["value"].dtype == pl.Boolean
+    # no cs_rank in the expression: the cross-section count is null, not zero
+    assert out["cs_count"].to_list() == [None] * bars.height
 
 
 def test_evaluate_keeps_the_symbol_column_of_a_multi_stream_frame() -> None:
@@ -205,7 +207,7 @@ def test_evaluate_keeps_the_symbol_column_of_a_multi_stream_frame() -> None:
         pl.Series("symbol", ["AAA"] * 4 + ["BBB"] * 4, dtype=pl.String)
     )
     out = compiled.evaluate(both.sort(["symbol", "event_time"]), bar_seconds=60)
-    assert out.columns == ["event_time", "decision_at", "value", "symbol"]
+    assert out.columns == ["event_time", "decision_at", "value", "cs_count", "symbol"]
     assert out["symbol"].to_list() == ["AAA"] * 4 + ["BBB"] * 4
     assert out["value"].to_list() == [None, True, True, True] * 2
 

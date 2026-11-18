@@ -2,8 +2,9 @@
 
 A ``CompiledSignal`` is a **definition**, not a run: it holds the canonical expression, its root
 kind, the features and free parameters it reads, its warm-up and the three identities, and it
-evaluates one bar frame through :func:`crucible.dsl.evaluate.evaluate`. It holds no evaluation
-state, so live (C4c) can reuse the same compiled definition with its own per-stream state.
+evaluates one bar frame through :func:`crucible.dsl.evaluate.evaluate_with_cross_section`. It
+holds no evaluation state, so live (C4c) reuses the same compiled definition with its own
+per-stream state.
 
 Compilation is a pure function of the text (or typed tree), the parameter bindings and the
 ``signal_input`` role:
@@ -34,7 +35,7 @@ from crucible.core.errors import ConfigurationError
 from crucible.dsl import ast
 from crucible.dsl.canonical import canonical_form, canonical_text, canonicalize
 from crucible.dsl.errors import ExpressionError
-from crucible.dsl.evaluate import evaluate, warmup_bars
+from crucible.dsl.evaluate import evaluate_with_cross_section, warmup_bars
 from crucible.dsl.identity import (
     compiled_id,
     parameterization_id,
@@ -107,17 +108,22 @@ class CompiledSignal:
     ) -> pl.DataFrame:
         """Evaluate the definition on ``frame``: one row per bar, in the frame's order.
 
-        Columns: ``event_time``, ``decision_at`` (the bar's ``available_at``, the C2 column the
-        availability check reads), ``value`` (Float64 for a score, Boolean for a condition) and
-        ``symbol`` when the frame has one. ``calendar`` is required when the signal uses a session
-        feature (``calendar_for(root)``). Timing: ``decision_at`` is the bar's ``available_at``,
-        never the wall clock; a null score is flat, not a hold.
+        Columns: ``event_time``, ``decision_at``, ``value`` (Float64 for a score, Boolean for a
+        condition), ``cs_count`` and ``symbol`` when the frame has one. ``calendar`` is required
+        when the signal uses a session feature (``calendar_for(root)``). Timing: ``decision_at``
+        is the bar's ``available_at``, never the wall clock; a signal that uses ``cs_rank`` is
+        published when its slowest universe member is known, so ``decision_at`` is that latest
+        ``available_at`` at the bar (ADR-0099), and ``cs_count`` is the smallest cross-section the
+        expression ranked (null without ``cs_rank``). A null score is flat, not a hold.
         """
-        values = evaluate(self.expression, frame, calendar=calendar, bar_seconds=bar_seconds)
+        values, cross = evaluate_with_cross_section(
+            self.expression, frame, calendar=calendar, bar_seconds=bar_seconds
+        )
         columns: dict[str, pl.Series] = {
             "event_time": frame.get_column("event_time"),
-            "decision_at": frame.get_column("available_at"),
+            "decision_at": cross.decision_at,
             "value": values,
+            "cs_count": cross.count,
         }
         if "symbol" in frame.columns:
             columns["symbol"] = frame.get_column("symbol")

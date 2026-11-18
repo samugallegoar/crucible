@@ -47,6 +47,7 @@ from crucible.core.errors import ConfigurationError
 from crucible.data.continuous import calendar_for
 from crucible.data.futures_specs import futures_spec
 from crucible.dsl.compile import CompiledSignal, compile_expression
+from crucible.dsl.evaluate import cs_rank_nodes
 from crucible.execution.futures_sim import CostSchedule, ExecutionPolicy
 from crucible.experiments.config import canonical_yaml, config_hash
 from crucible.experiments.futures_signals import FuturesSessionPolicy, SignalInput
@@ -477,7 +478,15 @@ class FuturesRunConfig(_FrozenModel):
             raise ConfigurationError(msg)
         if self.strategy.expression is not None:
             # compile at load: a type, window, parameter or scale error is a config error here
-            self.strategy.compiled_signal(self.signal.input)
+            signal = self.strategy.compiled_signal(self.signal.input)
+            if cs_rank_nodes(signal.expression):
+                msg = (
+                    "cs_rank ranks across instruments; a futures run trades one root: the "
+                    f"compiled expression {signal.canonical_text!r} cannot be evaluated here. "
+                    "Evaluate it on a panel from the library (crucible.dsl.evaluate.evaluate), "
+                    "or drop cs_rank from the expression"
+                )
+                raise ConfigurationError(msg)
         if self.strategy.spec is not None or self.strategy.expression is not None:
             if self.contracts is None:
                 what = "spec" if self.strategy.spec is not None else "expression"

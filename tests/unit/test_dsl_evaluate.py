@@ -1,9 +1,11 @@
-"""Evaluation semantics (ADR-0098): every operator, nulls, streams, warm-up and session features.
+"""Evaluation semantics (ADR-0098, ADR-0099): every operator, nulls, streams, warm-up, session
+features and the cross-sectional rank.
 
 Every expected value below is hand-computed from the series written in the test; nothing is read
 back from the engine. The session features are computed by hand from the CME calendar's own
 ``open_ns``/``close_ns`` for real ES trade dates of March 2024 (the schedule is the source of
-truth, never the observed bars).
+truth, never the observed bars). The ``cs_rank`` expectations are the average-tie ranks of the
+values written in each test, normalized to ``(rank - 1)/(m - 1)``.
 """
 
 from __future__ import annotations
@@ -16,8 +18,14 @@ import pytest
 from crucible.core.errors import DataQualityError
 from crucible.data.calendars import chicago_wall_to_utc_ns
 from crucible.data.continuous import calendar_for
-from crucible.dsl import ExpressionError, parse
-from crucible.dsl.evaluate import check_availability, evaluate, warmup_bars
+from crucible.dsl import ExpressionError, compile_expression, parse
+from crucible.dsl.evaluate import (
+    check_availability,
+    cs_universe,
+    evaluate,
+    evaluate_with_cross_section,
+    warmup_bars,
+)
 from crucible.strategy_spec.indicators import INDICATORS
 
 SECOND = 1_000_000_000
@@ -414,3 +422,210 @@ def test_session_features_are_null_on_an_off_schedule_bar_but_the_clock_is_not()
 def test_a_session_feature_without_a_calendar_is_refused_naming_it(feature: str) -> None:
     with pytest.raises(ExpressionError, match=feature):
         evaluate(parse(f"{feature} >= 0"), bars([1.0]))
+
+
+# ---------------------------------------------------------------- cross-sectional rank (C4c)
+
+
+def panel(rows: list[tuple[str, int, int, float | None, float | None]]) -> pl.DataFrame:
+    """A panel frame from ``(symbol, minute, latency_seconds, close, volume)`` rows.
+
+    ``event_time`` is ``minute * MINUTE``; ``available_at`` is ``event_time + latency_seconds``.
+    ``open`` is a constant 100.0, so ``close / open`` (a dimensionless argument for ``cs_rank``)
+    is ``close / 100``.
+    """
+    times = [minute * MINUTE for _, minute, _, _, _ in rows]
+    return pl.DataFrame(
+        {
+            "symbol": [symbol for symbol, _, _, _, _ in rows],
+            "event_time": times,
+            "available_at": [
+                time + latency * SECOND
+                for time, (_, _, latency, _, _) in zip(times, rows, strict=True)
+            ],
+            "open": [100.0] * len(rows),
+            "high": [100.0] * len(rows),
+            "low": [100.0] * len(rows),
+            "close": [close for _, _, _, close, _ in rows],
+            "volume": [volume for _, _, _, _, volume in rows],
+        },
+        schema={
+            "symbol": pl.String,
+            "event_time": pl.Int64,
+            "available_at": pl.Int64,
+            "open": pl.Float64,
+            "high": pl.Float64,
+            "low": pl.Float64,
+            "close": pl.Float64,
+            "volume": pl.Float64,
+        },
+    )
+
+
+def test_cs_rank_ranks_the_panel_at_each_event_time() -> None:
+    # t=0: A=3.0, B=1.0, C=2.0 -> ascending ranks 3, 1, 2 -> (r-1)/2 = 1.0, 0.0, 0.5
+    # t=1: A=1.0, B=2.0, C=3.0 -> 0.0, 0.5, 1.0
+    frame = panel(
+        [
+            ("A", 0, 1, 300.0, 1.0),
+            ("B", 0, 1, 100.0, 1.0),
+            ("C", 0, 1, 200.0, 1.0),
+            ("A", 1, 1, 100.0, 1.0),
+            ("B", 1, 1, 200.0, 1.0),
+            ("C", 1, 1, 300.0, 1.0),
+        ]
+    )
+    assert evaluate(parse("cs_rank(close / open)"), frame).to_list() == [
+        1.0,
+        0.0,
+        0.5,
+        0.0,
+        0.5,
+        1.0,
+    ]
+
+
+def test_cs_rank_averages_ties_and_normalizes_to_the_unit_interval() -> None:
+    # four members with values 1, 2, 2, 3 -> average-tie ranks 1, 2.5, 2.5, 4 -> (r-1)/3
+    frame = panel(
+        [
+            ("A", 0, 1, 100.0, 1.0),
+            ("B", 0, 1, 200.0, 1.0),
+            ("C", 0, 1, 200.0, 1.0),
+            ("D", 0, 1, 300.0, 1.0),
+        ]
+    )
+    assert evaluate(parse("cs_rank(close / open)"), frame).to_list() == [0.0, 0.5, 0.5, 1.0]
+
+
+def test_cs_rank_is_null_below_three_members_and_for_a_null_argument() -> None:
+    # t=0: only A and B have a value -> two members, so no rank; t=1: three members, and the
+    # null-argument row of D stays null even though the panel ranks three symbols
+    frame = panel(
+        [
+            ("A", 0, 1, 100.0, 1.0),
+            ("B", 0, 1, 200.0, 1.0),
+            ("A", 1, 1, 100.0, 1.0),
+            ("B", 1, 1, 200.0, 1.0),
+            ("C", 1, 1, 300.0, 1.0),
+            ("D", 1, 1, None, 1.0),
+        ]
+    )
+    assert evaluate(parse("cs_rank(close / open)"), frame).to_list() == [
+        None,
+        None,
+        0.0,
+        0.5,
+        1.0,
+        None,
+    ]
+
+
+def test_cs_rank_does_not_forward_fill_a_symbol_without_a_row() -> None:
+    # B has no row at t=1, so t=1's universe is {A, C}: two members, null for both
+    frame = panel(
+        [
+            ("A", 0, 1, 100.0, 1.0),
+            ("B", 0, 1, 200.0, 1.0),
+            ("C", 0, 1, 300.0, 1.0),
+            ("A", 1, 1, 100.0, 1.0),
+            ("C", 1, 1, 300.0, 1.0),
+            ("A", 2, 1, 100.0, 1.0),
+            ("B", 2, 1, 200.0, 1.0),
+            ("C", 2, 1, 300.0, 1.0),
+        ]
+    )
+    assert evaluate(parse("cs_rank(close / open)"), frame).to_list() == [
+        0.0,
+        0.5,
+        1.0,
+        None,
+        None,
+        0.0,
+        0.5,
+        1.0,
+    ]
+
+
+def test_cs_rank_needs_a_panel_with_a_symbol_column() -> None:
+    with pytest.raises(ExpressionError, match="cs_rank needs a panel with a symbol column"):
+        evaluate(parse("cs_rank(close / open)"), bars([1.0, 2.0]))
+
+
+def test_a_rank_dependent_decision_waits_for_the_slowest_universe_member() -> None:
+    # t=0: A known at +1s, B at +3s, C at +2s -> the rank is knowable at +3s for every row
+    frame = panel(
+        [
+            ("A", 0, 1, 100.0, 1.0),
+            ("B", 0, 3, 200.0, 1.0),
+            ("C", 0, 2, 300.0, 1.0),
+            ("A", 1, 1, 100.0, 1.0),
+            ("B", 1, 1, 200.0, 1.0),
+            ("C", 1, 1, 300.0, 1.0),
+        ]
+    )
+    compiled = compile_expression("cs_rank(close / open)")
+    out = compiled.evaluate(frame, bar_seconds=60)
+    slowest = frame["available_at"][1]
+    assert out["decision_at"].to_list() == [slowest] * 3 + [frame["available_at"][3]] * 3
+    assert out["cs_count"].to_list() == [3, 3, 3, 3, 3, 3]
+
+
+def test_a_compiled_signal_without_cs_rank_publishes_a_null_count() -> None:
+    compiled = compile_expression("ts_zscore(close, 2) > 0")
+    out = compiled.evaluate(bars([1.0, 2.0, 3.0]), bar_seconds=60)
+    assert out["cs_count"].to_list() == [None, None, None]
+    # decision_at is the bar's available_at: one nanosecond after its close
+    assert out["decision_at"].to_list() == [index * MINUTE + 1 for index in range(3)]
+
+
+def test_cs_rank_records_the_universe_it_ranked_per_timestamp_and_node() -> None:
+    frame = panel(
+        [
+            ("B", 0, 1, 200.0, 1.0),
+            ("A", 0, 1, 100.0, 1.0),
+            ("A", 1, 1, 100.0, 1.0),
+            ("B", 1, 1, None, 1.0),
+            ("C", 1, 1, 300.0, 1.0),
+        ]
+    )
+    universe = cs_universe(parse("cs_rank(close / open)"), frame)
+    assert universe.columns == ["event_time", "node", "symbols", "count"]
+    assert universe["node"].to_list() == [0, 0]
+    assert universe["count"].to_list() == [2, 2]
+    # sorted symbols, and the null argument of B at t=1 excluded
+    assert universe["symbols"].to_list() == [["A", "B"], ["A", "C"]]
+
+
+def test_cs_universe_has_one_row_per_timestamp_and_node() -> None:
+    # two cs_rank nodes at pre-order indexes 1 and 5 of the canonical tree
+    # (0: +, 1: cs_rank(close/open), 2: /, 3: close, 4: open, 5: cs_rank(volume/volume), ...)
+    frame = panel(
+        [
+            ("A", 0, 1, 100.0, 1.0),
+            ("B", 0, 1, 200.0, 1.0),
+            ("C", 0, 1, 300.0, 1.0),
+        ]
+    )
+    universe = cs_universe(parse("cs_rank(close / open) + cs_rank(volume / volume)"), frame)
+    assert universe.height == 2
+    assert universe["node"].to_list() == [1, 5]
+    assert universe["count"].to_list() == [3, 3]
+
+
+def test_cs_count_is_the_smallest_cross_section_the_expression_ranked() -> None:
+    # A has no volume, so the volume rank of t=0 sees two members while close/open sees three
+    frame = panel(
+        [
+            ("A", 0, 1, 100.0, None),
+            ("B", 0, 1, 200.0, 1.0),
+            ("C", 0, 1, 300.0, 1.0),
+        ]
+    )
+    compiled = compile_expression("max(cs_rank(close / open), cs_rank(volume / volume))")
+    out = compiled.evaluate(frame, bar_seconds=60)
+    assert out["cs_count"].to_list() == [2, 2, 2]
+    _, cross = evaluate_with_cross_section(parse("cs_rank(close / open)"), frame)
+    assert cross.nodes == (0,)
+    assert cross.count.to_list() == [3, 3, 3]
+    assert cross.decision_at.to_list() == [frame["available_at"][0]] * 3
