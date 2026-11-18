@@ -8,6 +8,28 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C3c: a futures-run document Fathom can read (ADR-0097)
+- **One constructor.** `crucible.experiments.futures_document.futures_document(run_dir)` builds the
+  document from the sealed run directory, `schema_version` 1. Its schema is printed by
+  `crucible schema --kind futures-run-document`. `futures run --json` and
+  `artifact show <ART-…> --json` both use it, so the two emit the same document.
+- **No verdict, and the document says why.** `verdict.verdict_level` is `null`, and
+  `verdict_reason.code` is `not_assessed`: no statistical assessment happens before C6 and C7. The
+  message states that this is not evidence of no edge.
+- **Metrics carry an assessment status.** Every metric is
+  `{value, ci_low, ci_high, assessment, unit}`. Each one is `descriptive`, with null intervals. No
+  statistic is computed (the ADR-0095 restriction stands).
+- **`--home`.** `futures run`, `artifact show` and `artifact verify` accept `--home`, resolved as
+  `backtest` resolves it. The artifacts root, and with it the only trial registry, become
+  `<home>/experiments`, and `--store` defaults to `<home>/data`. `--home` together with
+  `--artifacts` is refused. Without `--home`, `futures run` now refuses a missing `--store` with a
+  structured `configuration_error` (it used to be an argparse error).
+- **Data catalog.** `crucible data catalog` reports `futures_run` support per root: a calendar, a
+  contract spec and the four default datasets.
+- **MCP.** `crucible_futures_run` and `crucible_artifact` pass `home` through.
+- **Breaking:** the `futures run --json` document shape changed from the C3b-3 ad-hoc dict. Use
+  `experiment_id` and `metrics`; `summary` and `manifest` are gone.
+
 ### Fathom C4a: the DSL core (ADR-0096)
 - New package `crucible.dsl`, a typed causal expression language. This release covers syntax,
   types and identity only; evaluation arrives in C4b.

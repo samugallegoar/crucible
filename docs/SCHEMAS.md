@@ -1001,6 +1001,57 @@ the final balance minus the starting capital.
 
 <!-- END GENERATED: artifact-futures-rolls -->
 
+### The futures-run document (ADR-0097)
+
+A sealed futures run also has one *document*: what `crucible futures run --json` prints and what
+`crucible artifact show <ART-ID> --json` prints for it. Both call
+`crucible.experiments.futures_document.futures_document(run_dir)`, which reads the sealed directory
+only (`manifest.json` + `metrics.json`) after `verify_artifact`, so the two interfaces cannot drift
+and an edited artifact is never described. `schema_version` is **1**
+(`FUTURES_DOCUMENT_SCHEMA_VERSION`); its JSON Schema is
+`crucible schema --kind futures-run-document` (the kind `futures-run`, without `-document`, remains
+the futures-run *config*). Adding a key is additive; removing, renaming or changing the meaning of
+one bumps the version (`docs/COMPATIBILITY.md` §3).
+
+| Key | Type | Meaning |
+|---|---|---|
+| `schema_version` | int | `1` |
+| `kind` | string | `futures_run` |
+| `artifact_id` | string | `ART-<16 hex>` of the sealed directory (§2.1) |
+| `experiment_id` | string | the `FUT-<16 hex>` run id (the directory name) |
+| `run_name` | string | `run.name` of the config |
+| `trial_family` | string | the family whose trial count this run increments (ADR-0008) |
+| `trial_count` | int | the family's trial count after this run |
+| `root` | string | the CME root (`ES`, `NQ`, ...) |
+| `window` | `{start, end}` | inclusive Globex trade dates (day labels) |
+| `run_dir` | string | absolute, posix-style path of the run directory |
+| `datasets` | object | role (`execution`, `signal`, `rolls`, `raw`) -> `{dataset, content_hash, price_basis, adjustment}` |
+| `approximations` | array<string> | every assumption of the run, verbatim from the manifest |
+| `strict_execution` | boolean | whether the run refused off-schedule fills |
+| `verdict` | object | the null verdict and its reason (below) |
+| `headline` | array<string> | the headline metrics, in reading order: `net_pnl_usd`, `final_equity_usd`, `min_equity_usd`, `max_intraday_drawdown_usd`, `total_costs_usd`, `fills` |
+| `metrics` | object | metric name -> `{value, ci_low, ci_high, assessment, unit}` |
+| `files` | array<string> | the result files of the run |
+
+**The verdict is null, with a reason.** `verdict.verdict_level` is `null` exactly when
+`verdict.verdict_reason.code` is present (the constructor refuses the other combinations). The
+reason code is a closed set (`VERDICT_REASON_CODES`), today only `not_assessed`, with
+`assessed_by: ["C6", "C7"]` and a fixed message. `verdict.vocabulary` repeats the levels of
+`crucible backtest` (`some_evidence`, `not_conclusive`, `no_edge_detected`) so a consumer reads the
+same vocabulary; a futures run assigns none of them before milestones C6 and C7.
+
+**An absence of assessment is never negative evidence.** `not_assessed` is not
+`no_edge_detected`: the latter is a negative result, the former says no test was run. A consumer
+must not map one onto the other (the message states it in words; ADR-0095, ADR-0097).
+
+**Every metric is descriptive.** `assessment` is a closed set, `descriptive` | `statistical`; every
+futures metric is `descriptive` and a descriptive metric MUST carry null intervals, which the
+constructor enforces — so `ci_low`/`ci_high` are typed `null` in the schema, and a null interval
+reads as "not assessed", never as "assessed and uninformative". `unit` is a closed set: `usd`,
+`count`, `contracts`, `trade_dates`. Nothing in this document is a Sharpe, a deflated Sharpe, a
+confidence interval, a null test or any other edge claim (ADR-0095); such a metric arrives with C6
+and bumps `schema_version`.
+
 ## Known gaps
 
 - The Polars schemas describe the dtypes but not value domains (`side` in `{buy, sell}`,

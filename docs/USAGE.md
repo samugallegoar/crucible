@@ -249,11 +249,14 @@ uv run crucible run config.yaml --artifacts experiments --json            # prin
 uv run crucible artifact show ART-0123456789abcdef --artifacts experiments --json
 uv run crucible artifact show ART-0123456789abcdef --artifacts experiments --detail --json
 uv run crucible artifact verify ART-0123456789abcdef --artifacts experiments
-uv run crucible schema --kind run      # also: verification, error, manifest
+uv run crucible artifact show ART-0123456789abcdef --home ~/crucible --json
+uv run crucible schema --kind run      # also: verification, error, manifest, futures-run-document
 ```
 
 `show` prints the compact document (ids, headline fields, every metric with its interval);
-`--detail` adds the full manifest and the file inventory. `verify` recomputes the id from the
+`--detail` adds the full manifest and the file inventory. A futures run prints its own document
+instead (§11). `--home` selects `<home>/experiments` as the artifacts root; pass it or
+`--artifacts`, not both. `verify` recomputes the id from the
 files and refuses (exit 1) if a result file or the manifest was edited. A refusal under `--json`
 prints `{"error": {"code", "message", "location", ...}}`; branch on `code`.
 
@@ -265,7 +268,16 @@ From Python: `crucible.experiments.artifact_id.find_artifact(root, id)` returns 
 ```bash
 uv run crucible futures check --config examples/futures/es_sma_cross.yaml
 uv run crucible futures run --config examples/futures/es_sma_cross.yaml --store data/processed --json
+# a home-based run: the artifacts root is <home>/experiments and the store defaults to <home>/data
+uv run crucible futures run --config examples/futures/es_sma_cross.yaml --home ~/crucible
+uv run crucible artifact show ART-0123456789abcdef --home ~/crucible --json
+uv run crucible schema --kind futures-run-document
 ```
+
+`--home` uses the same resolver `crucible backtest --home` and `crucible config show` use: its
+`experiments/` folder becomes the artifacts root (with the family's one
+`trial_registry.duckdb`), its `data/` folder the default store. Pass it or `--artifacts`, never
+both (a refusal); without `--home`, `futures run` still requires `--store`.
 
 The config (`kind: futures_run`, `crucible schema --kind futures-run`) names:
 - the root and its continuous datasets (ADR-0092);
@@ -289,6 +301,14 @@ The sealed run directory holds:
 `manifest.json` records the datasets with their hashes, the signal and scale checks, the execution
 policy, the calendar version, the marking policy and every approximation. There is no Sharpe, and
 the result makes no performance claim (ADR-0095).
+
+`futures run --json` and `crucible artifact show <ART-...> --json` print the same **futures-run
+document** (`schema_version: 1`, `crucible schema --kind futures-run-document`; keys in
+`docs/SCHEMAS.md`, ADR-0097). Its verdict is null with a reason:
+`verdict.verdict_level: null`, `verdict.verdict_reason.code: "not_assessed"` — Crucible has not
+assessed the run statistically before milestones C6 and C7, and an absence of assessment is not
+evidence of no edge. Every metric is `{value, ci_low, ci_high, assessment: "descriptive", unit}`
+with null intervals: a null interval means "not assessed", never "assessed and uninformative".
 
 ## Known gaps
 
