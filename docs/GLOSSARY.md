@@ -247,6 +247,15 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   first minute at or after the roll decision in which both contracts traded, on raw prices; the
   default of the futures simulator. Its labelled alternative is the reference-price approximation
   (ADR-0090).
+- **Globex trade date / session regime** — the CME trading day a minute belongs to: its session
+  opens the evening before (Monday's on Sunday 17:00; before 2012-11-19 at 15:30) and closes on
+  the trade date. A regime is the regular week of a period (open, close, daily breaks); holidays
+  are per-trade-date overrides. The table is `crucible/data/cme_session_table.py` (ADR-0091).
+- **unverified session** — a scheduled session touching an unsourced window of the CME session
+  calendar: built from the regime because no archived document gives its holiday hours; strict
+  callers refuse it (ADR-0091).
+- **off-schedule bar** — a bar outside every scheduled segment (typically a print in the minute
+  after a close); not tradable, never a closure signal (ADR-0091).
 - **session open** — the start of the trading session containing a timestamp
   (`session_open_at`); the dividend holder-of-record cutoff (ADR-0046).
 - **settlement lag / available cash** — T+N delay before sale

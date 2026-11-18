@@ -37,7 +37,17 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   `crucible_data_catalog`. `ParquetDataStore.data_path` gives it the file path; rows are still read
   only through `read(as_of)`.
 - `calendars.py` also holds `cme_trade_date_expr` (Globex trade date = Chicago wall clock + 7 h,
-  ADR-0087) and `ExchangeCalendarAdapter.session_dates`.
+  ADR-0087), `ExchangeCalendarAdapter.session_dates`, and the Chicago wall-clock <-> UTC ns
+  converters `chicago_wall_to_utc_ns` / `utc_ns_to_chicago_wall` (refuse DST-ambiguous times).
+- `cme_sessions.py` + `cme_session_table.py` — the CME Globex session calendar of the equity-index
+  futures (ADR-0091). The table: regimes, per-trade-date overrides, no-trade dates, unsourced
+  windows, unscheduled events and the cited sources with SHA-256s, versioned
+  (`cme-equity-sessions-1`) and hashed (`table_summary`). The logic: `SessionCalendar` (scheduled
+  segments per trade date, `verified` flag, validation that refuses contradictions),
+  `assign_bars` / `trade_date_of` (bars by their end into sessions), `session_rule_masks`
+  (`flat_by_close`, `exit_at`, `entry_window` on the trade-date clock; `on_schedule`,
+  `missing_final`, `unverified`) and `schedule_report` (observed bars vs the schedule; validates,
+  never defines). Coverage ES/NQ/YM 2010-06-07, RTY 2017-07-10, NKD 2012-11-19, to 2027-12-31.
 - `providers/` — price providers behind one interface (`PriceProvider`, ADR-0063): the `tiingo` and `yfinance`
   adapters, and `fetch.py` behind `crucible data fetch`, the shared normalizer, settings (API keys),
   HTTP retry and the raw-response cache. See "Data providers" below.
@@ -214,6 +224,12 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
   refuses it rather than mislabel (Yahoo's `Close` is split-adjusted, so it will offer `adjusted` only).
 
 ## Known gaps
+- The CME session calendar (ADR-0091) leaves unsourced the 2023 holidays other than Labor Day,
+  Christmas and New Year, Martin Luther King Day 2024, and NKD on the 2023-2025 holiday dates
+  taken from ES-only captures; those sessions are built from the regime and flagged unverified.
+  It covers the five equity-index roots only. The continuous series and the integrity report still
+  assign trade dates with the ADR-0087 17:00 rule, which is wrong before 2012-11-19 and on the
+  Friday-to-Monday holiday sessions (ADR-0091, "Findings").
 - Continuous futures take a contract's scheduled last session from its last observed bar (ADR-0086,
   decision 2): exact for liquid contracts, an approximation for thin ones; a contract specification
   table replaces it. `CMES` is used for session dates only: it models a 24 h block with no
