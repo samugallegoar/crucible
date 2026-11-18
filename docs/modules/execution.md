@@ -37,10 +37,18 @@ equity in USD (`Decimal(38, 6)`), plus a fills table and a rolls table. No compo
   default to 1 tick each and are flagged uncalibrated; session windows (Chicago wall clock) can
   override them; `prices_include_spread` forces `spread_ticks = 0`. A target (limit) fill pays the
   fees only.
-- **Brackets** in ticks from the fill price, evaluated intrabar from the fill bar on: a bar touching
-  both exits at the stop; a gapped stop fills at the open; a target needs a trade through
-  (`target_fill_through_ticks`, default 1) and fills at the limit. Re-entry after a bracket exit:
-  `require_signal_reset` (default) or `allow_immediate`.
+- **Brackets per lot** (ADR-0093), in whole ticks from each lot's own fill price, evaluated
+  intrabar from the fill bar on.
+  - An add opens a lot with its own levels. A reduction closes lots FIFO. A flip anchors one new
+    lot. A roll keeps the lots and shifts their levels by the executed spread.
+  - If any lot's stop is touched in a bar, only stops fill in that bar. A gapped stop fills at the
+    open.
+  - A target needs a trade through (`target_fill_through_ticks`, default 1) and fills at the limit.
+  - Re-entry after a bracket exit: `require_signal_reset` (default; the stopped lots are not bought
+    back until the decided target changes) or `allow_immediate`.
+  - Non-integer tick counts are refused, so no percentage stops.
+- **Off-schedule bars** (an optional `on_schedule` column, ADR-0091) are not eligible for any fill
+  or bracket exit.
 - **Rolls** are two trades. `causal` (default, strict): both legs at the opens of the first minute at
   or after the roll's decision in which both contracts traded in the raw data; until then the
   position stays in the old contract, marked and bracketed on its raw bars; no such minute refuses.

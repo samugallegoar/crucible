@@ -119,5 +119,7 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0090](0090-futures-execution-simulator.md) | A futures execution simulator in contracts and dollars: causal fills, tick costs, brackets, causal rolls | ? | A dedicated contract-based simulator, `crucible/execution/futures_sim.py` |
 | [0091](0091-cme-globex-session-calendar.md) | A versioned CME Globex session calendar transcribed from published schedules | ? | One table, transcribed from documents. `crucible/data/cme_session_table.py` holds: |
 | [0092](0092-trade-dates-from-the-session-calendar.md) | Globex trade dates come from the session calendar (continuous datasets v3) | ? | The calendar is the only source of the trade date |
+| [0093](0093-per-lot-futures-brackets.md) | Futures brackets per lot, measured from each fill; off-schedule bars are not executable | ? | Lots. Every fill that opens or adds to a position (kind `signal`) creates a lot with its own stop and target in ticks from its own fill price |
+| [0094](0094-futures-signal-bridge.md) | The futures signal bridge: ratio-adjusted signals, scale invariance enforced, series aligned | ? | `crucible.experiments.futures_signals.futures_targets` is the one bridge |
 
 <!-- END GENERATED: adr-index -->

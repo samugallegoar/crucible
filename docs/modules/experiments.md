@@ -4,6 +4,19 @@
 
 Reproducibility: configs, the runner, artifacts and the research orchestrators. Detail sections follow.
 
+- `futures_signals.py` — the futures signal bridge (ADR-0094): `futures_targets` turns a
+  `StrategySpec` or a `FuturesSignalFunction` (signed contracts per bar) into the targets and the
+  `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the ratio-adjusted
+  series by default (`signal_input`), fills on the unadjusted one. It enforces:
+  - the price basis of both `DatasetRef`s and exact row alignment (`event_time`, `contract`);
+  - scale invariance on ratio-adjusted input: statically for a spec; by declaration
+    (`scale_invariant`) for a function; empirically for both, with prices x16 and x1/16;
+  - refusal of the spec's percentage stops, `max_holding_bars`, explicit sizing, `time` and
+    `session`;
+  - CME session rules (`FuturesSessionPolicy`): a missing final bar and unverified sessions are
+    refused.
+
+  It returns a provenance record. The run that uses it is C3b-3.
 - `config.py` — the frozen pydantic `ExperimentConfig` tree, `load_config`, `config_hash`,
   `canonical_yaml` (fields in `docs/SCHEMAS.md`).
 - `runner.py` — `run_experiment`, `run_experiment_parallel`, `run_with_scenarios`, `rebuild_report`,
@@ -218,6 +231,9 @@ in their phase; hash coverage extends automatically because the hash is over
 the whole model.
 
 ## Known gaps
+- The futures bridge (ADR-0094) has no config section, artifact or CLI yet (C3b-3), and
+  `FuturesSignalFunction` is a stub Protocol: no implementation ships in the package (the tests
+  hold fixtures; a spec goes through `spec_positions`).
 - `artifact_id` is verified, not enforced: nothing stops a process with disk access from editing an
   artifact and re-sealing it (ADR-0084). Runs written before it have no id (`verify` says so).
 - `ArtifactStore` and `RunRegistry` are stub Protocols: `run_experiment` writes the layout itself and `crucible compare` reads the trial registry directly.

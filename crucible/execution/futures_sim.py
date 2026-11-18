@@ -13,13 +13,19 @@ series cannot be an execution price), money is integer micro-dollars, returned a
 Timing: ``event_time`` is a bar's close (UTC ns), its open is ``event_time - bar_seconds``. A target
 decided at bar t's close trades at t+1's open at the earliest; brackets read only the bar they act
 on; a causal roll trades only at or after its decision (the end of the deciding session).
-Pessimism: a bar touching both bracket levels exits at the stop; a stop that gapped fills at the
-open; a target needs a trade through it and never fills at a better gap price.
+Brackets are per lot: every lot a signal fill opens carries its own stop and target, measured
+from its own fill price, and a roll that keeps the position shifts every lot's levels by the
+executed roll spread. A signal reduction closes lots FIFO and leaves the survivor's levels alone.
+Pessimism: if any lot's stop is touched in a bar, only the touched stops fill in that bar and no
+target fills until a later bar; a stop that gapped fills at the open; a target needs a trade
+through it and never fills at a better gap price. A bar flagged off schedule (ADR-0091) cannot
+execute anything: no signal fill and no bracket exit.
 """
 
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Literal
@@ -27,7 +33,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import polars as pl
 
-from crucible.core.errors import ConfigurationError, DataQualityError
+from crucible.core.errors import ConfigurationError, DataQualityError, InvariantViolation
 from crucible.core.types import NS_PER_S
 from crucible.data.futures_specs import SPEC_TABLE_VERSION, spec_table_hash
 
@@ -36,7 +42,7 @@ if TYPE_CHECKING:
 
     from crucible.data.futures_specs import FuturesContractSpec
 
-SIMULATOR_VERSION = "1"
+SIMULATOR_VERSION = "2"
 FillTiming = Literal["next_eligible_bar_open", "signal_bar_close"]
 RollExecution = Literal["causal", "reference_approximation"]
 Reentry = Literal["require_signal_reset", "allow_immediate"]
@@ -197,6 +203,16 @@ class ExecutionPolicy:
         if self.roll_execution not in ("causal", "reference_approximation"):
             msg = f"roll_execution {self.roll_execution!r}: use causal or reference_approximation"
             raise ConfigurationError(msg)
+        for name in ("stop_ticks", "target_ticks", "target_fill_through_ticks"):
+            value = getattr(self, name)
+            if value is not None and type(value) is not int:
+                msg = (
+                    f"{name} = {value!r} ({type(value).__name__}): brackets in the futures path "
+                    "are whole ticks (ADR-0090) and are refused when they are not a plain int "
+                    "(a bool, a float such as 8.0 or 0.25, or a string); a percentage or "
+                    "fractional stop is not accepted here"
+                )
+                raise ConfigurationError(msg)
         for name in ("stop_ticks", "target_ticks"):
             value = getattr(self, name)
             if value is not None and value < 1:
@@ -227,10 +243,14 @@ def execution_policy(
             "target_fill_through_ticks": policy.target_fill_through_ticks,
             "stop_order": "stop-market: the level, or the open when gapped; pays spread+slippage",
             "target_order": "limit: needs a trade through, fills at the limit, pays fees only",
-            "anchor": "the fill that opened or flipped the position; a roll shifts the levels by "
-            "the executed roll spread",
+            "anchor": "each lot's own fill price (FIFO lots); a roll shifts every lot's levels "
+            "by the executed roll spread",
+            "reduction": "FIFO",
+            "same_bar": "if any lot's stop is touched, only stops fill in that bar; targets need "
+            "a later bar",
             "reentry": policy.reentry,
         },
+        "off_schedule": "bars with on_schedule false are not eligible for fills or bracket exits",
         "roll_execution": policy.roll_execution,
         "strict": policy.strict,
         "bar_seconds": policy.bar_seconds,
@@ -357,9 +377,34 @@ class _Frame:
     high: NDArray[np.int64]
     low: NDArray[np.int64]
     close: NDArray[np.int64]
-    trades: NDArray[np.bool_]
+    trades: NDArray[np.bool_]  # the held contract traded in the bar AND the bar is on schedule
     held: list[str]
     rolls: list[_Roll] = field(default_factory=list)
+
+
+def _on_schedule(bars: pl.DataFrame) -> NDArray[np.bool_]:
+    """Whether each bar is on a scheduled session (ADR-0091). A bar outside every scheduled
+    Globex segment is not eligible: no signal fills at its open or close and no bracket exits in
+    it, because the market is closed and a resting order cannot execute. No ``on_schedule``
+    column means every bar is on schedule."""
+    if "on_schedule" not in bars.columns:
+        return np.ones(bars.height, dtype=np.bool_)
+    column = bars["on_schedule"]
+    nulls = column.null_count()
+    if nulls:
+        msg = (
+            f"bars.on_schedule has {nulls} null(s): every bar must say whether it is on a "
+            "scheduled session (ADR-0091), because a null can be read as neither eligible nor "
+            "not eligible and would silently change which fills can happen"
+        )
+        raise DataQualityError(msg)
+    if column.dtype != pl.Boolean:
+        msg = (
+            f"bars.on_schedule must be a Boolean column, got {column.dtype}: a bar is either on "
+            "schedule (true) or it is not (false), never a number or a string"
+        )
+        raise ConfigurationError(msg)
+    return column.to_numpy().astype(np.bool_)
 
 
 def _prepare(
@@ -370,7 +415,8 @@ def _prepare(
     policy: ExecutionPolicy,
 ) -> _Frame:
     """The execution frame: integer-tick OHLC of the contract actually held at each bar, whether
-    that contract traded in the bar, the held contract, and every roll with its execution."""
+    that contract could execute in the bar (it traded and the bar is on schedule), the held
+    contract, and every roll with its execution."""
     bar_ns = policy.bar_seconds * NS_PER_S
     frame = _Frame(
         times=bars["event_time"].to_numpy().astype(np.int64),
@@ -378,7 +424,7 @@ def _prepare(
         high=_ticks(bars["high"].to_numpy().astype(np.float64), tick, "bars.high"),
         low=_ticks(bars["low"].to_numpy().astype(np.float64), tick, "bars.low"),
         close=_ticks(bars["close"].to_numpy().astype(np.float64), tick, "bars.close"),
-        trades=np.ones(bars.height, dtype=np.bool_),
+        trades=_on_schedule(bars),
         held=bars["contract"].to_list(),
     )
     series = list(frame.held)
@@ -487,32 +533,80 @@ def _hold_old_contract(
 
 
 @dataclass(slots=True)
-class _Book:
-    """Open lots (FIFO) as ``[signed quantity, entry ticks]``."""
+class _Lot:
+    """One FIFO lot: signed quantity, entry ticks, and its OWN bracket levels measured from that
+    entry (``None`` where the policy declares no such bracket)."""
 
-    lots: deque[list[int]] = field(default_factory=deque)
+    qty: int
+    entry: int
+    stop: int | None = None
+    target: int | None = None
+
+    @property
+    def side(self) -> int:
+        return 1 if self.qty > 0 else -1
+
+
+@dataclass(slots=True)
+class _Book:
+    """Open lots, FIFO as ``_Lot`` (signed quantity, entry ticks, own stop and target)."""
+
+    lots: deque[_Lot] = field(default_factory=deque)
 
     @property
     def position(self) -> int:
-        return sum(q for q, _ in self.lots)
+        return sum(lot.qty for lot in self.lots)
 
     def unrealized_ticks(self, mark: int) -> int:
-        return sum(q * (mark - entry) for q, entry in self.lots)
+        return sum(lot.qty * (mark - lot.entry) for lot in self.lots)
 
-    def trade(self, qty: int, price: int) -> int:
-        """Applies a fill of ``qty`` (signed) at ``price`` ticks; returns the realized ticks."""
+    def trade(
+        self, qty: int, price: int, stop: int | None = None, target: int | None = None
+    ) -> int:
+        """Applies a fill of ``qty`` (signed) at ``price`` ticks; returns the realized ticks.
+
+        Opposing lots close FIFO (a lot cut short keeps its own levels); whatever is left over
+        opens ONE new lot carrying ``stop``/``target``, which belong to that fill's own price."""
         realized = 0
-        while qty and self.lots and (self.lots[0][0] > 0) != (qty > 0):
+        while qty and self.lots and (self.lots[0].qty > 0) != (qty > 0):
             lot = self.lots[0]
-            closed = min(abs(qty), abs(lot[0])) * (1 if lot[0] > 0 else -1)
-            realized += closed * (price - lot[1])
-            lot[0] -= closed
+            closed = min(abs(qty), abs(lot.qty)) * (1 if lot.qty > 0 else -1)
+            realized += closed * (price - lot.entry)
+            lot.qty -= closed
             qty += closed
-            if lot[0] == 0:
+            if lot.qty == 0:
                 self.lots.popleft()
         if qty:
-            self.lots.append([qty, price])
+            self.lots.append(_Lot(qty, price, stop, target))
         return realized
+
+    def close_lot(self, lot: _Lot, price: int) -> int:
+        """Closes exactly ``lot`` (not FIFO) at ``price``; returns the realized ticks."""
+        for index, candidate in enumerate(self.lots):
+            if candidate is lot:
+                del self.lots[index]
+                return lot.qty * (price - lot.entry)
+        msg = (
+            f"lot {lot!r} is not in the book (position {self.position}): a bracket exit can only "
+            "close a lot that is still open"
+        )
+        raise InvariantViolation(msg)
+
+    def restore(self, price: int, lots: Sequence[tuple[int, int | None, int | None]]) -> None:
+        """Replaces the book with ``lots`` re-opened at ``price`` (a roll that keeps the position):
+        the same signed quantities in the same FIFO order, each with its own levels."""
+        quantities = sum(qty for qty, _, _ in lots)
+        if quantities != self.position:
+            msg = (
+                f"re-opening {quantities} contracts over a book of {self.position}: a roll that "
+                "keeps the position must preserve every lot's quantity"
+            )
+            raise InvariantViolation(msg)
+        self.lots = deque(_Lot(qty, price, stop, target) for qty, stop, target in lots)
+
+    def carry(self) -> list[tuple[int, int | None, int | None]]:
+        """The book as ``(quantity, stop, target)`` in FIFO order, for a roll to re-open."""
+        return [(lot.qty, lot.stop, lot.target) for lot in self.lots]
 
 
 @dataclass(frozen=True, slots=True)
@@ -576,8 +670,6 @@ class _State:
     pending_raw: int = 0  # the decided target behind ``pending`` (before re-entry blocking)
     in_force_raw: int = 0  # the decided target the position currently reflects
     blocked: int | None = None  # require_signal_reset: the decided target that must change
-    stop_level: int | None = None
-    target_level: int | None = None
 
 
 class _Run:
@@ -598,6 +690,15 @@ class _Run:
         self.slippage = np.zeros(n, dtype=np.int64)
         self.fills: list[_Fill] = []
 
+    def levels(self, price: int, side: int) -> tuple[int | None, int | None]:
+        """The ``(stop, target)`` levels measured from a fill at ``price`` for a lot of ``side``
+        (``None`` where the policy declares no such bracket)."""
+        stop, take = self.policy.stop_ticks, self.policy.target_ticks
+        return (
+            None if stop is None else price - side * stop,
+            None if take is None else price + side * take,
+        )
+
     def fill(
         self,
         i: int,
@@ -610,13 +711,57 @@ class _Run:
         contract: str | None = None,
         fill_time: int | None = None,
     ) -> None:
-        """Books a fill of ``qty`` contracts at ``price`` ticks in bar ``i`` and re-anchors the
-        brackets when it opens or flips the position (not for the two legs of a roll)."""
+        """Books a signal fill of ``qty`` contracts at ``price`` ticks in bar ``i``: opposing lots
+        close FIFO and any position left over opens ONE lot whose brackets are measured from THIS
+        fill's price (an add to an existing position does not move the other lots' levels)."""
         if qty == 0:
             return
-        st, table = self.state, self.table
-        before = st.book.position
-        gained = st.book.trade(qty, price) * self.tick_micro
+        stop, target = self.levels(price, 1 if qty > 0 else -1)
+        gained = self.state.book.trade(qty, price, stop, target)
+        self._book(
+            i,
+            qty,
+            price,
+            kind,
+            gained,
+            at_close=at_close,
+            market=market,
+            contract=contract,
+            fill_time=fill_time,
+        )
+
+    def bracket_exit(self, i: int, lot: _Lot, price: int, kind: str) -> None:
+        """Exits exactly ``lot`` in bar ``i``: a stop is a stop-market order (pays spread and
+        slippage), a target is a limit order (pays the fees only)."""
+        gained = self.state.book.close_lot(lot, price)
+        self._book(
+            i,
+            -lot.qty,
+            price,
+            kind,
+            gained,
+            at_close=False,
+            market=kind == "stop",
+            contract=None,
+            fill_time=None,
+        )
+
+    def _book(
+        self,
+        i: int,
+        qty: int,
+        price: int,
+        kind: str,
+        gained_ticks: int,
+        *,
+        at_close: bool,
+        market: bool,
+        contract: str | None,
+        fill_time: int | None,
+    ) -> None:
+        """Records already-booked realized ticks as a fill: money arrays, then the fill row."""
+        table = self.table
+        gained = gained_ticks * self.tick_micro
         contracts = abs(qty)
         fees = table.fees * contracts
         spread = int((table.spread_close if at_close else table.spread)[i]) * contracts
@@ -644,20 +789,12 @@ class _Run:
                 slippage=slip,
             )
         )
-        if kind in ("roll_close", "roll_open"):
-            return
-        after = st.book.position
-        if after == 0:
-            st.stop_level = st.target_level = None
-        elif before == 0 or (before > 0) != (after > 0):
-            side = 1 if after > 0 else -1
-            stop, take = self.policy.stop_ticks, self.policy.target_ticks
-            st.stop_level = price - side * stop if stop else None
-            st.target_level = price + side * take if take else None
 
     def roll(self, i: int, roll: _Roll) -> None:
         """Closes the old contract and opens the new one at the roll's execution prices; a target
-        pending for this open is traded in the new leg instead of a separate fill."""
+        pending for this open is traded in the new leg instead of a separate fill. A roll that
+        keeps the position re-opens the same lots (same quantities, same FIFO order) with every
+        lot's levels shifted by the executed roll spread."""
         st = self.state
         held = st.book.position
         roll.position = held
@@ -666,38 +803,56 @@ class _Run:
         next_open = self.policy.fill == "next_eligible_bar_open"
         goal = st.pending if (st.pending is not None and next_open) else held
         when = roll.reference_time if roll.mode == "reference_approximation" else None
+        carried = st.book.carry()
         self.fill(
             i, -held, roll.old_ticks, "roll_close", contract=roll.from_contract, fill_time=when
         )
         if goal == held:
             self.fill(i, held, roll.new_ticks, "roll_open", fill_time=when)
             shift = roll.new_ticks - roll.old_ticks
-            st.stop_level = None if st.stop_level is None else st.stop_level + shift
-            st.target_level = None if st.target_level is None else st.target_level + shift
+            st.book.restore(
+                roll.new_ticks,
+                [
+                    (
+                        qty,
+                        None if stop is None else stop + shift,
+                        None if take is None else take + shift,
+                    )
+                    for qty, stop, take in carried
+                ],
+            )
         else:
-            st.stop_level = st.target_level = None
             self.fill(i, goal, roll.new_ticks, "signal", fill_time=when)
             st.in_force_raw = st.pending_raw
         if next_open:
             st.pending = None
 
     def brackets(self, i: int) -> None:
-        """Stop and target inside bar ``i``; a bar touching both exits at the stop."""
+        """Per-lot stops and targets inside bar ``i``, pessimistic about the intrabar path.
+
+        If ANY open lot's stop is touched, only the touched stops fill in this bar (the order of
+        the high and the low inside it is unknown, so the worse path is assumed) and no target
+        fills until a later bar. Lots whose stop is not touched stay open with their levels."""
         st, frame, policy = self.state, self.frame, self.policy
-        pos = st.book.position
-        if not pos or not frame.trades[i] or (st.stop_level is None and st.target_level is None):
+        if not st.book.lots or not frame.trades[i]:
             return
-        side = 1 if pos > 0 else -1
         o, h, lo = int(frame.open[i]), int(frame.high[i]), int(frame.low[i])
         through = policy.target_fill_through_ticks
-        stop, take = st.stop_level, st.target_level
-        stop_hit = stop is not None and (lo <= stop if side > 0 else h >= stop)
-        take_hit = take is not None and (h >= take + through if side > 0 else lo <= take - through)
-        if stop_hit and stop is not None:
-            gapped = o <= stop if side > 0 else o >= stop
-            self.fill(i, -pos, o if gapped else stop, "stop")
-        elif take_hit and take is not None:
-            self.fill(i, -pos, take, "target", market=False)
+        stops: list[tuple[_Lot, int]] = []
+        targets: list[tuple[_Lot, int]] = []
+        for lot in list(st.book.lots):
+            side, stop, take = lot.side, lot.stop, lot.target
+            if stop is not None and (lo <= stop if side > 0 else h >= stop):
+                gapped = o <= stop if side > 0 else o >= stop
+                stops.append((lot, o if gapped else stop))
+            elif take is not None and (h >= take + through if side > 0 else lo <= take - through):
+                targets.append((lot, take))
+        if stops:
+            for lot, price in stops:
+                self.bracket_exit(i, lot, price, "stop")
+        elif targets:
+            for lot, price in targets:
+                self.bracket_exit(i, lot, price, "target")
         else:
             return
         if policy.reentry == "require_signal_reset":
@@ -706,12 +861,13 @@ class _Run:
 
     def decide(self, i: int, decided: int) -> None:
         """The target decided at bar ``i``'s close: traded now (``signal_bar_close``) or at the
-        next eligible open; after a bracket exit it is held at 0 until it changes."""
+        next eligible open; after a bracket exit the decided target holds whatever survived the
+        exit (nothing, after a full exit) until it changes."""
         st = self.state
         effective = decided
         if st.blocked is not None:
             if decided == st.blocked:
-                effective = 0
+                effective = st.book.position
             else:
                 st.blocked = None
         if self.policy.fill == "signal_bar_close":
@@ -752,10 +908,11 @@ def simulate_futures(
     close) on one continuous futures series (ADR-0090).
 
     ``bars``: the unadjusted continuous series (``CONTINUOUS_BAR_SCHEMA``: raw prices of the held
-    contract, on its tick grid). ``rolls``: its rolls table (``ROLL_SCHEMA``). ``raw``: the raw
-    per-contract bars (``symbol`` = contract, ``event_time``, OHLC) the causal roll legs come from;
-    without it, strict causal mode refuses any roll. ``initial_capital`` in USD. Prices in points;
-    money in USD as ``Decimal(38, 6)``.
+    contract, on its tick grid), optionally with a Boolean ``on_schedule`` column (a false bar is
+    outside every scheduled session, so nothing can fill in it: ADR-0091). ``rolls``: its rolls
+    table (``ROLL_SCHEMA``). ``raw``: the raw per-contract bars (``symbol`` = contract,
+    ``event_time``, OHLC) the causal roll legs come from; without it, strict causal mode refuses
+    any roll. ``initial_capital`` in USD. Prices in points; money in USD as ``Decimal(38, 6)``.
     """
     policy = policy or ExecutionPolicy()
     tick = float(spec.tick_size)
