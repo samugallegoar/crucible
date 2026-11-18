@@ -673,7 +673,9 @@ def _column_notes(module_name: str, constant: str) -> dict[str, str]:
     for line in source[start + 1 :]:
         if line.startswith("}"):
             break
-        match = re.match(r'\s*"(\w+)":\s*pl\.\w+\(\),\s*(?:#\s*(.*))?$', line)
+        # ``pl.String()`` and a parameterised dtype such as ``pl.Decimal(38, 6)`` both document
+        # their column: the comment after the constructor is the column's documentation
+        match = re.match(r'\s*"(\w+)":\s*pl\.\w+\([^()]*\),\s*(?:#\s*(.*))?$', line)
         if match:
             notes[match.group(1)] = (match.group(2) or "").strip()
     return notes
@@ -715,6 +717,10 @@ SCHEMA_CONSTANTS: tuple[tuple[str, str], ...] = (
     ("crucible.experiments.artifacts", "EQUITY_SCHEMA"),
     ("crucible.analytics.trades", "TRADE_SCHEMA"),
     ("crucible.analytics.trades", "EPISODE_SCHEMA"),
+    ("crucible.experiments.futures_artifacts", "FUTURES_MARKS_SCHEMA"),
+    ("crucible.experiments.futures_artifacts", "FUTURES_DAILY_SCHEMA"),
+    ("crucible.experiments.futures_artifacts", "FUTURES_FILLS_SCHEMA"),
+    ("crucible.experiments.futures_artifacts", "FUTURES_ROLLS_SCHEMA"),
 )
 
 
@@ -773,6 +779,18 @@ def _artifact_blocks() -> dict[str, str]:
         "artifact-trades": schema_table("crucible.analytics.trades", "TRADE_SCHEMA"),
         "artifact-episodes": schema_table("crucible.analytics.trades", "EPISODE_SCHEMA"),
         "artifact-equity": schema_table("crucible.experiments.artifacts", "EQUITY_SCHEMA"),
+        "artifact-futures-marks": schema_table(
+            "crucible.experiments.futures_artifacts", "FUTURES_MARKS_SCHEMA"
+        ),
+        "artifact-futures-daily": schema_table(
+            "crucible.experiments.futures_artifacts", "FUTURES_DAILY_SCHEMA"
+        ),
+        "artifact-futures-fills": schema_table(
+            "crucible.experiments.futures_artifacts", "FUTURES_FILLS_SCHEMA"
+        ),
+        "artifact-futures-rolls": schema_table(
+            "crucible.experiments.futures_artifacts", "FUTURES_ROLLS_SCHEMA"
+        ),
         "artifact-manifest": (
             f"Current `schema_version`: **{SCHEMA_VERSION}**.\n\n"
             + _table(("Key", "JSON type", "Nullable", "Written by", "Meaning"), manifest_rows)

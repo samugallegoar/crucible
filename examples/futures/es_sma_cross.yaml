@@ -1,0 +1,31 @@
+# One futures run: ES, one contract, a 30-bar SMA crossing, four weeks of Globex trade dates.
+#
+#   uv run crucible futures check --config examples/futures/es_sma_cross.yaml
+#   uv run crucible futures run --config examples/futures/es_sma_cross.yaml \
+#       --store data/processed --artifacts experiments
+#
+# It reads the four `v3` datasets of `docs/data/glbx-futures-1m.md` (the names below default from
+# `root`), so build them first with `crucible data build` + `crucible data continuous`.
+#
+# Costs are per contract per side and are an assumption, not a measurement: the run records the
+# uncalibrated spread and slippage in its manifest's `approximations`. `session.flat_by_close`
+# means no position is carried overnight.
+kind: futures_run
+run:
+  name: es-sma-cross-30m
+  family: examples-es-sma-cross
+root: ES
+window:
+  start: 2024-03-04
+  end: 2024-03-28
+strategy:
+  spec: es_sma_cross_spec.yaml
+contracts: 1
+capital: "50000"
+costs:
+  commission: "2.00"
+execution:
+  stop_ticks: 16
+  target_ticks: 32
+session:
+  flat_by_close: true

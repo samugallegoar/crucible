@@ -2,7 +2,8 @@
 
 Implemented: ``backtest`` (the one-step product command, ADR-0068), ``spec``, ``config``,
 ``run`` (with ``--runtime backtest|paper|live``), ``run-vectorized``, ``report``, ``debug``,
-``optimize``, ``validate``, ``compare``, ``schema``, ``data check|list|build|fetch``.
+``optimize``, ``validate``, ``compare``, ``schema``, ``futures run|check``,
+``data check|list|build|fetch``.
 ``--json`` and ``--override`` are described in ADR-0059.
 """
 
@@ -269,6 +270,37 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--artifacts", default="experiments")
     _add_json(verify)
 
+    futures = subparsers.add_parser(
+        "futures",
+        help="Futures runs on a continuous CME series: run | check (ADR-0095)",
+    )
+    futures_sub = futures.add_subparsers(dest="futures_command", required=True)
+    futures_run = futures_sub.add_parser(
+        "run",
+        help="Simulate a futures config and write its sealed artifact (ADR-0095)",
+    )
+    futures_run.add_argument("--config", required=True, help="Path to a futures-run YAML")
+    futures_run.add_argument(
+        "--store", required=True, help="Data store root holding the four datasets of the root"
+    )
+    futures_run.add_argument(
+        "--artifacts",
+        default="experiments",
+        help="Artifact store root (default: experiments/)",
+    )
+    futures_run.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing run directory (the same config and data reproduce the same "
+        "artifact id, and the family's trial count does not grow)",
+    )
+    _add_json(futures_run)
+    futures_check = futures_sub.add_parser(
+        "check", help="Load and validate a futures config only (no store, no run)"
+    )
+    futures_check.add_argument("--config", required=True, help="Path to a futures-run YAML")
+    _add_json(futures_check)
+
     schema = subparsers.add_parser(
         "schema",
         help="Print a JSON Schema: the experiment config (default), a strategy spec, or an "
@@ -277,10 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
     schema.add_argument("--out", default=None, help="Write the schema here (default: stdout)")
     schema.add_argument(
         "--kind",
-        choices=["experiment", "strategy-spec", *OUTPUT_SCHEMAS],
+        choices=["experiment", "strategy-spec", "futures-run", *OUTPUT_SCHEMAS],
         default="experiment",
-        help="which schema: the experiment config, the no-code strategy spec (ADR-0067), or an "
-        "output document: run, verification, error, manifest (ADR-0084)",
+        help="which schema: the experiment config, the no-code strategy spec (ADR-0067), the "
+        "futures-run config (ADR-0095), or an output document: run, verification, error, "
+        "manifest (ADR-0084)",
     )
 
     data = subparsers.add_parser(
@@ -1077,12 +1110,90 @@ def _cmd_artifact(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_futures(args: argparse.Namespace) -> int:
+    """``crucible futures run|check``: one futures config in, one sealed artifact out (ADR-0095).
+
+    ``check`` loads and validates the config only: no store is touched, so it answers "is this
+    config valid, and what does the run's identity cover" before any data is read.
+    """
+    import json
+
+    from crucible.experiments.futures_config import (
+        canonical_futures_yaml,
+        futures_config_hash,
+        load_futures_config,
+    )
+
+    config = load_futures_config(Path(args.config))
+    if args.futures_command == "check":
+        config_hash = futures_config_hash(config)
+        if args.json:
+            machine.emit(
+                {
+                    "kind": "futures_run_config",
+                    "config_hash": config_hash,
+                    "config": config.model_dump(mode="json"),
+                }
+            )
+            return 0
+        sys.stdout.write(canonical_futures_yaml(config))
+        sys.stdout.write(f"config hash: {config_hash}\n")
+        return 0
+
+    from crucible.experiments.futures_run import run_futures
+
+    result = run_futures(
+        config,
+        store_root=Path(args.store),
+        artifacts_root=Path(args.artifacts),
+        overwrite=args.overwrite,
+    )
+    manifest = json.loads((result.run_dir / "manifest.json").read_text(encoding="utf-8"))
+    if args.json:
+        machine.emit(
+            {
+                "kind": "futures_run",
+                "run_id": result.run_id,
+                "artifact_id": result.artifact_id,
+                "run_dir": str(result.run_dir),
+                "trial_family": config.run.family,
+                "trial_count": result.trial_count,
+                "summary": result.summary,
+                "manifest": manifest,
+            }
+        )
+        return 0
+    summary = result.summary
+    lines = [
+        f"run:          {result.run_id}",
+        f"artifact:     {result.artifact_id}",
+        f"trial:        family {config.run.family}, trial {result.trial_count} of it",
+        f"window:       {config.window.start} .. {config.window.end} "
+        f"({summary['trade_dates']} trade dates)",
+        f"bars:         {summary['bars']}",
+        f"fills:        {summary['fills']}",
+        f"final:        balance {summary['final_balance_usd']} USD, "
+        f"equity {summary['final_equity_usd']} USD",
+    ]
+    approximations = manifest.get("approximations") or []
+    assert isinstance(approximations, list)
+    for index, note in enumerate(approximations):
+        lines.append(f"{'assumed:     ' if index == 0 else '             '}{note}")
+    lines.append(f"run dir:      {result.run_dir}")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
 def _cmd_schema(args: argparse.Namespace) -> int:
-    """Prints the experiment config's JSON Schema: what a valid config may contain."""
+    """Prints a JSON Schema: the experiment config, the strategy spec or a futures-run config."""
     if args.kind == "strategy-spec":
         from crucible.strategy_spec import spec_json_schema
 
         schema = spec_json_schema()
+    elif args.kind == "futures-run":
+        from crucible.experiments.futures_config import futures_config_json_schema
+
+        schema = futures_config_json_schema()
     elif args.kind in OUTPUT_SCHEMAS:
         schema = output_json_schema(args.kind)
     else:
@@ -1403,6 +1514,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_data(args)
         if args.command == "schema":
             return _cmd_schema(args)
+        if args.command == "futures":
+            return _cmd_futures(args)
         if args.command == "artifact":
             return _cmd_artifact(args)
     except CrucibleError as exc:
