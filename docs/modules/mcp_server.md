@@ -38,6 +38,14 @@ the config, a spec, or an output document), `crucible_artifact` (a run by artifa
 `crucible_data_catalog` (dataset registry: identity, lineage, contract, range; ADR-0089),
 `crucible_data_build`, `crucible_data_fetch`.
 
+Futures tools (ADR-0095): `crucible_futures_run(config, store, artifacts=None, overwrite=False)`
+simulates one futures-run config on the continuous CME series of `store` and returns the run id, the
+artifact id, the trial family and count, the summary and the manifest (with its approximations);
+`crucible_futures_check(config)` validates the config without touching a store and returns the
+config hash and the canonical config. Both are thin `build_argv` + `run_cli` wrappers over
+`crucible futures run|check` (ADR-0066), with absolute paths and the home's experiments folder as
+the default `artifacts`.
+
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
 (`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).
 

@@ -379,8 +379,8 @@ def build_server() -> MCPServer:
     @server.tool()
     async def crucible_schema(kind: str = "experiment") -> dict[str, object]:
         """A JSON Schema: the experiment config (default, `experiment`), the strategy spec
-        (`strategy-spec`), or an output document Crucible prints: `run`, `verification`, `error`,
-        `manifest`."""
+        (`strategy-spec`), the futures-run config (`futures-run`), or an output document Crucible
+        prints: `run`, `verification`, `error`, `manifest`."""
         return await run_cli(build_argv("schema", [], {"kind": kind}))
 
     @server.tool()
@@ -435,6 +435,35 @@ def build_server() -> MCPServer:
             "json": True,
         }
         return await run_cli(build_argv("run-vectorized", [absolute(config) or config], options))
+
+    @server.tool()
+    async def crucible_futures_run(
+        config: str,
+        store: str,
+        artifacts: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, object]:
+        """Simulate one futures-run config on a continuous CME series (one root, one strategy, a
+        window of Globex trade dates, explicit costs and execution). Reads the four datasets from
+        `store`; writes the sealed artifact under `artifacts` (default: the Crucible home).
+        Returns the run id, the artifact id, the trial family and count, the summary and the
+        manifest (which lists every approximation). A second identical run is refused unless
+        `overwrite`; a reproduction keeps the same artifact id."""
+        options: dict[str, Option] = {
+            "config": absolute(config),
+            "store": absolute(store),
+            "artifacts": absolute(artifacts) or _home_paths()[0],
+            "overwrite": overwrite,
+            "json": True,
+        }
+        return await run_cli(build_argv(["futures", "run"], [], options))
+
+    @server.tool()
+    async def crucible_futures_check(config: str) -> dict[str, object]:
+        """Validate a futures-run config without touching any store: the config hash and the
+        canonical config. Call it before `crucible_futures_run` to see how a config will be read."""
+        options: dict[str, Option] = {"config": absolute(config), "json": True}
+        return await run_cli(build_argv(["futures", "check"], [], options))
 
     @server.tool()
     async def crucible_validate(

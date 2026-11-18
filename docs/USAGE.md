@@ -260,6 +260,36 @@ prints `{"error": {"code", "message", "location", ...}}`; branch on `code`.
 From Python: `crucible.experiments.artifact_id.find_artifact(root, id)` returns the directory and
 `verify_artifact(dir)` the id; `RunArtifacts.artifact_id` is set on every finished run.
 
+## 11. A futures run (CME equity-index futures)
+
+```bash
+uv run crucible futures check --config examples/futures/es_sma_cross.yaml
+uv run crucible futures run --config examples/futures/es_sma_cross.yaml --store data/processed --json
+```
+
+The config (`kind: futures_run`, `crucible schema --kind futures-run`) names:
+- the root and its continuous datasets (ADR-0092);
+- a window in Globex trade dates;
+- a strategy: a spec, or a Python function returning signed contracts;
+- contracts, capital and costs;
+- tick brackets (ADR-0093);
+- the signal input (ratio-adjusted by default, ADR-0094);
+- the CME session rules;
+- a trial family, which is required.
+
+The sealed run directory holds:
+- `marks.parquet`: per bar, the position, the balance, the close equity and the intrabar
+  low/high equity estimate;
+- `daily.parquet`: per trade date, the opening and closing balance and equity, realized P&L,
+  costs, minimum and maximum equity, and the maximum contracts;
+- `fills.parquet`: with the position after each fill;
+- `rolls.parquet`;
+- `metrics.json`: descriptive totals only.
+
+`manifest.json` records the datasets with their hashes, the signal and scale checks, the execution
+policy, the calendar version, the marking policy and every approximation. There is no Sharpe, and
+the result makes no performance claim (ADR-0095).
+
 ## Known gaps
 
 - No Python API to *list* experiments in an artifact root; use `crucible compare <family>` or

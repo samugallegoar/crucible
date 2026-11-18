@@ -4,6 +4,18 @@
 
 Reproducibility: configs, the runner, artifacts and the research orchestrators. Detail sections follow.
 
+- `futures_config.py` + `futures_run.py` + `futures_artifacts.py` — the futures run (ADR-0095).
+  - **`FuturesRunConfig`** (`kind: futures_run`, `load_futures_config`, `futures_config_hash`): root,
+    the four datasets, a trade-date window, the strategy (a spec or a `FuturesSignalFunction`),
+    contracts, capital, costs, execution, signal input and session policy, with `run.family`
+    required.
+  - **`run_futures`** selects the window by trade date and calls `futures_targets` and
+    `simulate_futures`. It builds the marks, the daily ledger, the fills, the rolls and the
+    descriptive `metrics.json` (no Sharpe), and checks the ledger identities
+    (`check_daily_ledger`). It then registers the trial (mandatory) and seals the run
+    (`FUT-` run id, `ART-` artifact id).
+  - **Interfaces:** `crucible futures run|check` and MCP `crucible_futures_run|check`. The
+    schemas are in `docs/SCHEMAS.md`, and the marking policy is in the manifest.
 - `futures_signals.py` — the futures signal bridge (ADR-0094): `futures_targets` turns a
   `StrategySpec` or a `FuturesSignalFunction` (signed contracts per bar) into the targets and the
   `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the ratio-adjusted
@@ -231,8 +243,11 @@ in their phase; hash coverage extends automatically because the hash is over
 the whole model.
 
 ## Known gaps
-- The futures bridge (ADR-0094) has no config section, artifact or CLI yet (C3b-3), and
-  `FuturesSignalFunction` is a stub Protocol: no implementation ships in the package (the tests
+- The futures run (ADR-0095):
+  - It does not stop or flag an account whose equity falls to zero or below. It keeps trading;
+    `min_equity_usd` and the daily ledger show it. Ruin and prop-firm rules are C7.
+  - `crucible artifact show` does not render a futures run; `verify` does.
+  - `FuturesSignalFunction` is a stub Protocol: no implementation ships in the package (the tests
   hold fixtures; a spec goes through `spec_positions`).
 - `artifact_id` is verified, not enforced: nothing stops a process with disk access from editing an
   artifact and re-sealing it (ADR-0084). Runs written before it have no id (`verify` says so).

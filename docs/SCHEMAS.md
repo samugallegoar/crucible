@@ -875,6 +875,132 @@ and the feed cursor, all verified before a resume; the payload is each stateful 
 schema-version or digest mismatch is a `CheckpointError` (`crucible/core/checkpoint.py`,
 ADR-0041).
 
+## Futures run artifact (ADR-0095)
+
+A futures run (`crucible.experiments.futures_run.run_futures`) writes its own, smaller file set
+next to the equity artifact above:
+
+```
+<artifacts>/<FUT-ID>/
+  config.yaml     canonical rendering of the FuturesRunConfig (sorted keys)
+  manifest.json   provenance, assumptions and the seal (§2.1's contract, its own keys)
+  marks.parquet   one row per simulated bar: close mark + OHLC intrabar approximation
+  daily.parquet   one row per Globex trade date: session bounds, flows, opening/closing marks
+  fills.parquet   every fill, with its trade date and the position after it
+  rolls.parquet   every contract switch of the series, as the simulator executed it
+  metrics.json    descriptive totals only (no Sharpe, no return ratio, no claim of edge)
+```
+
+Rows are in simulation order (bars by `event_time`, days by `trade_date`, fills in fill order);
+the files are uncompressed Parquet without statistics, so the same inputs give the same bytes.
+Unlike the equity artifact's `Decimal`-as-string columns (§0), the money columns here are native
+Parquet `Decimal(38, 6)` in USD: exact micro-dollars, never floats. The close mark is exact (the
+simulator's `equity_usd`); `equity_low_usd`/`equity_high_usd` are an OHLC approximation whose rules
+are recorded verbatim in the manifest's `marking_policy`, and every assumption (uncalibrated costs,
+an approximate roll, an unverified session) is listed in its `approximations`.
+
+### Marks
+
+<!-- BEGIN GENERATED: artifact-futures-marks -->
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `event_time` | `Int64` | no | UTC ns; the bar's close, i.e. when the mark is taken |
+| `trade_date` | `Date` | no | Globex trade date of the bar (a day label, not an instant) |
+| `contract` | `String` | no | the contract held when the bar printed (ESH2024) |
+| `on_schedule` | `Boolean` | no | false when the bar is outside every scheduled Globex segment |
+| `position` | `Int64` | no | signed contracts held at the bar's close (long > 0 > short) |
+| `balance_usd` | `Decimal(precision=38, scale=6)` | no | USD; cash balance after this bar's flows (Decimal(38, 6)) |
+| `equity_usd` | `Decimal(precision=38, scale=6)` | no | USD; close mark = balance + unrealized (Decimal(38, 6)) |
+| `equity_low_usd` | `Decimal(precision=38, scale=6)` | no | USD; conservative intrabar low (see MARKING_POLICY) |
+| `equity_high_usd` | `Decimal(precision=38, scale=6)` | no | USD; intrabar high approximation (see MARKING_POLICY) |
+| `realized_usd` | `Decimal(precision=38, scale=6)` | no | USD; this bar's realized P&L, a flow not a total |
+| `costs_usd` | `Decimal(precision=38, scale=6)` | no | USD; this bar's fees + spread + slippage, a flow not a total |
+| `unrealized_usd` | `Decimal(precision=38, scale=6)` | no | USD; the open position valued at this bar's close |
+
+<!-- END GENERATED: artifact-futures-marks -->
+
+### Daily ledger
+
+The identities `check_daily_ledger` asserts before the run writes anything (a broken one refuses
+the run, naming the trade date): `closing_balance = opening_balance + realized - costs`;
+`closing_equity = closing_balance + unrealized_close`; a day's `opening_*` is the previous day's
+`closing_*` (capital on the first day); `min_equity <= closing_equity <= max_equity`; the last
+`closing_equity` is the last mark's `equity_usd`; and the sum over days of `realized - costs` is
+the final balance minus the starting capital.
+
+<!-- BEGIN GENERATED: artifact-futures-daily -->
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `trade_date` | `Date` | no | Globex trade date the row covers (a day label) |
+| `session_open_ns` | `Int64` | no | UTC ns; the calendar's SCHEDULED open of that trade date |
+| `session_close_ns` | `Int64` | no | UTC ns; the calendar's SCHEDULED close of that trade date |
+| `verified` | `Boolean` | no | false when an unsourced window touches the session's schedule |
+| `bars` | `Int64` | no | bars observed on the trade date |
+| `first_bar_ns` | `Int64` | no | UTC ns; close of the day's first bar |
+| `last_bar_ns` | `Int64` | no | UTC ns; close of the day's last bar |
+| `opening_balance_usd` | `Decimal(precision=38, scale=6)` | no | USD; previous close's balance (capital day 1) |
+| `closing_balance_usd` | `Decimal(precision=38, scale=6)` | no | USD; balance after the day's last bar |
+| `opening_equity_usd` | `Decimal(precision=38, scale=6)` | no | USD; previous close's equity (capital day 1) |
+| `closing_equity_usd` | `Decimal(precision=38, scale=6)` | no | USD; close mark of the day's last bar |
+| `realized_usd` | `Decimal(precision=38, scale=6)` | no | USD; sum of the day's realized flows |
+| `fees_usd` | `Decimal(precision=38, scale=6)` | no | USD; sum of the day's commission and fee flows |
+| `spread_usd` | `Decimal(precision=38, scale=6)` | no | USD; sum of the day's half-spread flows |
+| `slippage_usd` | `Decimal(precision=38, scale=6)` | no | USD; sum of the day's slippage flows |
+| `costs_usd` | `Decimal(precision=38, scale=6)` | no | USD; fees + spread + slippage over the day |
+| `unrealized_close_usd` | `Decimal(precision=38, scale=6)` | no | USD; open position valued at the day's last close |
+| `min_equity_usd` | `Decimal(precision=38, scale=6)` | no | USD; lowest equity_low_usd of the day's bars |
+| `max_equity_usd` | `Decimal(precision=38, scale=6)` | no | USD; highest equity_high_usd of the day's bars |
+| `max_contracts` | `Int64` | no | largest \|position\| over the day's bars, in contracts |
+| `fills` | `Int64` | no | fills that happened on the trade date |
+
+<!-- END GENERATED: artifact-futures-daily -->
+
+### Fills
+
+<!-- BEGIN GENERATED: artifact-futures-fills -->
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `event_time` | `Int64` | no | UTC ns; close of the bar the fill belongs to |
+| `fill_time` | `Int64` | no | UTC ns; when the fill happened (the bar's open on a next-open fill) |
+| `contract` | `String` | no | the contract that traded (the held one, or a roll leg's) |
+| `kind` | `String` | no | signal \| stop \| target \| roll_close \| roll_open |
+| `quantity` | `Int64` | no | signed contracts filled (a close of a long is negative) |
+| `price` | `Decimal(precision=38, scale=6)` | no | points; the fill price (Decimal(38, 6), on the tick grid) |
+| `realized_usd` | `Decimal(precision=38, scale=6)` | no | USD; realized P&L booked by THIS fill |
+| `fees_usd` | `Decimal(precision=38, scale=6)` | no | USD; commission and fees paid by this fill |
+| `spread_usd` | `Decimal(precision=38, scale=6)` | no | USD; half-spread paid by this fill (limit fills pay none) |
+| `slippage_usd` | `Decimal(precision=38, scale=6)` | no | USD; slippage paid by this fill (limit fills pay none) |
+| `trade_date` | `Date` | no | Globex trade date the fill happened on (a day label) |
+| `position_after` | `Int64` | no | signed contracts held after this fill, in fill order |
+
+<!-- END GENERATED: artifact-futures-fills -->
+
+### Rolls
+
+<!-- BEGIN GENERATED: artifact-futures-rolls -->
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `decision_time` | `Int64` | no | UTC ns; end of the session that decided the roll |
+| `from_contract` | `String` | no | the contract held before the roll |
+| `to_contract` | `String` | no | the contract held from the roll on |
+| `reason` | `String` | no | volume \| backstop \| expired (the series build's reason) |
+| `mode` | `String` | no | causal (executed on raw prices) \| reference_approximation |
+| `verified` | `Boolean` | no | true when both legs traded at the executed minute |
+| `executed_time` | `Int64` | no | UTC ns; when the legs traded (reference time if approximate) |
+| `old_price` | `Decimal(precision=38, scale=6)` | no | points; the old contract's executed price (Decimal(38, 6)) |
+| `new_price` | `Decimal(precision=38, scale=6)` | no | points; the new contract's executed price (Decimal(38, 6)) |
+| `delay_minutes` | `Float64` | no | minutes from the decision to the execution (null if unknown) |
+| `reference_time` | `Int64` | no | UTC ns; the reference prices' timestamp |
+| `approximation_error_ticks` | `Int64` | no | ticks per long contract the approximation costs |
+| `approximation_error_usd` | `Decimal(precision=38, scale=6)` | no | USD per long contract (Decimal(38, 6)) |
+| `position` | `Int64` | no | signed contracts rolled by this roll |
+
+<!-- END GENERATED: artifact-futures-rolls -->
+
 ## Known gaps
 
 - The Polars schemas describe the dtypes but not value domains (`side` in `{buy, sell}`,

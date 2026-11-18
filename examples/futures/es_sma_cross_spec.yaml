@@ -1,0 +1,16 @@
+# A 30-bar SMA crossing, traded on both sides. It compares prices with prices, so it is
+# scale invariant and may read the ratio-adjusted series (ADR-0086, decision 8): the levels of
+# that series depend on later rolls, a scale-invariant rule does not notice.
+#
+# Addressed from es_sma_cross.yaml (`strategy.spec`), which resolves the path against its own
+# directory. No sizing block and no percentage stop: in the futures path the size is `contracts`
+# and the brackets are whole ticks of the execution policy (ADR-0093).
+spec_version: 1
+name: ES 30-bar SMA crossing, long and short
+direction: long_short
+entry:
+  long: "close crosses_above sma(30)"
+  short: "close crosses_below sma(30)"
+exit:
+  long: "close crosses_below sma(30)"
+  short: "close crosses_above sma(30)"

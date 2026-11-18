@@ -8,6 +8,32 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C3b-3: the futures run (ADR-0095)
+- **Config and runner.** `crucible.experiments.futures_config.FuturesRunConfig` (`kind: futures_run`)
+  and `futures_run.run_futures`: a futures backtest of one root on its continuous datasets.
+  - The window is in Globex trade dates.
+  - The strategy is a spec or a `FuturesSignalFunction`.
+  - Contracts, capital, costs, tick brackets, signal input and CME session rules are all set in the
+    config.
+  - A trial family is required, and every run is registered in it (mode `futures`, no Sharpe).
+- **The sealed artifact** (`FUT-` run id, `ART-` artifact id) holds:
+  - `marks.parquet`: per bar, the position, the balance, the close equity, and an OHLC estimate of
+    the intrabar low and high equity, labelled as an approximation;
+  - `daily.parquet`: per trade date, the scheduled session bounds, the opening and closing balance
+    and equity, realized P&L, costs by kind, the unrealized P&L at the close, the minimum and
+    maximum equity and the maximum contracts;
+  - `fills.parquet`, with the position after each fill;
+  - `rolls.parquet`;
+  - `metrics.json`, with descriptive totals only.
+- **Ledger and manifest.** The daily-ledger identities are checked before writing
+  (`check_daily_ledger`). The manifest records the datasets with their hashes and adjustments, the
+  signal record, the execution policy, the calendar summary, the marking policy and the
+  approximations.
+- **CLI and MCP.** `crucible futures run|check`, `crucible schema --kind futures-run`, and the MCP
+  tools `crucible_futures_run` and `crucible_futures_check` (thin wrappers, ADR-0066).
+- **Example.** `examples/futures/es_sma_cross.yaml`, with an opt-in real-data test.
+- **Docs.** `tools.docgen` now documents `pl.Decimal(p, s)` columns.
+
 ### Fathom C3b-2: futures brackets per lot and the futures signal bridge (ADR-0093, ADR-0094)
 - **Brackets per lot.** `simulate_futures` keeps a stop and a target in ticks per lot, measured
   from each lot's own fill:

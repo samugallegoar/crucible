@@ -6,7 +6,8 @@ The `crucible` command (`crucible/cli/main.py`: `build_parser`, `main`). Every c
 options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-paths`, `spec check`, `spec templates`,
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
-`data fetch`, `data check`, `data integrity`, `data catalog`, `data list`. Handlers are
+`data fetch`, `data check`, `data integrity`, `data catalog`, `data list`, `futures run`,
+`futures check`. Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
 stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
@@ -112,6 +113,19 @@ The `crucible` command.
   per period, row-aligned — no date column) and merges the result into
   the run's manifest/report (`experiments.validate.validate_run`,
   ADR-0022).
+- `crucible futures run --config FILE --store S [--artifacts DIR] [--overwrite] [--json]` — one
+  futures run (`experiments.futures_run.run_futures`, ADR-0095): the four datasets of the config's
+  continuous build, one strategy, a window of Globex trade dates, explicit costs and execution.
+  Prints the run id, the artifact id, the trial family and count, the window and its trade dates,
+  bars, fills, the final balance and equity, every approximation the run recorded and the run
+  directory; `--json` prints `{"kind": "futures_run", "run_id", "artifact_id", "run_dir",
+  "trial_family", "trial_count", "summary", "manifest"}`. A second run of the same config and data
+  is refused unless `--overwrite` (a reproduction keeps the artifact id and does not grow the
+  trial count).
+- `crucible futures check --config FILE [--json]` — loads and validates the config only (no store,
+  no run): prints the config hash and the canonical YAML, or under `--json`
+  `{"kind": "futures_run_config", "config_hash", "config"}`. `schema --kind futures-run` prints
+  the futures-run config's JSON Schema.
 - `crucible data check --store S --dataset D --calendar C` — quality
   battery; `data list --store S` — datasets with manifest hashes;
   `--skip NAME --skip-reason TEXT` (repeatable) skips named checks with a
