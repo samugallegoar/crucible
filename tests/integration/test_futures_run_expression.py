@@ -19,6 +19,7 @@ import yaml
 
 from crucible.cli.main import main
 from crucible.core.errors import ConfigurationError
+from crucible.dsl import compile_expression
 from crucible.experiments.artifact_id import verify_artifact
 from crucible.experiments.futures_config import (
     FuturesRunConfig,
@@ -180,6 +181,16 @@ def test_a_non_numeric_parameter_is_refused_at_load() -> None:
     config["strategy"] = {"expression": EXPRESSION, "params": {"n": "three"}}
     with pytest.raises(ConfigurationError, match="is not a number"):
         parse_futures_config(config)
+
+
+def test_a_cross_sectional_rank_is_refused_because_a_futures_run_trades_one_root() -> None:
+    config = expression_mapping()
+    config["strategy"] = {"expression": "cs_rank(close / delay(close, 1))"}
+    with pytest.raises(ConfigurationError, match="ranks across instruments"):
+        parse_futures_config(config)
+    # it compiles and evaluates fine as a library definition on a panel: the refusal is the run's
+    compiled = compile_expression("cs_rank(close / delay(close, 1))", signal_input="unadjusted")
+    assert "cs_rank" in compiled.canonical_text
 
 
 def test_a_degree_one_score_is_refused_on_ratio_adjusted_input() -> None:

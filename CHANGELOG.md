@@ -8,6 +8,32 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C4c: cross-sectional rank, structural similarity, incremental evaluator (ADR-0099)
+- **`cs_rank` is evaluated on a panel.**
+  - The universe at each `event_time` is the symbols with a row exactly at that time and a
+    non-null argument, with no forward-fill.
+  - Fewer than three members give null. Ties take the average rank, normalized to [0, 1].
+  - `decision_at` is the latest `available_at` in the universe.
+  - `cs_universe` records the members and their count per timestamp.
+  - A futures run (one root) refuses an expression that uses it.
+- **Structural similarity** (`crucible.dsl.similarity`).
+  - The measure is Sørensen–Dice, `2·common/(nodes_a+nodes_b)`. `common` is the node count of the
+    largest complete subtree shared by the two canonical ASTs.
+  - Parameters are typed placeholders renumbered inside the subtree, so repeated and independent
+    parameters stay distinct.
+  - `pool_similarity` and `max_similarity` rank a pool.
+- **Incremental evaluator** (`crucible.dsl.incremental.IncrementalEvaluator`).
+  - It is `Snapshottable` and keeps per-symbol state for the same immutable `CompiledSignal`.
+  - It refuses out-of-order timestamps and enforces the availability rules at every step.
+  - It refuses a snapshot taken for another `compiled_id`.
+- **Parity** (`crucible.dsl.parity`).
+  - Nulls, booleans and decision times must match exactly. Scores must match within a relative
+    1e-9, and no decision may flip sign.
+  - On one real week of ES ratio-adjusted bars the two paths are bitwise equal.
+- **Fix: `ts_std` on a constant window.** It now uses Welford's one-pass form, so the result is
+  exactly 0 and `ts_zscore` is null. The two-pass residue had produced a huge z-score in the
+  incremental path.
+
 ### Fathom C4b: DSL evaluation, the CompiledSignal, and expressions in the futures run (ADR-0098)
 - **Evaluation.** `crucible.dsl.evaluate` evaluates expressions per symbol stream with fixed
   semantics:

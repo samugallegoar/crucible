@@ -1,8 +1,9 @@
-"""The Crucible expression DSL (ADR-0096, ADR-0098): grammar, types, identities, evaluation.
+"""The Crucible expression DSL (ADR-0096, ADR-0098, ADR-0099): grammar, types, identities,
+evaluation, cross-section, similarity and the incremental (live) evaluator.
 
 C4b evaluates the operator table on a bar frame and compiles an expression into an immutable,
-versioned :class:`CompiledSignal`; cross-sectional rank, similarity and the incremental (live)
-evaluator are C4c. Public surface:
+versioned :class:`CompiledSignal`; C4c adds the cross-sectional rank, structural similarity and
+the incremental evaluator with its parity harness. Public surface:
 
 - :func:`parse` -> :class:`Expression`: :func:`tokenize` for the lexer, :data:`GRAMMAR_VERSION`.
 - :func:`canonicalize`, :func:`canonical_text`, :func:`canonical_form`: the one normal form.
@@ -14,6 +15,12 @@ evaluator are C4c. Public surface:
 - :class:`ExprType`, :class:`Dimension`, :func:`typecheck`: the type/dimension model.
 - :func:`evaluate`, :func:`warmup_bars`, :func:`check_availability`: the vectorized evaluator, its
   static warm-up and the C2 availability check.
+- :func:`evaluate_with_cross_section`, :func:`cs_universe`, :class:`CrossSection`: ``cs_rank``
+  and the universe it ranked.
+- :func:`similarity`, :func:`common_subtree_nodes`, :func:`pool_similarity`,
+  :func:`max_similarity`: structural similarity against a pool.
+- :class:`IncrementalEvaluator`, :class:`StepOutput`: the live, one-timestamp-at-a-time evaluator.
+- :func:`parity_report`, :func:`assert_parity`: vectorized/incremental parity.
 - :func:`compile_expression` -> :class:`CompiledSignal`: the deterministic compilation,
   :data:`COMPILER_VERSION`.
 - :class:`ExpressionError`: the one refusal type (a ``ConfigurationError``).
@@ -45,7 +52,17 @@ from crucible.dsl.compile import (
     compile_expression,
 )
 from crucible.dsl.errors import ExpressionError
-from crucible.dsl.evaluate import check_availability, evaluate, warmup_bars
+from crucible.dsl.evaluate import (
+    MIN_CS_MEMBERS,
+    CrossSection,
+    CsRankRecord,
+    check_availability,
+    cs_rank_nodes,
+    cs_universe,
+    evaluate,
+    evaluate_with_cross_section,
+    warmup_bars,
+)
 from crucible.dsl.grammar import GRAMMAR_VERSION, MAX_LENGTH, MAX_NESTING, parse, tokenize
 from crucible.dsl.identity import (
     COMPILED_PREFIX,
@@ -56,6 +73,7 @@ from crucible.dsl.identity import (
     parameterization_id,
     structure_id,
 )
+from crucible.dsl.incremental import IncrementalEvaluator, StepOutput
 from crucible.dsl.metrics import StructuralMetrics, structural_metrics
 from crucible.dsl.operators import (
     MAX_WINDOW,
@@ -69,6 +87,19 @@ from crucible.dsl.params import (
     bind,
     free_parameters,
     optimizable_parameters,
+)
+from crucible.dsl.parity import (
+    ParityMismatch,
+    ParityReport,
+    assert_parity,
+    parity_report,
+)
+from crucible.dsl.similarity import (
+    SimilarityHit,
+    common_subtree_nodes,
+    max_similarity,
+    pool_similarity,
+    similarity,
 )
 from crucible.dsl.types import (
     SESSION_FEATURES,
@@ -86,6 +117,7 @@ __all__ = [
     "MAX_LENGTH",
     "MAX_NESTING",
     "MAX_WINDOW",
+    "MIN_CS_MEMBERS",
     "MIN_WINDOW",
     "OPERATORS",
     "OPERATOR_TABLE_VERSION",
@@ -95,6 +127,8 @@ __all__ = [
     "Binary",
     "Call",
     "CompiledSignal",
+    "CrossSection",
+    "CsRankRecord",
     "Dimension",
     "Expr",
     "ExprType",
@@ -102,28 +136,42 @@ __all__ = [
     "ExpressionError",
     "Feature",
     "FreeParam",
+    "IncrementalEvaluator",
     "Literal",
     "OperatorDef",
     "Param",
     "ParamDecl",
+    "ParityMismatch",
+    "ParityReport",
     "SignalInput",
+    "SimilarityHit",
+    "StepOutput",
     "StructuralMetrics",
     "Unary",
+    "assert_parity",
     "bind",
     "canonical_form",
     "canonical_text",
     "canonicalize",
     "check_availability",
     "check_root",
+    "common_subtree_nodes",
     "compile_expression",
     "compiled_id",
     "compiled_id_basis",
+    "cs_rank_nodes",
+    "cs_universe",
     "depth_of",
     "evaluate",
+    "evaluate_with_cross_section",
     "free_parameters",
+    "max_similarity",
     "optimizable_parameters",
     "parameterization_id",
+    "parity_report",
     "parse",
+    "pool_similarity",
+    "similarity",
     "structural_metrics",
     "structure_id",
     "tokenize",
