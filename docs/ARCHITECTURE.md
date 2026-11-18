@@ -89,7 +89,7 @@ bottom (siblings in one layer must not import each other):
 | 4 | engine and gates | `core.engine`, `validation`, `vectorized`, `analytics`, `strategy_spec` |
 | 5 | domain services | `risk`, `strategy`, `live.venue`, `live.execution`, `live.interfaces`, `live.feed`, `live.paper`, `live.replay`, `live.venue_feed` |
 | 6 | execution and portfolio | `execution`, `portfolio` |
-| 6b | expression language | `dsl` (typed causal expressions, ADR-0096; imports only the kernel in C4a) |
+| 6b | expression language | `dsl` (typed causal expressions, ADR-0096; evaluation and compilation, ADR-0098; reads the CME session calendar for the session features) |
 | 7 | ledger, data, orders | `accounting`, `data`, `orders`, `live.rows` |
 | 8 | kernel | `core.clock`, `core.queue`, `core.logging` above `core.checkpoint` above `core.events`, `core.interfaces`, `core.instruments` above `core.drawdown` (the one maximum-drawdown definition, ADR-0071) above `core.types`, `core.errors`, `core.invariants`, `core.setup_fingerprint`, `core.stats` (the one Sharpe/degenerate-return definition, ADR-0079) |
 
@@ -154,7 +154,8 @@ crucible/
                (ADR-0067)
   dsl/         the typed causal expression language: grammar, types with price/volume exponents,
                operator table, free parameters, bounded canonicalization, structure/parameterization/
-               compiled ids, structural metrics (ADR-0096); evaluation arrives in C4b
+               compiled ids, structural metrics (ADR-0096); vectorized evaluation, the C2
+               availability check and the immutable CompiledSignal (ADR-0098)
   product/     the one-step backtest: data acquisition, buy-and-hold benchmark, null test,
                plain-language summary, readable report, home folder (ADR-0068)
   cli/         backtest, results, spec, config, run, run-vectorized, promote, report, debug,

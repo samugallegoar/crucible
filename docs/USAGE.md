@@ -267,6 +267,8 @@ From Python: `crucible.experiments.artifact_id.find_artifact(root, id)` returns 
 
 ```bash
 uv run crucible futures check --config examples/futures/es_sma_cross.yaml
+# a strategy written in the DSL instead of a spec: check prints its canonical text and three ids
+uv run crucible futures check --config examples/futures/es_zscore_reversion.yaml
 uv run crucible futures run --config examples/futures/es_sma_cross.yaml --store data/processed --json
 # a home-based run: the artifacts root is <home>/experiments and the store defaults to <home>/data
 uv run crucible futures run --config examples/futures/es_sma_cross.yaml --home ~/crucible
@@ -282,7 +284,8 @@ both (a refusal); without `--home`, `futures run` still requires `--store`.
 The config (`kind: futures_run`, `crucible schema --kind futures-run`) names:
 - the root and its continuous datasets (ADR-0092);
 - a window in Globex trade dates;
-- a strategy: a spec, or a Python function returning signed contracts;
+- a strategy: a spec, a Python function returning signed contracts, or a DSL expression
+  (`strategy.expression`, compiled at load: `docs/modules/dsl.md`);
 - contracts, capital and costs;
 - tick brackets (ADR-0093);
 - the signal input (ratio-adjusted by default, ADR-0094);

@@ -4,9 +4,10 @@ A continuous futures run needs two things this module produces from one strategy
 position** in whole contracts decided at each bar's close (the input of
 ``crucible.execution.futures_sim.simulate_futures``, ADR-0090) and the per-bar ``on_schedule``
 column that stops orders filling in a closed Globex segment (ADR-0091, ADR-0093 decision 5). The
-strategy is either a declarative ``StrategySpec`` (compiled by ``spec_positions``, so its sides
-become +/-1 and ``contracts`` turns them into a size) or a ``FuturesSignalFunction`` that returns
-signed contracts itself.
+strategy is a declarative ``StrategySpec`` (compiled by ``spec_positions``, so its sides become
++/-1 and ``contracts`` turns them into a size), a ``FuturesSignalFunction`` that returns signed
+contracts itself, or a compiled DSL ``CompiledSignal`` (ADR-0098: a condition is long when true, a
+score's sign sets the side, and ``contracts`` sizes it).
 
 Two datasets meet here, and the rule is the owner's (ADR-0086, decision 8):
 
@@ -41,9 +42,10 @@ from typing import TYPE_CHECKING, Literal, NoReturn, Protocol
 import numpy as np
 import polars as pl
 
-from crucible.core.errors import ConfigurationError, DataQualityError
+from crucible.core.errors import ConfigurationError, DataQualityError, InvariantViolation
 from crucible.data.cme_sessions import SessionRuleMasks, session_rule_masks, table_summary
 from crucible.data.continuous import calendar_for
+from crucible.dsl.compile import CONDITION, CompiledSignal
 from crucible.strategy_spec.compile import condition_operands, spec_positions
 from crucible.strategy_spec.models import (
     ClockTime,
@@ -354,6 +356,54 @@ def _check_spec(spec: StrategySpec, contracts: object) -> int:
     return contracts
 
 
+def _check_expression_contracts(expression: CompiledSignal, contracts: object) -> int:
+    """An expression decides a side; ``contracts`` sizes it (a whole number of contracts)."""
+    if isinstance(contracts, bool) or not isinstance(contracts, int) or contracts < 1:
+        msg = (
+            f"contracts={contracts!r}: the expression {expression.canonical_text!r} decides a "
+            "side (+1 long, -1 short, 0 flat) and the bridge turns it into a size, so contracts "
+            "must be a whole number of contracts >= 1 (e.g. contracts=1)"
+        )
+        raise ConfigurationError(msg)
+    return contracts
+
+
+def _check_expression_input(expression: CompiledSignal, signal_input: str) -> None:
+    """Refuse an expression compiled for the other input: its scale guarantee would not apply."""
+    if expression.signal_input != signal_input:
+        msg = (
+            f"the compiled expression {expression.compiled_id} was compiled for "
+            f"signal_input={expression.signal_input!r}, but this run reads {signal_input!r}: its "
+            "static scale rule belongs to the role it was compiled for. Recompile it with "
+            "crucible.dsl.compile.compile_expression(..., signal_input=signal_input), or fix the "
+            "run's signal.input"
+        )
+        raise ConfigurationError(msg)
+
+
+def _expression_sides(value: pl.Series, root_kind: str) -> NDArray[np.int64]:
+    """The signed side per bar: a condition is 1 where true, a score takes its sign; null is 0.
+
+    A null value or the warm-up decides flat, never "hold the previous target": a position
+    without a current signal would be one the strategy did not decide (ADR-0098).
+    """
+    boolean = value.dtype == pl.Boolean
+    if boolean != (root_kind == CONDITION):
+        msg = (
+            f"the compiled expression's root_kind is {root_kind!r} but its evaluation returned "
+            f"{value.dtype}; a condition must evaluate to Boolean and a score to Float64"
+        )
+        raise InvariantViolation(msg)
+    if boolean:
+        return value.cast(pl.Int64).fill_null(0).to_numpy().astype(np.int64)
+    scores = value.to_numpy().astype(np.float64)
+    sides = np.zeros(scores.shape, dtype=np.int64)
+    finite = np.isfinite(scores)
+    sides[finite & (scores > 0.0)] = 1
+    sides[finite & (scores < 0.0)] = -1
+    return sides
+
+
 def _check_function_contracts(contracts: object) -> None:
     """A ``FuturesSignalFunction`` decides the size itself, so ``contracts`` is a contradiction."""
     if contracts is not None:
@@ -555,7 +605,7 @@ def futures_targets(
     signal_bars: pl.DataFrame,
     execution_ref: DatasetRef,
     signal_ref: DatasetRef,
-    strategy: StrategySpec | FuturesSignalFunction,
+    strategy: StrategySpec | FuturesSignalFunction | CompiledSignal,
     contracts: int | None,
     signal_input: SignalInput = "ratio_adjusted",
     session: FuturesSessionPolicy | None = None,
@@ -568,10 +618,12 @@ def futures_targets(
     ``execution_bars``: the UNADJUSTED continuous series (``CONTINUOUS_BAR_SCHEMA``) the fills and
     P&L come from; ``signal_bars``: the series the strategy reads (the ratio-adjusted one, or the
     unadjusted one), the same rows. ``execution_ref``/``signal_ref``: what each dataset's manifest
-    says (recorded, and checked against ``signal_input``). ``strategy``: a ``StrategySpec`` (sized
-    by ``contracts``, a whole number >= 1) or a ``FuturesSignalFunction`` (``contracts=None``; its
-    score is the size). ``params``: forwarded to a ``FuturesSignalFunction``. ``bar_seconds``: the
-    bar length of the series (60 for minute bars), used to place bars in the schedule.
+    says (recorded, and checked against ``signal_input``). ``strategy``: a ``StrategySpec`` or a
+    compiled DSL ``CompiledSignal`` (both sized by ``contracts``, a whole number >= 1) or a
+    ``FuturesSignalFunction`` (``contracts=None``; its score is the size). ``params``: forwarded to
+    a ``FuturesSignalFunction`` (an expression's ``$`` parameters are bound at compile time).
+    ``bar_seconds``: the bar length of the series (60 for minute bars), used to place bars in the
+    schedule.
 
     Units: prices in the series' own points, targets in contracts (``Int64``), times UTC ns.
     Timing: every target is decided at that bar's close from bars up to and including it.
@@ -583,17 +635,23 @@ def futures_targets(
     _check_alignment(execution_bars, signal_bars)
     spec: StrategySpec | None = None
     function: FuturesSignalFunction | None = None
+    expression: CompiledSignal | None = None
     size: int | None = None
-    if isinstance(strategy, StrategySpec):
+    if isinstance(strategy, CompiledSignal):
+        expression = strategy
+        _check_expression_input(expression, signal_input)
+        size = _check_expression_contracts(expression, contracts)
+    elif isinstance(strategy, StrategySpec):
         spec = strategy
         size = _check_spec(spec, contracts)
     else:
         candidate: object = strategy
         if not callable(candidate):
             msg = (
-                f"strategy={strategy!r} is neither a StrategySpec nor a callable "
-                "FuturesSignalFunction; pass a spec (crucible strategy spec) or a function with "
-                "__call__(bars, params) -> LazyFrame(ts, score) and scale_invariant"
+                f"strategy={strategy!r} is neither a StrategySpec, a compiled DSL CompiledSignal "
+                "nor a callable FuturesSignalFunction; pass a spec (crucible strategy spec), a "
+                "compile_expression(...) result, or a function with __call__(bars, params) -> "
+                "LazyFrame(ts, score) and scale_invariant"
             )
             raise ConfigurationError(msg)
         function = strategy
@@ -606,6 +664,11 @@ def futures_targets(
         declared: bool | None = None
         static = "not_applicable"
         factors: tuple[float, ...] = ()
+    elif expression is not None:
+        # the compile step refused a score of non-zero price degree: static, by typing
+        declared = None
+        static = "typed"
+        factors = EMPIRICAL_FACTORS
     else:
         if spec is not None:
             assert_scale_invariant(spec, what=f"the spec's signal on {signal_ref.dataset}")
@@ -628,6 +691,13 @@ def futures_targets(
         factors = EMPIRICAL_FACTORS
 
     def decide(bars: pl.DataFrame) -> NDArray[np.int64]:
+        if expression is not None:
+            assert size is not None
+            decided_bars = expression.evaluate(
+                bars, calendar=calendar_for(root), bar_seconds=bar_seconds
+            )
+            sides = _expression_sides(decided_bars.get_column("value"), expression.root_kind)
+            return _apply_session(sides * size, masks)
         if spec is not None:
             assert size is not None
             sides = spec_positions(
@@ -658,9 +728,10 @@ def futures_targets(
             )
             raise ConfigurationError(msg)
 
+    strategy_kind = "dsl" if expression is not None else "spec" if spec is not None else "python"
     record: dict[str, object] = {
         "root": root.upper(),
-        "strategy_kind": "spec" if spec is not None else "python",
+        "strategy_kind": strategy_kind,
         "signal_input": signal_input,
         "signal_dataset": dict(asdict(signal_ref)),
         "execution_dataset": dict(asdict(execution_ref)),
@@ -681,6 +752,17 @@ def futures_targets(
         "unverified_sessions": [day.isoformat() for day in masks.unverified],
         "contracts": contracts,
     }
+    if expression is not None:
+        record["expression"] = expression.describe()
+        record["availability"] = {
+            "column": "available_at",
+            "result": "passed",
+            "checks": [
+                "available_at >= event_time",
+                "available_at does not decrease within a stream",
+                "available_at - event_time <= one bar",
+            ],
+        }
     targets = pl.DataFrame(
         {
             "event_time": execution_bars.get_column("event_time"),

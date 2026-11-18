@@ -1248,17 +1248,28 @@ def _cmd_futures(args: argparse.Namespace) -> int:
     config = load_futures_config(Path(args.config))
     if args.futures_command == "check":
         config_hash = futures_config_hash(config)
+        compiled = (
+            config.strategy.compiled_signal(config.signal.input)
+            if config.strategy.expression is not None
+            else None
+        )
         if args.json:
-            machine.emit(
-                {
-                    "kind": "futures_run_config",
-                    "config_hash": config_hash,
-                    "config": config.model_dump(mode="json"),
-                }
-            )
+            document: dict[str, object] = {
+                "kind": "futures_run_config",
+                "config_hash": config_hash,
+                "config": config.model_dump(mode="json"),
+            }
+            if compiled is not None:
+                document["expression"] = compiled.describe()
+            machine.emit(document)
             return 0
         sys.stdout.write(canonical_futures_yaml(config))
         sys.stdout.write(f"config hash: {config_hash}\n")
+        if compiled is not None:
+            sys.stdout.write(f"expression:          {compiled.canonical_text}\n")
+            sys.stdout.write(f"structure id:        {compiled.structure_id}\n")
+            sys.stdout.write(f"parameterization id: {compiled.parameterization_id}\n")
+            sys.stdout.write(f"compiled id:         {compiled.compiled_id}\n")
         return 0
 
     from crucible.experiments.futures_document import futures_document

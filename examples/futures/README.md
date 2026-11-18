@@ -6,12 +6,25 @@
 rule itself is `es_sma_cross_spec.yaml` (a strategy spec, resolved relative to the config's
 directory, so editing it changes the run's config hash and therefore its run id).
 
+`es_zscore_reversion.yaml` is the same run decided by a **DSL expression** instead of a spec
+(ADR-0098): `strategy.expression` is a 60-bar z-score reversion with one free parameter,
+`$n:int[10,240]=60`. It is compiled at load, so `futures check` prints its canonical text and its
+three ids (`DSX-` structure, `DSP-` parameterization, `DSC-` compiled) and a bad expression is
+refused before any data is read; `futures run` records the same document in the manifest's
+`signal` block. The score reads the ratio-adjusted series, so it must be scale invariant
+(ADR-0086): `ts_zscore(close, n)` is dimensionless while a price level or `delta(close, 1)` would
+be refused at compile time. The expression language is documented in
+[`docs/modules/dsl.md`](../../docs/modules/dsl.md).
+
 ```bash
 # validate the config without touching any data
 uv run crucible futures check --config examples/futures/es_sma_cross.yaml
+uv run crucible futures check --config examples/futures/es_zscore_reversion.yaml
 
 # the run: one sealed artifact under experiments/
 uv run crucible futures run --config examples/futures/es_sma_cross.yaml \
+    --store data/processed --artifacts experiments
+uv run crucible futures run --config examples/futures/es_zscore_reversion.yaml \
     --store data/processed --artifacts experiments
 ```
 

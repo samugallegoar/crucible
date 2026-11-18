@@ -73,6 +73,7 @@ if TYPE_CHECKING:
 
     from crucible.data.cme_sessions import SessionCalendar
     from crucible.data.interfaces import DatasetManifest
+    from crucible.dsl.compile import CompiledSignal
     from crucible.strategy_spec.models import StrategySpec
 
 RUN_ID_PREFIX = "FUT-"
@@ -276,10 +277,15 @@ def _window_raw(raw_all: pl.DataFrame, bars: _Bars) -> pl.DataFrame:
 # c. the strategy
 
 
-def _strategy(config: FuturesRunConfig) -> StrategySpec | FuturesSignalFunction:
-    """The spec (parsed) or the imported signal function of the config."""
+def _strategy(
+    config: FuturesRunConfig,
+) -> StrategySpec | FuturesSignalFunction | CompiledSignal:
+    """The spec (parsed), the compiled DSL expression or the imported signal function."""
     if config.strategy.spec is not None:
         return parse_spec(config.strategy.spec)
+    if config.strategy.expression is not None:
+        # compiled with the config's params and signal role: the ids land in the manifest record
+        return config.strategy.compiled_signal(config.signal.input)
     entrypoint = config.strategy.entrypoint
     assert entrypoint is not None  # guaranteed by the config's exactly-one rule
     candidate = import_entrypoint(entrypoint)

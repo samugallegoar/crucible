@@ -205,8 +205,8 @@ def test_spec_and_entrypoint_together_are_refused() -> None:
         parse_futures_config(mapping(**{"strategy.entrypoint": "examples.x:signal"}))
 
 
-def test_neither_spec_nor_entrypoint_is_refused() -> None:
-    with pytest.raises(ConfigurationError, match="neither spec nor entrypoint"):
+def test_no_strategy_source_is_refused() -> None:
+    with pytest.raises(ConfigurationError, match="got none"):
         parse_futures_config(mapping(**{"strategy.spec": None}))
 
 

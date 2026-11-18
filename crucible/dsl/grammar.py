@@ -1,13 +1,14 @@
 """Tokenizer and recursive-descent parser for the expression DSL (ADR-0096).
 
-Grammar version :data:`GRAMMAR_VERSION` = ``"1"``. Whitespace-insensitive. Precedence, low to
-high: ``or`` < ``and`` < ``not`` < comparison < ``+ -`` < ``* /`` < unary ``-`` < call/atom. Every
-binary operator is left-associative. Tokens:
+Grammar version :data:`GRAMMAR_VERSION` = ``"2"`` (C4b added the session features).
+Whitespace-insensitive. Precedence, low to high: ``or`` < ``and`` < ``not`` < comparison <
+``+ -`` < ``* /`` < unary ``-`` < call/atom. Every binary operator is left-associative. Tokens:
 
 - numbers: ``\\d+`` (int) or ``\\d+\\.\\d+`` (float). ``.5``, ``5.``, exponents, ``inf``, ``nan``
   and underscores are refused.
 - booleans ``true`` / ``false``.
-- features: ``open``, ``high``, ``low``, ``close``, ``volume``, ``time_of_day``.
+- features: ``open``, ``high``, ``low``, ``close``, ``volume``, ``time_of_day``,
+  ``minutes_since_open``, ``minutes_to_close``.
 - calls ``name(arg, ...)`` from the operator table.
 - comparisons ``> >= < <=``; ``==``, ``!=``, ``=`` (outside a declaration), and chained
   comparisons are refused as ambiguous.
@@ -50,8 +51,9 @@ from crucible.dsl.types import FEATURES, check_root, type_map
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-GRAMMAR_VERSION: Final[str] = "1"
-"""Bump with ``OPERATOR_TABLE_VERSION`` whenever the grammar changes: the structure id hashes it."""
+GRAMMAR_VERSION: Final[str] = "2"
+"""Bump with ``OPERATOR_TABLE_VERSION`` whenever the grammar changes: the structure id hashes it.
+Bumped to "2" by C4b (ADR-0098): the session features joined the grammar."""
 
 MAX_LENGTH: Final[int] = 10_000
 MAX_NESTING: Final[int] = 64

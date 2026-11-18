@@ -11,9 +11,12 @@ z-score) compared to a constant, or two series of the same dimension compared to
 A literal (fixed number or free parameter) is dimension-polymorphic only in volume and time --
 never in price: ``volume > 1000`` and ``time_of_day >= 570`` typecheck, ``close > 4500`` does not.
 
-``time_of_day`` is exchange-time minutes since midnight at bar end (an int series). Time is only
-meaningful compared to a literal or chosen between by ``if``: arithmetic and rolling operators on
-it are refused, because wrapping around midnight silently breaks the arithmetic.
+The time-kind features are ``time_of_day`` (exchange-local minutes since midnight at the bar's
+end), ``minutes_since_open`` and ``minutes_to_close`` (whole minutes from the bar's end to its
+CME trade-date session's scheduled open and close). Time is only meaningful compared to a literal
+or chosen between by ``if``: arithmetic and rolling operators on it are refused, because wrapping
+around midnight silently breaks the arithmetic. :data:`SESSION_FEATURES` needs a CME session
+calendar at evaluation time (ADR-0098).
 """
 
 from __future__ import annotations
@@ -84,6 +87,12 @@ SERIES_VOLUME: Final[ExprType] = ExprType(SERIES, Dimension(volume=1))
 SERIES_TIME: Final[ExprType] = ExprType(SERIES, Dimension(time=True))
 SERIES_DIMENSIONLESS: Final[ExprType] = ExprType(SERIES, _NO_DIMENSION)
 
+SESSION_FEATURES: Final[frozenset[str]] = frozenset(
+    {"time_of_day", "minutes_since_open", "minutes_to_close"}
+)
+"""The time-kind features: they are computed from the CME session calendar (ADR-0098), so an
+expression that reads one is refused on a frame without a calendar."""
+
 FEATURES: Final[Mapping[str, ExprType]] = {
     "open": SERIES_PRICE,
     "high": SERIES_PRICE,
@@ -91,8 +100,10 @@ FEATURES: Final[Mapping[str, ExprType]] = {
     "close": SERIES_PRICE,
     "volume": SERIES_VOLUME,
     "time_of_day": SERIES_TIME,
+    "minutes_since_open": SERIES_TIME,
+    "minutes_to_close": SERIES_TIME,
 }
-"""Every recognized bare feature and its type. Extend with C4b session features, not ad hoc."""
+"""Every recognized bare feature and its type. Extend here, never ad hoc."""
 
 COMPARISONS: Final[frozenset[str]] = frozenset({">", ">=", "<", "<="})
 ARITHMETIC: Final[frozenset[str]] = frozenset({"+", "-", "*", "/"})
@@ -103,8 +114,8 @@ _PRICE_LEVEL_HINT: Final[str] = (
     "(ADR-0086); normalize, e.g. close/delay(close,1)"
 )
 _TIME_HINT: Final[str] = (
-    "time_of_day is only comparable to a literal or selected by if(): normalizing it around "
-    "midnight is ambiguous"
+    "a time feature (time_of_day, minutes_since_open, minutes_to_close) is only comparable to a "
+    "literal or selected by if(): normalizing minutes around midnight is ambiguous"
 )
 _ROLLING_OVER_CONSTANT: Final[str] = "a rolling operator over a constant"
 
@@ -183,11 +194,18 @@ def _unify(left: ExprType, right: ExprType, *, op: str, node: Expr) -> ExprType:
 
 
 def _window_value(
-    node: Expr, bindings: Mapping[str, FreeParam] | None, *, op: str, position: int
+    node: Expr,
+    bindings: Mapping[str, FreeParam] | None,
+    *,
+    op: str,
+    position: int,
+    minimum: int,
 ) -> int:
-    """Validate a window argument: a positive int literal or an int free parameter.
+    """Validate a window argument: an int literal or an int free parameter.
 
-    The parameter's default, and its bounds when declared, must lie in ``[1, 2000]``.
+    The value, and a parameter's default and declared bounds, must lie in
+    ``[minimum, MAX_WINDOW]``, where ``minimum`` is the operator's own ``min_window`` (ADR-0098):
+    ``ts_std(x, 1)`` cannot estimate a spread, so it is refused here and again by ``bind``.
     """
     from crucible.dsl import ast
 
@@ -199,11 +217,12 @@ def _window_value(
                 f"pass a whole number of bars, e.g. {op}(x, 20)",
             )
         value = int(node.value)
-        if not MIN_WINDOW <= value <= MAX_WINDOW:
+        if not minimum <= value <= MAX_WINDOW:
             raise _refuse(
                 node,
-                f"{op}() window {value} is outside [{MIN_WINDOW}, {MAX_WINDOW}]",
-                f"pass {MIN_WINDOW} <= n <= {MAX_WINDOW}",
+                f"{op}() window {value} is outside [{minimum}, {MAX_WINDOW}]",
+                f"pass {minimum} <= n <= {MAX_WINDOW}"
+                + ("" if minimum == MIN_WINDOW else f"; {op}() needs at least {minimum} values"),
             )
         return value
     if isinstance(node, ast.Param):
@@ -212,27 +231,27 @@ def _window_value(
             raise _refuse(
                 node,
                 f"{op}() window ${binding.name} is a float parameter",
-                f"declare it as an int with bounds inside [{MIN_WINDOW}, {MAX_WINDOW}], e.g. "
-                f"${binding.name}:int[{MIN_WINDOW},{MAX_WINDOW}]=20",
+                f"declare it as an int with bounds inside [{minimum}, {MAX_WINDOW}], e.g. "
+                f"${binding.name}:int[{minimum},{MAX_WINDOW}]=20",
             )
         default = int(binding.default)
-        if not MIN_WINDOW <= default <= MAX_WINDOW:
+        if not minimum <= default <= MAX_WINDOW:
             raise _refuse(
                 node,
                 f"{op}() window ${binding.name} defaults to {default}, outside "
-                f"[{MIN_WINDOW}, {MAX_WINDOW}]",
-                f"set a default inside [{MIN_WINDOW}, {MAX_WINDOW}]",
+                f"[{minimum}, {MAX_WINDOW}]",
+                f"set a default inside [{minimum}, {MAX_WINDOW}]",
             )
         # An unbounded window parameter is allowed (extractable, not optimizable, owner's rule
         # for C4a): its default is checked above and `bind` re-validates every bound value.
         if binding.low is None or binding.high is None:
             return default
-        if int(binding.low) < MIN_WINDOW or int(binding.high) > MAX_WINDOW:
+        if int(binding.low) < minimum or int(binding.high) > MAX_WINDOW:
             raise _refuse(
                 node,
                 f"{op}() window ${binding.name} has bounds [{binding.low}, {binding.high}] "
-                f"outside [{MIN_WINDOW}, {MAX_WINDOW}]",
-                f"keep the bounds inside [{MIN_WINDOW}, {MAX_WINDOW}]",
+                f"outside [{minimum}, {MAX_WINDOW}]",
+                f"keep the bounds inside [{minimum}, {MAX_WINDOW}]",
             )
         return default
     raise _refuse(
@@ -288,7 +307,7 @@ def _reject_time(node: Expr, expr_type: ExprType, *, op: str) -> None:
     if expr_type.dimension.time:
         raise _refuse(
             node,
-            f"`{op}` applied to time_of_day",
+            f"`{op}` applied to a time feature",
             _TIME_HINT,
         )
 
@@ -308,7 +327,13 @@ def _check_call(
             f"signature: {definition.signature}",
         )
     for position in definition.window_args:
-        _window_value(arg_list[position], bindings, op=node.name, position=position + 1)
+        _window_value(
+            arg_list[position],
+            bindings,
+            op=node.name,
+            position=position + 1,
+            minimum=definition.min_window,
+        )
     arg_types = [_check(arg, bindings) for arg in arg_list]
     first = arg_types[0]
     name = node.name
@@ -428,6 +453,13 @@ def _check(node: Expr, bindings: Mapping[str, FreeParam] | None) -> ExprType:
                 )
             return BOOL_TYPE
         if node.op in COMPARISONS:
+            if left.dimension.time and right.dimension.time:
+                raise _refuse(
+                    node,
+                    f"`{node.op}` compares two time features: a time feature is only comparable "
+                    "to a literal",
+                    _TIME_HINT,
+                )
             _unify(left, right, op=node.op, node=node)
             return BOOL_TYPE
         # arithmetic
