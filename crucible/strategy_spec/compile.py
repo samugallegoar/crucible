@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 _BAR_COLUMNS = ("symbol", "event_time", "open", "high", "low", "close", "volume")
+_RULE_COLUMNS = ("entry_long", "entry_short", "exit_long", "exit_short")
 _NS_PER_MINUTE = 60 * 10**9
 _TIME_COLUMN = "__time_of_day"
 _UNIT_MINUTES = {"m": 1, "h": 60}
@@ -424,6 +425,81 @@ def _walk(
             state, entry_price, held = -1, price, 0
         position[i] = float(state)
     return position, exit_prices
+
+
+def spec_positions(
+    spec: StrategySpec,
+    frame: pl.DataFrame,
+    *,
+    force_flat: NDArray[np.bool_] | None = None,
+    entry_ok: NDArray[np.bool_] | None = None,
+    frozen: NDArray[np.bool_] | None = None,
+) -> NDArray[np.int64]:
+    """The spec's position (-1, 0, +1) after each bar's decision for ONE symbol.
+
+    The same rules ``spec_signal`` compiles (``_signals`` then ``_walk``), over the bars handed in
+    and in their order: ``frame`` holds one symbol's rows with columns ``event_time``, ``open``,
+    ``high``, ``low``, ``close``, ``volume`` and ``symbol`` (any extra column is ignored). No
+    session schedule is applied here -- the caller supplies the per-bar masks it wants (the
+    futures path passes the CME calendar's, see ``crucible.experiments.futures_signals``), which is
+    also why a ``time``/clock-time rule is refused: it needs the schedule ``spec_signal`` builds.
+
+    ``force_flat`` closes a position and blocks entries on that bar; ``entry_ok`` false blocks new
+    entries and flips; ``frozen`` True means **no decision at all** on that bar -- no entry, no
+    exit -- so the position carried in is the position carried out. The futures path freezes the
+    off-schedule bars (a print while the Globex segment is closed decides nothing, ADR-0091), which
+    is why the rule columns are masked here rather than after the walk: an exit judged on such a
+    close would leak into the following bars.
+
+    Timing: row ``i`` is the position the spec decides at the close of ``event_time[i]``; the
+    caller lags it by one bar when trading, exactly as ``spec_signal`` does."""
+    missing = [c for c in _BAR_COLUMNS if c not in frame.columns]
+    if missing:
+        msg = f"the frame lacks columns {missing}; spec_positions needs {list(_BAR_COLUMNS)}"
+        raise ConfigurationError(msg)
+    if uses_time(spec):
+        msg = (
+            "this spec has a `time` / clock-time comparison, which needs the session schedule "
+            "only spec_signal builds; remove the time rule (the futures path takes its clock "
+            "rules from FuturesSessionPolicy), or compile the spec with spec_signal"
+        )
+        raise ConfigurationError(msg)
+    ordered = frame.select(list(_BAR_COLUMNS)).sort(["symbol", "event_time"])
+    symbols = ordered.get_column("symbol").unique().to_list()
+    if len(symbols) != 1:
+        msg = (
+            f"spec_positions compiles one symbol per frame and got {len(symbols)} "
+            f"({sorted(str(s) for s in symbols)}); call it once per symbol or use spec_signal"
+        )
+        raise ConfigurationError(msg)
+    n = ordered.height
+    for name, mask in (("force_flat", force_flat), ("entry_ok", entry_ok), ("frozen", frozen)):
+        if mask is not None and len(mask) != n:
+            msg = (
+                f"{name} has {len(mask)} entries but the frame has {n} bars; one mask value per "
+                "bar, in the frame's (sorted) order"
+            )
+            raise ConfigurationError(msg)
+    scored = _signals(spec, ordered)
+    if frozen is not None:
+        inert = pl.Series("__frozen", np.asarray(frozen, dtype=np.bool_))
+        scored = scored.with_columns([(pl.col(c) & inert.not_()).alias(c) for c in _RULE_COLUMNS])
+    position, _ = _walk(
+        spec,
+        str(symbols[0]),
+        scored.get_column("event_time").to_numpy(),
+        scored.get_column("open").to_numpy(),
+        scored.get_column("high").to_numpy(),
+        scored.get_column("low").to_numpy(),
+        scored.get_column("close").to_numpy(),
+        scored.get_column("entry_long").to_numpy(),
+        scored.get_column("entry_short").to_numpy(),
+        scored.get_column("exit_long").to_numpy(),
+        scored.get_column("exit_short").to_numpy(),
+        force_flat,
+        entry_ok,
+    )
+    return position.astype(np.int64)
 
 
 def spec_signal(bars: pl.LazyFrame, params: dict[str, object]) -> pl.LazyFrame:

@@ -20,6 +20,7 @@ from crucible.data.futures_specs import futures_spec
 from crucible.execution.futures_sim import (
     CostSchedule,
     ExecutionPolicy,
+    FuturesSimResult,
     SessionCostOverride,
     simulate_futures,
 )
@@ -192,6 +193,260 @@ def test_the_simulation_is_deterministic() -> None:
     assert first.equals(_run(_bars(FOUR), [1, 2, -1, 0], stop_ticks=2))
 
 
+# --- per-lot brackets (C3b-2a) ----------------------------------------------------------------
+
+
+def _simulate(bars: pl.DataFrame, values: list[int], **policy: object) -> FuturesSimResult:
+    return simulate_futures(
+        bars=bars,
+        targets=_targets(bars, values),
+        rolls=_no_rolls(),
+        spec=ES,
+        costs=COSTS,
+        initial_capital=CAPITAL,
+        policy=ExecutionPolicy(**policy),  # type: ignore[arg-type]
+    )
+
+
+SCALE_IN = [
+    (100.0, 100.0, 100.0, 100.0),  # 0: decide 1
+    (100.0, 100.25, 100.0, 100.25),  # 1: lot1 at 100.00, stop 98.00; decide 2
+    (102.0, 102.25, 102.0, 102.0),  # 2: lot2 at 102.00, stop 100.00
+    (101.5, 101.75, 99.75, 100.0),  # 3: low 99.75 stops lot2 (100.00) only
+]
+
+
+def test_an_add_carries_its_own_stop_and_only_that_lot_stops() -> None:
+    # ES tick 0.25 = $12.50; stop_ticks=8 is 2.00 points. A market fill costs $20.75.
+    result = _simulate(_bars(SCALE_IN), [1, 2, 2, 2], stop_ticks=8)
+    assert result.bars["position"].to_list() == [0, 1, 2, 1]
+    fills = result.fills
+    assert fills["kind"].to_list() == ["signal", "signal", "stop"]
+    assert fills["quantity"].to_list() == [1, 1, -1]
+    assert [Decimal(p) for p in fills["price"].to_list()] == [
+        Decimal(100),
+        Decimal(102),
+        Decimal(100),
+    ]
+    # lot2: 102.00 -> 100.00 = -2.00 points x $50 = -$100.00, plus the market fill $20.75
+    assert _usd(result.bars, "realized_usd")[3] == Decimal(-100)
+    assert _usd(result.bars, "costs_usd")[3] == Decimal("20.75")
+    # lot1 survives with its own stop 98.00 (99.75 does not reach it), marked at 100.00: +0.00
+    assert _usd(result.bars, "unrealized_usd")[3] == Decimal(0)
+
+
+def test_the_stopped_lot_is_not_rebought_until_the_decided_target_changes() -> None:
+    bars = _bars(
+        [
+            *SCALE_IN,  # 0-3: lot1 at 100.00, lot2 stopped at 100.00, position 1
+            (100.0, 100.5, 99.75, 100.5),  # 4: target still 2, still blocked: no trade
+            (100.5, 101.0, 100.5, 101.0),  # 5: target changes to 1 (already held)
+            (101.0, 101.0, 101.0, 101.0),  # 6: target 2 again: a buy is now allowed
+            (101.5, 101.5, 101.5, 101.5),  # 7: buy lot3 at 101.50, stop 99.50
+            (101.5, 101.5, 100.0, 100.0),  # 8: low 100.00 > 99.50: still open
+            (100.0, 100.0, 99.25, 99.5),  # 9: low 99.25 stops lot3 at 99.50
+        ]
+    )
+    result = _simulate(bars, [1, 2, 2, 2, 2, 1, 2, 2, 2, 2], stop_ticks=8)
+    assert result.bars["position"].to_list() == [0, 1, 2, 1, 1, 1, 1, 2, 2, 1]
+    assert result.fills["quantity"].to_list() == [1, 1, -1, 1, -1]
+    assert [Decimal(p) for p in result.fills["price"].to_list()] == [
+        Decimal(100),
+        Decimal(102),
+        Decimal(100),
+        Decimal("101.5"),
+        Decimal("99.5"),
+    ]
+    # lot3: 101.50 -> 99.50 = -2.00 points x $50 = -$100.00; lot1 (98.00) is never touched
+    assert _usd(result.bars, "realized_usd")[9] == Decimal(-100)
+    assert _usd(result.bars, "unrealized_usd")[9] == Decimal(-25)  # lot1: 100.00 -> 99.50
+
+
+def test_with_allow_immediate_the_next_open_rebuys_the_stopped_contract() -> None:
+    bars = _bars(
+        [
+            *SCALE_IN,  # 0-3: lot2 stops at 100.00, position 1
+            (100.5, 101.0, 100.5, 100.5),  # 4: buy 1 at 100.50, its own stop 98.50
+            (99.5, 99.75, 98.25, 99.0),  # 5: low 98.25 stops the NEW lot at 98.50
+        ]
+    )
+    result = _simulate(bars, [1, 2, 2, 2, 2, 2], stop_ticks=8, reentry="allow_immediate")
+    assert result.bars["position"].to_list() == [0, 1, 2, 1, 2, 1]
+    assert result.fills["kind"].to_list() == ["signal", "signal", "stop", "signal", "stop"]
+    assert result.fills["quantity"].to_list() == [1, 1, -1, 1, -1]
+    # the new lot: 100.50 -> 98.50 = -2.00 points = -$100.00 (lot1, stop 98.00, survives)
+    assert _usd(result.bars, "realized_usd")[5] == Decimal(-100)
+    assert _usd(result.bars, "unrealized_usd")[5] == Decimal(-50)  # lot1: 100.00 -> 99.00
+
+
+def test_a_partial_reduction_closes_the_oldest_lot_and_the_survivor_keeps_its_levels() -> None:
+    bars = _bars(
+        [
+            (100.0, 100.0, 100.0, 100.0),  # 0: decide 1
+            (100.0, 100.0, 100.0, 100.0),  # 1: lot1 at 100.00, stop 98.00; decide 2
+            (102.0, 102.0, 102.0, 102.0),  # 2: lot2 at 102.00, stop 100.00
+            (102.0, 102.0, 102.0, 102.0),  # 3: decide 1
+            (102.0, 102.0, 102.0, 102.0),  # 4: sell 1 at 102.00 -> closes lot1 (FIFO)
+            (102.0, 102.0, 99.0, 99.5),  # 5: low 99.00 reaches 100.00 (lot2) but not 98.00
+        ]
+    )
+    result = _simulate(bars, [1, 2, 2, 1, 1, 1], stop_ticks=8)
+    assert result.bars["position"].to_list() == [0, 1, 2, 2, 1, 0]
+    assert result.fills["kind"].to_list() == ["signal", "signal", "signal", "stop"]
+    assert result.fills["quantity"].to_list() == [1, 1, -1, -1]
+    assert [Decimal(p) for p in result.fills["price"].to_list()] == [
+        Decimal(100),
+        Decimal(102),
+        Decimal(102),
+        Decimal(100),
+    ]
+    # FIFO: the lot entered at 100.00 gains 2.00 points = +$100.00 (the one at 102.00 would be 0)
+    assert _usd(result.bars, "realized_usd")[4] == Decimal(100)
+    # the survivor is the lot entered at 102.00, so 99.00 stops it at 100.00: -2.00 points
+    assert _usd(result.bars, "realized_usd")[5] == Decimal(-100)
+
+
+def test_a_bar_touching_one_lots_target_and_another_lots_stop_fills_only_the_stop() -> None:
+    bars = _bars(
+        [
+            (100.0, 100.0, 100.0, 100.0),  # 0: decide 1
+            (100.0, 100.0, 100.0, 100.0),  # 1: lot1 at 100.00, stop 98.00, target 102.00
+            (101.0, 101.0, 101.0, 101.0),  # 2: lot2 at 101.00, stop 99.00, target 103.00
+            (101.0, 102.5, 98.5, 101.0),  # 3: lot1's target AND lot2's stop
+            (101.0, 102.5, 101.0, 102.0),  # 4: lot1's target fills
+        ]
+    )
+    result = _simulate(bars, [1, 2, 2, 2, 2], stop_ticks=8, target_ticks=8)
+    assert result.bars["position"].to_list() == [0, 1, 2, 1, 0]
+    assert result.fills["kind"].to_list() == ["signal", "signal", "stop", "target"]
+    assert result.fills["quantity"].to_list() == [1, 1, -1, -1]
+    assert [Decimal(p) for p in result.fills["price"].to_list()] == [
+        Decimal(100),
+        Decimal(101),
+        Decimal(99),
+        Decimal(102),
+    ]
+    # bar 3: only lot2's stop, 101.00 -> 99.00 = -2.00 points = -$100.00, $20.75 market fill
+    assert _usd(result.bars, "realized_usd")[3] == Decimal(-100)
+    assert _usd(result.bars, "costs_usd")[3] == Decimal("20.75")
+    # bar 4: lot1's target, 100.00 -> 102.00 = +2.00 points = +$100.00, $2.00 limit fill
+    assert _usd(result.bars, "realized_usd")[4] == Decimal(100)
+    assert _usd(result.bars, "costs_usd")[4] == Decimal(2)
+
+
+def test_both_lots_targets_fill_in_the_same_bar_at_their_own_limits() -> None:
+    bars = _bars(
+        [
+            (100.0, 100.0, 100.0, 100.0),  # 0: decide 1
+            (100.0, 100.0, 100.0, 100.0),  # 1: lot1 at 100.00, target 102.00; decide 2
+            (101.0, 101.0, 101.0, 101.0),  # 2: lot2 at 101.00, target 103.00
+            (101.0, 103.25, 101.0, 103.0),  # 3: both targets traded through (102.25 / 103.25)
+        ]
+    )
+    result = _simulate(bars, [1, 2, 2, 2], target_ticks=8)
+    assert result.bars["position"].to_list() == [0, 1, 2, 0]
+    assert result.fills["kind"].to_list() == ["signal", "signal", "target", "target"]
+    assert [Decimal(p) for p in result.fills["price"].to_list()] == [
+        Decimal(100),
+        Decimal(101),
+        Decimal(102),
+        Decimal(103),
+    ]
+    # lot1 +2.00 points and lot2 +2.00 points = +$200.00, two limit fills of $2.00
+    assert _usd(result.bars, "realized_usd")[3] == Decimal(200)
+    assert _usd(result.bars, "costs_usd")[3] == Decimal(4)
+
+
+def test_a_gapped_stop_takes_out_only_the_lot_it_gapped() -> None:
+    bars = _bars(
+        [
+            (100.0, 100.0, 100.0, 100.0),  # 0: decide 1
+            (100.0, 100.0, 100.0, 100.0),  # 1: lot1 at 100.00, stop 98.00; decide 2
+            (102.0, 102.0, 102.0, 102.0),  # 2: lot2 at 102.00, stop 100.00
+            (99.75, 99.75, 99.5, 99.75),  # 3: opens below 100.00 but above 98.00
+        ]
+    )
+    result = _simulate(bars, [1, 2, 2, 2], stop_ticks=8)
+    assert result.bars["position"].to_list() == [0, 1, 2, 1]
+    assert result.fills["kind"].to_list() == ["signal", "signal", "stop"]
+    # lot2 gapped: exits at the open 99.75, 102.00 -> 99.75 = -2.25 points = -$112.50
+    assert [Decimal(p) for p in result.fills["price"].to_list()] == [
+        Decimal(100),
+        Decimal(102),
+        Decimal("99.75"),
+    ]
+    assert _usd(result.bars, "realized_usd")[3] == Decimal("-112.5")
+    assert _usd(result.bars, "unrealized_usd")[3] == Decimal("-12.5")  # lot1: 100.00 -> 99.75
+
+
+def test_a_flip_closes_every_lot_and_opens_one_lot_at_the_flip_price() -> None:
+    bars = _bars(
+        [
+            (100.0, 100.0, 100.0, 100.0),  # 0: decide 1
+            (100.0, 100.0, 100.0, 100.0),  # 1: lot1 at 100.00; decide 2
+            (102.0, 102.0, 102.0, 102.0),  # 2: lot2 at 102.00; decide -1
+            (103.0, 103.0, 103.0, 103.0),  # 3: sell 3 at 103.00 -> short lot at 103.00
+            (104.0, 105.25, 103.5, 104.0),  # 4: short lot's stop 105.00 (not its target 101.00)
+        ]
+    )
+    result = _simulate(bars, [1, 2, -1, -1, -1], stop_ticks=8, target_ticks=8)
+    assert result.bars["position"].to_list() == [0, 1, 2, -1, 0]
+    assert result.fills["kind"].to_list() == ["signal", "signal", "signal", "stop"]
+    assert result.fills["quantity"].to_list() == [1, 1, -3, 1]
+    # the flip closes both lots at 103.00: (103-100) + (103-102) = 4.00 points = +$200.00
+    assert _usd(result.bars, "realized_usd")[3] == Decimal(200)
+    assert _usd(result.bars, "costs_usd")[3] == Decimal("62.25")  # 3 contracts x 20.75
+    # the single short lot anchors at the flip price: stop 103.00 + 2.00 = 105.00
+    assert Decimal(result.fills["price"].to_list()[-1]) == Decimal(105)
+    assert _usd(result.bars, "realized_usd")[4] == Decimal(-100)
+
+
+# --- off-schedule bars (ADR-0091) -------------------------------------------------------------
+
+
+def test_an_off_schedule_bar_cannot_fill_a_pending_signal() -> None:
+    bars = _bars([(100.0,) * 4, (101.0,) * 4, (102.0,) * 4]).with_columns(
+        on_schedule=pl.Series([True, False, True])
+    )
+    result = _simulate(bars, [1, 1, 1])
+    assert result.bars["tradable"].to_list() == [True, False, True]
+    assert result.bars["position"].to_list() == [0, 0, 1]
+    # bar 1 (101.00) is off schedule: the buy waits for bar 2's open 102.00
+    assert [Decimal(p) for p in result.fills["price"].to_list()] == [Decimal(102)]
+
+
+def test_an_off_schedule_bar_does_not_trigger_a_stop() -> None:
+    bars = _bars(
+        [
+            (100.0, 100.0, 100.0, 100.0),
+            (100.0, 100.0, 100.0, 100.0),  # lot at 100.00, stop 98.00
+            (100.0, 100.0, 97.0, 97.0),  # off schedule: its low 97.00 is not a fill
+            (100.0, 100.0, 98.5, 99.0),  # on schedule, low 98.50: above the stop
+            (99.0, 99.0, 98.0, 98.0),  # low 98.00: the stop fills at 98.00
+        ]
+    ).with_columns(on_schedule=pl.Series([True, True, False, True, True]))
+    result = _simulate(bars, [1, 1, 1, 1, 1], stop_ticks=8)
+    assert result.bars["tradable"].to_list() == [True, True, False, True, True]
+    assert result.bars["position"].to_list() == [0, 1, 1, 1, 0]
+    assert result.fills["kind"].to_list() == ["signal", "stop"]
+    assert _usd(result.bars, "realized_usd")[4] == Decimal(-100)  # 100.00 -> 98.00
+
+
+def test_a_null_on_schedule_is_refused() -> None:
+    with pytest.raises(DataQualityError, match="on_schedule"):
+        _run(
+            _bars(FOUR).with_columns(
+                on_schedule=pl.Series([True, None, True, True], dtype=pl.Boolean)
+            ),
+            [0] * 4,
+        )
+    with pytest.raises(ConfigurationError, match="on_schedule"):
+        _run(
+            _bars(FOUR).with_columns(on_schedule=pl.Series([1, 1, 1, 1], dtype=pl.Int8)),
+            [0] * 4,
+        )
+
+
 # --- rolls -----------------------------------------------------------------------------------
 
 _DECISION = _T0 + 2 * _MIN  # the deciding session ends with bar 2's close
@@ -328,6 +583,56 @@ def test_a_roll_shifts_the_bracket_levels_by_the_roll_spread() -> None:
     assert Decimal(result.fills["price"].to_list()[-1]) == Decimal("109.5")
 
 
+def test_a_roll_that_keeps_the_position_shifts_every_lots_own_levels() -> None:
+    first_new = _DECISION + 61 * _MIN
+    old = _bars([(100.0,) * 4, (100.0,) * 4, (102.0,) * 4], contract="ESH4")
+    new = _bars(
+        [(110.5, 111.0, 110.5, 111.0), (111.0, 111.5, 110.25, 111.0)],
+        contract="ESM4",
+        start=first_new,
+    )
+    bars = pl.concat([old, new])
+    raw = _raw([(first_new, 100.25)], [(first_new, 110.5)])
+    result = simulate_futures(
+        bars=bars,
+        targets=_targets(bars, [1, 2, 2, 2, 2]),
+        rolls=_roll_table((100.0, 110.0)),
+        spec=ES,
+        costs=COSTS,
+        initial_capital=CAPITAL,
+        policy=ExecutionPolicy(stop_ticks=8),
+        raw=raw,
+    )
+    # lot1 at 100.00 (stop 98.00) and lot2 at 102.00 (stop 100.00); the roll trades the old
+    # contract at 100.25 and the new one at 110.50, i.e. +10.25 points = +41 ticks of spread
+    assert result.rolls["position"].to_list() == [2]
+    assert result.fills["kind"].to_list() == [
+        "signal",
+        "signal",
+        "roll_close",
+        "roll_open",
+        "stop",
+    ]
+    assert result.fills["quantity"].to_list() == [1, 1, -2, 2, -1]
+    assert [Decimal(p) for p in result.fills["price"].to_list()] == [
+        Decimal(100),
+        Decimal(102),
+        Decimal("100.25"),
+        Decimal("110.5"),
+        Decimal("110.25"),
+    ]
+    # roll close: (100.25 - 100.00) + (100.25 - 102.00) = -1.50 points x $50 = -$75.00
+    assert _usd(result.bars, "realized_usd")[3] == Decimal(-75)
+    assert _usd(result.bars, "costs_usd")[3] == Decimal("83.00")  # two market legs x 2 contracts
+    # both lots re-open at 110.50: level shift 98.00+10.25 = 108.25 and 100.00+10.25 = 110.25
+    assert _usd(result.bars, "unrealized_usd")[3] == Decimal(50)  # 2 x 0.50 points
+    # bar 4 touches only lot2's shifted stop: (110.25 - 110.50) = -0.25 point = -$12.50
+    assert _usd(result.bars, "realized_usd")[4] == Decimal("-12.5")
+    assert _usd(result.bars, "costs_usd")[4] == Decimal("20.75")
+    assert result.bars["position"].to_list() == [0, 1, 2, 2, 1]
+    assert _usd(result.bars, "unrealized_usd")[4] == Decimal(25)  # lot1: 110.50 -> 111.00
+
+
 # --- refusals --------------------------------------------------------------------------------
 
 
@@ -424,6 +729,16 @@ def test_bad_policies_are_refused() -> None:
         SessionCostOverride("x", "09:00", "09:00", Decimal(1), Decimal(1))
 
 
+def test_brackets_are_whole_ticks_and_a_float_or_percentage_is_refused() -> None:
+    for bad in (8.0, True, "8"):
+        with pytest.raises(ConfigurationError, match="whole ticks"):
+            ExecutionPolicy(stop_ticks=bad)  # type: ignore[arg-type]
+    with pytest.raises(ConfigurationError, match="whole ticks"):
+        ExecutionPolicy(target_ticks=Decimal("8"))  # type: ignore[arg-type]
+    with pytest.raises(ConfigurationError, match="whole ticks"):
+        ExecutionPolicy(target_fill_through_ticks=0.25)  # type: ignore[arg-type]
+
+
 def test_the_policy_record_names_every_assumption() -> None:
     result = simulate_futures(
         bars=_bars(FOUR),
@@ -443,3 +758,15 @@ def test_the_policy_record_names_every_assumption() -> None:
     assert isinstance(costs, dict)
     assert costs["spread_calibrated"] is False
     assert costs["slippage_calibrated"] is False
+
+
+def test_the_policy_record_documents_per_lot_brackets_and_off_schedule_bars() -> None:
+    policy = _simulate(_bars(FOUR), [0] * 4).policy
+    assert policy["simulator_version"] == "2"
+    brackets = policy["brackets"]
+    assert isinstance(brackets, dict)
+    assert "each lot's own fill price" in brackets["anchor"]
+    assert brackets["reduction"] == "FIFO"
+    assert "stop" in brackets["same_bar"]
+    assert "target" in brackets["same_bar"]
+    assert "on_schedule" in policy["off_schedule"]

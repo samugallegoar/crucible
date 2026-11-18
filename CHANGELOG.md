@@ -8,6 +8,37 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C3b-2: futures brackets per lot and the futures signal bridge (ADR-0093, ADR-0094)
+- **Brackets per lot.** `simulate_futures` keeps a stop and a target in ticks per lot, measured
+  from each lot's own fill:
+  - an add opens a lot and a reduction closes lots FIFO;
+  - a flip anchors one new lot, and a roll shifts each lot's levels by the executed spread;
+  - if any lot's stop is touched in a bar, only stops fill in that bar;
+  - after a partial bracket exit, `require_signal_reset` does not buy the stopped lots back.
+
+  The simulator is now version `2`, and runs with one lot per position are unchanged.
+- **Off-schedule bars.** An optional `on_schedule` column in the bars makes off-schedule bars
+  ineligible for fills and bracket exits.
+- **Ticks are whole.** `stop_ticks`, `target_ticks` and `target_fill_through_ticks` must be plain
+  integers.
+- **Futures signal bridge.** `crucible.experiments.futures_signals.futures_targets`:
+  - turns a strategy spec or a Python `FuturesSignalFunction` (signed contracts) into contract
+    targets;
+  - signals on the ratio-adjusted series by default, with `signal_input="unadjusted"` as the
+    explicit option;
+  - checks that the execution and signal datasets have the right price bases, and that they are
+    aligned exactly on `event_time` and `contract`;
+  - enforces scale invariance: statically for specs, by declaration for functions, and
+    empirically for both with prices x16 and x1/16;
+  - refuses percentage stops and targets, `max_holding_bars`, explicit sizing or `stop_fill`,
+    `time` conditions and the spec `session` block;
+  - applies the CME session rules (`FuturesSessionPolicy`), refusing a missing final bar under
+    `flat_by_close` and unverified sessions;
+  - returns a provenance record with both dataset ids, hashes and price bases, and the calendar
+    version.
+- **New spec functions.** `crucible.strategy_spec.scale` (`scale_violations`,
+  `assert_scale_invariant`) and `compile.spec_positions`.
+
 ### Fathom C3b-1b: Globex trade dates from the session calendar; continuous datasets v3 (ADR-0092)
 - **Behaviour change (data).**
   - The continuous builder and the integrity report's `cme` rule now date bars by the CME session

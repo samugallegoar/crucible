@@ -256,6 +256,11 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   callers refuse it (ADR-0091).
 - **off-schedule bar** — a bar outside every scheduled segment (typically a print in the minute
   after a close); not tradable, never a closure signal (ADR-0091).
+- **lot (futures)** — one fill's contracts inside a position, with its own entry price, stop and
+  target in ticks; reductions close lots FIFO (ADR-0093).
+- **scale invariance** — a signal rule's decisions do not change when every price is multiplied
+  by the same positive constant; required on the ratio-adjusted continuous series, whose levels
+  depend on later rolls, and checked statically and with prices x16 and x1/16 (ADR-0094).
 - **session open** — the start of the trading session containing a timestamp
   (`session_open_at`); the dividend holder-of-record cutoff (ADR-0046).
 - **settlement lag / available cash** — T+N delay before sale

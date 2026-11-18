@@ -12,7 +12,12 @@ The no-code strategy path (ADR-0067). A strategy is a validated document, not co
   `sma`, `ema`, `rsi`, `roc`, `highest`, `lowest`, `bb_upper`, `bb_lower`, each with its signature,
   warm-up and plain-language description. `resolve_indicator` validates a call.
 - `compile.py` — `spec_signal(bars, params)`, a `SignalFunction` (`crucible/vectorized/interfaces.py`)
-  with `params["spec"]`; `warmup_bars(spec)`.
+  with `params["spec"]`; `warmup_bars(spec)`; `spec_positions(spec, frame, *, force_flat, entry_ok,
+  frozen)`, the -1/0/+1 positions of one symbol under external session masks (the futures path,
+  ADR-0094).
+- `scale.py` — `scale_violations(spec)` / `assert_scale_invariant(spec, what=...)`: the comparisons
+  that are not invariant under scaling every price (a price against a number, an oscillator or
+  volume), refused on ratio-adjusted futures data (ADR-0086 decision 8, ADR-0094).
 - `describe.py` — `describe_spec`, the spec read back in plain sentences.
 - `templates.py` — `TEMPLATES`, ready-made specs (all compiled by the tests).
 
@@ -102,6 +107,10 @@ including the current one; add it to `EVERY_INDICATOR` in
 A change to the grammar or to a field's meaning needs a new `spec_version`.
 
 ## Known gaps
+
+- The futures path (ADR-0094) refuses percentage stops and targets, `max_holding_bars`, explicit
+  `sizing` / `stop_fill`, `time` conditions and the `session` block; brackets are ticks in the
+  execution policy and session rules come from the CME calendar.
 
 - Time rules (ADR-0073, ADR-0074): `flat_by_close` (with `close_with`), `exit_at`,
   `entry_window`, and `time` against clock literals in conditions. No day-of-week conditions, no
