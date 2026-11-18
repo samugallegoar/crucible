@@ -16,6 +16,17 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
     (`FUT-` run id, `ART-` artifact id).
   - **Interfaces:** `crucible futures run|check` and MCP `crucible_futures_run|check`. The
     schemas are in `docs/SCHEMAS.md`, and the marking policy is in the manifest.
+- `futures_document.py` — the futures-run document (ADR-0097): `futures_document(run_dir)` builds
+  one versioned document (`FUTURES_DOCUMENT_SCHEMA_VERSION`) from the sealed run directory alone
+  (manifest + metrics, after `verify_artifact`), so `futures run --json`, `futures run`'s human
+  output, `artifact show` and the MCP tools all emit the same document. It carries the identity,
+  the window, the datasets, the approximations, a **null verdict with a reason**
+  (`VERDICT_REASON_CODES`, today only `not_assessed`, plus the `backtest` `VERDICT_VOCABULARY`), and
+  every metric as `{value, ci_low, ci_high, assessment, unit}` where `assessment` is a closed set
+  (`METRIC_ASSESSMENTS`) and every futures metric is `descriptive` with null intervals. It computes
+  no statistic (ADR-0095) and refuses (a) a directory that is not a futures run, (b) one whose seal
+  does not verify, and (c) a descriptive metric that claims an interval. Its JSON Schema is the
+  output kind `futures-run-document`; `verdict_document` and `metric_document` hold the invariants.
 - `futures_signals.py` — the futures signal bridge (ADR-0094): `futures_targets` turns a
   `StrategySpec` or a `FuturesSignalFunction` (signed contracts per bar) into the targets and the
   `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the ratio-adjusted
@@ -246,7 +257,8 @@ the whole model.
 - The futures run (ADR-0095):
   - It does not stop or flag an account whose equity falls to zero or below. It keeps trading;
     `min_equity_usd` and the daily ledger show it. Ruin and prop-firm rules are C7.
-  - `crucible artifact show` does not render a futures run; `verify` does.
+  - The verdict is null until C6/C7: the document says `not_assessed` with a reason and no
+    metric carries an interval (`futures_document.py`, ADR-0097).
   - `FuturesSignalFunction` is a stub Protocol: no implementation ships in the package (the tests
   hold fixtures; a spec goes through `spec_positions`).
 - `artifact_id` is verified, not enforced: nothing stops a process with disk access from editing an

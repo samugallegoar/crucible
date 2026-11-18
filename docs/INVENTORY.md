@@ -17,8 +17,8 @@
 
 | Command | Arguments and options | Help |
 |---|---|---|
-| `crucible artifact show` | `<artifact_id> --artifacts --detail --json` | Print a run by artifact id (ART-...) or experiment id (EXP-...) |
-| `crucible artifact verify` | `<artifact_id> --artifacts --json` | Recompute the artifact id from the files and refuse if it differs |
+| `crucible artifact show` | `<artifact_id> --artifacts --detail --home --json` | Print a run by artifact id (ART-...) or experiment id (EXP-...) |
+| `crucible artifact verify` | `<artifact_id> --artifacts --home --json` | Recompute the artifact id from the files and refuse if it differs |
 | `crucible backtest` | `--calendar --capital --commission-bps --costs --direction --end --entry --entry-window --exit --exit-at --family --flat-by-close --fraction --home --interval --json --market-on-close --max-holding-bars --name --null-iterations --offline --price-basis --provider --realism-check --short-entry --short-exit --slippage-bps --spec --start --stop-loss-pct --symbols --take-profit-pct` | One step: fetch data if needed, run a strategy spec, compare with buy-and-hold |
 | `crucible compare` | `<family> --artifacts --json` | Compare every recorded trial in a family from the trial registry |
 | `crucible config set-home` | `<path> --json` | Remember a home folder for every run |
@@ -32,7 +32,7 @@
 | `crucible data list` | `--json --store` | List datasets and manifest hashes |
 | `crucible debug` | `<experiment_id> --artifacts --at --json --order` | Replay a recorded experiment, stepping the event loop |
 | `crucible futures check` | `--config --json` | Load and validate a futures config only (no store, no run) |
-| `crucible futures run` | `--artifacts --config --json --overwrite --store` | Simulate a futures config and write its sealed artifact (ADR-0095) |
+| `crucible futures run` | `--artifacts --config --home --json --overwrite --store` | Simulate a futures config and write its sealed artifact (ADR-0095) |
 | `crucible optimize` | `<config> --artifacts --json --metric --override --param --pbo-groups --values --vectorized --workers` | 1D parameter sweep, tagged as trials, assembling a PBO panel (R4.3/R4.9) |
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
 | `crucible report` | `<experiment_id> --artifacts --json` | Re-render the report for a finished experiment |

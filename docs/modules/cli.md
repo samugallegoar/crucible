@@ -12,8 +12,9 @@ thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit 
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
 stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
 the `--json` document); `artifact show <ART-.../EXP-...>` prints the same document for a finished
-run, `artifact verify` recomputes its id from the files; `schema --kind` also serves `run`,
-`verification`, `error` and `manifest`. stdout and
+run, `artifact verify` recomputes its id from the files; a futures run's `artifact show` prints its
+futures-run document (`experiments.futures_document`, ADR-0097); `schema --kind` also serves `run`,
+`verification`, `error`, `manifest` and `futures-run-document`. stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
 `UnicodeEncodeError` on a legacy Windows code page.
 
@@ -113,19 +114,35 @@ The `crucible` command.
   per period, row-aligned — no date column) and merges the result into
   the run's manifest/report (`experiments.validate.validate_run`,
   ADR-0022).
-- `crucible futures run --config FILE --store S [--artifacts DIR] [--overwrite] [--json]` — one
+- `crucible futures run --config FILE [--store S] [--artifacts DIR | --home DIR] [--overwrite]
+  [--json]` — one
   futures run (`experiments.futures_run.run_futures`, ADR-0095): the four datasets of the config's
   continuous build, one strategy, a window of Globex trade dates, explicit costs and execution.
   Prints the run id, the artifact id, the trial family and count, the window and its trade dates,
-  bars, fills, the final balance and equity, every approximation the run recorded and the run
-  directory; `--json` prints `{"kind": "futures_run", "run_id", "artifact_id", "run_dir",
-  "trial_family", "trial_count", "summary", "manifest"}`. A second run of the same config and data
-  is refused unless `--overwrite` (a reproduction keeps the artifact id and does not grow the
-  trial count).
+  bars, fills, the final balance and equity, the verdict line ("not assessed (C6/C7) — absence of
+  assessment, not evidence of no edge"), every approximation the run recorded and the run
+  directory; `--json` prints the futures-run document (`futures_document`, ADR-0097):
+  `schema_version`, `kind`, `artifact_id`, `experiment_id`, `run_name`, `trial_family`,
+  `trial_count`, `root`, `window`, `run_dir`, `datasets`, `approximations`, `strict_execution`,
+  `verdict`, `headline`, `metrics`, `files` — the same document `artifact show` prints for it. A
+  second run of the same config and data is refused unless `--overwrite` (a reproduction keeps the
+  artifact id and does not grow the trial count).
+- `crucible artifact show|verify <ART-...> [--artifacts DIR | --home DIR] [--json]` — an equity
+  run prints its run document; a futures run prints its futures-run document (ADR-0097). Both
+  subcommands take `--home` and `--artifacts`.
+- **`--home` precedence (also for `futures run` and `artifact show|verify`).** The home is resolved
+  by `crucible.product.home.resolve_home`, the same resolver `backtest --home` and
+  `config show` use. With `--home DIR` the artifacts root is `DIR/experiments` and the trial
+  registry is `DIR/experiments/trial_registry.duckdb` — one registry per artifacts root, never two;
+  `futures run` also defaults `--store` to `DIR/data`. `--artifacts` and `--home` together are
+  refused (`configuration_error`: "pass one of --artifacts or --home"); `--artifacts` alone behaves
+  as before; neither keeps the historical default (`experiments/` under the working directory).
+  Without `--home`, `futures run` still requires `--store`.
 - `crucible futures check --config FILE [--json]` — loads and validates the config only (no store,
   no run): prints the config hash and the canonical YAML, or under `--json`
   `{"kind": "futures_run_config", "config_hash", "config"}`. `schema --kind futures-run` prints
-  the futures-run config's JSON Schema.
+  the futures-run config's JSON Schema; `schema --kind futures-run-document` prints the JSON Schema
+  of the document a sealed futures run prints (ADR-0097).
 - `crucible data check --store S --dataset D --calendar C` — quality
   battery; `data list --store S` — datasets with manifest hashes;
   `--skip NAME --skip-reason TEXT` (repeatable) skips named checks with a
@@ -154,7 +171,11 @@ The `crucible` command.
   registry (`data.catalog.dataset_catalog`, ADR-0089): per dataset identity, origin and root origin,
   price basis, lineage, contract and range. Exit 1 only when a manifest disagrees with its data file
   (row count, name, missing file, or the SHA-256 with `--verify`); a rebuilt parent or a superseded
-  continuous builder is a finding.
+  continuous builder is a finding. It also carries `futures_run`: per CME root of the contract-spec
+  table, `{"supported": bool, "reasons": [...]}`, true only when the root has a CME session
+  calendar, a contract specification and the four default v3 datasets in the store (ADR-0097). That
+  field is computed in the CLI (`_futures_run_support`), because the default dataset names live in
+  `experiments.futures_config` and `crucible.data` must not import `crucible.experiments`.
 - `crucible data fetch --store S --dataset D --symbols A,B --start YYYY-MM-DD --end YYYY-MM-DD
   [--provider yfinance|tiingo] [--interval 1d] [--price-basis adjusted|raw] [--calendar XNYS]
   [--allow-partial] [--cache-dir P | --no-cache] [--refresh] [--ohlc-repair refuse|clamp]

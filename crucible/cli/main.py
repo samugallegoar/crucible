@@ -14,7 +14,7 @@ import sys
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from crucible import __version__
 from crucible.cli import machine, product_commands
@@ -56,6 +56,68 @@ def _add_override(parser: argparse.ArgumentParser) -> None:
         help="Set a config field before validation, e.g. strategy.params.lookback=60 "
         "(repeatable; VALUE is YAML). The run's hash and stored config include it (ADR-0059)",
     )
+
+
+def _add_home(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--home",
+        default=None,
+        help="Crucible home folder: the artifacts root becomes its experiments/ folder and "
+        "--store defaults to its data/ folder. Pass it or --artifacts, never both (they are "
+        "two roots, and one family's trial registry lives in one)",
+    )
+
+
+FUTURES_VERDICT_LINE = (
+    "Verdict: not assessed (C6/C7) — absence of assessment, not evidence of no edge."
+)
+"""The one human line a futures run prints about its verdict (ADR-0097): the same sentence
+`futures run` and `artifact show` show, so a null verdict is never read as no edge."""
+
+
+def _artifacts_root(args: argparse.Namespace) -> Path:
+    """The artifacts root of a command: ``--artifacts``, or ``--home``'s experiments folder.
+
+    ``--artifacts`` and ``--home`` together are refused: the root holds the shared
+    ``trial_registry.duckdb``, and two roots would split one family's trial count across two
+    registries (ADR-0008, ADR-0068). Neither keeps the historical default (``experiments/``
+    relative to the working directory).
+    """
+    home = getattr(args, "home", None)
+    artifacts = getattr(args, "artifacts", None)
+    if home is None:
+        return Path(artifacts) if artifacts is not None else Path("experiments")
+    if artifacts is not None:
+        msg = (
+            f"pass one of --artifacts or --home, not both ({artifacts!r} and {home!r}): the "
+            "artifacts root holds the trial registry, so two roots would count one family's "
+            "trials in two places and neither count would be complete (ADR-0008)"
+        )
+        raise ConfigurationError(msg)
+    from crucible.product.home import resolve_home
+
+    return resolve_home(home).experiments
+
+
+def _store_root(args: argparse.Namespace) -> Path:
+    """The data store root of a futures run: ``--store``, or ``--home``'s data folder.
+
+    ``--home`` defines ``data/``, so a home-based run needs no ``--store``; without a home the
+    store stays required (there is no artifact root to derive it from).
+    """
+    store = getattr(args, "store", None)
+    if store is not None:
+        return Path(store)
+    home = getattr(args, "home", None)
+    if home is None:
+        msg = (
+            "--store is required: the run reads its four datasets from a data store. Pass "
+            "--store DIR, or --home DIR to use its data/ folder as the store"
+        )
+        raise ConfigurationError(msg)
+    from crucible.product.home import resolve_home
+
+    return resolve_home(home).data
 
 
 def _positive_int(text: str) -> int:
@@ -260,14 +322,16 @@ def build_parser() -> argparse.ArgumentParser:
         "show", help="Print a run by artifact id (ART-...) or experiment id (EXP-...)"
     )
     show.add_argument("artifact_id", help="Artifact id (ART-...) or experiment id (EXP-...)")
-    show.add_argument("--artifacts", default="experiments")
+    show.add_argument("--artifacts", default=None)
+    _add_home(show)
     _add_detail(show)
     _add_json(show)
     verify = artifact_sub.add_parser(
         "verify", help="Recompute the artifact id from the files and refuse if it differs"
     )
     verify.add_argument("artifact_id", help="Artifact id (ART-...) or experiment id (EXP-...)")
-    verify.add_argument("--artifacts", default="experiments")
+    verify.add_argument("--artifacts", default=None)
+    _add_home(verify)
     _add_json(verify)
 
     futures = subparsers.add_parser(
@@ -281,13 +345,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     futures_run.add_argument("--config", required=True, help="Path to a futures-run YAML")
     futures_run.add_argument(
-        "--store", required=True, help="Data store root holding the four datasets of the root"
+        "--store",
+        default=None,
+        help="Data store root holding the four datasets of the root (default: the --home's "
+        "data folder when --home is given; required otherwise)",
     )
     futures_run.add_argument(
         "--artifacts",
-        default="experiments",
-        help="Artifact store root (default: experiments/)",
+        default=None,
+        help="Artifact store root (default: experiments/, or the --home's experiments folder)",
     )
+    _add_home(futures_run)
     futures_run.add_argument(
         "--overwrite",
         action="store_true",
@@ -313,7 +381,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="experiment",
         help="which schema: the experiment config, the no-code strategy spec (ADR-0067), the "
         "futures-run config (ADR-0095), or an output document: run, verification, error, "
-        "manifest (ADR-0084)",
+        "manifest (ADR-0084), futures-run-document (the document a sealed futures run prints, "
+        "ADR-0097)",
     )
 
     data = subparsers.add_parser(
@@ -1081,11 +1150,15 @@ def _manifest_row(manifest: DatasetManifest) -> dict[str, object]:
 
 
 def _cmd_artifact(args: argparse.Namespace) -> int:
-    """``crucible artifact show|verify``: a run by its artifact id (ADR-0084)."""
+    """``crucible artifact show|verify``: a run by its artifact id (ADR-0084).
+
+    ``show`` prints the run document, or — when the artifact is a futures run — the futures-run
+    document (ADR-0097), the same document ``crucible futures run --json`` prints.
+    """
     from crucible.experiments.artifact_id import find_artifact, verify_artifact
     from crucible.experiments.contracts import run_document, verification_document
 
-    run_dir = find_artifact(Path(args.artifacts), args.artifact_id)
+    run_dir = find_artifact(_artifacts_root(args), args.artifact_id)
     if args.artifact_command == "verify":
         verified = verify_artifact(run_dir)
         if args.json:
@@ -1093,6 +1166,8 @@ def _cmd_artifact(args: argparse.Namespace) -> int:
             return 0
         sys.stdout.write(f"verified: {verified}\n")
         return 0
+    if _manifest_kind(run_dir) == "futures_run":
+        return _show_futures_run(run_dir, json_output=bool(args.json))
     doc = run_document(run_dir, detail=args.detail)
     if args.json:
         machine.emit(doc)
@@ -1110,11 +1185,57 @@ def _cmd_artifact(args: argparse.Namespace) -> int:
     return 0
 
 
+def _manifest_kind(run_dir: Path) -> object:
+    """The ``kind`` of the run's manifest (``None`` when it has none: a run from before the
+    artifact contract), read without validating it: the caller decides which document fits."""
+    import json
+
+    try:
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return manifest.get("kind") if isinstance(manifest, dict) else None
+
+
+def _show_futures_run(run_dir: Path, *, json_output: bool) -> int:
+    """The futures-run document on stdout: JSON with ``--json``, a short rendering otherwise."""
+    from typing import cast
+
+    from crucible.experiments.futures_document import futures_document
+
+    doc = futures_document(run_dir)
+    if json_output:
+        machine.emit(doc)
+        return 0
+    # the document is a JSON-ready dict; the rendering reads these four keys of it
+    metrics = cast("dict[str, dict[str, object]]", doc["metrics"])
+    headline = cast("list[str]", doc["headline"])
+    verdict = cast("dict[str, object]", doc["verdict"])
+    reason = cast("dict[str, object]", verdict["verdict_reason"])
+    lines = [
+        f"{doc['artifact_id']}  ({doc['experiment_id']})",
+        f"artifacts: {doc['run_dir']}",
+        f"run: {doc['run_name']} (family {doc['trial_family']}, trial {doc['trial_count']})",
+        f"window: {cast('dict[str, object]', doc['window'])['start']}.."
+        f"{cast('dict[str, object]', doc['window'])['end']}",
+        FUTURES_VERDICT_LINE,
+        f"reason: {reason['code']}",
+    ]
+    for name in headline:
+        lines.append(f"{name}: {metrics[name]['value']} {metrics[name]['unit']}")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
 def _cmd_futures(args: argparse.Namespace) -> int:
     """``crucible futures run|check``: one futures config in, one sealed artifact out (ADR-0095).
 
     ``check`` loads and validates the config only: no store is touched, so it answers "is this
     config valid, and what does the run's identity cover" before any data is read.
+
+    ``run`` writes the artifact and prints the futures-run document (``--json``) or a short
+    headline plus the verdict line (ADR-0097). ``--home`` makes the artifacts root its
+    ``experiments/`` folder and defaults ``--store`` to its ``data/`` folder (ADR-0068).
     """
     import json
 
@@ -1140,29 +1261,21 @@ def _cmd_futures(args: argparse.Namespace) -> int:
         sys.stdout.write(f"config hash: {config_hash}\n")
         return 0
 
+    from crucible.experiments.futures_document import futures_document
     from crucible.experiments.futures_run import run_futures
 
+    artifacts_root = _artifacts_root(args)
+    store_root = _store_root(args)
     result = run_futures(
         config,
-        store_root=Path(args.store),
-        artifacts_root=Path(args.artifacts),
+        store_root=store_root,
+        artifacts_root=artifacts_root,
         overwrite=args.overwrite,
     )
-    manifest = json.loads((result.run_dir / "manifest.json").read_text(encoding="utf-8"))
     if args.json:
-        machine.emit(
-            {
-                "kind": "futures_run",
-                "run_id": result.run_id,
-                "artifact_id": result.artifact_id,
-                "run_dir": str(result.run_dir),
-                "trial_family": config.run.family,
-                "trial_count": result.trial_count,
-                "summary": result.summary,
-                "manifest": manifest,
-            }
-        )
+        machine.emit(futures_document(result.run_dir))
         return 0
+    manifest = json.loads((result.run_dir / "manifest.json").read_text(encoding="utf-8"))
     summary = result.summary
     lines = [
         f"run:          {result.run_id}",
@@ -1174,6 +1287,7 @@ def _cmd_futures(args: argparse.Namespace) -> int:
         f"fills:        {summary['fills']}",
         f"final:        balance {summary['final_balance_usd']} USD, "
         f"equity {summary['final_equity_usd']} USD",
+        FUTURES_VERDICT_LINE,
     ]
     approximations = manifest.get("approximations") or []
     assert isinstance(approximations, list)
@@ -1328,19 +1442,65 @@ def _cmd_data_integrity(args: argparse.Namespace) -> int:
     return exit_code
 
 
+class _FuturesRunSupport(TypedDict):
+    """Whether `crucible futures run` can run a root from this store, and why not."""
+
+    supported: bool
+    reasons: list[str]
+
+
+def _futures_run_support(store_root: Path) -> dict[str, _FuturesRunSupport]:
+    """Per CME root, whether a futures run could read this store (ADR-0097, part 5).
+
+    A root is supported when it has a CME session calendar, a contract specification and the four
+    default v3 datasets of the continuous build in the store. Computed here, in the CLI, because
+    the default dataset names live in ``experiments.futures_config.default_datasets`` and
+    ``crucible.data`` must not import ``crucible.experiments`` (docs/ARCHITECTURE.md, layering
+    rule). The roots are the contract-spec table's: those are the roots Crucible can simulate.
+    """
+    from crucible.data.continuous import calendar_for
+    from crucible.data.futures_specs import SPEC_TABLE, futures_spec
+    from crucible.data.store import ParquetDataStore
+    from crucible.experiments.futures_config import default_datasets
+
+    present = {str(name) for name in ParquetDataStore(store_root).list_datasets()}
+    support: dict[str, _FuturesRunSupport] = {}
+    for root in sorted({spec.root for spec in SPEC_TABLE}):
+        reasons: list[str] = []
+        try:
+            calendar_for(root)
+        except CrucibleError as exc:
+            reasons.append(f"no CME session calendar: {exc}")
+        try:
+            futures_spec(root)
+        except CrucibleError as exc:
+            reasons.append(f"no contract specification: {exc}")
+        missing = sorted(name for name in default_datasets(root).values() if name not in present)
+        if missing:
+            reasons.append(f"missing datasets: {', '.join(missing)}")
+        support[root] = {"supported": not reasons, "reasons": reasons}
+    return support
+
+
 def _cmd_data_catalog(args: argparse.Namespace) -> int:
     """The dataset registry of a store (ADR-0089). Exit 1 when an entry has an error (a manifest
-    that disagrees with its data file); stale lineage and superseded builders are findings."""
+    that disagrees with its data file); stale lineage and superseded builders are findings.
+
+    It also answers "which CME roots can `crucible futures run` read from this store", per root
+    (ADR-0097): a calendar, a contract spec and the four default v3 datasets.
+    """
     from crucible.core.types import DatasetId
     from crucible.data.catalog import dataset_catalog
     from crucible.data.store import ParquetDataStore
 
+    support = _futures_run_support(Path(args.store))
     catalog = dataset_catalog(
         ParquetDataStore(Path(args.store)),
         datasets=[DatasetId(d) for d in args.dataset] or None,
         verify=args.verify,
         top=args.top,
     )
+    catalog["futures_run"] = support
     exit_code = 0 if catalog["ok"] else 1
     if args.json:
         machine.emit(catalog)
@@ -1357,6 +1517,13 @@ def _cmd_data_catalog(args: argparse.Namespace) -> int:
         )
         for line in [*entry["errors"], *entry["findings"]]:
             sys.stdout.write(f"    {line}\n")
+    for root, status in support.items():
+        if status["supported"]:
+            sys.stdout.write(f"futures run {root}: supported\n")
+        else:
+            sys.stdout.write(
+                f"futures run {root}: not supported ({'; '.join(status['reasons'])})\n"
+            )
     return exit_code
 
 

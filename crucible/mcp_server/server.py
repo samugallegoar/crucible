@@ -389,15 +389,19 @@ def build_server() -> MCPServer:
         detail: bool = False,
         verify: bool = False,
         artifacts: str | None = None,
+        home: str | None = None,
     ) -> dict[str, object]:
         """Fetch a finished run by its artifact id (`ART-...`, or an `EXP-...` id): the compact
         document (ids, headline fields, every metric with its interval) by default, the full
         manifest and file list with `detail`. With `verify`, recompute the id from the files on
-        disk and refuse if the artifact was edited."""
-        options: dict[str, Option] = {
-            "artifacts": absolute(artifacts) or _home_paths()[0],
-            "json": True,
-        }
+        disk and refuse if the artifact was edited. A futures run returns the futures-run
+        document instead (ADR-0097). `home` points at a Crucible home folder; its experiments/
+        folder is the artifacts root (pass it or `artifacts`, never both)."""
+        options: dict[str, Option] = {"home": absolute(home), "json": True}
+        if artifacts is not None:
+            options["artifacts"] = absolute(artifacts)
+        elif home is None:
+            options["artifacts"] = _home_paths()[0]
         if verify:
             return await run_cli(build_argv(["artifact", "verify"], [artifact_id], options))
         options["detail"] = detail
@@ -439,23 +443,31 @@ def build_server() -> MCPServer:
     @server.tool()
     async def crucible_futures_run(
         config: str,
-        store: str,
+        store: str | None = None,
         artifacts: str | None = None,
+        home: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, object]:
         """Simulate one futures-run config on a continuous CME series (one root, one strategy, a
         window of Globex trade dates, explicit costs and execution). Reads the four datasets from
         `store`; writes the sealed artifact under `artifacts` (default: the Crucible home).
-        Returns the run id, the artifact id, the trial family and count, the summary and the
-        manifest (which lists every approximation). A second identical run is refused unless
-        `overwrite`; a reproduction keeps the same artifact id."""
+        `home` points at a Crucible home folder: its experiments/ folder becomes the artifacts
+        root and its data/ folder the default store (pass it or `artifacts`, never both).
+        Returns the futures-run document (ADR-0097): the ids, the window, every approximation,
+        the null verdict with its reason and every descriptive metric. A second identical run is
+        refused unless `overwrite`; a reproduction keeps the same artifact id."""
         options: dict[str, Option] = {
             "config": absolute(config),
             "store": absolute(store),
-            "artifacts": absolute(artifacts) or _home_paths()[0],
             "overwrite": overwrite,
             "json": True,
         }
+        if home is not None:
+            options["home"] = absolute(home)
+        if artifacts is not None:
+            options["artifacts"] = absolute(artifacts)
+        if home is None and artifacts is None:
+            options["artifacts"] = _home_paths()[0]
         return await run_cli(build_argv(["futures", "run"], [], options))
 
     @server.tool()

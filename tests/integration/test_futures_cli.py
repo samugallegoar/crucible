@@ -31,15 +31,26 @@ from tests.integration.test_futures_run_artifact import FAMILY, build_store, map
 EXAMPLE = Path("examples/futures/es_sma_cross.yaml")
 DATASETS = ("es_1m_cont_v3", "es_1m_cont_ratio_v3", "es_1m_rolls_v3", "es_1m_raw")
 RUN_KEYS = {
+    "schema_version",
     "kind",
-    "run_id",
     "artifact_id",
-    "run_dir",
+    "experiment_id",
+    "run_name",
     "trial_family",
     "trial_count",
-    "summary",
-    "manifest",
+    "root",
+    "window",
+    "run_dir",
+    "datasets",
+    "approximations",
+    "strict_execution",
+    "verdict",
+    "headline",
+    "metrics",
+    "files",
 }
+"""The futures-run document's keys (ADR-0097); its own shape is tested in
+tests/unit/test_futures_document.py."""
 
 
 def _write_config(directory: Path, **overrides: object) -> Path:
@@ -81,18 +92,19 @@ def test_run_json_writes_a_sealed_artifact_that_verifies(
     doc = json.loads(capsys.readouterr().out)  # stdout is exactly one JSON document
     assert set(doc) == RUN_KEYS
     assert doc["kind"] == "futures_run"
-    assert doc["run_id"].startswith("FUT-")
+    assert doc["schema_version"] == 1
+    assert doc["experiment_id"].startswith("FUT-")
     assert doc["artifact_id"].startswith("ART-")
     run_dir = Path(doc["run_dir"])
     assert run_dir.is_dir()
-    assert run_dir.name == doc["run_id"]
+    assert run_dir.name == doc["experiment_id"]
     assert run_dir.parent == artifacts
     assert doc["trial_family"] == FAMILY
     assert doc["trial_count"] == 1
-    assert doc["summary"]["bars"] == 10
-    assert doc["summary"]["trade_dates"] == 2
-    assert doc["manifest"]["experiment_id"] == doc["run_id"]
-    assert doc["manifest"]["approximations"]  # uncalibrated costs are recorded, not hidden
+    assert doc["metrics"]["fills"]["value"] == 4.0
+    assert doc["metrics"]["trade_dates"]["value"] == 2.0
+    assert doc["verdict"]["verdict_level"] is None  # not assessed: no statistic is claimed
+    assert doc["approximations"]  # uncalibrated costs are recorded, not hidden
 
     # the real shape of `artifact verify`: an id, and the root it was written under
     assert (
@@ -103,6 +115,12 @@ def test_run_json_writes_a_sealed_artifact_that_verifies(
     assert verified["verified"] is True
     assert verified["artifact_id"] == doc["artifact_id"]
     assert verify_artifact(run_dir) == doc["artifact_id"]
+
+    # `artifact show` describes the same directory with the same document (ADR-0097)
+    assert (
+        main(["artifact", "show", doc["artifact_id"], "--artifacts", str(artifacts), "--json"]) == 0
+    )
+    assert json.loads(capsys.readouterr().out) == doc
 
 
 def test_a_second_identical_run_is_refused_unless_overwrite(
@@ -122,7 +140,7 @@ def test_a_second_identical_run_is_refused_unless_overwrite(
 
     assert main([*args, "--overwrite"]) == 0
     again = json.loads(capsys.readouterr().out)
-    assert again["run_id"] == first["run_id"]
+    assert again["experiment_id"] == first["experiment_id"]
     assert again["artifact_id"] == first["artifact_id"]
     assert again["trial_count"] == 1  # a reproduction is not a second trial
 
@@ -139,6 +157,7 @@ def test_run_prints_the_headline_and_the_approximations(
     assert "artifact:     ART-" in text
     assert f"family {FAMILY}" in text
     assert "bars:         10" in text
+    assert "Verdict: not assessed (C6/C7)" in text
     assert "assumed:" in text
     assert f"run dir:      {artifacts}" in text
 
@@ -234,7 +253,6 @@ def test_the_example_runs_on_the_real_datasets(
     doc = json.loads(capsys.readouterr().out)
     run_dir = Path(doc["run_dir"])
     assert verify_artifact(run_dir) == doc["artifact_id"]
-
     # one daily row per Globex trade date of the window (2024-03-04 .. 2024-03-28: no CME holiday)
     window = load_futures_config(EXAMPLE).window
     day, expected = window.start, []
