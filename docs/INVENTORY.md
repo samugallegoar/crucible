@@ -203,6 +203,28 @@ Gate 4 and the data gates: what a researcher calls to judge a result. Splitters,
 | `participation` | `PARTICIPATION` |
 | `market_on_close` | `MARKET_ON_CLOSE` |
 
+## DSL operators
+
+Registry: `crucible/dsl/operators.py` (`OPERATOR_TABLE_VERSION = '1'`). Signatures and result rules only: C4b implements evaluation.
+
+| Operator | Signature | Result type rule | Semantic version |
+|---|---|---|---|
+| `abs` | `abs(x)` | preserves the dimension of x | `1.0.0` |
+| `cs_rank` | `cs_rank(x)` | dimensionless; x must be dimensionless (price and volume degree 0, not time) | `1.0.0` |
+| `delay` | `delay(x, n)` | preserves the dimension of x | `1.0.0` |
+| `delta` | `delta(x, n)` | preserves the dimension of x | `1.0.0` |
+| `ema` | `ema(x, n)` | preserves the dimension of x | `1.0.0` |
+| `if` | `if(c, a, b)` | the unified type of the two branches | `1.0.0` |
+| `max` | `max(a, b)` | the unified dimension of a and b | `1.0.0` |
+| `min` | `min(a, b)` | the unified dimension of a and b | `1.0.0` |
+| `sign` | `sign(x)` | dimensionless | `1.0.0` |
+| `ts_max` | `ts_max(x, n)` | preserves the dimension of x | `1.0.0` |
+| `ts_mean` | `ts_mean(x, n)` | preserves the dimension of x | `1.0.0` |
+| `ts_min` | `ts_min(x, n)` | preserves the dimension of x | `1.0.0` |
+| `ts_rank` | `ts_rank(x, n)` | dimensionless series in [0, 1] | `1.0.0` |
+| `ts_std` | `ts_std(x, n)` | preserves the dimension of x | `1.0.0` |
+| `ts_zscore` | `ts_zscore(x, n)` | dimensionless series | `1.0.0` |
+
 ## Enumerations
 
 | Enum | Module | Members |
@@ -270,6 +292,7 @@ When to raise which, and what the message must contain: `docs/CONVENTIONS.md` §
 | `DataQualityError` | `crucible.core.errors` | `CrucibleError` |
 | `EmptyDataError` | `crucible.data.providers.errors` | `ProviderError` |
 | `ExperimentError` | `crucible.core.errors` | `CrucibleError` |
+| `ExpressionError` | `crucible.dsl.errors` | `ConfigurationError` |
 | `IllegalOrderTransition` | `crucible.core.errors` | `CrucibleError` |
 | `InsufficientHistory` | `crucible.execution.models` | `CrucibleError` |
 | `InvariantViolation` | `crucible.core.errors` | `CrucibleError` |

@@ -8,6 +8,27 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C4a: the DSL core (ADR-0096)
+- New package `crucible.dsl`, a typed causal expression language. This release covers syntax,
+  types and identity only; evaluation arrives in C4b.
+  - **Grammar** (`GRAMMAR_VERSION = "1"`). It refuses ambiguous text: `==`, chained comparisons,
+    exponent numbers and unknown names.
+  - **Types.** Every node carries price and volume exponents, so a price level compared with a
+    constant is refused (ADR-0086).
+  - **Operator table** (`OPERATOR_TABLE_VERSION = "1"`), with a semantic version per operator.
+  - **`$` free parameters.** Repeated references share one binding. An unbounded parameter can be
+    extracted and bound but is not optimizable.
+  - **Bounded canonicalization.** Literal folding, the exact identities `x*1`, `x/1` and `x-0`,
+    double negation, and sorting of the direct operands of `+ * min max`. `x + 0` is kept because
+    it changes the sign of zero.
+  - **Three ids:** `structure_id` (`DSX-`), `parameterization_id` (`DSP-`) and the `compiled_id`
+    basis (`DSC-`).
+  - **Structural metrics.**
+- `crucible.core.canonical.canonical_json` now holds the canonical-JSON function.
+  `experiments.artifact_id` re-exports it, byte-identical.
+- A new import layer for `crucible.dsl` sits between `execution | portfolio` and `data`. The
+  `strategy_spec` row of `docs/ARCHITECTURE.md` is corrected.
+
 ### Fathom C3b-3: the futures run (ADR-0095)
 - **Config and runner.** `crucible.experiments.futures_config.FuturesRunConfig` (`kind: futures_run`)
   and `futures_run.run_futures`: a futures backtest of one root on its continuous datasets.
