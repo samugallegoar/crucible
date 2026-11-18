@@ -16,8 +16,9 @@ from crucible.data.continuous import (
     RollParams,
     build_continuous,
     build_continuous_datasets,
+    calendar_for,
     dataset_names,
-    trade_date_expr,
+    trade_dates,
 )
 from crucible.data.contracts import (
     BAR_SCHEMA,
@@ -32,12 +33,21 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 _NS = 1_000_000_000
-_DAY0 = dt.date(2024, 1, 2)
 A, B, C = "ESH2024", "ESM2024", "ESU2024"  # consecutive quarterly contracts
+_TRADE_DATES = [
+    s.trade_date for s in calendar_for("ES").sessions(dt.date(2024, 1, 2), dt.date(2024, 3, 29))
+]
 
 
 def _day(i: int) -> dt.date:
-    return _DAY0 + dt.timedelta(days=i)
+    """The ``i``-th ES trade date from 2024-01-02 (weekends and holidays skipped)."""
+    return _TRADE_DATES[i]
+
+
+def trade_date_expr(_bar_seconds: int) -> pl.Expr:
+    """The trade date of the synthetic bars here: all open at 09:00 CT on their own trade date,
+    so it is the UTC date of the open (the calendar's own assignment is tested below)."""
+    return pl.from_epoch(pl.col("event_time") - 60 * _NS, time_unit="ns").dt.date()
 
 
 def _ns(day: dt.date, hour: int, minute: int) -> int:
@@ -125,8 +135,8 @@ def test_the_trade_date_follows_the_globex_session(
     close_utc: tuple[int, int, int, int, int], expected: str
 ) -> None:
     closed = dt.datetime(*close_utc, tzinfo=dt.UTC)
-    frame = pl.DataFrame({"event_time": [int(closed.timestamp()) * _NS]})
-    got = frame.select(trade_date_expr(60).cast(pl.String).alias("d"))["d"][0]
+    times = pl.Series("event_time", [int(closed.timestamp()) * _NS])
+    got = trade_dates(times, calendar_for("ES"), 60).cast(pl.String)[0]
     assert got == expected
 
 
@@ -457,17 +467,57 @@ def test_the_datasets_are_written_with_their_price_basis_and_parameters(tmp_path
         store, "es", raw_dataset="es_1m_raw", params=params
     )
     assert [str(m.dataset) for m in manifests] == list(dataset_names("ES", params))
-    assert dataset_names("ES", params) == ("es_1m_cont_v2", "es_1m_cont_ratio_v2", "es_1m_rolls_v2")
+    assert dataset_names("ES", params) == ("es_1m_cont_v3", "es_1m_cont_ratio_v3", "es_1m_rolls_v3")
     plain, adjusted, rolls = manifests
     assert price_basis_of(plain) == "raw"
     assert price_basis_of(adjusted) == "adjusted"
     for manifest in manifests:
         assert "from=es_1m_raw@" in manifest.source
         assert "threshold=1.0;backstop_sessions=1;bar_seconds=60;chain_months=3" in manifest.source
+        assert ";calendar=cme-equity-sessions-1@" in manifest.source
+        assert manifest.source.endswith(";trimmed_rows=0")
     assert plain.row_count == series.unadjusted.height
     assert rolls.row_count == series.rolls.height
-    read = ParquetDataStore(store).read(DatasetId("es_1m_rolls_v2"), TimestampNs(END_AT_OPEN))
+    read = ParquetDataStore(store).read(DatasetId("es_1m_rolls_v3"), TimestampNs(END_AT_OPEN))
     assert read.collect().height == series.rolls.height
+
+
+def _nkd_with_pre_coverage_bars() -> tuple[pl.DataFrame, pl.DataFrame, int]:
+    """NKD copies of the two contracts, plus 3 bars on 2012-11-16 (before NKD's calendar
+    coverage, trade date 2012-11-19): ``(clean, with_early, early_rows)``."""
+    clean = _two_contracts().with_columns(pl.col("symbol").str.replace("^ES", "NKD"))
+    early = clean.head(3).with_columns(
+        (
+            pl.col("event_time") - pl.col("event_time").min() + _ns(dt.date(2012, 11, 16), 15, 1)
+        ).alias("event_time")
+    )
+    early = early.with_columns(available_at=pl.col("event_time"))
+    return clean, pl.concat([early, clean]), early.height
+
+
+def test_bars_outside_the_session_calendar_are_refused() -> None:
+    _, raw, _ = _nkd_with_pre_coverage_bars()
+    with pytest.raises(DataQualityError, match=r"3 raw bars lie outside.*trim-to-calendar"):
+        build_continuous(raw, root="NKD")
+
+
+def test_trim_to_calendar_drops_and_counts_them(tmp_path: Path) -> None:
+    clean, raw, early = _nkd_with_pre_coverage_bars()
+    store = tmp_path / "store"
+    build_dataset(
+        store,
+        DatasetId("nkd_1m_raw"),
+        raw,
+        schema=BAR_SCHEMA,
+        sort_keys=BAR_SORT_KEYS,
+        source="import:databento_dbn;price_basis=raw",
+    )
+    series, manifests = build_continuous_datasets(
+        store, "NKD", raw_dataset="nkd_1m_raw", trim_to_calendar=True
+    )
+    assert series.trimmed_rows == early
+    assert all(m.source.endswith(f";trimmed_rows={early}") for m in manifests)
+    assert series.unadjusted.equals(build_continuous(clean, root="NKD").unadjusted)
 
 
 def test_a_rebuild_reproduces_the_content_hashes(tmp_path: Path) -> None:

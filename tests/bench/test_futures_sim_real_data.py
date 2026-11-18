@@ -1,8 +1,8 @@
 """Opt-in acceptance of the futures execution simulator on the real datasets (ADR-0090).
 
 Run: uv run pytest -m bench tests/bench/test_futures_sim_real_data.py
-Needs `data/processed` (or CRUCIBLE_DATA_STORE) with the `*_1m_raw`, `*_1m_cont_v2` and
-`*_1m_rolls_v2` datasets of `docs/data/glbx-futures-1m.md`; skips when they are missing. Holds one
+Needs `data/processed` (or CRUCIBLE_DATA_STORE) with the `*_1m_raw`, `*_1m_cont_v3` and
+`*_1m_rolls_v3` datasets of `docs/data/glbx-futures-1m.md`; skips when they are missing. Holds one
 contract long from the first bar to the end, so every roll is traded. About 15-25 s and a few GB
 of memory per root.
 """
@@ -23,13 +23,14 @@ STORE = Path(os.environ.get("CRUCIBLE_DATA_STORE", "data/processed"))
 pytestmark = pytest.mark.bench
 
 # root: (rolls, rolls executed after the first bar of the effective session, mean |reference
-# error| in USD per contract) -- the figures of ADR-0090, measured independently first
+# error| in USD per contract) -- the figures of ADR-0090 (on v3 since ADR-0092), measured
+# independently first
 EXPECTED: dict[str, tuple[int, int, float]] = {
     "es": (66, 0, 28.79),
     "nq": (66, 1, 61.52),
     "ym": (66, 1, 51.06),
     "rty": (37, 1, 47.84),
-    "nkd": (66, 35, 67.80),
+    "nkd": (56, 31, 77.23),  # v3 starts at NKD's calendar coverage (ADR-0092); v2: 66, 35, 67.80
 }
 
 
@@ -42,8 +43,8 @@ def _need(dataset: str) -> pl.DataFrame:
 
 @pytest.mark.parametrize("root", sorted(EXPECTED))
 def test_holding_one_contract_trades_every_roll_causally(root: str) -> None:
-    bars = _need(f"{root}_1m_cont_v2")
-    rolls = _need(f"{root}_1m_rolls_v2")
+    bars = _need(f"{root}_1m_cont_v3")
+    rolls = _need(f"{root}_1m_rolls_v3")
     raw = _need(f"{root}_1m_raw")
     spec = futures_spec(root)
     result = simulate_futures(

@@ -26,7 +26,7 @@
 | `crucible data build` | `<spec> --end --json --max-contracts --max-rows --start --store` | Build datasets from an import spec (ADR-0052) |
 | `crucible data catalog` | `--dataset --json --store --top --verify` | Dataset registry: identity, origin, lineage, contract and range of every dataset (ADR-0089) |
 | `crucible data check` | `--calendar --dataset --json --skip --skip-reason --store` | Run quality checks on a dataset |
-| `crucible data continuous` | `--backstop-sessions --json --raw --roots --store --threshold` | Build the continuous futures series of each root from its raw contracts (ADR-0086) |
+| `crucible data continuous` | `--backstop-sessions --json --raw --roots --store --threshold --trim-to-calendar` | Build the continuous futures series of each root from its raw contracts (ADR-0086) |
 | `crucible data fetch` | `--allow-partial --cache-dir --calendar --dataset --end --interval --json --max-rows --no-cache --ohlc-repair --price-basis --provider --refresh --start --store --symbols` | Fetch prices from a data provider into a dataset (ADR-0063) |
 | `crucible data integrity` | `--bar-seconds --calendar --dataset --json --session --store --top` | Minute-level integrity report of a bar dataset: gaps, short sessions, contract violations (ADR-0088) |
 | `crucible data list` | `--json --store` | List datasets and manifest hashes |

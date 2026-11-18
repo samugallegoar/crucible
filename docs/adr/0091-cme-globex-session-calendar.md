@@ -126,7 +126,7 @@ session opens, closes and halts. What existed does not say:
     Juneteenth and July 3, 2026), the rule gives the Friday bars to a weekday that is not a trade
     date.
   - The continuous series and the integrity report use that rule. Fixing them changes the
-    continuous datasets (version `v3`), so the fix is a separate decision.
+    continuous datasets (version `v3`), so the fix is a separate decision: ADR-0092.
 - **Feed artefact.** The live service lists Saturday "open 05:00 / closed 17:00" events for
   2026-06-20, 2026-07-04 and 2027-06-19. No Saturday session exists, and they are recorded as a
   conflict and ignored.
