@@ -437,8 +437,9 @@ def _dsl_operator_section() -> Section:
         ("Operator", "Signature", "Result type rule", "Semantic version"),
         tuple(rows),
         "Registry: `crucible/dsl/operators.py` "
-        f"(`OPERATOR_TABLE_VERSION = {OPERATOR_TABLE_VERSION!r}`). Signatures and result rules "
-        "only: C4b implements evaluation.",
+        f"(`OPERATOR_TABLE_VERSION = {OPERATOR_TABLE_VERSION!r}`). Signatures, result rules and "
+        "the minimum window each estimator needs; semantics in `docs/modules/dsl.md`, evaluation "
+        "in `crucible/dsl/evaluate.py`.",
     )
 
 

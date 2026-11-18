@@ -53,7 +53,8 @@ def test_accepted_forms(text: str) -> None:
 
 
 def test_grammar_version_is_pinned() -> None:
-    assert GRAMMAR_VERSION == "1"
+    # bumped in C4b (ADR-0098): new session features and min_window
+    assert GRAMMAR_VERSION == "2"
 
 
 def test_number_literals_keep_their_type() -> None:

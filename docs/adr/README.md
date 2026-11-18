@@ -124,5 +124,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0095](0095-futures-run-artifact.md) | The futures run: its own config, a daily ledger by trade date, intraday marks, a sealed artifact | ? | A separate config kind, `kind: futures_run` (`crucible.experiments.futures_config`) |
 | [0096](0096-dsl-core.md) | The DSL core: typed causal expressions, bounded canonicalization, three identities | accepted | A new package, `crucible/dsl/`, in its own layer of the import contract |
 | [0097](0097-futures-run-document.md) | The futures-run document: a null verdict with a reason, a versioned schema, `artifact show`, `--home` | accepted | One constructor, one schema. `crucible.experiments.futures_document.futures_document(run_dir)` builds the document from the sealed run directory alone, after verifying the seal |
+| [0098](0098-dsl-evaluation-and-compilation.md) | DSL evaluation semantics, availability, the CompiledSignal, and expressions in the futures run | accepted | Streams and windows |
 
 <!-- END GENERATED: adr-index -->

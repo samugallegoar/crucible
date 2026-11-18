@@ -59,9 +59,10 @@ def test_parameterization_changes_with_default_and_bounds() -> None:
 def test_structure_and_parameterization_ids_are_stable_across_runs() -> None:
     # A change to either expectation requires a GRAMMAR_VERSION/OPERATOR_TABLE_VERSION bump
     # and an ADR: the ids are part of the recorded identity of an expression (ADR-0096).
+    # bumped in C4b (ADR-0098): new session features and min_window
     expression = parse("ts_zscore(close, $n:int[5,100]=20) > 1.5 and volume > ts_mean(volume, $n)")
-    assert structure_id(expression) == "DSX-58cfdc89fe443722"
-    assert parameterization_id(expression) == "DSP-3d34280376b8e8a8"
+    assert structure_id(expression) == "DSX-25f815af51e3a2d4"
+    assert parameterization_id(expression) == "DSP-a9d7c59a147b12b8"
 
 
 def test_ids_have_their_prefixes_and_16_hex_digits() -> None:

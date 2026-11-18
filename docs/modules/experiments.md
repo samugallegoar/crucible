@@ -6,9 +6,12 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
 
 - `futures_config.py` + `futures_run.py` + `futures_artifacts.py` — the futures run (ADR-0095).
   - **`FuturesRunConfig`** (`kind: futures_run`, `load_futures_config`, `futures_config_hash`): root,
-    the four datasets, a trade-date window, the strategy (a spec or a `FuturesSignalFunction`),
-    contracts, capital, costs, execution, signal input and session policy, with `run.family`
-    required.
+    the four datasets, a trade-date window, the strategy (exactly one of a spec, a
+    `FuturesSignalFunction` entrypoint or a DSL `strategy.expression`), contracts, capital, costs,
+    execution, signal input and session policy, with `run.family` required. An expression is
+    compiled at load (`FuturesStrategyConfig.compiled_signal(signal_input)`), so a type, window,
+    parameter or scale error surfaces at `futures check`, which also prints the canonical text and
+    the three ids; its `params` bind the `$` parameters and `contracts` sizes the side.
   - **`run_futures`** selects the window by trade date and calls `futures_targets` and
     `simulate_futures`. It builds the marks, the daily ledger, the fills, the rolls and the
     descriptive `metrics.json` (no Sharpe), and checks the ledger identities
@@ -27,13 +30,15 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   no statistic (ADR-0095) and refuses (a) a directory that is not a futures run, (b) one whose seal
   does not verify, and (c) a descriptive metric that claims an interval. Its JSON Schema is the
   output kind `futures-run-document`; `verdict_document` and `metric_document` hold the invariants.
-- `futures_signals.py` — the futures signal bridge (ADR-0094): `futures_targets` turns a
-  `StrategySpec` or a `FuturesSignalFunction` (signed contracts per bar) into the targets and the
-  `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the ratio-adjusted
-  series by default (`signal_input`), fills on the unadjusted one. It enforces:
+- `futures_signals.py` — the futures signal bridge (ADR-0094, ADR-0098): `futures_targets` turns a
+  `StrategySpec`, a `FuturesSignalFunction` or a compiled DSL `CompiledSignal` into the targets and
+  the `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the
+  ratio-adjusted series by default (`signal_input`), fills on the unadjusted one. It enforces:
   - the price basis of both `DatasetRef`s and exact row alignment (`event_time`, `contract`);
-  - scale invariance on ratio-adjusted input: statically for a spec; by declaration
-    (`scale_invariant`) for a function; empirically for both, with prices x16 and x1/16;
+  - scale invariance on ratio-adjusted input: statically for a spec, by typing for an expression
+    (a score must have price degree 0) and by declaration (`scale_invariant`) for a function;
+    empirically for all three, with prices x16 and x1/16 (an expression records
+    `strategy_kind: dsl`, its `describe()` document and `scale_invariance.static: typed`);
   - refusal of the spec's percentage stops, `max_holding_bars`, explicit sizing, `time` and
     `session`;
   - CME session rules (`FuturesSessionPolicy`): a missing final bar and unverified sessions are

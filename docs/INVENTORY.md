@@ -205,7 +205,7 @@ Gate 4 and the data gates: what a researcher calls to judge a result. Splitters,
 
 ## DSL operators
 
-Registry: `crucible/dsl/operators.py` (`OPERATOR_TABLE_VERSION = '1'`). Signatures and result rules only: C4b implements evaluation.
+Registry: `crucible/dsl/operators.py` (`OPERATOR_TABLE_VERSION = '2'`). Signatures, result rules and the minimum window each estimator needs; semantics in `docs/modules/dsl.md`, evaluation in `crucible/dsl/evaluate.py`.
 
 | Operator | Signature | Result type rule | Semantic version |
 |---|---|---|---|

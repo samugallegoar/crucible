@@ -1,0 +1,36 @@
+# One futures run driven by a DSL expression: ES, one contract, a 60-bar z-score reversion, four
+# weeks of Globex trade dates (the same window as es_sma_cross).
+#
+#   uv run crucible futures check --config examples/futures/es_zscore_reversion.yaml
+#   uv run crucible futures run --config examples/futures/es_zscore_reversion.yaml \
+#       --store data/processed --artifacts experiments
+#
+# It reads the four `v3` datasets of `docs/data/glbx-futures-1m.md` (the names below default from
+# `root`), so build them first with `crucible data build` + `crucible data continuous`.
+#
+# The expression (ADR-0096/0098, `docs/modules/dsl.md`) is compiled at load: `futures check` prints
+# its canonical text and the three ids, and `futures run` records them in the manifest's signal
+# block. It reads the ratio-adjusted series by default, so a score must be scale invariant
+# (ADR-0086): `ts_zscore(close, n)` is dimensionless, and a price level such as `close` or
+# `delta(close, 1)` would be refused. `$n` is the only free parameter, bound by `params` (here from
+# its own declaration).
+#
+# Costs are per contract per side and are an assumption, not a measurement: the run records the
+# uncalibrated spread and slippage in its manifest's `approximations`. `session.flat_by_close`
+# means no position is carried overnight.
+kind: futures_run
+run:
+  name: es-zscore-reversion-60m
+  family: examples-es-zscore
+root: ES
+window:
+  start: 2024-03-04
+  end: 2024-03-28
+strategy:
+  expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(ts_zscore(close, $n) > 2, -1, 0))
+contracts: 1
+capital: "50000"
+costs:
+  commission: "2.00"
+session:
+  flat_by_close: true

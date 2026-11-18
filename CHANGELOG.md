@@ -8,6 +8,33 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C4b: DSL evaluation, the CompiledSignal, and expressions in the futures run (ADR-0098)
+- **Evaluation.** `crucible.dsl.evaluate` evaluates expressions per symbol stream with fixed
+  semantics:
+  - windows count rows and include the current one;
+  - null propagates, and every non-finite value becomes null;
+  - `and`, `or` and `not` follow Kleene logic;
+  - `ts_std` uses ddof = 1;
+  - `ts_rank` averages ties and is normalized to [0, 1];
+  - `ema` uses `adjust=False`, as in `strategy_spec`.
+
+  `warmup_bars` gives the static warm-up. `cs_rank` is refused until C4c.
+- **Versions.** Each operator now declares `min_window`. New session features `minutes_since_open`
+  and `minutes_to_close` come from the CME calendar. `GRAMMAR_VERSION` and
+  `OPERATOR_TABLE_VERSION` are now `"2"`, so every `structure_id` changes.
+- **Availability.** `check_availability` enforces C2's `available_at`. It refuses a value before
+  `event_time`, a non-monotone sequence, and a latency longer than one bar.
+- **`CompiledSignal`.** `crucible.dsl.compile.compile_expression` gives an immutable, stateless,
+  versioned `CompiledSignal` (`COMPILER_VERSION = "1"`).
+  - Its `compiled_id` covers the input roles, not dataset hashes.
+  - On ratio-adjusted input it refuses a score of non-zero price degree (ADR-0086).
+- **Futures runs.** `strategy.expression` is a third strategy source. `params` bind its `$`
+  parameters and `contracts` is required. The target is `sign(score) × contracts`, and a null
+  score gives flat. The session policy and the empirical scale check apply.
+  - The signal record carries `strategy_kind: dsl` and the three ids.
+  - `futures check` prints the canonical text and the ids.
+  - New example: `examples/futures/es_zscore_reversion.yaml`.
+
 ### Fathom C3c: a futures-run document Fathom can read (ADR-0097)
 - **One constructor.** `crucible.experiments.futures_document.futures_document(run_dir)` builds the
   document from the sealed run directory, `schema_version` 1. Its schema is printed by

@@ -11,6 +11,8 @@ Two rules make the config hash (and therefore the run id) an identity of the *co
 
 - a ``strategy.spec`` given as a path is **loaded** by :func:`load_futures_config` and the loaded
   mapping is what the model holds, so editing the spec file changes the hash (the path does not);
+- a ``strategy.expression`` (DSL, ADR-0098) is compiled at load, so a type or window error, an
+  unknown ``$`` parameter or a score that is not scale invariant surfaces at ``futures check``;
 - ``datasets`` defaults are resolved from ``root`` at parse time, so the canonical config always
   names the four datasets it read.
 
@@ -44,6 +46,7 @@ from pydantic import (
 from crucible.core.errors import ConfigurationError
 from crucible.data.continuous import calendar_for
 from crucible.data.futures_specs import futures_spec
+from crucible.dsl.compile import CompiledSignal, compile_expression
 from crucible.execution.futures_sim import CostSchedule, ExecutionPolicy
 from crucible.experiments.config import canonical_yaml, config_hash
 from crucible.experiments.futures_signals import FuturesSessionPolicy, SignalInput
@@ -66,6 +69,21 @@ class _FrozenModel(BaseModel):
     """Frozen, and a typo in a config is an error rather than a silently ignored knob."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+def _parameter_bindings(params: Mapping[str, object]) -> dict[str, int | float]:
+    """``params`` as the numeric bindings of an expression's ``$`` parameters."""
+    out: dict[str, int | float] = {}
+    for name, value in params.items():
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            msg = (
+                f"strategy.params[{name!r}] = {value!r} is not a number: an expression's `$` "
+                "parameters are bound to int or float values (no strings, lists or booleans). "
+                f"Bind ${name} to a number, e.g. {name}: 20"
+            )
+            raise ConfigurationError(msg)
+        out[name] = value
+    return out
 
 
 def _no_bool(value: object, what: str) -> object:
@@ -140,7 +158,7 @@ class FuturesWindow(_FrozenModel):
 
 
 class FuturesStrategyConfig(_FrozenModel):
-    """What decides the position: a declarative spec sized by ``contracts``, or a function."""
+    """What decides the position: a spec sized by ``contracts``, a function, or a DSL expression."""
 
     spec: dict[str, object] | str | None = Field(
         default=None,
@@ -153,9 +171,17 @@ class FuturesStrategyConfig(_FrozenModel):
         description="module.path:function of a FuturesSignalFunction (returns signed whole "
         "contracts per bar and decides its own size).",
     )
+    expression: str | None = Field(
+        default=None,
+        min_length=1,
+        description="A DSL expression (ADR-0096/0098): a condition (true is long) or a numeric "
+        "score whose sign sets the side, sized by contracts. Its `$` parameters are bound from "
+        "params, and it is compiled at load, so a bad expression surfaces at `futures check`.",
+    )
     params: dict[str, object] = Field(
         default_factory=dict,
-        description="Keyword parameters passed to the entrypoint function on every call.",
+        description="Keyword parameters passed to the entrypoint function on every call, or the "
+        "bindings of an expression's `$` parameters (by name, without the `$`).",
     )
 
     @model_validator(mode="after")
@@ -167,12 +193,21 @@ class FuturesStrategyConfig(_FrozenModel):
                 "load_futures_config(path), or inline the spec as a mapping"
             )
             raise ConfigurationError(msg)
-        if (self.spec is None) == (self.entrypoint is None):
+        given = [
+            name
+            for name, value in (
+                ("spec", self.spec),
+                ("entrypoint", self.entrypoint),
+                ("expression", self.expression),
+            )
+            if value is not None
+        ]
+        if len(given) != 1:
+            sources = ", ".join(given) if given else "none"
             msg = (
-                "strategy needs exactly one of spec (a StrategySpec mapping) or entrypoint "
-                "(module.path:function); both were given"
-                if self.spec is not None
-                else "strategy has neither spec nor entrypoint: give one of them"
+                "strategy needs exactly one of spec (a StrategySpec mapping), entrypoint "
+                f"(module.path:function) or expression (a DSL expression); got {sources}. Keep "
+                "one of them and remove the others"
             )
             raise ConfigurationError(msg)
         if self.spec is not None:
@@ -185,6 +220,25 @@ class FuturesStrategyConfig(_FrozenModel):
                 raise ConfigurationError(msg)
             parse_spec(self.spec)
         return self
+
+    def compiled_signal(self, signal_input: SignalInput) -> CompiledSignal:
+        """The DSL expression compiled for ``signal_input``: its ids, warm-up and features.
+
+        Refuses an expression that does not compile, a parameter name the expression does not
+        declare, a value of the wrong type or outside its bounds (``ExpressionError``), and a
+        score that is not scale invariant on ratio-adjusted input (ADR-0086, ADR-0098).
+        """
+        if self.expression is None:
+            msg = (
+                "strategy.compiled_signal() needs strategy.expression; this config decides with "
+                f"a {'spec' if self.spec is not None else 'entrypoint'}"
+            )
+            raise ConfigurationError(msg)
+        return compile_expression(
+            self.expression,
+            params=_parameter_bindings(self.params),
+            signal_input=signal_input,
+        )
 
 
 class FuturesCostsConfig(_FrozenModel):
@@ -331,8 +385,9 @@ class FuturesRunConfig(_FrozenModel):
     contracts: int | None = Field(
         default=None,
         ge=1,
-        description="Contracts per side a SPEC is sized at (a spec decides the side, +-1). "
-        "Forbidden for an entrypoint, whose score is already signed whole contracts.",
+        description="Contracts per side a SPEC or an EXPRESSION is sized at (both decide the "
+        "side; the size is this many contracts). Forbidden for an entrypoint, whose score is "
+        "already signed whole contracts.",
     )
     capital: Decimal = Field(
         gt=0, description="Starting capital in USD (at most 6 decimals: exact micro-dollars)."
@@ -420,11 +475,15 @@ class FuturesRunConfig(_FrozenModel):
                 "ratio_adjusted with the ratio-adjusted series"
             )
             raise ConfigurationError(msg)
-        if self.strategy.spec is not None:
+        if self.strategy.expression is not None:
+            # compile at load: a type, window, parameter or scale error is a config error here
+            self.strategy.compiled_signal(self.signal.input)
+        if self.strategy.spec is not None or self.strategy.expression is not None:
             if self.contracts is None:
+                what = "spec" if self.strategy.spec is not None else "expression"
                 msg = (
-                    "contracts is required: a strategy spec decides the side (+1 long, -1 short) "
-                    "and contracts sizes it. Pass contracts: 1 (or the size you want)"
+                    f"contracts is required: a strategy {what} decides the side (+1 long, "
+                    "-1 short) and contracts sizes it. Pass contracts: 1 (or the size you want)"
                 )
                 raise ConfigurationError(msg)
         elif self.contracts is not None:
