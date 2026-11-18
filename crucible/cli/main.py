@@ -368,6 +368,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     futures_check.add_argument("--config", required=True, help="Path to a futures-run YAML")
     _add_json(futures_check)
+    futures_batch = futures_sub.add_parser(
+        "batch",
+        help="Run N DSL expressions on one futures base config and write the batch document (C5a)",
+    )
+    futures_batch.add_argument("--batch", required=True, help="Path to a futures-batch YAML")
+    futures_batch.add_argument(
+        "--store",
+        default=None,
+        help="Data store root holding the four datasets of the base config's root (default: the "
+        "--home's data folder when --home is given; required otherwise)",
+    )
+    futures_batch.add_argument(
+        "--artifacts",
+        default=None,
+        help="Artifact store root (default: experiments/, or the --home's experiments folder)",
+    )
+    _add_home(futures_batch)
+    futures_batch.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Re-simulate a candidate whose run directory already exists (a reproduction keeps "
+        "the same run and artifact ids)",
+    )
+    _add_json(futures_batch)
 
     schema = subparsers.add_parser(
         "schema",
@@ -377,12 +401,12 @@ def build_parser() -> argparse.ArgumentParser:
     schema.add_argument("--out", default=None, help="Write the schema here (default: stdout)")
     schema.add_argument(
         "--kind",
-        choices=["experiment", "strategy-spec", "futures-run", *OUTPUT_SCHEMAS],
+        choices=["experiment", "strategy-spec", "futures-run", "futures-batch", *OUTPUT_SCHEMAS],
         default="experiment",
         help="which schema: the experiment config, the no-code strategy spec (ADR-0067), the "
-        "futures-run config (ADR-0095), or an output document: run, verification, error, "
-        "manifest (ADR-0084), futures-run-document (the document a sealed futures run prints, "
-        "ADR-0097)",
+        "futures-run config (ADR-0095), the futures-batch file (C5a), or an output document: run, "
+        "verification, error, manifest (ADR-0084), futures-run-document (the document a sealed "
+        "futures run prints, ADR-0097)",
     )
 
     data = subparsers.add_parser(
@@ -1228,7 +1252,8 @@ def _show_futures_run(run_dir: Path, *, json_output: bool) -> int:
 
 
 def _cmd_futures(args: argparse.Namespace) -> int:
-    """``crucible futures run|check``: one futures config in, one sealed artifact out (ADR-0095).
+    """``crucible futures run|check|batch``: one futures config in, one sealed artifact out
+    (ADR-0095).
 
     ``check`` loads and validates the config only: no store is touched, so it answers "is this
     config valid, and what does the run's identity cover" before any data is read.
@@ -1236,6 +1261,9 @@ def _cmd_futures(args: argparse.Namespace) -> int:
     ``run`` writes the artifact and prints the futures-run document (``--json``) or a short
     headline plus the verdict line (ADR-0097). ``--home`` makes the artifacts root its
     ``experiments/`` folder and defaults ``--store`` to its ``data/`` folder (ADR-0068).
+
+    ``batch`` runs every candidate of a batch file on one base config, writes
+    ``<artifacts>/<BAT-ID>/batch.json`` and prints it (``--json``) or a short per-candidate list.
     """
     import json
 
@@ -1245,6 +1273,8 @@ def _cmd_futures(args: argparse.Namespace) -> int:
         load_futures_config,
     )
 
+    if args.futures_command == "batch":
+        return _cmd_futures_batch(args)
     config = load_futures_config(Path(args.config))
     if args.futures_command == "check":
         config_hash = futures_config_hash(config)
@@ -1309,8 +1339,54 @@ def _cmd_futures(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_futures_batch(args: argparse.Namespace) -> int:
+    """``crucible futures batch``: N expressions on one base config, one ``batch.json`` out.
+
+    ``--json`` prints the batch document itself (``<artifacts>/<BAT-ID>/batch.json``),
+    so the CLI and the file cannot drift. The text rendering lists the candidates in SUBMISSION
+    order with their status and their descriptive metrics: no ranking, no statistic (C5).
+    """
+    from crucible.experiments.futures_batch import run_futures_batch
+
+    artifacts_root = _artifacts_root(args)
+    store_root = _store_root(args)
+    result = run_futures_batch(
+        Path(args.batch),
+        store_root=store_root,
+        artifacts_root=artifacts_root,
+        overwrite=args.overwrite,
+    )
+    if args.json:
+        machine.emit(result.document)
+        return 0
+    document = result.document
+    candidates = document["candidates"]
+    assert isinstance(candidates, list)
+    lines = [
+        f"batch:        {result.batch_id}",
+        f"family:       {document['family']}",
+        f"submitted:    {document['submitted']} candidate(s), "
+        f"{document['distinct_runs']} distinct run(s)",
+    ]
+    for entry in candidates:
+        assert isinstance(entry, dict)
+        metrics = entry["metrics"]
+        assert isinstance(metrics, dict)
+        lines.append(
+            f"  {entry['position']:>2} {entry['name']:<16} {entry['status']:<9} "
+            f"{entry['run_id']}  net {metrics['net_pnl_usd']['value']} USD, "
+            f"costs {metrics['total_costs_usd']['value']} USD, "
+            f"fills {metrics['fills']['value']}"
+        )
+    lines.append(FUTURES_VERDICT_LINE)
+    lines.append(f"batch dir:    {result.batch_dir}")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
 def _cmd_schema(args: argparse.Namespace) -> int:
-    """Prints a JSON Schema: the experiment config, the strategy spec or a futures-run config."""
+    """Prints a JSON Schema: the experiment config, the strategy spec, a futures-run config or a
+    futures-batch file."""
     if args.kind == "strategy-spec":
         from crucible.strategy_spec import spec_json_schema
 
@@ -1319,6 +1395,10 @@ def _cmd_schema(args: argparse.Namespace) -> int:
         from crucible.experiments.futures_config import futures_config_json_schema
 
         schema = futures_config_json_schema()
+    elif args.kind == "futures-batch":
+        from crucible.experiments.futures_batch import futures_batch_json_schema
+
+        schema = futures_batch_json_schema()
     elif args.kind in OUTPUT_SCHEMAS:
         schema = output_json_schema(args.kind)
     else:

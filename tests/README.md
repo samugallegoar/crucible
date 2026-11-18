@@ -134,6 +134,11 @@ The three families:
    (`test_leaky_strategy_canary.py`). Add a canary when you add a new way to reach data.
 3. **Shift detector** for the vectorized path (`test_vectorized_poisoned_future.py`).
 
+A coarser reading of a series is an accessor too: `test_resample_poisoned_future.py` covers the
+5m/15m aggregation of a continuous futures series (ADR-0100) — a resampled bar at or before a
+cutoff, its `available_at` and the targets decided at it are unchanged when every one-minute bar
+after the cutoff is poisoned or removed.
+
 ## 7. The other matrices
 
 - **Resume equivalence (I13)** — a new stateful component or strategy joins

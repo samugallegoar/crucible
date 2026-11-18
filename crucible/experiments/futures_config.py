@@ -57,7 +57,29 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 BAR_SECONDS = 60
-"""The bar length of the futures datasets this config names (one-minute bars, the C3 datasets)."""
+"""The bar length of the futures datasets this config names (one-minute bars, the C3 datasets).
+The length a run actually simulates at is ``fidelity.bar_seconds`` (60 x the resolution): the
+store's datasets stay one-minute and a coarser resolution resamples them causally
+(``crucible.data.resample``)."""
+
+FIDELITY_TABLE_VERSION = "1"
+"""Version of the fidelity table (the presets below): bump it when a preset's mapping changes, so
+an artifact that recorded a version is never read with different meanings")."""
+
+FIDELITY_RESOLUTIONS = ("1m", "5m", "15m")
+"""The bar resolutions a run can read: the source bars, or a causal aggregate of them."""
+
+FIDELITY_COST_DETAIL = ("full", "commission_only")
+"""How much of the cost model the run charges: every cost, or commission and fees only."""
+
+FIDELITY_PRESETS: dict[str, tuple[str, str]] = {
+    "screen": ("15m", "commission_only"),
+    "standard": ("5m", "full"),
+    "full": ("1m", "full"),
+}
+"""The named fidelity levels, as ``(resolution, cost_detail)``. ``screen`` is the cheap first
+pass (coarse bars, spread and slippage off), ``standard`` the working level, ``full`` the source
+resolution with every cost."""
 
 FILL_MODES = ("next_eligible_bar_open", "signal_bar_close")
 REENTRY_MODES = ("require_signal_reset", "allow_immediate")
@@ -365,6 +387,96 @@ class FuturesSessionConfig(_FrozenModel):
     )
 
 
+class FuturesFidelityConfig(_FrozenModel):
+    """How finely and how expensively a run reads its series (Fathom C5a).
+
+    ``resolution`` is the bar length the run simulates: ``1m`` is the stored series itself, ``5m``
+    and ``15m`` are causal aggregates of it (``crucible.data.resample``: a bucket never spans the
+    maintenance break or a session boundary, and a bar is knowable when its last one-minute
+    constituent is). ``cost_detail`` is how much of the cost model is charged: ``full`` charges
+    spread and slippage as configured, ``commission_only`` charges commission and fees and zeroes
+    both tick costs, which is OPTIMISTIC and is recorded as an approximation in the manifest.
+
+    ``preset`` fills both fields from :data:`FIDELITY_PRESETS`; an explicit field that contradicts
+    the preset it was given with is refused rather than silently overridden.
+    """
+
+    resolution: Literal["1m", "5m", "15m"] = Field(
+        default="1m",
+        description="Bar length the run simulates: 1m (the stored series), or 5m/15m, a causal "
+        "aggregate of it. The raw per-contract bars and the rolls stay one-minute.",
+    )
+    cost_detail: Literal["full", "commission_only"] = Field(
+        default="full",
+        description="full: every configured cost (commission, fees, spread, slippage). "
+        "commission_only: commission and fees only, spread and slippage zeroed (OPTIMISTIC, "
+        "recorded as an approximation).",
+    )
+    preset: Literal["screen", "standard", "full"] | None = Field(
+        default=None,
+        description="A named fidelity level: screen = 15m + commission_only, standard = 5m + "
+        "full, full = 1m + full. An explicit resolution or cost_detail that contradicts it is "
+        "refused.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_preset(cls, data: object) -> object:
+        """Fill the fields the preset decides, refusing an explicit value that contradicts it."""
+        if not isinstance(data, dict) or data.get("preset") is None:
+            return data
+        preset = data["preset"]
+        level = FIDELITY_PRESETS.get(str(preset))
+        if level is None:
+            msg = (
+                f"fidelity.preset {preset!r} is not a fidelity level; use one of "
+                f"{list(FIDELITY_PRESETS)} (screen = 15m + commission_only, standard = 5m + "
+                "full, full = 1m + full)"
+            )
+            raise ConfigurationError(msg)
+        filled = dict(data)
+        for name, value in zip(("resolution", "cost_detail"), level, strict=True):
+            given = filled.get(name)
+            if given is not None and given != value:
+                msg = (
+                    f"fidelity.preset {preset!r} is {value} for {name}, but {name} is given as "
+                    f"{given!r}: a preset and a contradicting field cannot both stand. Drop the "
+                    f"preset or change {name} to {value!r}"
+                )
+                raise ConfigurationError(msg)
+            filled[name] = value
+        return filled
+
+    @property
+    def minutes(self) -> int:
+        """The resolution in minutes: 1, 5 or 15."""
+        return {"1m": 1, "5m": 5, "15m": 15}[self.resolution]
+
+    @property
+    def bar_seconds(self) -> int:
+        """The bar length the run simulates at, in seconds (60 x ``minutes``)."""
+        return BAR_SECONDS * self.minutes
+
+    @property
+    def resampled(self) -> bool:
+        """Whether the run aggregates the stored one-minute series before simulating it."""
+        return self.minutes != 1
+
+    def record(
+        self, *, dropped_off_schedule: int = 0, partial_buckets: int = 0
+    ) -> dict[str, object]:
+        """The manifest's ``fidelity`` block: the level, whether it resampled and what that cost."""
+        return {
+            "resolution": self.resolution,
+            "cost_detail": self.cost_detail,
+            "preset": self.preset,
+            "table_version": FIDELITY_TABLE_VERSION,
+            "resampled": self.resampled,
+            "dropped_off_schedule": dropped_off_schedule,
+            "partial_buckets": partial_buckets,
+        }
+
+
 class FuturesRunConfig(_FrozenModel):
     """One futures run: the data, the window, the strategy and every cost and timing decision."""
 
@@ -399,6 +511,11 @@ class FuturesRunConfig(_FrozenModel):
     )
     signal: FuturesSignalConfig = Field(
         default_factory=FuturesSignalConfig, description="Which series the strategy reads."
+    )
+    fidelity: FuturesFidelityConfig = Field(
+        default_factory=FuturesFidelityConfig,
+        description="How finely and how expensively the run reads the series (1m/5m/15m bars, "
+        "full or commission-only costs).",
     )
     session: FuturesSessionConfig = Field(
         default_factory=FuturesSessionConfig, description="Globex session rules."
@@ -503,28 +620,49 @@ class FuturesRunConfig(_FrozenModel):
             )
             raise ConfigurationError(msg)
         # build every derived object now, so its own checks refuse a bad combination at load
+        if self.fidelity.cost_detail == "commission_only":
+            explicit = [
+                name
+                for name in ("spread_ticks", "slippage_ticks")
+                if name in self.costs.model_fields_set and getattr(self.costs, name) != 0
+            ]
+            if explicit:
+                fields = ", ".join(f"costs.{name}" for name in explicit)
+                msg = (
+                    f"fidelity.cost_detail=commission_only charges no tick cost, but {fields} "
+                    "sets a non-zero value: the run would silently ignore what the config says. "
+                    "Remove it, set it to 0, or use cost_detail=full"
+                )
+                raise ConfigurationError(msg)
         self.cost_schedule()
         self.execution_policy()
         self.session_policy()
         return self
 
     def cost_schedule(self) -> CostSchedule:
-        """The simulator's cost schedule (no session overrides: one schedule for the run)."""
+        """The simulator's cost schedule (no session overrides: one schedule for the run).
+
+        ``fidelity.cost_detail=commission_only`` zeroes the spread and the slippage ticks and keeps
+        commission and fees: the run is then OPTIMISTIC about the cost of trading and records the
+        approximation in its manifest (``_approximations``).
+        """
         costs = self.costs
+        commission_only = self.fidelity.cost_detail == "commission_only"
         return CostSchedule(
             commission=costs.commission,
             exchange_fee=costs.exchange_fee,
             clearing_fee=costs.clearing_fee,
             regulatory_fee=costs.regulatory_fee,
-            spread_ticks=costs.spread_ticks,
-            slippage_ticks=costs.slippage_ticks,
+            spread_ticks=Decimal(0) if commission_only else costs.spread_ticks,
+            slippage_ticks=Decimal(0) if commission_only else costs.slippage_ticks,
             spread_calibrated=costs.spread_calibrated,
             slippage_calibrated=costs.slippage_calibrated,
             prices_include_spread=costs.prices_include_spread,
         )
 
     def execution_policy(self) -> ExecutionPolicy:
-        """The simulator's execution policy (brackets in whole ticks, ``bar_seconds`` = 60)."""
+        """The simulator's execution policy (brackets in whole ticks, ``bar_seconds`` from
+        ``fidelity``)."""
         policy = self.execution
         return ExecutionPolicy(
             fill=policy.fill,
@@ -534,7 +672,7 @@ class FuturesRunConfig(_FrozenModel):
             reentry=policy.reentry,
             roll_execution=policy.roll_execution,
             strict=policy.strict,
-            bar_seconds=BAR_SECONDS,
+            bar_seconds=self.fidelity.bar_seconds,
         )
 
     def session_policy(self) -> FuturesSessionPolicy:
@@ -637,12 +775,17 @@ def canonical_futures_yaml(config: BaseModel) -> str:
 
 __all__ = [
     "BAR_SECONDS",
+    "FIDELITY_COST_DETAIL",
+    "FIDELITY_PRESETS",
+    "FIDELITY_RESOLUTIONS",
+    "FIDELITY_TABLE_VERSION",
     "FILL_MODES",
     "REENTRY_MODES",
     "ROLL_EXECUTIONS",
     "FuturesCostsConfig",
     "FuturesDatasets",
     "FuturesExecutionConfig",
+    "FuturesFidelityConfig",
     "FuturesRunConfig",
     "FuturesRunHeader",
     "FuturesSessionConfig",

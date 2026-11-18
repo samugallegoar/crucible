@@ -156,6 +156,28 @@ class FuturesWindowDocument(_Document):
     end: str
 
 
+class FuturesFidelityDocument(_Document):
+    """How finely and how expensively the run read its series (C5a).
+
+    ``resolution``: the bar length the run simulated (``1m`` is the stored series, ``5m``/``15m`` a
+    causal aggregate of it). ``cost_detail``: ``full`` charges spread and slippage,
+    ``commission_only`` charges commission and fees only (OPTIMISTIC, and listed in
+    ``approximations``). ``preset``: the named level that decided both fields, or null.
+    ``table_version``: the version of the preset table, so a reader never reinterprets an old run.
+    ``resampled``: whether the stored one-minute series was aggregated; ``dropped_off_schedule``:
+    one-minute bars outside every scheduled session, not aggregated; ``partial_buckets``: buckets
+    clipped by a session open or close (a run refuses one, so it is 0 in a sealed run).
+    """
+
+    resolution: Literal["1m", "5m", "15m"]
+    cost_detail: Literal["full", "commission_only"]
+    preset: Literal["screen", "standard", "full"] | None
+    table_version: str
+    resampled: bool
+    dropped_off_schedule: int
+    partial_buckets: int
+
+
 class FuturesVerdictReasonDocument(_Document):
     """Why the verdict level is what it is: a code from ``VERDICT_REASON_CODES``, the message a
     reader must see, and the milestones whose absence leaves the reason standing."""
@@ -204,6 +226,7 @@ class FuturesRunDocument(_Document):
     trial_count: int
     root: str
     window: FuturesWindowDocument
+    fidelity: FuturesFidelityDocument
     run_dir: str
     datasets: dict[str, FuturesDatasetDocument]
     approximations: list[str]
@@ -349,6 +372,33 @@ def _datasets(manifest: Mapping[str, object], where: Path) -> dict[str, FuturesD
     return out
 
 
+DEFAULT_FIDELITY: dict[str, object] = {
+    "resolution": "1m",
+    "cost_detail": "full",
+    "preset": None,
+    "table_version": "1",
+    "resampled": False,
+    "dropped_off_schedule": 0,
+    "partial_buckets": 0,
+}
+"""The fidelity block of a run that recorded none: a manifest written before C5a simulated the
+stored one-minute series with the full cost model, so it reads as ``1m`` + ``full`` rather than
+failing (adding the key is additive, ``FUTURES_DOCUMENT_SCHEMA_VERSION`` stays 1)."""
+
+
+def _fidelity(manifest: Mapping[str, object], where: Path) -> FuturesFidelityDocument:
+    """The manifest's ``fidelity`` block, or the pre-C5a default when it recorded none."""
+    raw = manifest.get("fidelity", DEFAULT_FIDELITY)
+    if not isinstance(raw, dict):
+        msg = (
+            f"the manifest of {where.name} records fidelity={raw!r}: the fidelity block is an "
+            "object {resolution, cost_detail, preset, table_version, resampled, "
+            "dropped_off_schedule, partial_buckets}"
+        )
+        raise ExperimentError(msg).at(path=str(where), key="fidelity")
+    return FuturesFidelityDocument.model_validate(raw)
+
+
 def _strings(manifest: Mapping[str, object], key: str, where: Path) -> list[str]:
     value = manifest.get(key)
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
@@ -429,6 +479,7 @@ def futures_document(run_dir: Path) -> dict[str, object]:
         window=FuturesWindowDocument(
             start=str(window.get("start", "")), end=str(window.get("end", ""))
         ),
+        fidelity=_fidelity(manifest, run_dir),
         run_dir=Path(run_dir).resolve().as_posix(),
         datasets=_datasets(manifest, run_dir),
         approximations=_strings(manifest, "approximations", run_dir),
@@ -454,6 +505,7 @@ def futures_document_json_schema() -> dict[str, object]:
 
 
 __all__ = [
+    "DEFAULT_FIDELITY",
     "FUTURES_DOCUMENT_SCHEMA_VERSION",
     "HEADLINE_METRICS",
     "METRIC_ASSESSMENTS",

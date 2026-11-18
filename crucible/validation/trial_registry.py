@@ -43,6 +43,27 @@ class TrialRecord:
     end_ns: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class SubmissionRecord:
+    """One candidate a batch SUBMITTED, whether or not it computed a run (C5a).
+
+    The ``trials`` table counts distinct evaluations; a batch's submissions count what the
+    researcher actually asked for, including the candidates that turned out to be duplicates of
+    another (status ``cached``) or that hit an existing run directory. C6 decides how submissions
+    count toward ``total_trials``; until then this table is the record and ``trials`` stays
+    unchanged (one row per distinct ``experiment_id``).
+    """
+
+    batch_id: str
+    position: int
+    family: str
+    experiment_id: str
+    structure_id: str
+    parameterization_id: str
+    candidate_name: str
+    status: str
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS trials (
     family VARCHAR NOT NULL,
@@ -54,9 +75,23 @@ CREATE TABLE IF NOT EXISTS trials (
     PRIMARY KEY (family, experiment_id)
 );
 ALTER TABLE trials ADD COLUMN IF NOT EXISTS period_ns BIGINT;
+CREATE TABLE IF NOT EXISTS submissions (
+    batch_id VARCHAR NOT NULL,
+    position INTEGER NOT NULL,
+    family VARCHAR NOT NULL,
+    experiment_id VARCHAR NOT NULL,
+    structure_id VARCHAR NOT NULL,
+    parameterization_id VARCHAR NOT NULL,
+    candidate_name VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    PRIMARY KEY (batch_id, position)
+);
 """
 # period_ns (ADR-0071): the trial's median spacing between equity marks, i.e. the return
 # frequency its per-period Sharpe is measured at. Null for rows from before the column existed.
+# submissions (Fathom C5a): every candidate a futures batch submitted, in submission order. It is
+# ADDITIVE: the trials table keeps one row per distinct experiment_id, and the primary key makes
+# re-running a batch a no-op instead of a duplicate.
 
 FREQUENCY_TOLERANCE = 1.5
 """Two trials' return periods count as the same frequency when they differ by less than this
@@ -93,7 +128,11 @@ class DuckDBTrialRegistry:
     """Implements ``crucible.validation.interfaces.TrialRegistry``. One row
     per (family, experiment_id); the primary key makes recording the same
     trial twice a no-op rather than a double-count (and never overwrites
-    that trial's stored ``sharpe``/``mode``/window)."""
+    that trial's stored ``sharpe``/``mode``/window).
+
+    A batch's submissions live in their own table (one row per submitted candidate, keyed by
+    ``(batch_id, position)``), so a researcher's submitted set is preserved even when two
+    candidates deduplicate onto one evaluation."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -125,6 +164,94 @@ class DuckDBTrialRegistry:
         with duckdb.connect(str(self._path)) as conn:
             conn.execute(_SCHEMA)
             return self._count(conn, family)
+
+    # --- submissions (Fathom C5a) ----------------------------------------------------------
+
+    def record_submission(
+        self,
+        batch_id: str,
+        position: int,
+        family: str,
+        experiment_id: str,
+        structure_id: str,
+        parameterization_id: str,
+        candidate_name: str,
+        status: str,
+    ) -> int:
+        """Record one submitted candidate; returns the batch's submission count.
+
+        ``(batch_id, position)`` is the key, so re-running a batch never duplicates a submission
+        and never rewrites the status first recorded (a candidate that computed keeps
+        ``computed``; the run it names is reused on a re-run).
+        """
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            conn.execute(
+                "INSERT INTO submissions (batch_id, position, family, experiment_id, "
+                "structure_id, parameterization_id, candidate_name, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (batch_id, position) DO NOTHING",
+                [
+                    batch_id,
+                    int(position),
+                    family,
+                    experiment_id,
+                    structure_id,
+                    parameterization_id,
+                    candidate_name,
+                    status,
+                ],
+            )
+            row = conn.execute(
+                "SELECT COUNT(*) FROM submissions WHERE batch_id = ?", [batch_id]
+            ).fetchone()
+            assert row is not None
+            return int(row[0])
+
+    def submissions(
+        self, batch_id: str | None = None, family: str | None = None
+    ) -> list[SubmissionRecord]:
+        """Every recorded submission, in ``(batch_id, position)`` order: submission order, never
+        an order a metric would impose."""
+        clauses: list[str] = []
+        params: list[object] = []
+        if batch_id is not None:
+            clauses.append("batch_id = ?")
+            params.append(batch_id)
+        if family is not None:
+            clauses.append("family = ?")
+            params.append(family)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            rows = conn.execute(
+                "SELECT batch_id, position, family, experiment_id, structure_id, "
+                f"parameterization_id, candidate_name, status FROM submissions {where} "
+                "ORDER BY batch_id, position",
+                params,
+            ).fetchall()
+        return [
+            SubmissionRecord(
+                batch_id=str(row[0]),
+                position=int(row[1]),
+                family=str(row[2]),
+                experiment_id=str(row[3]),
+                structure_id=str(row[4]),
+                parameterization_id=str(row[5]),
+                candidate_name=str(row[6]),
+                status=str(row[7]),
+            )
+            for row in rows
+        ]
+
+    def submission_count(self, family: str) -> int:
+        """How many candidates were submitted under ``family`` across every batch."""
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            row = conn.execute(
+                "SELECT COUNT(*) FROM submissions WHERE family = ?", [family]
+            ).fetchone()
+            assert row is not None
+            return int(row[0])
 
     def trial_sharpes(self, family: str) -> list[float]:
         """Per-period Sharpe of every distinct trial recorded for

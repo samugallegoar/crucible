@@ -49,6 +49,11 @@ Reentry = Literal["require_signal_reset", "allow_immediate"]
 
 _MICRO = 1_000_000
 _GRID_TOLERANCE = 1e-6
+RAW_BAR_SECONDS = 60
+"""Bar length of the raw per-contract bars (``<root>_1m_raw``, ADR-0085/0086): a causal roll's
+legs are priced on ONE-MINUTE raw opens, whatever the simulated series' bar length. The raw
+dataset is one-minute bars by contract, so its bar open is ``event_time - 60s``."""
+_RAW_BAR_NS = RAW_BAR_SECONDS * NS_PER_S
 _CHICAGO = "America/Chicago"
 _MONEY = pl.Decimal(38, 6)
 _MINUTES_PER_HOUR = 60
@@ -252,6 +257,14 @@ def execution_policy(
         },
         "off_schedule": "bars with on_schedule false are not eligible for fills or bracket exits",
         "roll_execution": policy.roll_execution,
+        "roll_execution_grid_seconds": policy.bar_seconds,
+        "roll_execution_grid": (
+            "a causal roll executes at the OPEN of the first SIMULATED bar at or after its "
+            "decision and at or after the first joint one-minute print, when both contracts have "
+            "a raw one-minute bar opening exactly there; both legs are priced at those raw "
+            "one-minute opens. On one-minute bars (grid 60) that is the first joint minute; on a "
+            "coarser grid the roll waits for such a bar open, at most one bar of delay"
+        ),
         "strict": policy.strict,
         "bar_seconds": policy.bar_seconds,
         "costs": costs.as_dict(),
@@ -357,17 +370,59 @@ class _Roll:
     position: int = 0
 
 
-def _causal_leg(raw: pl.DataFrame, roll: _Roll, bar_ns: int) -> tuple[int, float, float] | None:
-    """``(close time, old open, new open)`` of the first minute whose bar OPENS at or after the
-    decision and in which both contracts traded; None if there is none."""
-    after = raw.filter(pl.col("event_time") - bar_ns >= roll.decision)
-    old = after.filter(pl.col("symbol") == roll.from_contract).select("event_time", "open")
-    new = after.filter(pl.col("symbol") == roll.to_contract).select("event_time", "open")
-    both = old.join(new, on="event_time", suffix="_new").sort("event_time")
+def _causal_leg(
+    raw: pl.DataFrame,
+    roll: _Roll,
+    times: NDArray[np.int64],
+    bar_ns: int,
+    *,
+    start: int,
+    stop: int,
+) -> tuple[int, float, float] | None:
+    """``(bar index, old open, new open)`` of the first simulated bar in ``[start, stop)`` a causal
+    roll can execute at; None when there is none.
+
+    The candidate execution instants are the OPENS of the simulated bars (``event_time -
+    bar_seconds``): a fill inside a bar happens at its open, never at a minute buried inside it.
+    The first candidate is taken whose open is at or after the decision and at which BOTH
+    contracts have a raw one-minute bar opening exactly there; the two legs are priced at those
+    raw one-minute opens. On one-minute bars every simulated bar open is a raw minute, so this is
+    exactly "the first joint 1m print at or after the decision"; on a coarser grid it delays the
+    roll at most one bar rather than pricing it inside a bar it cannot see (the delay is recorded
+    as ``delay_minutes``). A candidate whose instant has only one side trading is skipped.
+
+    Timing: every price used is a raw print at that instant, so nothing after the execution
+    instant is read.
+    """
+    if stop <= start:
+        return None
+    opens = np.asarray(times[start:stop], dtype=np.int64) - bar_ns
+    after = np.unique(opens[opens >= roll.decision])
+    if after.size == 0:
+        return None
+    window = raw.filter((pl.col("event_time") - _RAW_BAR_NS).is_in(after.tolist()))
+    old = (
+        window.filter(pl.col("symbol") == roll.from_contract)
+        .select((pl.col("event_time") - _RAW_BAR_NS).alias("instant"), "open")
+        .sort("instant")
+    )
+    new = (
+        window.filter(pl.col("symbol") == roll.to_contract)
+        .select((pl.col("event_time") - _RAW_BAR_NS).alias("instant"), "open")
+        .sort("instant")
+    )
+    both = old.join(new, on="instant", suffix="_new").sort("instant")
     if both.height == 0:
         return None
     first = both.row(0, named=True)
-    return int(first["event_time"]), float(first["open"]), float(first["open_new"])
+    at = int(np.searchsorted(np.asarray(times, dtype=np.int64), int(first["instant"]) + bar_ns))
+    if (
+        at >= len(times)
+        or int(times[at]) != int(first["instant"]) + bar_ns
+        or not (start <= at < stop)
+    ):
+        return None
+    return at, float(first["open"]), float(first["open_new"])
 
 
 @dataclass(slots=True)
@@ -457,12 +512,12 @@ def _prepare(
             to_ticks=_one_tick(row["to_price"], tick, "rolls.to_price"),
         )
         next_switch = switches[n + 1] if n + 1 < len(switches) else len(series)
-        leg = _causal_leg(raw_needed, roll, bar_ns) if raw_needed is not None else None
-        at = -1
-        if leg is not None:
-            at = int(np.searchsorted(frame.times, leg[0]))
-            if not (k <= at < next_switch and frame.times[at] == leg[0]):
-                at = -1
+        leg = (
+            _causal_leg(raw_needed, roll, frame.times, bar_ns, start=k, stop=next_switch)
+            if raw_needed is not None
+            else None
+        )
+        at = leg[0] if leg is not None else -1
         if leg is not None and at >= 0:
             old_ticks = _one_tick(leg[1], tick, "raw old-contract open")
             new_ticks = _one_tick(leg[2], tick, "raw new-contract open")
@@ -473,7 +528,7 @@ def _prepare(
                 )
                 raise DataQualityError(msg)
             roll.error_ticks = (roll.from_ticks - old_ticks) - (roll.to_ticks - new_ticks)
-            roll.delay_minutes = (leg[0] - int(frame.times[k])) / _NS_PER_MIN
+            roll.delay_minutes = (int(frame.times[at]) - int(frame.times[k])) / _NS_PER_MIN
         if policy.roll_execution == "causal" and leg is not None and at >= 0:
             roll.mode, roll.verified = "causal", True
             roll.index, roll.executed_time = at, int(frame.times[at])

@@ -40,6 +40,14 @@ when every statistical guard passes.
   transcribed, cited schedule table for 2010-06 to 2027-12 (ADR-0091). Most 2023 holidays and
   Martin Luther King Day 2024 have no archived schedule: those sessions are flagged unverified,
   not guessed. Other futures have no session calendar yet.
+- A futures run reads its series at one fidelity level (1m, or 5m/15m causally resampled from the
+  one-minute series, ADR-0100). A coarse level does not see the intrabar path, and a causal roll
+  then waits for the first coarse bar open at which both contracts have a one-minute bar (at most
+  one bar of delay, recorded as an approximation). `fidelity: {cost_detail: commission_only}` is a
+  screen: it is optimistic about the cost of trading and says so in the run's approximations.
+- A futures batch (`crucible futures batch`) reports every candidate descriptively — net P&L,
+  costs, fills, the conservative intraday drawdown, the minimum equity — with null intervals, and
+  ranks nothing. Sharpe, IC, confidence intervals and any statistical comparison begin in C6.
 - No fundamentals, news, filings or alternative data.
 - Survivorship: a ticker you ask for today exists today. A test of a rule on today's index
   constituents over the past is flattered by the companies that were dropped; Crucible does not

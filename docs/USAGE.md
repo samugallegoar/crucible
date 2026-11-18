@@ -302,8 +302,35 @@ The sealed run directory holds:
 - `metrics.json`: descriptive totals only.
 
 `manifest.json` records the datasets with their hashes, the signal and scale checks, the execution
-policy, the calendar version, the marking policy and every approximation. There is no Sharpe, and
-the result makes no performance claim (ADR-0095).
+policy, the calendar version, the marking policy, the **fidelity** block and every approximation.
+There is no Sharpe, and the result makes no performance claim (ADR-0095).
+
+**Fidelity (C5a, ADR-0100).** `fidelity` decides how finely and how expensively the run reads its
+series: `resolution` (`1m` default, `5m`, `15m`, a causal aggregate of the stored one-minute
+series), `cost_detail` (`full` default, or `commission_only`, which zeroes spread and slippage and
+is recorded as an optimistic approximation) and an optional `preset` (`screen` = 15m +
+commission_only, `standard` = 5m + full, `full` = 1m + full). A preset that contradicts an explicit
+field is refused. The fidelity is part of the config hash, so it is part of the run id, and the
+manifest records both the block and the resampling counts.
+
+**A batch of expressions (C5a, ADR-0100).** One base config, N expressions:
+
+```bash
+uv run crucible futures batch --batch examples/futures/es_batch_screen.yaml \
+    --store data/processed --artifacts experiments --json
+uv run crucible schema --kind futures-batch
+```
+
+Every candidate shares the base's data, window, contracts, costs, execution, session and fidelity;
+only its strategy and its run name change, so all candidates are compared under the same
+conditions. `<artifacts>/<BAT-ID>/batch.json` lists them in **submission order** (never sorted by a
+metric) with their status (`computed`/`cached`), run and artifact ids and five descriptive metrics
+(net P&L, costs, fills, the conservative intraday drawdown, the minimum equity), each with null
+intervals; the batch's verdict is null with the same `not_assessed` reason. A candidate that
+duplicates an earlier one after canonicalization and binding is `cached` and reuses that run, and
+one whose sealed run already exists is `cached` too (re-running a batch is a reproduction). Every
+submitted candidate is recorded in the trial registry's `submissions` table, while `trials` keeps
+one row per distinct run: how submissions count toward `total_trials` is decided in C6.
 
 `futures run --json` and `crucible artifact show <ART-...> --json` print the same **futures-run
 document** (`schema_version: 1`, `crucible schema --kind futures-run-document`; keys in

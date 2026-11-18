@@ -7,14 +7,14 @@ options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-path
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
 `data fetch`, `data check`, `data integrity`, `data catalog`, `data list`, `futures run`,
-`futures check`. Handlers are
+`futures check`, `futures batch`. Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
 stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
 the `--json` document); `artifact show <ART-.../EXP-...>` prints the same document for a finished
 run, `artifact verify` recomputes its id from the files; a futures run's `artifact show` prints its
 futures-run document (`experiments.futures_document`, ADR-0097); `schema --kind` also serves `run`,
-`verification`, `error`, `manifest` and `futures-run-document`. stdout and
+`verification`, `error`, `manifest`, `futures-run-document` and `futures-batch`. stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
 `UnicodeEncodeError` on a legacy Windows code page.
 
@@ -123,14 +123,15 @@ The `crucible` command.
   assessment, not evidence of no edge"), every approximation the run recorded and the run
   directory; `--json` prints the futures-run document (`futures_document`, ADR-0097):
   `schema_version`, `kind`, `artifact_id`, `experiment_id`, `run_name`, `trial_family`,
-  `trial_count`, `root`, `window`, `run_dir`, `datasets`, `approximations`, `strict_execution`,
-  `verdict`, `headline`, `metrics`, `files` — the same document `artifact show` prints for it. A
-  second run of the same config and data is refused unless `--overwrite` (a reproduction keeps the
-  artifact id and does not grow the trial count).
+  `trial_count`, `root`, `window`, `fidelity`, `run_dir`, `datasets`, `approximations`,
+  `strict_execution`, `verdict`, `headline`, `metrics`, `files` — the same document `artifact show`
+  prints for it. A second run of the same config and data is refused unless `--overwrite` (a
+  reproduction keeps the artifact id and does not grow the trial count).
 - `crucible artifact show|verify <ART-...> [--artifacts DIR | --home DIR] [--json]` — an equity
   run prints its run document; a futures run prints its futures-run document (ADR-0097). Both
   subcommands take `--home` and `--artifacts`.
-- **`--home` precedence (also for `futures run` and `artifact show|verify`).** The home is resolved
+- **`--home` precedence (also for `futures run`, `futures batch` and `artifact show|verify`).**
+  The home is resolved
   by `crucible.product.home.resolve_home`, the same resolver `backtest --home` and
   `config show` use. With `--home DIR` the artifacts root is `DIR/experiments` and the trial
   registry is `DIR/experiments/trial_registry.duckdb` — one registry per artifacts root, never two;
@@ -143,6 +144,16 @@ The `crucible` command.
   `{"kind": "futures_run_config", "config_hash", "config"}`. `schema --kind futures-run` prints
   the futures-run config's JSON Schema; `schema --kind futures-run-document` prints the JSON Schema
   of the document a sealed futures run prints (ADR-0097).
+- `crucible futures batch --batch FILE [--store S] [--artifacts DIR | --home DIR] [--overwrite]
+  [--json]` — N DSL expressions on ONE base futures config (`experiments.futures_batch`,
+  ADR-0100): every candidate shares the base's data, window, contracts, costs, execution, session
+  and fidelity, and only its strategy and run name differ. Writes
+  `<artifacts>/<BAT-ID>/batch.json` and prints it (`--json`) or a per-candidate list in SUBMISSION
+  order with status (`computed`/`cached`), run id and the descriptive metrics; the text rendering
+  ends with the verdict line. A candidate that duplicates an earlier parameterization, or whose
+  sealed run already exists, is `cached` and reuses that run; the `--overwrite` flag re-simulates
+  instead. The `--home` / `--artifacts` / `--store` precedence is `futures run`'s.
+  `schema --kind futures-batch` prints the batch file's JSON Schema.
 - `crucible data check --store S --dataset D --calendar C` — quality
   battery; `data list --store S` — datasets with manifest hashes;
   `--skip NAME --skip-reason TEXT` (repeatable) skips named checks with a

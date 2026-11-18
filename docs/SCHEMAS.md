@@ -866,6 +866,27 @@ Append-only count of parameter evaluations per trial family (ADR-0008/0014). One
 
 <!-- END GENERATED: trial-registry -->
 
+The C5a batch submission log lives in the SAME DuckDB file, additively (ADR-0100): one row per
+submitted candidate, keyed by `(batch_id, position)`, so re-running a batch never duplicates a
+submission and never rewrites the status first recorded. The `trials` table above is unchanged: a
+batch of three candidates with one canonical duplicate is 3 submissions and 2 trials. How
+submissions count toward `total_trials` is decided in C6.
+
+<!-- BEGIN GENERATED: trial-submissions -->
+
+| Column | DuckDB type | Nullable |
+|---|---|---|
+| `batch_id` | VARCHAR | no |
+| `position` | INTEGER | no |
+| `family` | VARCHAR | no |
+| `experiment_id` | VARCHAR | no |
+| `structure_id` | VARCHAR | no |
+| `parameterization_id` | VARCHAR | no |
+| `candidate_name` | VARCHAR | no |
+| `status` | VARCHAR | no |
+
+<!-- END GENERATED: trial-submissions -->
+
 ### 2.12 Checkpoints (`BacktestEngine.checkpoint(path)`)
 
 Canonical JSON: `{"schema_version": int, "header": {...}, "payload": {...}, "digest":
@@ -1026,6 +1047,7 @@ one bumps the version (`docs/COMPATIBILITY.md` §3).
 | `window` | `{start, end}` | inclusive Globex trade dates (day labels) |
 | `run_dir` | string | absolute, posix-style path of the run directory |
 | `datasets` | object | role (`execution`, `signal`, `rolls`, `raw`) -> `{dataset, content_hash, price_basis, adjustment}` |
+| `fidelity` | object | how finely and how expensively the run read its series (below, C5a) |
 | `approximations` | array<string> | every assumption of the run, verbatim from the manifest |
 | `strict_execution` | boolean | whether the run refused off-schedule fills |
 | `verdict` | object | the null verdict and its reason (below) |
@@ -1051,6 +1073,64 @@ reads as "not assessed", never as "assessed and uninformative". `unit` is a clos
 `count`, `contracts`, `trade_dates`. Nothing in this document is a Sharpe, a deflated Sharpe, a
 confidence interval, a null test or any other edge claim (ADR-0095); such a metric arrives with C6
 and bumps `schema_version`.
+
+### The fidelity block (C5a)
+
+Since C5a (ADR-0100) a sealed futures run's manifest carries a `fidelity` block, and the futures
+run document exposes it verbatim as `fidelity`. Adding the key is additive, so the document's
+`schema_version` stays **1**; a manifest written before C5a (no `fidelity` key) reads as
+`1m` + `full` (`DEFAULT_FIDELITY` in `experiments/futures_document.py`) rather than failing.
+
+| Key | JSON type | Meaning |
+|---|---|---|
+| `resolution` | string | `1m` (the stored series), or `5m`/`15m`, a causal aggregate of it (`data/resample.py`) |
+| `cost_detail` | string | `full` (commission, fees, spread, slippage) or `commission_only` (spread and slippage zeroed: OPTIMISTIC, listed in `approximations`) |
+| `preset` | string \| null | the named level that decided the two fields: `screen` (15m + commission_only), `standard` (5m + full), `full` (1m + full); null when the fields were given directly |
+| `table_version` | string | version of the preset table (`FIDELITY_TABLE_VERSION`, today `1`) |
+| `resampled` | boolean | whether the stored one-minute series was aggregated before the run simulated it |
+| `dropped_off_schedule` | int | one-minute bars outside every scheduled session (both series), not aggregated |
+| `partial_buckets` | int | buckets clipped by a session open or close; a coarse run REFUSES one, so a sealed run records 0 |
+
+A `resolution` other than `1m` also changes what the rest of the manifest says: the execution
+policy's `bar_seconds` (and `roll_execution_grid_seconds`) is 60 x the resolution, the marks are
+one row per coarse bar, and the `approximations` list gains the resampling note and the causal-roll
+note (a causal roll executes at the first coarse-bar open at or after the first joint one-minute
+print, delayed by up to one coarse bar).
+
+### `batch.json` (C5a)
+
+`crucible futures batch` writes `<artifacts>/<BAT-ID>/batch.json` (`BATCH_SCHEMA_VERSION` = 1,
+keys sorted, LF) and prints the same object with `--json`. `BAT-` + 16 hex digits is the SHA-256 of
+the base config's canonical JSON and the ORDERED candidate list, so the same submission is the same
+batch.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `schema_version` | int | `1` |
+| `kind` | string | `futures_batch` |
+| `batch_id` | string | `BAT-<16 hex>` (also the directory name) |
+| `family` | string | the base config's trial family (shared by every candidate) |
+| `base_config_hash` | string | the base config's canonical hash (the candidates' configs hash differently) |
+| `fidelity` | object | the base config's fidelity block (above) |
+| `candidates` | array | one row per submitted candidate, in SUBMISSION order (below) |
+| `submitted` | int | number of submitted candidates |
+| `distinct_runs` | int | number of distinct run ids among them (the trials this batch records) |
+| `verdict` | object | the null verdict and its `not_assessed` reason (ADR-0097, above) |
+| `ordering` | string | the note that the list is the submission's order and is never ranked |
+
+A candidate row: `position` (0-based submission index), `name`, `status` (`computed` | `cached`),
+`run_id` (`FUT-`), `artifact_id` (`ART-`), `structure_id` (`DSX-`), `parameterization_id` (`DSP-`)
+and `metrics`: exactly `net_pnl_usd`, `total_costs_usd`, `fills`, `max_intraday_drawdown_usd` and
+`min_equity_usd`, each `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`.
+`status: cached` means the run was reused: another candidate of this batch has the same
+`parameterization_id` after canonicalization and binding, or its sealed run directory already
+existed and verified. A cached row reports the same `run_id`/`artifact_id`/`metrics` as the run it
+reuses.
+
+**The C5 boundary.** Everything a batch reports is descriptive: totals, counts and a conservative
+drawdown, with null intervals and a null verdict. No Sharpe, IC, PSR, DSR, p-value, confidence
+interval or ranking by a statistic appears here; **descriptive only; Sharpe, IC, CIs and
+statistical assessment begin in C6**.
 
 ## Known gaps
 

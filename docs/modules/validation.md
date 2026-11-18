@@ -93,6 +93,18 @@ bootstrap CIs, contamination flagging.
   runner.py::_finalize_experiment`, which `run_experiment_parallel` calls
   serially in the parent process — worker processes never construct a
   `DuckDBTrialRegistry` at all.
+- **Submissions (C5a, ADR-0100)**: the additive table
+  `submissions(batch_id, position, family, experiment_id, structure_id, parameterization_id,
+  candidate_name, status)` with `PRIMARY KEY (batch_id, position)`, written by
+  `crucible futures batch` (ADR-0100). `record_submission(...)` inserts with
+  `ON CONFLICT (batch_id, position) DO NOTHING`, so re-running a batch neither duplicates a
+  submission nor rewrites the status first recorded; `submissions(batch_id=None, family=None)`
+  returns `SubmissionRecord`s in `(batch_id, position)` order (submission order, never a metric's);
+  `submission_count(family)` counts a family's submissions across batches. The `trials` table is
+  UNCHANGED (one row per distinct `experiment_id`), so a batch's three candidates with one
+  duplicate are 3 submissions and 2 trials. **How submissions count toward `total_trials` is
+  decided in C6**, not here: until then the table is the complete record of what was submitted and
+  the trial count stays what DSR reads.
 
 ## Implementations (`crucible/validation/dsr.py`, `pbo.py`)
 - `deflated_sharpe_ratio(returns, trial_sharpes) -> DsrResult` — PSR
@@ -312,3 +324,5 @@ implement `Splitter`. All stochastic components take an explicit
 - DSR's `N` is the number of trials recorded in the family; the registry cannot know about trials
   run elsewhere, so the correction is a lower bound on the true search (the one-step result says
   so in `validation.trial_count_scope`, ADR-0070). No effective-independent-trials estimate.
+- The `submissions` table is recorded but nothing reads it yet: C6 decides whether (and how) a
+  submission counts toward `total_trials`, and no statistic uses it.

@@ -40,6 +40,7 @@ RUN_KEYS = {
     "trial_count",
     "root",
     "window",
+    "fidelity",
     "run_dir",
     "datasets",
     "approximations",

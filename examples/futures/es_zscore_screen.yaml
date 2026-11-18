@@ -1,0 +1,37 @@
+# The SCREEN base of the z-score example: the same ES run read at 15-minute bars with the cost
+# model reduced to commission and fees (`fidelity: {preset: screen}`), for the first cheap pass over
+# many expressions (see `es_batch_screen.yaml`, which runs three of them on this base).
+#
+#   uv run crucible futures check --config examples/futures/es_zscore_screen.yaml
+#   uv run crucible futures run --config examples/futures/es_zscore_screen.yaml \
+#       --store data/processed --artifacts experiments
+#
+# `preset: screen` = resolution 15m + cost_detail commission_only (FIDELITY_PRESETS, version 1).
+# Both are recorded in the manifest's `fidelity` block, and the reduced cost model is listed in its
+# `approximations`: a screen run is OPTIMISTIC about the cost of trading (spread and slippage are
+# not charged), so a candidate that survives a screen must be re-run at `standard` (5m, full costs)
+# or `full` (1m, full costs) before anything is believed. The bars are a CAUSAL aggregate of the
+# stored one-minute series: a 15m bucket never spans the maintenance break or a session boundary,
+# and it is knowable when its last one-minute constituent is.
+#
+# The family is its own (`examples-es-zscore-screen`): a run's recorded trial carries the return
+# frequency of its marks (ADR-0071), and 15-minute marks are not poolable with 1-minute ones, so a
+# family holds one fidelity level.
+kind: futures_run
+run:
+  name: es-zscore-screen-15m
+  family: examples-es-zscore-screen
+root: ES
+window:
+  start: 2024-03-04
+  end: 2024-03-28
+strategy:
+  expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(ts_zscore(close, $n) > 2, -1, 0))
+contracts: 1
+capital: "50000"
+costs:
+  commission: "2.00"
+fidelity:
+  preset: screen
+session:
+  flat_by_close: true

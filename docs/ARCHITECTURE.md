@@ -130,7 +130,8 @@ crucible/
                available_at), ParquetDataStore + build_dataset (deterministic writes +
                manifests), StorePITAccessor (the information barrier; LookaheadError),
                calendars, the quality battery, TableUniverseProvider, null-test transforms,
-               importers/ (spec-driven CSV/Parquet import for `crucible data build`, ADR-0052)
+               importers/ (spec-driven CSV/Parquet import for `crucible data build`, ADR-0052),
+               resample.py (causal 5m/15m resampling of a continuous series, ADR-0100)
   strategy/    Strategy/StatefulStrategy/Context Protocols, BacktestContext, MultiStrategy
   orders/      state machine + validate_transition (I7), InMemoryOrderManager
   execution/   models.py (spreads, latency, slippage/impact, commissions, MarketStats),
@@ -147,7 +148,8 @@ crucible/
   vectorized/  the shift-disciplined Level 0/1 engine
   experiments/ ExperimentConfig + canonical hash/yaml, run_experiment (quality gate -> engine ->
                artifacts), artifacts.py (artifact schemas, schema_version, load_experiment),
-               scenario fan-out, sweeps, perturbation, null tests, promotion, vectorized runner
+               scenario fan-out, sweeps, perturbation, null tests, promotion, vectorized runner,
+               futures_config/run/artifacts/signals/document + futures_batch (ADR-0095/0100)
   live/        DataFeed/Broker Protocols, ReplayDataFeed, PaperBroker/PaperRuntime, SimulatedVenue,
                VenueDataFeed, VenueExecution, LiveRuntime (behind `live.enabled`)
   strategy_spec/ declarative strategy specs (YAML/JSON) compiled to a vectorized SignalFunction
