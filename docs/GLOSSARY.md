@@ -304,6 +304,18 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
 - **walk-forward** — validation scheme that trains on a period, evaluates
   on the period immediately after, and slides forward; anchored (expanding
   train) or rolling (fixed-width train).
+- **futures fold** — one train/test pair of a futures walk-forward (ADR-0101): fold k trains on the
+  base window's trade dates before its test window (`rolling`: the N immediately before;
+  `anchored`: every date from the first one) and tests on the M dates that follow. Test windows are
+  contiguous and never overlap; a trailing remainder shorter than M is not evaluated and is
+  reported as `unused_trade_dates`.
+- **terminal exit** — the cost a walk-forward fold pays for ending flat (ADR-0101): the contracts
+  open at the fold's last test bar times one side of the full per-contract cost (fees, half the
+  spread and slippage ticks), booked on the fold's last trade date. Pessimistic by design, so no
+  fold closes an open position for free and no position is carried into the next fold.
+- **signal warm-up (futures)** — the `window.warmup_trade_dates` Globex trade dates immediately
+  before a futures run's window that the run READS only to compute the signal and then drops: no
+  fill, mark, ledger row, position or roll comes from them (ADR-0101).
 - **session boundary** — the point after the last event of a timestamp was
   fully handled (dispatched, callbacks flushed, marked); where `run_until`
   returns and `checkpoint` is legal (ADR-0041).

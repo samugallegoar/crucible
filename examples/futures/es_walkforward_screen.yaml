@@ -1,0 +1,56 @@
+# A WALK-FORWARD of three z-score candidates on ONE base config (C5b, ADR-0101), at the base's
+# screen fidelity (15m bars, commission-only costs).
+#
+#   uv run crucible futures walkforward --config examples/futures/es_walkforward_screen.yaml \
+#       --store data/processed --artifacts experiments
+#
+# The base is `es_walkforward_base.yaml`: the z-score screen of `es_zscore_screen.yaml` over six
+# months (2024-01-02 .. 2024-06-28) instead of four weeks, because a walk-forward needs enough
+# trade dates to cut folds from. `es_zscore_screen.yaml` stays the four-week batch base.
+#
+# How the folds are cut (ADR-0101 decision 2): the base window's Globex trade dates that have
+# on-schedule bars, in order. Fold k TRAINS on the 20 dates immediately before its test window
+# (`scheme: rolling`) and TESTS on the next 10, so the test windows are contiguous and never
+# overlap. A trailing remainder shorter than 10 dates is not evaluated; it is listed as
+# `unused_trade_dates`. Fewer than one complete fold is refused.
+#
+# `warmup_trade_dates: 5` is what makes the folds comparable: each run READS the 5 Globex trade
+# dates before its window only to compute the signal, then drops them, so the first test bars
+# decide with real history instead of starting flat and the simulated window stays exactly the
+# fold's. The run refuses a warm-up that does not cover the expression's own window (240 bars for
+# `$n = 240`), which is why 5 dates at 15m (about 460 bars) is the setting here.
+#
+# Selection happens INSIDE the training window only: a candidate is eligible when its training run
+# respects every constraint, and the eligible one with the largest training net P&L is selected
+# (a tie goes to the earlier submission). With no eligible candidate the fold is evaluated FLAT
+# (zero P&L, zero costs, status `no_eligible_candidate`) rather than skipped. The selected
+# candidate then runs on the fold's test window alone, and the fold is charged a terminal exit -
+# the contracts open at its last bar times one side of the full cost - so every fold starts and
+# ends flat at a known, pessimistic price.
+#
+# `max_intraday_drawdown_usd` is REQUIRED: a selection with no drawdown ceiling could pick a size
+# the account could not carry. It is exact money, so it is written as a string. `min_equity_usd`,
+# `max_fills` and `max_time_in_market` are optional and unset here.
+#
+# What the walk-forward reports is the CONCATENATED out-of-sample series only (`oos` and
+# `oos_daily.parquet`). The training numbers are kept for audit under `in_sample_audit`, each
+# marked `in_sample: true`, and are never presented as out-of-sample. Every metric is descriptive
+# with null confidence intervals and the verdict is null (`not_assessed`): C5 reports no Sharpe, no
+# IC, no PSR/DSR, no p-value, no interval and no claim of edge (ADR-0095, ADR-0097, ADR-0101).
+kind: futures_walkforward
+base: es_walkforward_base.yaml
+candidates:
+  - name: z60
+    expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(ts_zscore(close, $n) > 2, -1, 0))
+  - name: z120
+    expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(ts_zscore(close, $n) > 2, -1, 0))
+    params: {n: 120}
+  - name: z240
+    expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(ts_zscore(close, $n) > 2, -1, 0))
+    params: {n: 240}
+train_trade_dates: 20
+test_trade_dates: 10
+scheme: rolling
+warmup_trade_dates: 5
+constraints:
+  max_intraday_drawdown_usd: "5000"

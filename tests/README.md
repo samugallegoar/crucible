@@ -139,6 +139,12 @@ A coarser reading of a series is an accessor too: `test_resample_poisoned_future
 cutoff, its `available_at` and the targets decided at it are unchanged when every one-minute bar
 after the cutoff is poisoned or removed.
 
+A walk-forward (ADR-0101) is a boundary too, so
+`test_futures_walkforward_poisoned_future.py` pins both sides of it: poisoning every bar after a
+fold's TRAINING end leaves that fold's selection and its training audit unchanged, and poisoning
+every bar after a fold's TEST window end leaves that fold's OOS rows unchanged (its own test window
+is what decides them).
+
 ## 7. The other matrices
 
 - **Resume equivalence (I13)** — a new stateful component or strategy joins

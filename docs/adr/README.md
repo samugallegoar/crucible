@@ -127,5 +127,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0098](0098-dsl-evaluation-and-compilation.md) | DSL evaluation semantics, availability, the CompiledSignal, and expressions in the futures run | accepted | Streams and windows |
 | [0099](0099-dsl-cross-section-similarity-live.md) | Cross-sectional rank, structural similarity, and the incremental evaluator with parity | accepted | `cs_rank` |
 | [0100](0100-futures-fidelity-and-batch.md) | Futures fidelity levels (causal session-bounded resampling, cost detail) and batch evaluation | accepted | Resampling (`crucible.data.resample.resample_session_bars`) |
+| [0101](0101-futures-walk-forward.md) | Futures walk-forward with constrained in-sample selection and concatenated out-of-sample evaluation | accepted | Signal warm-up (`window.warmup_trade_dates`, integer, default 0) |
 
 <!-- END GENERATED: adr-index -->

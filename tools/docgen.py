@@ -749,6 +749,7 @@ SCHEMA_CONSTANTS: tuple[tuple[str, str], ...] = (
     ("crucible.experiments.futures_artifacts", "FUTURES_DAILY_SCHEMA"),
     ("crucible.experiments.futures_artifacts", "FUTURES_FILLS_SCHEMA"),
     ("crucible.experiments.futures_artifacts", "FUTURES_ROLLS_SCHEMA"),
+    ("crucible.experiments.futures_walkforward", "OOS_DAILY_SCHEMA"),
 )
 
 
@@ -818,6 +819,9 @@ def _artifact_blocks() -> dict[str, str]:
         ),
         "artifact-futures-rolls": schema_table(
             "crucible.experiments.futures_artifacts", "FUTURES_ROLLS_SCHEMA"
+        ),
+        "artifact-futures-walkforward-oos": schema_table(
+            "crucible.experiments.futures_walkforward", "OOS_DAILY_SCHEMA"
         ),
         "artifact-manifest": (
             f"Current `schema_version`: **{SCHEMA_VERSION}**.\n\n"

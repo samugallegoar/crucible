@@ -8,6 +8,45 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C5b: futures walk-forward with constrained in-sample selection and concatenated OOS (ADR-0101)
+- **C5 stays descriptive.** No Sharpe, IC, PSR, DSR, p-values, confidence intervals or statistical
+  edge claims are added. Every metric keeps `assessment: "descriptive"` with null intervals, and
+  the verdict stays `not_assessed`. C6 is the first stage that may introduce them.
+- **Signal warm-up** (`window.warmup_trade_dates`, default 0).
+  - The run reads the N Globex trade dates before `window.start` to compute the signal only. The
+    warm-up produces no fill, mark, ledger row, position or roll.
+  - A warm-up that does not cover the expression's warm-up bars is refused.
+  - The manifest gains an additive `warmup` block.
+  - With 0, every output is unchanged.
+- **Walk-forward** (`crucible futures walkforward --config FILE`, the MCP tool
+  `crucible_futures_walkforward` and `crucible schema --kind futures-walkforward`).
+  - Folds are counted in trade dates, `rolling` or `anchored`. Test windows are contiguous and
+    never overlap; a remainder is reported as `unused_trade_dates`.
+  - Every candidate runs on the training window under the base config; only the strategy changes.
+  - A candidate is eligible only if its training run meets every constraint:
+    `max_intraday_drawdown_usd` (required), and optionally `min_equity_usd`, `max_fills` and
+    `max_time_in_market`.
+  - The selection is the largest training net P&L among the eligible candidates, with ties going
+    to the earliest submission.
+  - A fold with no eligible candidate is evaluated flat, with status `no_eligible_candidate`.
+  - The selected candidate runs on the following test window only.
+  - A position open at a test window's last bar is charged one side of the run's per-contract cost
+    (`terminal_exit_cost_usd`). Every fold therefore starts and ends flat.
+- **Outputs.** `walkforward.json` (`WFA-<16 hex>`, schema_version 1) and `oos_daily.parquet`.
+  - The `oos` summary is computed only from the concatenated test-window series. A fold's OOS P&L
+    is its marked P&L minus its terminal exit cost.
+  - `window_stability` lists each fold's OOS P&L and counts folds that are positive, negative or
+    flat.
+  - Training results are kept under `in_sample_audit`, each marked `in_sample: true`, and never
+    under `oos`.
+  - Every training candidate is recorded in `submissions`, with the walk-forward id as the batch id.
+- **Compatibility: every futures run id changes again.** `FuturesWindow` gained
+  `warmup_trade_dates`, and the config hash dumps defaults. Results at warm-up 0 do not change.
+- **Example.** `examples/futures/es_walkforward_screen.yaml` covers ES from January to June 2024 at
+  15m with commission-only costs: 3 candidates, train 20 and test 10 trade dates, warm-up 5. It
+  produces 10 folds, two of them with no eligible candidate. Its base sets
+  `allow_unverified_sessions`, because the 2024-01-15 early close has no verified final bar.
+
 ### Fathom C5a: futures fidelity levels and batch evaluation (ADR-0100)
 - **C5 stays descriptive.** No Sharpe, IC, PSR, DSR, p-values, confidence intervals or statistical
   edge claims are added. Every metric keeps `assessment: "descriptive"` with null intervals, and
