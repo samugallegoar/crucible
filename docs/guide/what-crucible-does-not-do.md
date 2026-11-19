@@ -45,9 +45,16 @@ when every statistical guard passes.
   then waits for the first coarse bar open at which both contracts have a one-minute bar (at most
   one bar of delay, recorded as an approximation). `fidelity: {cost_detail: commission_only}` is a
   screen: it is optimistic about the cost of trading and says so in the run's approximations.
-- A futures batch (`crucible futures batch`) reports every candidate descriptively — net P&L,
-  costs, fills, the conservative intraday drawdown, the minimum equity — with null intervals, and
-  ranks nothing. Sharpe, IC, confidence intervals and any statistical comparison begin in C6.
+- A futures batch (`crucible futures batch`) reports every candidate's descriptive metrics (net P&L,
+  costs, fills, the conservative intraday drawdown, the minimum equity) AND, since C6a, its
+  run's statistics (per-period and annualized Sharpe, mean daily return, PSR, DSR, IC) with their
+  intervals and reasons — and it still ranks nothing. A futures run gives no VERDICT: robustness
+  and prop-firm rules are C7, so `verdict_level` is null with `robustness_not_assessed`.
+- The futures statistics answer "is this distinguishable from the search that produced it?", not
+  "will it make money?": DSR counts the distinct candidates in the family's trial registry (not the
+  effective number of independent trials, ADR-0104), a submission is an event and not a trial, and
+  the IC is a single-root time-series one (no cross-sectional IC, and none at all for a spec or
+  Python strategy).
 - No fundamentals, news, filings or alternative data.
 - Survivorship: a ticker you ask for today exists today. A test of a rule on today's index
   constituents over the past is flattered by the companies that were dropped; Crucible does not

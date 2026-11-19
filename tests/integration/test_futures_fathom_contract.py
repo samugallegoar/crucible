@@ -53,17 +53,22 @@ def _assert_the_fathom_contract(
     assert verdict["verdict_level"] is None
     assert verdict["verdict_reason"]["code"] in VERDICT_REASON_CODES
     assert verdict["verdict_reason"]["message"] == NOT_ASSESSED_MESSAGE
-    # every metric is descriptive and carries no interval
+    # a descriptive metric carries no interval, an inferential one says how it was made
     assert doc["metrics"]
     for metric in doc["metrics"].values():
-        assert metric["assessment"] == "descriptive"
-        assert metric["ci_low"] is None
-        assert metric["ci_high"] is None
+        if metric["assessment"] == "descriptive":
+            assert metric["ci_low"] is None
+            assert metric["ci_high"] is None
+        else:
+            assert metric["assessment"] == "inferential"
+    # C6a: the statistics are reported, with their conventions and trial counts, and no verdict
+    statistics = doc["statistics"]
+    assert statistics["annualization"] == {"periods_per_year": 252, "convention": "sqrt"}
+    assert statistics["bootstrap"]["rng"] == "numpy.random.PCG64"
+    assert statistics["trials"]["total_trials"] >= 1
+    assert str(statistics["candidate_id"]).startswith("CND-")
     # the schema is the one `crucible schema --kind futures-run-document` prints
     assert FuturesRunDocument.model_validate(doc)
-    assert not [
-        key for key in _keys(doc) if any(term in key.lower() for term in RECORDED_STATISTICS)
-    ]
     # the artifact root is the home's experiments folder, and nothing landed in the cwd
     run_dir = Path(doc["run_dir"])
     assert run_dir.parent == (home / "experiments").resolve()

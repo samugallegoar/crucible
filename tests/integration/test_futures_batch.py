@@ -3,7 +3,7 @@
 The store is the synthetic ES store of ``tests/integration/test_futures_run_artifact.py`` (two
 Globex trade dates, one contract switch). What is under test here is the batch's contract: one run
 per DISTINCT parameterization, every submitted candidate preserved, the document in submission
-order with descriptive metrics only, no ranking and no verdict, and the CLI/MCP plumbing.
+order with the run's metrics and statistics, no ranking and no verdict, and the CLI/MCP plumbing.
 
 ``-m bench`` runs the shipped example ``examples/futures/es_batch_screen.yaml`` against the real
 datasets of ``docs/data/glbx-futures-1m.md`` (skipped when missing), and checks the 15-minute
@@ -51,7 +51,9 @@ CANDIDATE_KEYS = {
     "artifact_id",
     "structure_id",
     "parameterization_id",
+    "candidate_id",
     "metrics",
+    "statistics",
 }
 DOCUMENT_KEYS = {
     "schema_version",
@@ -63,10 +65,19 @@ DOCUMENT_KEYS = {
     "candidates",
     "submitted",
     "distinct_runs",
+    "trials",
     "verdict",
     "ordering",
 }
 Z60 = "if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(max(ts_zscore(close, $n), 2) > 2, -1, 0))"
+STATISTICS = (
+    "sharpe_per_period",
+    "sharpe_annualized",
+    "mean_daily_return",
+    "psr",
+    "dsr",
+    "ic_mean",
+)
 Z60_SWAPPED = (
     "if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(max(2, ts_zscore(close, $n)) > 2, -1, 0))"
 )
@@ -162,18 +173,30 @@ def test_three_candidates_with_a_duplicate_compute_two_runs(store: Path, tmp_pat
         metrics = entry["metrics"]
         assert tuple(metrics) == CANDIDATE_METRICS
         for name, metric in metrics.items():
-            assert set(metric) == {"value", "ci_low", "ci_high", "assessment", "unit"}
+            assert {"value", "ci_low", "ci_high", "assessment", "unit"} <= set(metric)
             assert metric["assessment"] == "descriptive"
             assert metric["ci_low"] is None
             assert metric["ci_high"] is None
             assert metric["unit"] == units[name]
             assert isinstance(metric["value"], float)
+        # since C6a every candidate also reports its run's statistics, copied from the run
+        assert tuple(entry["statistics"]) == STATISTICS
+        assert str(entry["candidate_id"]).startswith("CND-")
+        assert entry["statistics"]["sharpe_annualized"]["assessment"] == "inferential"
+        assert entry["statistics"]["psr"]["assessment"] == "inferential"
 
-    # the null verdict carries ADR-0097's reason: absence of assessment is not "no edge"
+    # the family's counts: 3 submitted candidates, 2 computed runs, 2 distinct candidates
+    assert document["trials"] == {
+        "submission_count": 3,
+        "unique_candidate_count": 2,
+        "total_trials": 2,
+    }
+
+    # the null verdict carries ADR-0103's reason: statistics are reported, no verdict is
     verdict = document["verdict"]
     assert verdict["verdict_level"] is None
-    assert verdict["verdict_reason"]["code"] == "not_assessed"
-    assert verdict["verdict_reason"]["assessed_by"] == ["C6", "C7"]
+    assert verdict["verdict_reason"]["code"] == "robustness_not_assessed"
+    assert verdict["verdict_reason"]["assessed_by"] == ["C7"]
 
     # the file on disk is the document, written deterministically
     on_disk = json.loads((result.batch_dir / "batch.json").read_text(encoding="utf-8"))
@@ -394,6 +417,8 @@ def test_the_shipped_screen_batch_runs_on_the_real_store(tmp_path: Path) -> None
             assert metric["assessment"] == "descriptive"
             assert metric["ci_low"] is None
             assert metric["ci_high"] is None
+        for metric in entry["statistics"].values():
+            assert metric["assessment"] == "inferential"
 
     # the 15-minute series the run read: no output bar mixes two trade dates, so none spans the
     # maintenance break (a bucket never crosses a session boundary)

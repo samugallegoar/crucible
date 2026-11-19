@@ -11,11 +11,12 @@ session's scheduled bounds, the day's flows and its opening and closing marks.
 ``check_daily_ledger`` asserts the identities that make it a ledger rather than a summary (the
 runner refuses to write a broken one: ``InvariantViolation``, naming the trade date).
 
-``metrics.json`` is deliberately descriptive: totals, counts and a conservative drawdown, each in
-the artifact contract's ``{"value", "ci_low", "ci_high"}`` shape with the intervals null. There is
-no Sharpe, no return ratio and no claim of edge here; those need trial counts, a deflated
-benchmark and a realism level in the same report (AGENTS.md §9), which the run manifest and the
-trial registry carry, not this file.
+``build_metrics`` is deliberately DESCRIPTIVE: totals, counts and a conservative drawdown, each in
+the artifact contract's ``{"value", "ci_low", "ci_high"}`` shape with the intervals null. The run
+adds the inferential statistics of ADR-0103 (per-period and annualized Sharpe, mean daily return,
+PSR, DSR, IC — with their intervals and reasons) in ``futures_run`` from ``futures_stats``, and
+records the trial counts, the bootstrap recipe and the realism assumptions in the manifest, so a
+Sharpe never travels without what AGENTS.md §9 requires beside it. Nothing here computes one.
 
 Units: prices in the series' points, money in USD as exact ``Decimal(38, 6)`` (``MONEY``), times
 UTC int64 nanoseconds, ``trade_date`` a Globex trade date (a day label, never an instant).

@@ -37,6 +37,14 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   data window overlaps a prior optimization-mode trial in the same family;
   a hit means the "held-out" evaluation may have leaked into the search
   that chose it (ADR-0021).
+- **candidate / candidate id (`CND-`)** — what a futures evaluation IS, independent of the window
+  it was run on (ADR-0103 decision 4): the strategy (a DSL expression by its canonical structure
+  and parameterization ids, a spec by its canonical dump, an entrypoint by its path and
+  parameters), the size, the root and the four datasets, the execution and costs sections, the
+  fidelity and the session and signal sections. The id excludes the window, the warm-up, the run
+  name, the family, the capital and the statistics, so one candidate run on four windows is one
+  candidate and `total_trials` counts it once. `candidate_id(config)` in
+  `experiments/futures_config.py`.
 - **CPCV** — Combinatorial Purged Cross-Validation; the priority-1
   splitter (`CombinatorialPurgedCVSplitter`) used for walk-forward-style
   purged cross-validation. Not the same technique as CSCV, below.
@@ -166,7 +174,14 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
 - **PSR** — Probabilistic Sharpe Ratio: the probability the true Sharpe
   exceeds a stated benchmark, given the estimate's sampling noise (skew/
   kurtosis-corrected). DSR is PSR evaluated against a specific,
-  trial-count-aware benchmark (ADR-0015).
+  trial-count-aware benchmark (ADR-0015). On the futures path (ADR-0103) it is computed on the
+  UNANNUALIZED per-period Sharpe of the daily returns on the fixed capital; the annualized Sharpe
+  is presentation only.
+- **PSR on fixed-capital returns / daily return (futures)** — the daily number every futures
+  statistic stands on (ADR-0103): `(closing_equity_t - closing_equity_{t-1}) / initial_capital`,
+  with the previous trade date's closing equity and the capital on the first date. It does NOT
+  compound; a trade date with on-schedule bars and no position is a real zero return, and a trade
+  date with no valid bars is `missing_sessions` — excluded and counted, never zero-filled.
 - **purge** — training rows removed from both edges of a test block whose
   label window could overlap it; distinct from `embargo`'s one-directional
   trim (ADR-0013).
@@ -261,8 +276,15 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   is not on the `m`-minute grid; an empty bucket produces no bar (ADR-0100).
 - **submission / batch** — a batch is one base futures config plus an ordered list of candidate
   expressions (only the strategy and run name change per candidate); every candidate is a
-  *submission* (recorded in the registry's `submissions` table), while a *trial* is one distinct
-  run. How submissions count toward `total_trials` is decided in C6 (ADR-0100).
+  *submission* (recorded in the registry's `submissions` table with its `CND-` id), while a *trial*
+  is one distinct run. `submission_count` counts submission EVENTS (every submitted candidate plus
+  every standalone run), `unique_candidate_count` the distinct candidates, and `total_trials` what
+  a deflation is divided by — in C6a the same as the unique count (ADR-0100, ADR-0103).
+- **information coefficient (IC)** — on the futures path, the per-trade-date Spearman correlation
+  between a DSL expression's score at each decision bar and the close-to-close return over
+  `statistics.ic_horizon_bars` bars of the signal series; a pair crossing a session edge or a
+  contract change is dropped, and a trade date with fewer than 10 valid pairs gives no IC. Only a
+  DSL expression has one (a spec or Python strategy records null with a reason). ADR-0103.
 - **Globex trade date / session regime** — the CME trading day a minute belongs to: its session
   opens the evening before (Monday's on Sunday 17:00; before 2012-11-19 at 15:30) and closes on
   the trade date. A regime is the regular week of a period (open, close, daily breaks); holidays
@@ -298,7 +320,8 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   a touch (equal) never fills at Levels 0–2 (pessimism; queue models arrive
   at Level 3).
 - **trial / trial family** — one parameter evaluation / the scope in which
-  trials are counted for DSR and PBO (ADR-0008).
+  trials are counted for DSR and PBO (ADR-0008). A futures family's `total_trials` counts distinct
+  candidates (`CND-`), not run directories (ADR-0103).
 - **universe(t)** — the set of tradeable symbols at time t, including names
   later delisted (no survivorship bias).
 - **walk-forward** — validation scheme that trains on a period, evaluates

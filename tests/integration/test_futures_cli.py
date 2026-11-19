@@ -48,9 +48,10 @@ RUN_KEYS = {
     "verdict",
     "headline",
     "metrics",
+    "statistics",
     "files",
 }
-"""The futures-run document's keys (ADR-0097); its own shape is tested in
+"""The futures-run document's keys (ADR-0097, ADR-0103); its own shape is tested in
 tests/unit/test_futures_document.py."""
 
 
@@ -266,4 +267,13 @@ def test_the_example_runs_on_the_real_datasets(
 
     metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
     assert metrics
-    assert not [name for name in metrics if "sharpe" in name]
+    # since C6a a run reports inferential statistics next to its descriptive totals
+    for name in (
+        "sharpe_per_period",
+        "sharpe_annualized",
+        "mean_daily_return",
+        "psr",
+        "dsr",
+        "ic_mean",
+    ):
+        assert name in metrics

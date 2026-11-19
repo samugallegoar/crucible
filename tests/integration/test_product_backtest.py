@@ -195,7 +195,10 @@ def test_the_same_request_gives_byte_identical_artifacts(home: Home, tmp_path: P
     ).read_bytes()
 
 
-def test_a_second_variant_is_a_second_trial(home: Home) -> None:
+def test_a_second_variant_is_a_second_trial(home: Home, doc: dict[str, object]) -> None:
+    # request `doc` first: this test needs the reference variant to have been recorded, and
+    # depending on another test having run earlier made it fail when selected alone
+    assert doc["validation"]["trial_count"] >= 1  # type: ignore[index]
     other = load_spec(
         {
             "entry": {"long": "sma(5) crosses_above sma(15)"},

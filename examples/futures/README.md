@@ -28,7 +28,9 @@ expression with `$n` bound to 60 and to 120: one structure id, two parameterizat
 `z60-swapped`, a deliberate duplicate of `z60` written with `max(2, x)` instead of `max(x, 2)`. The
 duplicate canonicalizes to the same expression, so the batch computes TWO runs and reports the third
 candidate as `cached` with the first one's run and artifact ids. Every submitted candidate is
-recorded in the trial registry's `submissions` table, while `trials` keeps one row per distinct run.
+recorded in the trial registry's `submissions` table (with its `CND-` candidate id), while `trials`
+keeps one row per distinct run; `batch.json` reports the family's `submission_count`,
+`unique_candidate_count` and `total_trials`, and each candidate row carries its run's statistics.
 
 ```bash
 # validate the config without touching any data
@@ -66,13 +68,18 @@ training net P&L (a tie goes to the earlier submission) and evaluates it on the 
 charging a terminal exit so the fold ends flat. The artifact is
 `experiments/<WFA-ID>/walkforward.json` plus `oos_daily.parquet`, the concatenated out-of-sample
 chain; the training runs are kept inside `in_sample_audit`, marked `in_sample: true`, never as
-out-of-sample. No Sharpe, no interval, no claim of edge.
+out-of-sample. Since C6a `oos.statistics` reports the per-period and annualized Sharpe, the mean
+daily return, PSR and DSR of the CONCATENATED chain (deflated by the family's `total_trials`), and
+each training run's own statistics stay under the audit; the verdict is still null with
+`robustness_not_assessed` (robustness is C7).
 
 `futures run` prints the run id, the artifact id, the trial family and its count, the window, bars,
-fills, the final balance and equity, every approximation the run recorded and the run directory;
-`--json` prints the same as one document (`kind: futures_run`). A second identical run is refused
-unless `--overwrite`, and a reproduction keeps the same artifact id and does not grow the family's
-trial count.
+fills, the final balance and equity, every approximation the run recorded, its statistics
+(per-period and annualized Sharpe, mean daily return, PSR, DSR, mean IC with their intervals and
+reasons) and the run directory; `--json` prints the same as one document (`kind: futures_run`). A
+second identical run is refused unless `--overwrite`, and a reproduction keeps the same artifact id,
+does not grow the family's trial count and reproduces every interval byte for byte (the bootstrap
+seed is a function of the run id).
 
 ## Comparing the two examples with each other (C5c)
 
@@ -104,8 +111,9 @@ their keys are equal and the value is Pearson's correlation of their daily USD P
 trade dates they both have (a missing date is excluded, never a zero).
 
 What the comparison never does: it does not rank the pool by the value, does not attach an
-interval to it, and does not call a high correlation evidence of anything. The verdict is
-`not_assessed`; Sharpe, IC and any statistical assessment begin in C6.
+interval to it, and does not call a high correlation evidence of anything. It also repeats each
+member's OWN recorded statistics (Sharpe, PSR, DSR) without recomputing them. The verdict is
+`robustness_not_assessed`: inferential statistics from C6a, no edge verdict before C7.
 
 ## What it needs
 

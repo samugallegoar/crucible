@@ -106,6 +106,7 @@ DOCUMENT_KEYS = {
     "in_sample_audit",
     "unused_trade_dates",
     "terminal_exit",
+    "trials",
     "verdict",
 }
 FOLD_KEYS = {"fold", "status", "train", "test", "selection", "selection_reason", "oos"}
@@ -528,21 +529,53 @@ def test_the_terminal_exit_is_one_side_of_the_full_cost(
 def test_no_training_result_is_presented_as_out_of_sample(
     default_run: tuple[Path, dict[str, object], Path],
 ) -> None:
-    _, document, _ = default_run
-    # the OOS block carries the five descriptive series metrics and nothing else
-    assert set(document["oos"]) == {
+    _, document, artifacts = default_run
+    # the OOS block carries the five descriptive series metrics plus the C6a statistics block,
+    # which is computed on THIS series alone (ADR-0103 decision 7)
+    oos = document["oos"]
+    assert set(oos) == {
         "net_pnl_usd",
         "total_costs_usd",
         "fills",
         "trade_dates",
         "max_drawdown_usd",
         "folds_with_selection",
+        "statistics",
     }
-    for entry in document["oos"].values():
-        assert set(entry) == {"value", "ci_low", "ci_high", "assessment", "unit"}
+    for name in (
+        "net_pnl_usd",
+        "total_costs_usd",
+        "fills",
+        "trade_dates",
+        "max_drawdown_usd",
+        "folds_with_selection",
+    ):
+        entry = oos[name]
+        assert set(entry) == {
+            "value",
+            "ci_low",
+            "ci_high",
+            "assessment",
+            "unit",
+        }
         assert entry["assessment"] == "descriptive"
         assert entry["ci_low"] is None
         assert entry["ci_high"] is None
+    statistics = oos["statistics"]
+    assert set(statistics["metrics"]) == {
+        "sharpe_per_period",
+        "sharpe_annualized",
+        "mean_daily_return",
+        "psr",
+        "dsr",
+        "ic_mean",
+    }
+    assert statistics["trials"]["total_trials"] >= 1
+    # the OOS series is four trade dates of a walk-forward chain, so the per-period Sharpe is
+    # computed from it and NOT from any training run
+    daily = pl.read_parquet(artifacts / str(document["wf_id"]) / "oos_daily.parquet")
+    assert daily.height == 4
+    assert statistics["observations"] == daily.height
     # every training run is in the audit, marked in_sample, and nowhere else
     audit = document["in_sample_audit"]
     assert audit["note"].startswith("training results")
@@ -552,10 +585,23 @@ def test_no_training_result_is_presented_as_out_of_sample(
             assert entry["run_id"] not in json.dumps(
                 {k: v for k, v in document.items() if k != "in_sample_audit"}
             )
-            for metric in entry["metrics"].values():
-                assert metric["assessment"] == "descriptive"
-                assert metric["ci_low"] is None
-                assert metric["ci_high"] is None
+            for name, metric in entry["metrics"].items():
+                assert metric["assessment"] in ("descriptive", "inferential")
+                if metric["assessment"] == "descriptive":
+                    assert metric["ci_low"] is None
+                    assert metric["ci_high"] is None
+                if name not in entry["statistics"]:
+                    # everything outside the C6a statistics is a descriptive total or count
+                    assert metric["assessment"] == "descriptive"
+            # the training run's own statistics are audit-only, marked in_sample like the rest
+            assert set(entry["statistics"]) == {
+                "sharpe_per_period",
+                "sharpe_annualized",
+                "mean_daily_return",
+                "psr",
+                "dsr",
+                "ic_mean",
+            }
     # the fold's OOS block names only test-run data
     for fold in document["folds"]:
         assert set(fold["oos"]) == {
@@ -569,18 +615,22 @@ def test_no_training_result_is_presented_as_out_of_sample(
             "open_contracts_at_last_bar",
             "time_in_market",
         }
-    # no statistic anywhere outside the verdict's own not-assessed message
-    text = json.dumps({key: value for key, value in document.items() if key != "verdict"}).lower()
-    for word in ("sharpe", "psr", "dsr", "p_value", "p-value", "confidence_interval", "ic_"):
-        assert word not in text
+    # the statistics live in exactly two places: oos.statistics (the OOS series) and the training
+    # audit. Nothing else in the document states a statistic.
+    outside = {
+        key: value for key, value in document.items() if key not in ("verdict", "in_sample_audit")
+    }
+    assert "sharpe_per_period" in outside["oos"]["statistics"]["metrics"]
+    for key in ("window_stability", "folds", "unused_trade_dates"):
+        assert "sharpe" not in json.dumps(outside[key]).lower()
 
 
 def test_the_verdict_is_not_assessed(default_run: tuple[Path, dict[str, object], Path]) -> None:
     _, document, _ = default_run
     verdict = document["verdict"]
     assert verdict["verdict_level"] is None
-    assert verdict["verdict_reason"]["code"] == "not_assessed"
-    assert verdict["verdict_reason"]["assessed_by"] == ["C6", "C7"]
+    assert verdict["verdict_reason"]["code"] == "robustness_not_assessed"
+    assert verdict["verdict_reason"]["assessed_by"] == ["C7"]
     assert verdict["vocabulary"] == ["some_evidence", "not_conclusive", "no_edge_detected"]
 
 
@@ -642,7 +692,8 @@ def test_re_running_is_idempotent(
     assert statuses == {"cached"}
     # nothing was submitted or counted twice
     assert registry.submissions(batch_id=second.wf_id) == submissions_before
-    assert registry.submission_count(FAMILY) == 8
+    # 8 training submissions + the 2 test runs (standalone runs, ADR-0103 decision 4)
+    assert registry.submission_count(FAMILY) == 8 + 2 == 10
     assert registry.trial_count(FAMILY) == trials_before == 10
 
 

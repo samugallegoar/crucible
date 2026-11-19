@@ -56,6 +56,7 @@ DOCUMENT_KEYS = {
     "verdict",
     "headline",
     "metrics",
+    "statistics",
     "files",
 }
 """The document's keys, exactly (an added or renamed key fails the test with the schema)."""
@@ -108,10 +109,15 @@ def _keys(value: object) -> list[str]:
     return []
 
 
-def _statistical(key: str) -> bool:
-    lowered = key.lower()
-    terms = ("sharpe", "psr", "dsr", "p_value", "p-value", "bootstrap", "permutation")
-    return any(term in lowered for term in terms)
+STATISTICS = (
+    "sharpe_per_period",
+    "sharpe_annualized",
+    "mean_daily_return",
+    "psr",
+    "dsr",
+    "ic_mean",
+)
+"""The statistics C6a adds (ADR-0103): inferential metrics next to the descriptive totals."""
 
 
 # ---------------------------------------------------------------------------------------------
@@ -165,23 +171,26 @@ def test_the_document_has_the_versioned_shape(run_dir: Path) -> None:
 
 def test_the_verdict_is_null_with_a_reason(run_dir: Path) -> None:
     verdict = cast("dict[str, object]", futures_document(run_dir)["verdict"])
-    assert verdict["verdict_level"] is None  # no level: the run is not assessed
+    assert verdict["verdict_level"] is None  # no level: robustness is C7
     assert verdict["vocabulary"] == list(VERDICT_VOCABULARY)
     reason = cast("dict[str, object]", verdict["verdict_reason"])
-    assert reason["code"] == "not_assessed"
+    assert reason["code"] == "robustness_not_assessed"
     assert reason["code"] in VERDICT_REASON_CODES
-    assert reason["assessed_by"] == REASON_ASSESSED_BY["not_assessed"] == ["C6", "C7"]
+    assert reason["assessed_by"] == REASON_ASSESSED_BY["robustness_not_assessed"] == ["C7"]
     assert reason["message"] == NOT_ASSESSED_MESSAGE
-    assert "absence of assessment, not evidence of no edge" in str(reason["message"])
-    # the hard restriction: no key of the document names a statistical result (ADR-0095)
-    assert not [key for key in _keys(futures_document(run_dir)) if _statistical(key)]
+    assert "absence of a verdict, not evidence of no edge" in str(reason["message"])
+    # the restriction of ADR-0103 decision 8: statistics are reported, no VERDICT is assigned --
+    # the vocabulary lists the levels a later milestone may set, and this document sets none
+    document = futures_document(run_dir)
+    assert "verdict_level" in _keys(document)
+    assert verdict["verdict_level"] is None
 
 
 def test_a_verdict_level_without_its_reason_is_refused() -> None:
     assert verdict_document().verdict_level is None  # the futures verdict: null + a reason
-    assert verdict_document(None, "not_assessed").verdict_level is None
+    assert verdict_document(None, "robustness_not_assessed").verdict_level is None
     with pytest.raises(InvariantViolation, match="reason code"):
-        verdict_document("not_conclusive", "not_assessed")  # a level next to a reason
+        verdict_document("not_conclusive", "robustness_not_assessed")  # a level next to a reason
     with pytest.raises(InvariantViolation, match="reason code"):
         verdict_document(None, None)  # a null level with nothing to explain it
     with pytest.raises(InvariantViolation, match="verdict level"):
@@ -196,24 +205,55 @@ def test_a_verdict_level_without_its_reason_is_refused() -> None:
 # the metrics: descriptive, no intervals
 
 
-def test_every_metric_is_descriptive_with_null_intervals(run_dir: Path) -> None:
+def test_the_metrics_are_descriptive_or_inferential_and_carry_their_units(run_dir: Path) -> None:
     metrics = cast("dict[str, dict[str, object]]", futures_document(run_dir)["metrics"])
     assert set(metrics) == set(METRIC_UNITS)
     for name, metric in metrics.items():
-        assert metric["assessment"] == "descriptive"
         assert metric["assessment"] in METRIC_ASSESSMENTS
-        assert metric["ci_low"] is None
-        assert metric["ci_high"] is None
         assert metric["unit"] == METRIC_UNITS[name]
         assert metric["unit"] in METRIC_UNIT_NAMES
-        assert isinstance(metric["value"], float)
+        if metric["assessment"] == "descriptive":
+            # a descriptive metric states what the run did: no interval, always a number
+            assert metric["ci_low"] is None
+            assert metric["ci_high"] is None
+            assert isinstance(metric["value"], float)
+        else:
+            assert name in STATISTICS
+        if metric["value"] is None:  # a null is a missing number and says why
+            assert metric["reason"]
     for name in HEADLINE_METRICS:
         assert name in metrics
+    # this synthetic run is two trade dates long: the intervals exist as fields but the series is
+    # too short to compute a Sharpe, so the statistics are null WITH reasons rather than zeros
+    assert metrics["sharpe_per_period"]["value"] is None
+    assert "at least 3 daily return observations" in str(metrics["sharpe_per_period"]["reason"])
 
 
 def test_a_descriptive_metric_may_not_claim_an_interval() -> None:
     with pytest.raises(InvariantViolation, match="descriptive but carries an interval"):
         metric_document("net_pnl_usd", {"value": 1.0, "ci_low": -1.0, "ci_high": 3.0})
+    # an inferential metric may carry one, and a null one must say why it is missing
+    intervaled = metric_document(
+        "sharpe_per_period",
+        {
+            "value": 1.0,
+            "ci_low": 0.5,
+            "ci_high": 1.5,
+            "assessment": "inferential",
+            "unit": "sharpe",
+        },
+    )
+    assert (intervaled.ci_low, intervaled.ci_high) == (0.5, 1.5)
+    with pytest.raises(InvariantViolation, match="null with no reason"):
+        metric_document(
+            "dsr",
+            {"value": None, "ci_low": None, "ci_high": None, "assessment": "inferential"},
+        )
+    with pytest.raises(InvariantViolation, match="half an interval"):
+        metric_document(
+            "psr",
+            {"value": 0.5, "ci_low": 0.4, "ci_high": None, "assessment": "inferential"},
+        )
     with pytest.raises(InvariantViolation, match="no unit"):
         metric_document("not_a_metric", {"value": 1.0, "ci_low": None, "ci_high": None})
     with pytest.raises(InvariantViolation, match="not a number"):
@@ -285,8 +325,10 @@ def test_the_registered_schema_describes_the_document(run_dir: Path) -> None:
     )
     assert metric["assessment"]["enum"] == list(METRIC_ASSESSMENTS)
     assert metric["unit"]["enum"] == list(METRIC_UNIT_NAMES)
-    assert metric["ci_low"]["type"] == "null"
-    assert metric["ci_high"]["type"] == "null"
+    # a metric's interval is a number or null: descriptive metrics are refused a number by
+    # metric_document, and an inferential one carries the bootstrap interval
+    assert {variant.get("type") for variant in metric["ci_low"]["anyOf"]} == {"number", "null"}
+    assert {variant.get("type") for variant in metric["ci_high"]["anyOf"]} == {"number", "null"}
     assert definitions["FuturesMetricDocument"]["additionalProperties"] is False
 
     # the document is exactly what the schema's model accepts (jsonschema is not a dependency,

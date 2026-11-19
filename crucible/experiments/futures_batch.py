@@ -15,14 +15,17 @@ Two identities keep the batch honest:
 Trial accounting: a batch SUBMITS every candidate and COMPUTES one run per distinct
 parameterization (canonicalized and bound, ``crucible.dsl.identity.parameterization_id``). The
 submissions are recorded in the registry's ``submissions`` table (one row per submitted candidate,
-in submission order) and each computed run registers its trial as any futures run does; C6 decides
-how submissions count toward ``total_trials``.
+in submission order, with its ``CND-`` candidate id) and each computed run registers its trial as
+any futures run does. Since C6a (ADR-0103) ``batch.json`` reports the family's
+``submission_count``, ``unique_candidate_count`` and ``total_trials``: a submission is an EVENT, a
+candidate is counted once however many windows or folds it was evaluated on, and ``total_trials``
+is what a deflation divides by.
 
-Hard restriction (ADR-0095, owner): nothing here computes or ranks a statistic. Each candidate
-reports the five descriptive metrics of its run (totals and counts) with null intervals, and
-``verdict`` is null with the ``not_assessed`` reason of ADR-0097. Candidates are listed in
-SUBMISSION order, never sorted by a metric; no Sharpe, IC, PSR, DSR, p-value, confidence interval
-or edge claim appears anywhere in this module.
+What this module does NOT do (ADR-0095, ADR-0103): compute or rank a statistic. Each candidate
+reports the five descriptive metrics of its run (totals and counts) with null intervals, PLUS the
+``statistics`` block its run recorded (C6a) copied verbatim, and ``verdict`` is null with the
+``robustness_not_assessed`` reason of ADR-0097 (robustness is C7). Candidates are listed in
+SUBMISSION order, never sorted by a metric.
 
 Units: money in USD (as ``metrics.json`` reports it), counts in contracts and fills, times UTC ns.
 """
@@ -43,12 +46,14 @@ from crucible.core.errors import ConfigurationError, ExperimentError
 from crucible.experiments.artifact_id import read_seal, verify_artifact
 from crucible.experiments.futures_config import (
     FuturesRunConfig,
+    candidate_id,
     futures_config_hash,
     load_futures_config,
     parse_futures_config,
 )
 from crucible.experiments.futures_document import metric_document, verdict_document
 from crucible.experiments.futures_run import futures_run_id, run_futures
+from crucible.experiments.futures_stats import STATISTICS_METRICS
 from crucible.validation.trial_registry import DuckDBTrialRegistry
 
 BATCH_SCHEMA_VERSION = 1
@@ -290,9 +295,17 @@ def _candidate_document(
     artifact_id: str,
     structure_id: str,
     parameterization_id: str,
+    candidate_identity: str,
     metrics: dict[str, object],
 ) -> dict[str, object]:
-    """One candidate's row of ``batch.json``: its identity and its descriptive metrics."""
+    """One candidate's row of ``batch.json``: its identity, its descriptive metrics and its
+    statistics (C6a).
+
+    ``statistics`` is the run's own C6a report (per-period and annualized Sharpe, mean daily
+    return, PSR, DSR, mean IC with their intervals and reasons), copied from its sealed
+    ``metrics.json``: a cached candidate has no numbers of its own and reports the ones the run it
+    reuses computed. Nothing here ranks the candidates (AGENTS.md §9).
+    """
     reported: dict[str, object] = {}
     for name in CANDIDATE_METRICS:
         entry = metrics.get(name)
@@ -303,6 +316,17 @@ def _candidate_document(
             )
             raise ExperimentError(msg).at(key=name)
         reported[name] = metric_document(name, entry).model_dump(mode="json")
+    statistics: dict[str, object] = {}
+    for name in STATISTICS_METRICS:
+        entry = metrics.get(name)
+        if not isinstance(entry, dict):
+            msg = (
+                f"the run {run_id} (candidate {candidate.name!r}) has no {name!r} statistic: since "
+                "C6a every futures run reports its statistics in metrics.json (ADR-0103). Re-run "
+                "the candidate with `crucible futures run`"
+            )
+            raise ExperimentError(msg).at(key=name)
+        statistics[name] = metric_document(name, entry).model_dump(mode="json")
     return {
         "position": candidate.position,
         "name": candidate.name,
@@ -311,7 +335,9 @@ def _candidate_document(
         "artifact_id": artifact_id,
         "structure_id": structure_id,
         "parameterization_id": parameterization_id,
+        "candidate_id": candidate_identity,
         "metrics": reported,
+        "statistics": statistics,
     }
 
 
@@ -377,6 +403,7 @@ def run_futures_batch(
             compiled.parameterization_id,
             candidate.name,
             status,
+            candidate_id=candidate_id(config),
         )
         rows.append(
             _candidate_document(
@@ -386,6 +413,7 @@ def run_futures_batch(
                 artifact_id,
                 compiled.structure_id,
                 compiled.parameterization_id,
+                candidate_id(config),
                 metrics,
             )
         )
@@ -399,6 +427,11 @@ def run_futures_batch(
         "candidates": rows,
         "submitted": len(rows),
         "distinct_runs": len({str(row["run_id"]) for row in rows}),
+        "trials": {
+            "submission_count": registry.submission_count(base.run.family),
+            "unique_candidate_count": registry.unique_candidate_count(base.run.family),
+            "total_trials": registry.total_trials(base.run.family),
+        },
         "verdict": verdict_document().model_dump(mode="json"),
         "ordering": RANKING_NOTE,
     }

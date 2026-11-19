@@ -26,12 +26,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, get_args
+from typing import TYPE_CHECKING, Literal, cast, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from crucible.core.errors import ExperimentError, InvariantViolation
 from crucible.experiments.artifact_id import verify_artifact
+from crucible.experiments.futures_stats import STATISTICS_METRIC_UNITS
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -40,19 +41,21 @@ FUTURES_DOCUMENT_SCHEMA_VERSION = 1
 """Version of the futures-run document (``docs/COMPATIBILITY.md`` §3: adding a key is additive;
 removing, renaming or changing the meaning of one bumps this)."""
 
-VERDICT_REASON_CODES = ("not_assessed",)
-"""The closed set of verdict reason codes. ``not_assessed`` is the only one today: a futures run
-has no statistical assessment before milestones C6 and C7 (ADR-0095, ADR-0097)."""
+VERDICT_REASON_CODES = ("robustness_not_assessed",)
+"""The closed set of verdict reason codes. ``robustness_not_assessed`` is the only one: since C6a
+(ADR-0103 decision 8) a futures artifact reports inferential STATISTICS, but no VERDICT --
+robustness and prop-firm rules are C7, so nothing states an edge yet."""
 
 VERDICT_VOCABULARY = ("some_evidence", "not_conclusive", "no_edge_detected")
 """The verdict levels of ``crucible/product/summary.py``, in the order the product uses them. A
 futures run assigns none of them today; the document lists them so a reader knows the vocabulary
 without importing Crucible."""
 
-METRIC_ASSESSMENTS = ("descriptive", "statistical")
-"""The closed set of metric assessments. Every futures metric is ``descriptive``: it states what
-the run did (totals, counts, a conservative drawdown), never whether the result is distinguishable
-from chance."""
+METRIC_ASSESSMENTS = ("descriptive", "inferential", "statistical")
+"""The closed set of metric assessments. ``descriptive``: a total, a count or a conservative
+drawdown, with null intervals. ``inferential``: a statistic whose uncertainty the artifact reports
+(an interval, or a closed-form probability such as PSR/DSR), which is what C6a added. Both are
+statements about the run's own numbers; neither is a verdict."""
 
 METRIC_UNITS = {
     "final_balance_usd": "usd",
@@ -65,20 +68,43 @@ METRIC_UNITS = {
     "rolls": "count",
     "trade_dates": "trade_dates",
     "max_contracts": "contracts",
+    **STATISTICS_METRIC_UNITS,
 }
-"""The unit of every metric a futures run reports. A metric name outside this table refuses the
-document: a value with no unit cannot be read (``docs/CONVENTIONS.md`` §2)."""
+"""The unit of every metric a futures run reports: the descriptive totals and counts of ADR-0095
+and the statistics of ADR-0103 (per-period and annualized Sharpe, mean daily return, PSR, DSR, mean
+IC). A metric name outside this table refuses the document: a value with no unit cannot be read
+(``docs/CONVENTIONS.md`` §2)."""
 
-METRIC_UNIT_NAMES = ("usd", "count", "contracts", "trade_dates")
-"""The closed set of metric units."""
+METRIC_UNIT_NAMES = (
+    "usd",
+    "count",
+    "contracts",
+    "trade_dates",
+    "sharpe",
+    "fraction",
+    "probability",
+    "correlation",
+)
+"""The closed set of metric units. ``sharpe`` is dimensionless (per period or annualized),
+``fraction`` a per-trade-date return on the fixed capital, ``probability`` a number in [0, 1] and
+``correlation`` a correlation coefficient."""
 
-VerdictReasonCode = Literal["not_assessed"]
+VerdictReasonCode = Literal["robustness_not_assessed"]
 """The type of a verdict reason code: the members of ``VERDICT_REASON_CODES``."""
 
-MetricAssessment = Literal["descriptive", "statistical"]
+MetricAssessment = Literal["descriptive", "inferential", "statistical"]
 """The type of a metric assessment: the members of ``METRIC_ASSESSMENTS``."""
 
-MetricUnit = Literal["usd", "count", "contracts", "trade_dates"]
+MetricUnit = Literal[
+    "usd",
+    "count",
+    "contracts",
+    "trade_dates",
+    "sharpe",
+    "fraction",
+    "probability",
+    "correlation",
+]
 """The type of a metric unit: the members of ``METRIC_UNIT_NAMES``."""
 
 VerdictLevel = Literal["some_evidence", "not_conclusive", "no_edge_detected"]
@@ -113,24 +139,31 @@ HEADLINE_METRICS = (
     "max_intraday_drawdown_usd",
     "total_costs_usd",
     "fills",
+    "sharpe_annualized",
+    "psr",
+    "dsr",
 )
 """The headline metrics, in reading order: what the run made, what it ended at, its worst equity,
-its conservative worst drawdown, what it cost and how many fills it took."""
+its conservative worst drawdown, what it cost, how many fills it took, and (C6a) the annualized
+Sharpe with PSR and DSR. A headline statistic with a null value is a missing number with a reason
+in its own metric entry, and AGENTS.md §9 is why they belong here: a Sharpe is never reported
+without its trial count, its interval and its deflation in the same document."""
 
 NOT_ASSESSED_MESSAGE = (
-    "Crucible has not assessed this futures run statistically: no Sharpe, deflated Sharpe, "
-    "confidence interval or null test is computed for futures runs before milestones C6 "
-    "(multiple-testing statistics) and C7 (robustness and prop-firm rules). This is an absence "
-    "of assessment, not evidence of no edge."
+    "Crucible reports inferential statistics for this futures artifact (per-period Sharpe, PSR, "
+    "DSR, bootstrap intervals and, for a DSL expression, the information coefficient) but no "
+    "VERDICT: robustness and prop-firm rules are milestone C7, so no document states an edge. "
+    "This is an absence of a verdict, not evidence of no edge."
 )
-"""Recorded verbatim in every futures document (ADR-0095, ADR-0097). The sentence matters: a null
-verdict must never be read as "no edge detected"."""
+"""Recorded verbatim in every futures document (ADR-0097, ADR-0103 decision 8). The sentence
+matters: a null verdict must never be read as \"no edge detected\"."""
 
-REASON_MESSAGES = {"not_assessed": NOT_ASSESSED_MESSAGE}
+REASON_MESSAGES = {"robustness_not_assessed": NOT_ASSESSED_MESSAGE}
 """The message of each verdict reason code (one per member of ``VERDICT_REASON_CODES``)."""
 
-REASON_ASSESSED_BY = {"not_assessed": ["C6", "C7"]}
-"""The milestones whose absence leaves this reason standing."""
+REASON_ASSESSED_BY = {"robustness_not_assessed": ["C7"]}
+"""The milestones whose absence leaves this reason standing: C6a reports the statistics, C7 owns
+the robustness assessment a verdict would need."""
 
 
 _closed_sets_agree()
@@ -200,16 +233,100 @@ class FuturesVerdictDocument(_Document):
 class FuturesMetricDocument(_Document):
     """One metric: its value, its unit and its assessment.
 
-    Every futures metric is ``descriptive``, and a descriptive metric carries no interval: both CI
-    fields are null. The document has no ``statistical`` metric today (that needs C6/C7); a later
-    milestone that adds one bumps ``FUTURES_DOCUMENT_SCHEMA_VERSION`` and widens these fields.
+    ``descriptive`` metrics (totals, counts, a conservative drawdown) carry no interval: both CI
+    fields are null, and a non-null one refuses the document. ``inferential`` metrics (C6a,
+    ADR-0103) may carry the bootstrap interval of the statistic, and PSR/DSR -- probabilities
+    computed in closed form -- carry none but say so in ``method``. ``value`` may be null for an
+    inferential metric that could not be computed, and then ``reason`` says why: a null is a
+    missing number, never a zero.
     """
 
-    value: float
-    ci_low: None
-    ci_high: None
+    value: float | None
+    ci_low: float | None
+    ci_high: float | None
     assessment: MetricAssessment
     unit: MetricUnit
+    method: str | None = None
+    reason: str | None = None
+
+
+class FuturesAnnualizationDocument(_Document):
+    """How the annualized Sharpe is derived from the per-period one (presentation only)."""
+
+    periods_per_year: int
+    convention: Literal["sqrt"]
+
+
+class FuturesBootstrapDocument(_Document):
+    """The bootstrap recipe, recorded so the intervals can be reproduced or challenged.
+
+    ``seeds`` maps a statistic name to its own 64-bit seed; ``seed`` repeats the primary one (the
+    per-period Sharpe's), which is the number a reader needs most often.
+    """
+
+    rng: str
+    seed: int
+    block_length_policy: str
+    block_length: int
+    resamples: int
+    confidence: float
+    observations: int
+    seeds: dict[str, int]
+
+
+class FuturesTrialsDocument(_Document):
+    """The family's trial counts (ADR-0103 decision 4): what a DSR is deflated against.
+
+    ``submission_count`` counts submission EVENTS (a batch or walk-forward candidate, or a
+    standalone run), ``unique_candidate_count`` the distinct ``CND-`` candidates, and
+    ``total_trials`` the number the deflation used -- in C6a the same as the unique count, kept as
+    its own field because C6b and C6c may add to it. ``trials_with_sharpe`` is how many candidates
+    contributed the cross-trial dispersion the DSR needs.
+    """
+
+    submission_count: int
+    unique_candidate_count: int
+    total_trials: int
+    trials_with_sharpe: int
+
+
+class FuturesICMonthDocument(_Document):
+    """One calendar month of information coefficients: the mean and how many trade dates fed it."""
+
+    ic_mean: float
+    ic_days: int
+
+
+class FuturesICDocument(_Document):
+    """The information coefficient record: horizon, days, pairs, per-month means and a reason.
+
+    ``reason`` is set exactly when no IC was computed (a spec or Python strategy, or a window with
+    too few valid pairs); it is never a zero IC.
+    """
+
+    horizon_bars: int
+    days: int
+    pairs: int
+    by_month: dict[str, FuturesICMonthDocument]
+    reason: str | None = None
+
+
+class FuturesStatisticsDocument(_Document):
+    """The run's statistics block (C6a, ADR-0103): conventions, intervals, counts and the IC.
+
+    Null for a manifest written before C6a (adding the key is additive, so
+    ``FUTURES_DOCUMENT_SCHEMA_VERSION`` stays 1).
+    """
+
+    returns_convention: str
+    annualization: FuturesAnnualizationDocument
+    bootstrap: FuturesBootstrapDocument
+    trials: FuturesTrialsDocument
+    candidate_id: str
+    observations: int
+    missing_sessions: int
+    zero_position_days: int
+    ic: FuturesICDocument
 
 
 class FuturesRunDocument(_Document):
@@ -234,17 +351,19 @@ class FuturesRunDocument(_Document):
     verdict: FuturesVerdictDocument
     headline: list[str]
     metrics: dict[str, FuturesMetricDocument]
+    statistics: FuturesStatisticsDocument | None
     files: list[str]
 
 
 def verdict_document(
-    verdict_level: str | None = None, reason_code: str | None = "not_assessed"
+    verdict_level: str | None = None, reason_code: str | None = "robustness_not_assessed"
 ) -> FuturesVerdictDocument:
-    """The verdict of a futures run: a null level with a reason (ADR-0097).
+    """The verdict of a futures artifact: a null level with a reason (ADR-0097, ADR-0103).
 
     ``verdict_level`` is null EXACTLY when ``reason_code`` is present; a level from
     ``VERDICT_VOCABULARY`` without a reason, or a null level without one, is refused because
-    neither can be read honestly. No futures run sets a level today.
+    neither can be read honestly. No futures artifact sets a level: C6a reports statistics, C7 owns
+    the robustness assessment a verdict would need.
     """
     if verdict_level is not None and verdict_level not in VERDICT_VOCABULARY:
         msg = (
@@ -262,9 +381,10 @@ def verdict_document(
         raise InvariantViolation(msg)
     if verdict_level is not None:
         msg = (
-            f"the futures path assigns no verdict level (got {verdict_level!r}): no futures run "
-            "is assessed statistically before milestones C6 and C7 (ADR-0095, ADR-0097). A "
-            "milestone that assesses one extends this function and bumps "
+            "the futures path assigns no verdict level (got "
+            f"{verdict_level!r}): a futures artifact reports statistics but no verdict before "
+            "milestone C7 (ADR-0095, ADR-0097, "
+            "ADR-0103). A milestone that assesses one extends this function and bumps "
             "FUTURES_DOCUMENT_SCHEMA_VERSION"
         )
         raise InvariantViolation(msg)
@@ -289,12 +409,19 @@ def verdict_document(
 
 
 def metric_document(name: str, entry: Mapping[str, object]) -> FuturesMetricDocument:
-    """One metric of the document: its value, its unit and its descriptive assessment.
+    """One metric of the document: its value, its unit and its assessment.
 
-    ``entry`` is the metric as ``metrics.json`` writes it (``value``, ``ci_low``, ``ci_high``).
-    Every futures metric is descriptive (the run computes no statistical metric), and a
-    descriptive metric must have null intervals: a non-null one is refused rather than shipped,
-    because it would read as a claim the run never made.
+    ``entry`` is the metric as ``metrics.json`` writes it (``value``, ``ci_low``, ``ci_high``, and
+    for an inferential metric also ``assessment``, ``unit``, ``method``/``reason``). The rules the
+    constructor enforces, because a wrong one would read as a claim the artifact never made:
+
+    - the name must have a unit in ``METRIC_UNITS`` (a value with no unit cannot be read);
+    - a metric whose entry carries no ``assessment`` is ``descriptive``;
+    - a ``descriptive`` metric must have null intervals;
+    - a metric that carries an interval must be ``inferential`` (an interval on a descriptive
+      number is a statistical claim in disguise);
+    - the entry's ``unit``, when given, must be the table's;
+    - the value must be a number, or null with a ``reason`` for an inferential metric.
     """
     unit = METRIC_UNITS.get(name)
     if unit is None:
@@ -303,28 +430,67 @@ def metric_document(name: str, entry: Mapping[str, object]) -> FuturesMetricDocu
             "be read. Add it to METRIC_UNITS (and to the document's schema) before shipping it"
         )
         raise InvariantViolation(msg)
-    assessment: MetricAssessment = "descriptive"
-    if entry.get("ci_low") is not None or entry.get("ci_high") is not None:
+    declared = entry.get("assessment", "descriptive")
+    if declared not in METRIC_ASSESSMENTS:
         msg = (
-            f"metric {name!r} is descriptive but carries an interval "
-            f"(ci_low={entry.get('ci_low')!r}, ci_high={entry.get('ci_high')!r}): a descriptive "
-            "metric states what the run did, and an interval here would read as a statistical "
-            "claim the futures path does not make (AGENTS.md §9, ADR-0095)"
+            f"metric {name!r} declares assessment={declared!r}; the closed set is "
+            f"{list(METRIC_ASSESSMENTS)}"
+        )
+        raise InvariantViolation(msg)
+    assessment = cast("MetricAssessment", declared)
+    given_unit = entry.get("unit")
+    if given_unit is not None and given_unit != unit:
+        msg = (
+            f"metric {name!r} declares unit={given_unit!r} but the document's table says {unit!r}: "
+            "one of the two is wrong, and a value with the wrong unit is worse than no value"
+        )
+        raise InvariantViolation(msg)
+    ci_low = entry.get("ci_low")
+    ci_high = entry.get("ci_high")
+    if assessment == "descriptive" and (ci_low is not None or ci_high is not None):
+        msg = (
+            f"metric {name!r} is descriptive but carries an interval (ci_low={ci_low!r}, "
+            f"ci_high={ci_high!r}): a descriptive metric states what the run did, and an interval "
+            "here would read as a statistical claim the metric does not make (AGENTS.md §9)"
+        )
+        raise InvariantViolation(msg)
+    if assessment != "descriptive" and (ci_low is None) != (ci_high is None):
+        msg = (
+            f"metric {name!r} has half an interval (ci_low={ci_low!r}, ci_high={ci_high!r}): an "
+            "interval is both ends or neither"
         )
         raise InvariantViolation(msg)
     value = entry.get("value")
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    reason = entry.get("reason")
+    if value is None:
+        if assessment == "descriptive":
+            msg = (
+                f"metric {name!r} is descriptive with a null value: a descriptive metric is a "
+                "number the run measured, so it cannot be missing. Only an inferential metric "
+                "may be null, with a reason"
+            )
+            raise InvariantViolation(msg)
+        if not isinstance(reason, str) or not reason:
+            msg = (
+                f"metric {name!r} is null with no reason: a missing number must say why it is "
+                "missing, or a reader cannot tell it from a zero (ADR-0103)"
+            )
+            raise InvariantViolation(msg)
+    elif isinstance(value, bool) or not isinstance(value, int | float):
         msg = (
             f"metric {name!r} has value {value!r}, which is not a number: metrics.json writes "
             "each metric as {'value': <number>, 'ci_low': null, 'ci_high': null}"
         )
         raise InvariantViolation(msg)
+    method = entry.get("method")
     return FuturesMetricDocument(
-        value=float(value),
-        ci_low=None,
-        ci_high=None,
+        value=None if value is None else float(value),
+        ci_low=None if ci_low is None else float(cast("float", ci_low)),
+        ci_high=None if ci_high is None else float(cast("float", ci_high)),
         assessment=assessment,
-        unit=unit,
+        unit=cast("MetricUnit", unit),
+        method=None if method is None else str(method),
+        reason=None if reason is None else str(reason),
     )
 
 
@@ -410,6 +576,33 @@ def _strings(manifest: Mapping[str, object], key: str, where: Path) -> list[str]
     return [str(item) for item in value]
 
 
+def _statistics(manifest: Mapping[str, object], where: Path) -> FuturesStatisticsDocument | None:
+    """The manifest's ``statistics`` block (C6a), or None for a run written before it.
+
+    The block is validated, not passed through: a document that claims a bootstrap seed, a trial
+    count or an IC record describes numbers a reader will try to reproduce, so each field has a
+    type here (``FuturesStatisticsDocument``).
+    """
+    raw = manifest.get("statistics")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        msg = (
+            f"the manifest of {where.name} records statistics={raw!r}: the statistics block is an "
+            "object {returns_convention, annualization, bootstrap, trials, candidate_id, "
+            "observations, missing_sessions, zero_position_days, ic}"
+        )
+        raise ExperimentError(msg).at(path=str(where), key="statistics")
+    try:
+        return FuturesStatisticsDocument.model_validate(raw)
+    except ValueError as exc:
+        msg = (
+            f"the manifest of {where.name} records a statistics block the document cannot read "
+            f"({exc}): re-run the artifact with `crucible futures run` (ADR-0103)"
+        )
+        raise ExperimentError(msg).at(path=str(where), key="statistics") from exc
+
+
 def futures_document(run_dir: Path) -> dict[str, object]:
     """The futures-run document for the sealed run in ``run_dir`` (ADR-0097).
 
@@ -487,6 +680,7 @@ def futures_document(run_dir: Path) -> dict[str, object]:
         verdict=verdict_document(),
         headline=list(HEADLINE_METRICS),
         metrics=metrics,
+        statistics=_statistics(manifest, run_dir),
         files=_strings(manifest, "files", run_dir),
     )
     dumped: dict[str, object] = document.model_dump(mode="json")
@@ -515,6 +709,7 @@ __all__ = [
     "VERDICT_REASON_CODES",
     "VERDICT_VOCABULARY",
     "FuturesRunDocument",
+    "FuturesStatisticsDocument",
     "futures_document",
     "futures_document_json_schema",
     "metric_document",
