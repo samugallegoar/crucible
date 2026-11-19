@@ -45,9 +45,12 @@ artifact id, the trial family and count, the summary and the manifest (with its 
 config hash and the canonical config. `crucible_futures_batch(batch, store=None, home=None,
 artifacts=None, overwrite=False)` (C5a, ADR-0100) runs N DSL expressions on one base futures config
 and returns the batch document (`BAT-` id, the candidates in submission order with their status and
-descriptive metrics, the null verdict). All three are thin `build_argv` + `run_cli` wrappers over
-`crucible futures run|check|batch` (ADR-0066), with absolute paths and the home's experiments folder
-as the default `artifacts`.
+descriptive metrics, the null verdict). `crucible_futures_walkforward(config, store=None,
+home=None, artifacts=None, overwrite=False)` (C5b, ADR-0101) runs a walk-forward and returns its
+document (`WFA-` id, the folds with their selection and out-of-sample run, the concatenated `oos`
+summary, the disjoint `in_sample_audit` and the null verdict). All four are thin `build_argv` +
+`run_cli` wrappers over `crucible futures run|check|batch|walkforward` (ADR-0066), with absolute
+paths and the home's experiments folder as the default `artifacts`.
 
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
 (`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).

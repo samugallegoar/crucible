@@ -7,7 +7,7 @@ options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-path
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
 `data fetch`, `data check`, `data integrity`, `data catalog`, `data list`, `futures run`,
-`futures check`, `futures batch`. Handlers are
+`futures check`, `futures batch`, `futures walkforward`. Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
 stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
@@ -154,6 +154,18 @@ The `crucible` command.
   sealed run already exists, is `cached` and reuses that run; the `--overwrite` flag re-simulates
   instead. The `--home` / `--artifacts` / `--store` precedence is `futures run`'s.
   `schema --kind futures-batch` prints the batch file's JSON Schema.
+- `crucible futures walkforward --config FILE [--store S] [--artifacts DIR | --home DIR]
+  [--overwrite] [--json]` — a walk-forward (`experiments.futures_walkforward`,
+  ADR-0101) on a futures-walkforward file: its base config gives the trade dates the folds are cut
+  from, its candidates are the batch format and its constraints decide eligibility.
+  Each fold trains every candidate on the training window, selects the eligible one with the
+  largest TRAINING net P&L (a tie goes to the earlier submission) and evaluates it on the fold's
+  test window with a costed terminal exit. Writes `<artifacts>/<WFA-ID>/walkforward.json` and
+  `oos_daily.parquet` and prints the document (`--json`) or a fold table (dates, selection, status,
+  each fold's OOS net P&L and terminal exit cost) followed by the OOS totals, the stability counts
+  and the verdict line. A re-run reuses every run it already computed (`cached`) and records no
+  duplicate submission. The `--home` / `--artifacts` / `--store` precedence is `futures run`'s.
+  `schema --kind futures-walkforward` prints the walk-forward file's JSON Schema.
 - `crucible data check --store S --dataset D --calendar C` — quality
   battery; `data list --store S` — datasets with manifest hashes;
   `--skip NAME --skip-reason TEXT` (repeatable) skips named checks with a

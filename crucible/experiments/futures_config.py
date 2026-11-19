@@ -164,10 +164,30 @@ class FuturesDatasets(_FrozenModel):
 
 
 class FuturesWindow(_FrozenModel):
-    """The evaluation window as Globex TRADE DATES, inclusive on both ends."""
+    """The evaluation window as Globex TRADE DATES, inclusive on both ends.
+
+    ``warmup_trade_dates`` lets the run READ the trade dates immediately before ``start`` to
+    compute the signal (ADR-0101 decision 1). Those bars decide the target of the first window bar
+    and nothing else: they produce no fill, no mark, no ledger row, no position and no roll, so the
+    simulated window is exactly ``[start, end]`` whether the warm-up is 0 or 30. The warm-up is
+    past data, so it introduces no lookahead; with ``0`` the run is exactly the one of ADR-0095.
+    """
 
     start: dt.date = Field(description="First trade date whose bars are simulated.")
     end: dt.date = Field(description="Last trade date whose bars are simulated, inclusive.")
+    warmup_trade_dates: int = Field(
+        default=0,
+        ge=0,
+        description="Globex trade dates immediately before start whose bars are read to "
+        "compute the signal: they are dropped before the simulator (no fill, mark, ledger row, "
+        "position or roll), so the simulated window stays [start, end]. A run whose warm-up does "
+        "not cover the expression's own warm-up is refused. With 0 the run is unchanged.",
+    )
+
+    @field_validator("warmup_trade_dates", mode="before")
+    @classmethod
+    def _warmup_is_whole(cls, value: object) -> object:
+        return _no_bool(value, "window.warmup_trade_dates")
 
     @model_validator(mode="after")
     def _ordered(self) -> FuturesWindow:

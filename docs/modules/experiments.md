@@ -29,7 +29,25 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
     (`check_daily_ledger`). It then registers the trial (mandatory) and seals the run
     (`FUT-` run id, `ART-` artifact id). `futures_run_id(config, store_root=)` gives the id a
     config WOULD get without simulating (the batch uses it to reuse a sealed run).
-  - **Interfaces:** `crucible futures run|check|batch` and MCP `crucible_futures_run|check|batch`.
+  - **signal warm-up** (C5b, ADR-0101; `window.warmup_trade_dates`, integer, default 0): the run
+    reads the N Globex trade dates WITH ON-SCHEDULE BARS immediately before `window.start` and
+    computes targets (`futures_targets`: session masks, availability check, DSL evaluation) on the
+    extended series, then DROPS the warm-up rows before the simulator (`_prepare` -> `_subset`). No
+    fill, mark, ledger row, position or roll can come from the warm-up, and the rolls stay filtered
+    by the window; resampling applies to the extended series with the same buckets. A request the
+    dataset cannot honour (fewer prior trade dates than N) is refused (`DataQualityError`), and so
+    is a warm-up that does not cover an expression's own requirement
+    (`CompiledSignal.warmup_bars + 1` bars up to and including the first window bar,
+    `ConfigurationError`); a spec or a `FuturesSignalFunction` declares no warm-up, so for them only
+    the explicit N applies and no bar count is checked. The check applies to a run that ASKED for a
+    warm-up (`N > 0`): with `0` the expression's first bars are decided flat for lack of history,
+    which is the ADR-0095 behaviour a refusal would silently change. The field joins the config
+    hash, so it
+    renames every futures run id; with `0` the extended and window series are the same frame, so the
+    run is exactly the ADR-0095 one. The manifest records it in its `warmup` block:
+    `{trade_dates, first_trade_date, last_trade_date, bars, signal_bars_required}`.
+  - **Interfaces:** `crucible futures run|check|batch|walkforward` and MCP
+    `crucible_futures_run|check|batch|walkforward`.
     The schemas are in `docs/SCHEMAS.md`, and the marking policy is in the manifest.
 - `futures_document.py` — the futures-run document (ADR-0097): `futures_document(run_dir)` builds
   one versioned document (`FUTURES_DOCUMENT_SCHEMA_VERSION`) from the sealed run directory alone
@@ -69,6 +87,46 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   `total_trials`.
   The keys of `batch.json` are in `docs/SCHEMAS.md`; the CLI and MCP surfaces are
   `crucible futures batch` and `crucible_futures_batch`.
+- `futures_walkforward.py` — walk-forward evaluation of N DSL expressions on ONE base config (C5b,
+  ADR-0101): `load_futures_walkforward(path)` (`FuturesWalkForwardFile` = the file's contract and
+  its JSON Schema, `futures_walkforward_json_schema`, `crucible schema --kind
+  futures-walkforward`), `walkforward_id(base, file)` (`WFA-` + the hash of the file, base path
+  excluded, and the base config), `walkforward_trade_dates(config, store_root=)` (the base window's
+  Globex trade dates with on-schedule bars), `walkforward_folds(trade_dates, *, train_trade_dates,
+  test_trade_dates, scheme)` -> `(folds, unused_trade_dates)` and
+  `run_futures_walkforward(walkforward, *, store_root, artifacts_root, overwrite=False)` ->
+  `WalkForwardResult` (`walkforward_dir`, `wf_id`, `document`).
+  - **Folds** (decision 2): fold k tests on trade dates `[N + k*M, N + (k+1)*M)` and trains on the N
+    before it (`rolling`) or on every date from the first one (`anchored`); test windows are
+    contiguous and never overlap, a trailing remainder shorter than M is reported as
+    `unused_trade_dates`, and fewer than one complete fold is refused.
+  - **Per fold**: every candidate runs on the training window with the base config, changing only
+    `strategy`, `run.name` (`<base>/wf/<fold>/train/<name>`) and the window plus its warm-up; a
+    candidate is eligible when its training run satisfies every constraint (required
+    `max_intraday_drawdown_usd`, optional `min_equity_usd`, `max_fills`, `max_time_in_market`), each
+    check recorded as `{constraint, limit, value, ok}`; the selected candidate is the eligible one
+    with the largest training `net_pnl_usd`, a tie going to the earliest submission position; with
+    no eligible candidate the fold is FLAT (`status: no_eligible_candidate`, zero P&L and costs, no
+    run). The selected candidate then runs on the test window (`<base>/wf/<fold>/test/<name>`).
+  - **Terminal exit** (decision 4, `terminal_exit_cost`): the contracts open at the test window's
+    last bar times ONE side of the full per-contract cost from the run's effective
+    `CostSchedule` (fees + half the spread + slippage ticks x tick value; a `commission_only` run
+    charges the fees only), in exact micro-dollars, so every fold starts and ends flat at a known,
+    pessimistic price.
+  - **`oos_daily.parquet`** is the CONCATENATED chain: each fold's `closing_equity_usd` is its run's
+    own daily equity shifted to `base capital + previous folds' net P&L`, the terminal exit is
+    booked as a cost on the fold's last trade date, and a flat fold has one zero row per test trade
+    date. `walkforward.json` (`schema_version` 1) carries the folds, the `oos` summary computed from
+    that frame alone (net, costs, fills, trade dates, max drawdown on the chain, folds with a
+    selection), `window_stability` (each fold's OOS net P&L plus counts of positive/negative/flat
+    folds), `in_sample_audit` (every training run, marked `in_sample: true`) and the null verdict.
+  - **Trials**: every training and test run is a sealed futures run that registers its trial, and
+    each fold's candidates are `submissions` with `batch_id = wf_id` and position
+    `fold * K + candidate`, so re-running is idempotent (every run `cached`, no duplicate
+    submission). Nothing here computes a statistic: every metric is `descriptive` with null
+    intervals and the verdict is `not_assessed` (ADR-0095, ADR-0097, ADR-0101).
+  - **Interfaces:** `crucible futures walkforward` and MCP `crucible_futures_walkforward`; the keys
+    and columns are in `docs/SCHEMAS.md`.
 - `futures_signals.py` — the futures signal bridge (ADR-0094, ADR-0098): `futures_targets` turns a
   `StrategySpec`, a `FuturesSignalFunction` or a compiled DSL `CompiledSignal` into the targets and
   the `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the

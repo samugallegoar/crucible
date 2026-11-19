@@ -1,0 +1,49 @@
+# The BASE of the walk-forward example (`es_walkforward_screen.yaml`): the same ES z-score screen
+# as `es_zscore_screen.yaml`, read at 15-minute bars with the cost model reduced to commission and
+# fees (`fidelity: {preset: screen}`) over SIX MONTHS of Globex trade dates, which is what a
+# walk-forward needs in order to cut several folds.
+#
+#   uv run crucible futures check --config examples/futures/es_walkforward_base.yaml
+#
+# It exists as its own file because a walk-forward takes its fold geometry from the base window:
+# `es_zscore_screen.yaml` covers four weeks (one batch, no folds), this one covers 2024-01-02 ..
+# 2024-06-28 (about 125 trade dates, enough for ten rolling folds of 20 train + 10 test).
+#
+# The family is its own (`examples-es-walkforward`), for the C5a reason: a run's recorded trial
+# carries the return frequency of its marks (ADR-0071), and 15-minute marks are not poolable with
+# 1-minute ones, so a family holds one fidelity level.
+#
+# `preset: screen` = resolution 15m + cost_detail commission_only (FIDELITY_PRESETS, version 1).
+# A screen run is OPTIMISTIC about the cost of trading (spread and slippage are not charged), and
+# the manifest's `approximations` says so: nothing that survives a screen is believed before it is
+# re-run at `standard` (5m, full costs) or `full` (1m, full costs). The bars are a CAUSAL aggregate
+# of the stored one-minute series: a 15m bucket never spans the maintenance break or a session
+# boundary and is knowable when its last one-minute constituent is.
+#
+# The strategy block below is replaced per candidate by the walk-forward file; it is written out so
+# this base is also a valid futures run on its own (`crucible futures run --config <this file>`).
+#
+# `session` deliberately does NOT set `flat_by_close`, unlike the four-week screen base:
+# 2024-01-15 (Martin Luther King Jr. Day) is a CME early close whose schedule the transcribed table
+# does not cover — it is marked unverified, and the session it claims ends with a bar the early
+# close never prints, so a flat-by-close exit could not fill and the run is refused. The example
+# therefore keeps its position across bars and RECORDS the unverified sessions as an approximation
+# (`allow_unverified_sessions: true`), which the manifest's `approximations` states in words.
+kind: futures_run
+run:
+  name: es-walkforward-base-15m
+  family: examples-es-walkforward
+root: ES
+window:
+  start: 2024-01-02
+  end: 2024-06-28
+strategy:
+  expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(ts_zscore(close, $n) > 2, -1, 0))
+contracts: 1
+capital: "50000"
+costs:
+  commission: "2.00"
+fidelity:
+  preset: screen
+session:
+  allow_unverified_sessions: true

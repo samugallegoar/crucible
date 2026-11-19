@@ -392,6 +392,33 @@ def build_parser() -> argparse.ArgumentParser:
         "the same run and artifact ids)",
     )
     _add_json(futures_batch)
+    futures_walkforward = futures_sub.add_parser(
+        "walkforward",
+        help="Train candidates per fold, select inside the training window and concatenate the "
+        "out-of-sample windows (C5b)",
+    )
+    futures_walkforward.add_argument(
+        "--config", required=True, help="Path to a futures-walkforward YAML"
+    )
+    futures_walkforward.add_argument(
+        "--store",
+        default=None,
+        help="Data store root holding the four datasets of the base config's root (default: the "
+        "--home's data folder when --home is given; required otherwise)",
+    )
+    futures_walkforward.add_argument(
+        "--artifacts",
+        default=None,
+        help="Artifact store root (default: experiments/, or the --home's experiments folder)",
+    )
+    _add_home(futures_walkforward)
+    futures_walkforward.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Re-simulate a run whose directory already exists (a reproduction keeps the same "
+        "run and artifact ids)",
+    )
+    _add_json(futures_walkforward)
 
     schema = subparsers.add_parser(
         "schema",
@@ -401,12 +428,19 @@ def build_parser() -> argparse.ArgumentParser:
     schema.add_argument("--out", default=None, help="Write the schema here (default: stdout)")
     schema.add_argument(
         "--kind",
-        choices=["experiment", "strategy-spec", "futures-run", "futures-batch", *OUTPUT_SCHEMAS],
+        choices=[
+            "experiment",
+            "strategy-spec",
+            "futures-run",
+            "futures-batch",
+            "futures-walkforward",
+            *OUTPUT_SCHEMAS,
+        ],
         default="experiment",
         help="which schema: the experiment config, the no-code strategy spec (ADR-0067), the "
-        "futures-run config (ADR-0095), the futures-batch file (C5a), or an output document: run, "
-        "verification, error, manifest (ADR-0084), futures-run-document (the document a sealed "
-        "futures run prints, ADR-0097)",
+        "futures-run config (ADR-0095), the futures-batch file (C5a), the futures-walkforward "
+        "file (C5b), or an output document: run, verification, error, manifest (ADR-0084), "
+        "futures-run-document (the document a sealed futures run prints, ADR-0097)",
     )
 
     data = subparsers.add_parser(
@@ -1264,6 +1298,11 @@ def _cmd_futures(args: argparse.Namespace) -> int:
 
     ``batch`` runs every candidate of a batch file on one base config, writes
     ``<artifacts>/<BAT-ID>/batch.json`` and prints it (``--json``) or a short per-candidate list.
+
+    ``walkforward`` trains every candidate inside each fold's training window, selects the
+    eligible one with the largest training net P&L, evaluates it on the fold's test window and
+    writes ``<artifacts>/<WFA-ID>/`` (``walkforward.json`` + ``oos_daily.parquet``); it prints the
+    document (``--json``) or the fold table.
     """
     import json
 
@@ -1275,6 +1314,8 @@ def _cmd_futures(args: argparse.Namespace) -> int:
 
     if args.futures_command == "batch":
         return _cmd_futures_batch(args)
+    if args.futures_command == "walkforward":
+        return _cmd_futures_walkforward(args)
     config = load_futures_config(Path(args.config))
     if args.futures_command == "check":
         config_hash = futures_config_hash(config)
@@ -1384,6 +1425,83 @@ def _cmd_futures_batch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_futures_walkforward(args: argparse.Namespace) -> int:
+    """``crucible futures walkforward``: constrained in-sample selection, concatenated OOS out.
+
+    ``--json`` prints the walk-forward document itself (``<artifacts>/<WFA-ID>/walkforward.json``),
+    so the CLI and the file cannot drift. The text rendering is a fold table: the dates, the
+    selected candidate and why, and the fold's OOS net P&L and terminal exit cost. Nothing here
+    ranks candidates by a statistic, and no training result is presented as out-of-sample (C5b).
+    """
+    from crucible.experiments.futures_walkforward import run_futures_walkforward
+
+    artifacts_root = _artifacts_root(args)
+    store_root = _store_root(args)
+    result = run_futures_walkforward(
+        Path(args.config),
+        store_root=store_root,
+        artifacts_root=artifacts_root,
+        overwrite=args.overwrite,
+    )
+    if args.json:
+        machine.emit(result.document)
+        return 0
+    document = result.document
+    folds = document["folds"]
+    assert isinstance(folds, list)
+    constraints = document["constraints"]
+    assert isinstance(constraints, dict)
+    oos = document["oos"]
+    assert isinstance(oos, dict)
+    stability = document["window_stability"]
+    assert isinstance(stability, dict)
+    limits = ", ".join(
+        f"{name} {value}" for name, value in sorted(constraints.items()) if value is not None
+    )
+    lines = [
+        f"walk-forward: {result.wf_id}",
+        f"family:       {document['family']}",
+        f"scheme:       {document['scheme']} (train {document['train_trade_dates']}, test "
+        f"{document['test_trade_dates']}, warm-up {document['warmup_trade_dates']} trade dates)",
+        f"constraints:  {limits}",
+        f"folds:        {len(folds)}",
+    ]
+    for entry in folds:
+        assert isinstance(entry, dict)
+        fold_oos = entry["oos"]
+        train = entry["train"]
+        test = entry["test"]
+        assert isinstance(fold_oos, dict)
+        assert isinstance(train, dict)
+        assert isinstance(test, dict)
+        selection = entry["selection"]
+        chosen = "-" if selection is None else str(selection["candidate"])
+        lines.append(
+            f"  {entry['fold']:>2} train {train['start']}..{train['end']} "
+            f"test {test['start']}..{test['end']}  {entry['status']:<21} {chosen:<16} "
+            f"OOS net {fold_oos['net_pnl_usd']['value']} USD, "
+            f"exit {fold_oos['terminal_exit_cost_usd']['value']} USD"
+        )
+    lines.append(
+        f"OOS:          net {oos['net_pnl_usd']['value']} USD, costs "
+        f"{oos['total_costs_usd']['value']} USD, fills {oos['fills']['value']}, "
+        f"max drawdown {oos['max_drawdown_usd']['value']} USD over "
+        f"{oos['trade_dates']['value']} trade date(s)"
+    )
+    lines.append(
+        f"stability:    {stability['folds_positive']} positive, {stability['folds_negative']} "
+        f"negative, {stability['folds_flat']} flat (counts only, no statistic)"
+    )
+    unused = document["unused_trade_dates"]
+    assert isinstance(unused, list)
+    if unused:
+        lines.append(f"unused:       {len(unused)} trade date(s), first {unused[0]}")
+    lines.append(FUTURES_VERDICT_LINE)
+    lines.append(f"walk-forward dir: {result.walkforward_dir}")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
 def _cmd_schema(args: argparse.Namespace) -> int:
     """Prints a JSON Schema: the experiment config, the strategy spec, a futures-run config or a
     futures-batch file."""
@@ -1399,6 +1517,10 @@ def _cmd_schema(args: argparse.Namespace) -> int:
         from crucible.experiments.futures_batch import futures_batch_json_schema
 
         schema = futures_batch_json_schema()
+    elif args.kind == "futures-walkforward":
+        from crucible.experiments.futures_walkforward import futures_walkforward_json_schema
+
+        schema = futures_walkforward_json_schema()
     elif args.kind in OUTPUT_SCHEMAS:
         schema = output_json_schema(args.kind)
     else:

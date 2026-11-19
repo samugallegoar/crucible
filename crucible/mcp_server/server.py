@@ -509,6 +509,40 @@ def build_server() -> MCPServer:
         return await run_cli(build_argv(["futures", "batch"], [], options))
 
     @server.tool()
+    async def crucible_futures_walkforward(
+        config: str,
+        store: str | None = None,
+        home: str | None = None,
+        artifacts: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, object]:
+        """Walk-forward evaluation of N DSL expressions on one futures base config (C5b). The base
+        window's Globex trade dates are cut into folds; each fold trains every candidate on the
+        trade dates before it, keeps the eligible ones (intraday drawdown ceiling required, minimum
+        equity / fill cap / time-in-market cap optional), selects the eligible one with the largest
+        TRAINING net P&L (a tie goes to the earlier submission) and evaluates it on the fold's test
+        window only, charging a terminal exit so the fold ends flat. Reads the four datasets from
+        `store`; writes each run plus `<walk-forward id>/walkforward.json` and
+        `oos_daily.parquet` under `artifacts` (default: the Crucible home). `home` gives both roots
+        (its experiments/ and data/ folders; pass it or `artifacts`, never both). Returns the
+        walk-forward document: the folds, the concatenated OUT-OF-SAMPLE summary, the disjoint
+        training audit (marked in_sample) and the null verdict - no Sharpe, no interval, no
+        assessment of edge. Re-running the same walk-forward reuses every run it computed."""
+        options: dict[str, Option] = {
+            "config": absolute(config),
+            "store": absolute(store),
+            "overwrite": overwrite,
+            "json": True,
+        }
+        if home is not None:
+            options["home"] = absolute(home)
+        if artifacts is not None:
+            options["artifacts"] = absolute(artifacts)
+        if home is None and artifacts is None:
+            options["artifacts"] = _home_paths()[0]
+        return await run_cli(build_argv(["futures", "walkforward"], [], options))
+
+    @server.tool()
     async def crucible_validate(
         config: str,
         artifacts: str | None = None,

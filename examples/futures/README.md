@@ -39,12 +39,34 @@ uv run crucible futures check --config examples/futures/es_zscore_screen.yaml
 # three expressions on that base, one sealed run each (plus the batch document)
 uv run crucible futures batch --batch examples/futures/es_batch_screen.yaml     --store data/processed --artifacts experiments
 
+# a walk-forward of three candidates over six months (folds, selection, concatenated OOS)
+uv run crucible futures walkforward --config examples/futures/es_walkforward_screen.yaml \
+    --store data/processed --artifacts experiments
+
 # the run: one sealed artifact under experiments/
 uv run crucible futures run --config examples/futures/es_sma_cross.yaml \
     --store data/processed --artifacts experiments
 uv run crucible futures run --config examples/futures/es_zscore_reversion.yaml \
     --store data/processed --artifacts experiments
 ```
+
+`es_walkforward_screen.yaml` is a **walk-forward** (C5b, ADR-0101) of three z-score candidates on
+`es_walkforward_base.yaml` — the screen run above over six months of trade dates
+(2024-01-02 .. 2024-06-28, its own family `examples-es-walkforward`), because a walk-forward needs
+enough dates to cut folds from. Twenty training dates and ten test dates per fold, rolling, a
+five-date signal warm-up and a required `max_intraday_drawdown_usd` of 5000 USD.
+
+```bash
+uv run crucible futures walkforward --config examples/futures/es_walkforward_screen.yaml \
+    --store data/processed --artifacts experiments
+```
+
+Each fold trains the three candidates, keeps the eligible ones, selects the one with the largest
+training net P&L (a tie goes to the earlier submission) and evaluates it on the test window alone,
+charging a terminal exit so the fold ends flat. The artifact is
+`experiments/<WFA-ID>/walkforward.json` plus `oos_daily.parquet`, the concatenated out-of-sample
+chain; the training runs are kept inside `in_sample_audit`, marked `in_sample: true`, never as
+out-of-sample. No Sharpe, no interval, no claim of edge.
 
 `futures run` prints the run id, the artifact id, the trial family and its count, the window, bars,
 fills, the final balance and equity, every approximation the run recorded and the run directory;
@@ -79,4 +101,6 @@ Tests: `tests/integration/test_futures_cli.py` validates these configs on every 
 against a real store only under `-m bench`
 (`CRUCIBLE_DATA_STORE=… uv run pytest -m bench tests/integration/test_futures_cli.py`); the batch
 example is exercised (including the "no 15-minute bar spans a maintenance break" check) by
-`tests/integration/test_futures_batch.py` under `-m bench`.
+`tests/integration/test_futures_batch.py` under `-m bench`, and the walk-forward example by
+`tests/integration/test_futures_walkforward.py` under `-m bench` (its identities: the fold chain
+adds up and every fold that selected charged a terminal exit).

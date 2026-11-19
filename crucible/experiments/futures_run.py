@@ -23,6 +23,12 @@ the bridge sees them, so the bar length downstream is 60 x the resolution and a 
 still reads only bars that had closed; ``cost_detail: commission_only`` charges commission and fees
 only and records the optimism.
 
+``window.warmup_trade_dates`` (C5b, ADR-0101) makes the run READ the Globex trade dates immediately
+before the window to compute the signal and then DROP them (``_prepare`` -> ``_subset``): the run
+decides the first window bars with real history instead of starting flat, and the simulated window
+stays ``[start, end]``, so no fill, mark, ledger row, position or roll comes from the warm-up. With
+``0`` the extended and the window series are the same frame and the run is exactly the one above.
+
 The run id is ``FUT-`` + a SHA-256 over the config hash, the four dataset content hashes, the
 session calendar's table hash, the contract-spec table hash and the simulator version: the same
 id exactly when the same inputs would be simulated the same way. The run directory is the id, and
@@ -34,6 +40,7 @@ window in Globex trade dates.
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import shutil
@@ -52,6 +59,7 @@ from crucible.data.contracts import END_AT_OPEN, ROLL_SCHEMA
 from crucible.data.futures_specs import futures_spec, spec_table_hash
 from crucible.data.resample import resample_session_bars
 from crucible.data.store import ParquetDataStore, price_basis_of
+from crucible.dsl.compile import CompiledSignal
 from crucible.execution.futures_sim import SIMULATOR_VERSION, simulate_futures
 from crucible.experiments.artifact_id import read_seal, seal_artifact, write_manifest
 from crucible.experiments.futures_artifacts import (
@@ -78,9 +86,11 @@ from crucible.validation.trial_registry import DuckDBTrialRegistry
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from numpy.typing import NDArray
+
     from crucible.data.cme_sessions import SessionCalendar
+    from crucible.data.futures_specs import FuturesContractSpec
     from crucible.data.interfaces import DatasetManifest
-    from crucible.dsl.compile import CompiledSignal
     from crucible.strategy_spec.models import StrategySpec
 
 RUN_ID_PREFIX = "FUT-"
@@ -224,26 +234,30 @@ def _window_bars(
     calendar: SessionCalendar,
     execution_all: pl.DataFrame,
     bar_seconds: int | None = None,
+    start: dt.date | None = None,
 ) -> _Bars:
-    """Keep the bars whose Globex trade date is in the window (refusing an empty window).
+    """Keep the bars whose Globex trade date is in ``[first, window.end]`` (refusing an empty
+    selection), ``first`` being ``start`` when given and ``window.start`` otherwise.
 
     ``bar_seconds``: the length of the bars in ``execution_all`` (``None``: the run's own fidelity
     grid). The bar length is what places a bar in its scheduled segment, so the one-minute source
-    window is measured with ``BAR_SECONDS`` even when the run simulates coarser bars.
+    window is measured with ``BAR_SECONDS`` even when the run simulates coarser bars. ``start``:
+    an earlier first trade date, used only to read the signal's warm-up (ADR-0101 decision 1); the
+    rows it adds are dropped before the simulator (``_subset``).
     """
     step = config.fidelity.bar_seconds if bar_seconds is None else bar_seconds
+    first = config.window.start if start is None else start
     days, on_schedule = session_trade_dates(calendar, execution_all["event_time"].to_numpy(), step)
     date_series = pl.Series("trade_date", days).cast(pl.Date)
     keep = pl.Series(
         "keep",
-        np.asarray(date_series >= config.window.start)
-        & np.asarray(date_series <= config.window.end),
+        np.asarray(date_series >= first) & np.asarray(date_series <= config.window.end),
         dtype=pl.Boolean,
     )
     if not bool(keep.any()):
         msg = (
             f"no bar of the execution dataset {config.datasets.execution} falls on a Globex "
-            f"trade date in [{config.window.start}, {config.window.end}]: the window is a range "
+            f"trade date in [{first}, {config.window.end}]: the window is a range "
             "of trade dates, inclusive. Widen the window or check the dataset's dates"
         )
         raise DataQualityError(msg)
@@ -252,6 +266,67 @@ def _window_bars(
         trade_dates=date_series.filter(keep),
         on_schedule=pl.Series("on_schedule", on_schedule, dtype=pl.Boolean).filter(keep),
     )
+
+
+def _subset(bars: _Bars, mask: NDArray[np.bool_]) -> _Bars:
+    """The rows of ``bars`` where ``mask`` is true (the warm-up drop, ADR-0101 decision 1)."""
+    keep = pl.Series("keep", mask, dtype=pl.Boolean)
+    return _Bars(
+        execution=bars.execution.filter(keep),
+        trade_dates=bars.trade_dates.filter(keep),
+        on_schedule=bars.on_schedule.filter(keep),
+    )
+
+
+def _warmup_trade_dates(
+    config: FuturesRunConfig, calendar: SessionCalendar, execution_all: pl.DataFrame
+) -> tuple[dt.date, ...]:
+    """The ``window.warmup_trade_dates`` Globex trade dates immediately before ``window.start``.
+
+    The candidates are the dataset's trade dates with at least one on-schedule bar, measured on the
+    one-minute grid (``BAR_SECONDS``): a bar's trade date and its schedule flag do not change when
+    a coarser resolution aggregates it, so the set is the same one a resampled run would select.
+    Refuses a request the dataset cannot honour (fewer trade dates before the window than asked
+    for) rather than silently warming up less than the config asked.
+    """
+    wanted = config.window.warmup_trade_dates
+    if wanted == 0:
+        return ()
+    days, on_schedule = session_trade_dates(
+        calendar, execution_all["event_time"].to_numpy(), BAR_SECONDS
+    )
+    frame = pl.DataFrame(
+        {
+            "trade_date": pl.Series("trade_date", days).cast(pl.Date),
+            "on_schedule": pl.Series("on_schedule", on_schedule, dtype=pl.Boolean),
+        }
+    )
+    prior = frame.filter(pl.col("on_schedule") & (pl.col("trade_date") < config.window.start))
+    available = sorted(set(prior["trade_date"].to_list()))
+    if len(available) < wanted:
+        msg = (
+            f"window.warmup_trade_dates = {wanted}, but the execution dataset "
+            f"{config.datasets.execution} holds only {len(available)} Globex trade date(s) with "
+            f"on-schedule bars before window.start {config.window.start}. A warm-up is past data "
+            "the run reads before the window, so the dataset must reach that far back: extend the "
+            "dataset, move window.start later, or lower warmup_trade_dates"
+        )
+        raise DataQualityError(msg)
+    return tuple(available[-wanted:])
+
+
+def _signal_warmup_required(strategy: object) -> int | None:
+    """The bars an expression needs up to and including the bar it decides at, or ``None``.
+
+    A compiled DSL expression reports the leading rows that are null by construction
+    (``CompiledSignal.warmup_bars``, from its bound windows: ``ts_zscore(close, 60)`` needs 59 rows
+    of history, so 60 bars including the deciding one). A spec or a Python ``FuturesSignalFunction``
+    declares no warm-up, so only the run's explicit ``warmup_trade_dates`` applies to them and no
+    requirement is checked (ADR-0101 decision 1).
+    """
+    if not isinstance(strategy, CompiledSignal):
+        return None
+    return strategy.warmup_bars + 1
 
 
 def _window_signal(signal: pl.DataFrame, bars: _Bars) -> pl.DataFrame:
@@ -354,6 +429,28 @@ def _strategy(
 
 # ---------------------------------------------------------------------------------------------
 # d. the run
+
+
+@dataclass(frozen=True, slots=True)
+class _Prepared:
+    """What a run decides before it simulates, with the signal warm-up already dropped.
+
+    ``bars``, ``targets`` and ``on_schedule`` cover exactly the config's window: the warm-up rows
+    the signal read are gone, so the simulator cannot fill, mark or ledger anything in them.
+    ``warmup`` is the manifest's record of what was asked for and what the dataset provided.
+    """
+
+    calendar: SessionCalendar
+    spec: FuturesContractSpec
+    refs: Mapping[str, DatasetRef]
+    bars: _Bars
+    targets: pl.DataFrame
+    on_schedule: pl.Series
+    signal_record: dict[str, object]
+    rolls: pl.DataFrame
+    raw: pl.DataFrame
+    fidelity: dict[str, object]
+    warmup: dict[str, object]
 
 
 def run_id_basis(
@@ -473,6 +570,118 @@ def _replace(run_dir: Path, overwrite: bool) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _prepare(config: FuturesRunConfig, store_root: Path) -> _Prepared:
+    """Everything a run decides before it simulates: the window bars, the targets, the rolls.
+
+    The signal is computed on the WINDOW PLUS ITS WARM-UP (``window.warmup_trade_dates`` trade
+    dates before ``window.start``, ADR-0101 decision 1), and the warm-up rows are then dropped
+    (``_subset``): the returned bars, targets and rolls cover exactly ``[start, end]``, so no fill,
+    mark, ledger row, position or roll can come from the warm-up. With a warm-up of 0 the extended
+    and the window series are the same frame and the run is the one of ADR-0095.
+    """
+    calendar = calendar_for(config.root)
+    store = ParquetDataStore(store_root)
+    names = {role: getattr(config.datasets, role) for role in DATASET_ROLES}
+    manifests = {role: _manifest(store, store_root, names[role], role) for role in DATASET_ROLES}
+    refs = {role: _dataset_ref(role, names[role], manifests[role]) for role in DATASET_ROLES}
+    execution_all = _read(store, names["execution"]).collect()
+    warmup_dates = _warmup_trade_dates(config, calendar, execution_all)
+    source_start = warmup_dates[0] if warmup_dates else config.window.start
+
+    # the extended source series (warm-up + window) FIRST: its one-minute bars are what a coarser
+    # resolution aggregates, so the signal series is read for exactly the same source instants and
+    # both are aggregated with the same function (the bridge's alignment check then passes by
+    # construction)
+    source_bars = _window_bars(config, calendar, execution_all, BAR_SECONDS, start=source_start)
+    # the signal, rolls and raw scans are bounded before they are materialized: the C3 store
+    # holds years of minute bars and the whole contract history, and only these rows are read
+    signal_source = (
+        _read(store, names["signal"])
+        .filter(pl.col("event_time").is_between(source_bars.first_ns, source_bars.last_ns))
+        .collect()
+    )
+    execution, dropped_execution, partial_execution = _resampled(
+        config, calendar, source_bars.execution, "execution"
+    )
+    signal, dropped_signal, partial_signal = _resampled(config, calendar, signal_source, "signal")
+    extended = _window_bars(config, calendar, execution, start=source_start)
+    extended_signal = _window_signal(signal, extended)
+    in_window = np.asarray(extended.trade_dates >= config.window.start)
+    bars = _subset(extended, in_window)
+    fidelity = config.fidelity.record(
+        dropped_off_schedule=dropped_execution + dropped_signal,
+        partial_buckets=partial_execution + partial_signal,
+    )
+
+    strategy = _strategy(config)
+    required = _signal_warmup_required(strategy)
+    warmup_bars = extended.execution.height - bars.execution.height
+    if config.window.warmup_trade_dates > 0 and required is not None:
+        # only a run that ASKED for a warm-up is held to it: with 0 the run is the ADR-0095 one,
+        # where an expression's first bars are simply decided flat for lack of history (refusing
+        # that would change every existing config), so the ask is what is checked
+        # the bars a signal can read up to and including the first bar of the window
+        available = warmup_bars + 1
+        if available < required:
+            first_day = bars.trade_dates[0]
+            msg = (
+                f"window.warmup_trade_dates = {config.window.warmup_trade_dates} gives "
+                f"{available} bar(s) up to and including the first window bar ({first_day}), but "
+                "the strategy's expression needs "
+                f"{required} bar(s) before it decides anything (its own warm-up: the widest "
+                "window, delay or delta after binding). The first window bars would therefore "
+                "decide flat for lack of history. Raise warmup_trade_dates until it covers "
+                f"{required} bars, shorten the expression's window, or widen the dataset"
+            )
+            raise ConfigurationError(msg)
+
+    decided = futures_targets(
+        root=config.root,
+        execution_bars=extended.execution,
+        signal_bars=extended_signal,
+        execution_ref=refs["execution"],
+        signal_ref=refs["signal"],
+        strategy=strategy,
+        contracts=config.contracts,
+        signal_input=config.signal.input,
+        session=config.session_policy(),
+        params=config.strategy.params,
+        bar_seconds=config.fidelity.bar_seconds,
+    )
+    window_rows = pl.Series("keep", in_window, dtype=pl.Boolean)
+    rolls = _window_rolls(config, _read(store, names["rolls"]).collect(), bars)
+    raw = _window_raw(_read(store, names["raw"]).collect(), bars)
+    missing = [name for name in _RAW_COLUMNS if name not in raw.columns]
+    if missing:
+        msg = (
+            f"the raw dataset {names['raw']} lacks {missing}: the causal roll legs need the "
+            "per-contract bars (symbol, event_time, OHLC) of BAR_SCHEMA"
+        )
+        raise DataQualityError(msg)
+    warmup: dict[str, object] = {
+        "trade_dates": config.window.warmup_trade_dates,
+        "first_trade_date": warmup_dates[0].isoformat() if warmup_dates else None,
+        "last_trade_date": warmup_dates[-1].isoformat() if warmup_dates else None,
+        "bars": int(warmup_bars),
+        "signal_bars_required": required,
+    }
+    return _Prepared(
+        calendar=calendar,
+        spec=futures_spec(config.root),
+        refs=refs,
+        bars=bars,
+        targets=decided.targets.filter(window_rows),
+        on_schedule=pl.Series(
+            "on_schedule", np.asarray(decided.on_schedule)[in_window], dtype=pl.Boolean
+        ),
+        signal_record=decided.record,
+        rolls=rolls,
+        raw=raw,
+        fidelity=fidelity,
+        warmup=warmup,
+    )
+
+
 def run_futures(
     config: FuturesRunConfig,
     *,
@@ -488,83 +697,38 @@ def run_futures(
 
     Timing: the whole run is a function of the config and the datasets; nothing reads the clock
     except the artifact seal. Pessimism: fills come from ``simulate_futures`` (next-eligible-open
-    by default, stops before targets, nothing fills off schedule), the daily ledger is asserted
-    against the marks, and an unverified session or an approximate roll is recorded as an
-    approximation rather than passed off as measured. A fidelity resolution coarser than ``1m``
-    aggregates both series causally BEFORE the bridge sees them (``_resampled``), so the decision
-    at a bar's close still reads only bars that had closed by then.
+    by default, stops before targets, nothing fills off schedule), the daily
+    ledger is asserted against the marks, and an unverified session or an approximate roll is
+    recorded as an approximation rather than passed off as measured. A fidelity resolution coarser
+    than ``1m`` aggregates both series causally BEFORE the bridge sees them (``_resampled``), so
+    the decision at a bar's close still reads only bars that had closed by then. A signal warm-up
+    (``window.warmup_trade_dates``) reads past trade dates to decide the first window bars and is
+    dropped before the simulator (``_prepare``), so it adds no fill, mark or ledger row.
     """
     calendar = calendar_for(config.root)
-    spec = futures_spec(config.root)
-    store = ParquetDataStore(store_root)
-    names = {role: getattr(config.datasets, role) for role in DATASET_ROLES}
-    manifests = {role: _manifest(store, store_root, names[role], role) for role in DATASET_ROLES}
-    refs = {role: _dataset_ref(role, names[role], manifests[role]) for role in DATASET_ROLES}
-
-    # the window of the SOURCE series first: its one-minute bars are what a coarser resolution
-    # aggregates, so the signal series is read for exactly the same source instants and both are
-    # aggregated with the same function (the bridge's alignment check then passes by construction)
-    source_bars = _window_bars(
-        config, calendar, _read(store, names["execution"]).collect(), BAR_SECONDS
-    )
-    # the signal, rolls and raw scans are bounded before they are materialized: the C3 store
-    # holds years of minute bars and the whole contract history, and only these rows are read
-    signal_source = (
-        _read(store, names["signal"])
-        .filter(pl.col("event_time").is_between(source_bars.first_ns, source_bars.last_ns))
-        .collect()
-    )
-    execution, dropped_execution, partial_execution = _resampled(
-        config, calendar, source_bars.execution, "execution"
-    )
-    signal, dropped_signal, partial_signal = _resampled(config, calendar, signal_source, "signal")
-    bars = _window_bars(config, calendar, execution)
-    signal = _window_signal(signal, bars)
-    rolls = _window_rolls(config, _read(store, names["rolls"]).collect(), bars)
-    raw = _window_raw(_read(store, names["raw"]).collect(), bars)
-    missing = [name for name in _RAW_COLUMNS if name not in raw.columns]
-    if missing:
-        msg = (
-            f"the raw dataset {names['raw']} lacks {missing}: the causal roll legs need the "
-            "per-contract bars (symbol, event_time, OHLC) of BAR_SCHEMA"
-        )
-        raise DataQualityError(msg)
+    prepared = _prepare(config, store_root)
+    refs = prepared.refs
+    bars = prepared.bars
     first_ns, last_ns = bars.first_ns, bars.last_ns
-    fidelity = config.fidelity.record(
-        dropped_off_schedule=dropped_execution + dropped_signal,
-        partial_buckets=partial_execution + partial_signal,
-    )
-
-    targets = futures_targets(
-        root=config.root,
-        execution_bars=bars.execution,
-        signal_bars=signal,
-        execution_ref=refs["execution"],
-        signal_ref=refs["signal"],
-        strategy=_strategy(config),
-        contracts=config.contracts,
-        signal_input=config.signal.input,
-        session=config.session_policy(),
-        params=config.strategy.params,
-        bar_seconds=config.fidelity.bar_seconds,
-    )
+    fidelity = prepared.fidelity
+    targets = prepared.targets
     simulation = simulate_futures(
-        bars=bars.execution.with_columns(targets.on_schedule),
-        targets=targets.targets,
-        rolls=rolls,
-        spec=spec,
+        bars=bars.execution.with_columns(prepared.on_schedule),
+        targets=targets,
+        rolls=prepared.rolls,
+        spec=prepared.spec,
         costs=config.cost_schedule(),
         initial_capital=config.capital,
         policy=config.execution_policy(),
-        raw=raw,
+        raw=prepared.raw,
     )
 
     marks = build_marks(
         bars=simulation.bars,
         execution=bars.execution,
         trade_dates=bars.trade_dates,
-        on_schedule=targets.on_schedule,
-        spec=spec,
+        on_schedule=prepared.on_schedule,
+        spec=prepared.spec,
     )
     fills = build_fills(fills=simulation.fills, marks=marks)
     rolls = build_rolls(simulation.rolls)
@@ -611,12 +775,13 @@ def run_futures(
         },
         "datasets": {role: asdict(refs[role]) for role in DATASET_ROLES},
         "fidelity": fidelity,
-        "signal": targets.record,
+        "warmup": prepared.warmup,
+        "signal": prepared.signal_record,
         "execution_policy": simulation.policy,
         "strict_execution": simulation.strict_execution,
         "session_calendar": calendar_summary,
         "marking_policy": MARKING_POLICY,
-        "approximations": _approximations(config, rolls, targets.record, fidelity),
+        "approximations": _approximations(config, rolls, prepared.signal_record, fidelity),
         "files": sorted(RESULT_FILES),
         "bars": marks.height,
         "trade_dates": daily.height,

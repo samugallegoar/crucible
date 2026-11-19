@@ -1022,6 +1022,77 @@ the final balance minus the starting capital.
 
 <!-- END GENERATED: artifact-futures-rolls -->
 
+### The walk-forward (C5b, ADR-0101)
+
+A walk-forward (`crucible futures walkforward`) writes its own, smaller file set next to the runs it
+trained and tested:
+
+```
+<artifacts>/<WFA-ID>/
+  walkforward.json   the folds, the out-of-sample summary, the training audit and the null verdict
+  oos_daily.parquet  the CONCATENATED out-of-sample chain, one row per test trade date
+```
+
+`WFA-<16 hex>` is a hash of the walk-forward file (its base path excluded) and the base config, so
+the same submission is the same walk-forward. The run directories it points at (`FUT-...`) are the
+futures runs above, unchanged. `walkforward.json` has `schema_version` **1**
+(`WALKFORWARD_SCHEMA_VERSION`); its JSON Schema is `crucible schema --kind futures-walkforward`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `schema_version` | int | `1` |
+| `kind` | string | `futures_walkforward` |
+| `wf_id` | string | `WFA-<16 hex>` (the directory name) |
+| `family` | string | the base config's trial family |
+| `base_config_hash` | string | SHA-256 of the resolved base config (the futures run's own hash) |
+| `fidelity` | object | the base config's `fidelity` block (C5a) |
+| `scheme` | string | `rolling` or `anchored` |
+| `train_trade_dates` | int | N, the training window's trade dates per fold |
+| `test_trade_dates` | int | M, the test window's trade dates per fold |
+| `warmup_trade_dates` | int | the signal warm-up every fold's runs used (`window.warmup_trade_dates`) |
+| `constraints` | object | `max_intraday_drawdown_usd` (required), `min_equity_usd`, `max_fills`, `max_time_in_market` (each null when unset); amounts are exact strings |
+| `folds` | array | one entry per fold, in date order (below) |
+| `oos` | object | the out-of-sample summary, computed from `oos_daily.parquet` alone (below) |
+| `window_stability` | object | `fold_oos_net_pnl_usd` (one metric per fold) and `folds_positive`/`folds_negative`/`folds_flat`: counts, never a statistic |
+| `in_sample_audit` | object | every fold's training runs, `note` and `folds[].candidates[]`, each candidate `in_sample: true` with its `metrics`, `checks`, `violations`, `eligible` and `time_in_market` |
+| `unused_trade_dates` | array<string> | the trailing base-window trade dates no fold evaluated (fewer than M) |
+| `terminal_exit` | string | how the fold boundary is costed, in words |
+| `verdict` | object | the null verdict with the `not_assessed` reason (ADR-0097) |
+
+A `folds[]` entry has `fold` (int), `status` (`selected` or `no_eligible_candidate`), `train` and
+`test` (`{start, end, trade_dates}`), `selection` (`{candidate, position}`, null when no candidate
+was eligible), `selection_reason` (a sentence about counts and the tie rule, never a result) and
+`oos`: `{candidate, run_id, artifact_id, net_pnl_usd, costs_usd, fills, terminal_exit_cost_usd,
+open_contracts_at_last_bar, time_in_market}`. In a flat fold the run fields are null and every
+number is 0.
+
+`oos` holds `net_pnl_usd`, `total_costs_usd`, `fills`, `trade_dates`, `max_drawdown_usd` and
+`folds_with_selection`, each `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`.
+The drawdown is peak-to-trough on the concatenated daily closing equity, in USD. Nothing in this
+file is a statistic: C5b reports no Sharpe, IC, PSR, DSR, p-value or confidence interval, and the
+verdict is `not_assessed` (ADR-0095, ADR-0097, ADR-0101). The training numbers are audit only.
+
+<!-- BEGIN GENERATED: artifact-futures-walkforward-oos -->
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `trade_date` | `Date` | no | Globex trade date of the row (a day label) |
+| `fold` | `Int64` | no | 0-based fold index, in date order |
+| `candidate` | `String` | yes | the selected candidate's name; null on a flat fold |
+| `run_id` | `String` | yes | the FUT- id of the fold's test run; null on a flat fold |
+| `net_pnl_usd` | `Decimal(precision=38, scale=6)` | no | USD; the row's OOS net P&L (equity change of the day) |
+| `costs_usd` | `Decimal(precision=38, scale=6)` | no | USD; day's costs plus the terminal exit on the fold's last |
+| `fills` | `Int64` | no | fills on the trade date |
+| `closing_equity_usd` | `Decimal(precision=38, scale=6)` | no | USD; the concatenated chain's closing equity |
+
+<!-- END GENERATED: artifact-futures-walkforward-oos -->
+
+A fold's out-of-sample net P&L is its rows' `net_pnl_usd`, and the chain closes: a fold's equity
+starts at the base capital plus the previous folds' net P&L *after* their terminal exit costs, and
+each fold's terminal exit (one side of the full per-contract cost times the contracts open at its
+last bar) is booked on that fold's last trade date as `costs_usd` and as a reduction of
+`closing_equity_usd`. A flat fold (no eligible candidate) has one zero row per test trade date.
+
 ### The futures-run document (ADR-0097)
 
 A sealed futures run also has one *document*: what `crucible futures run --json` prints and what

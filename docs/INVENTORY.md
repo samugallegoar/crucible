@@ -34,6 +34,7 @@
 | `crucible futures batch` | `--artifacts --batch --home --json --overwrite --store` | Run N DSL expressions on one futures base config and write the batch document (C5a) |
 | `crucible futures check` | `--config --json` | Load and validate a futures config only (no store, no run) |
 | `crucible futures run` | `--artifacts --config --home --json --overwrite --store` | Simulate a futures config and write its sealed artifact (ADR-0095) |
+| `crucible futures walkforward` | `--artifacts --config --home --json --overwrite --store` | Train candidates per fold, select inside the training window and concatenate the out-of-sample windows (C5b) |
 | `crucible optimize` | `<config> --artifacts --json --metric --override --param --pbo-groups --values --vectorized --workers` | 1D parameter sweep, tagged as trials, assembling a PBO panel (R4.3/R4.9) |
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
 | `crucible report` | `<experiment_id> --artifacts --json` | Re-render the report for a finished experiment |

@@ -332,6 +332,48 @@ one whose sealed run already exists is `cached` too (re-running a batch is a rep
 submitted candidate is recorded in the trial registry's `submissions` table, while `trials` keeps
 one row per distinct run: how submissions count toward `total_trials` is decided in C6.
 
+**A signal warm-up (C5b, ADR-0101).** `window.warmup_trade_dates` (integer, default 0) makes the
+run READ the N Globex trade dates immediately before its window to compute the signal, and then
+drop them: no fill, mark, ledger row, position or roll comes from the warm-up, so the simulated
+window stays exactly the one you wrote. It is what stops every window from starting flat while the
+strategy's own window fills up, and it is past data, so it adds no lookahead. A run whose warm-up
+does not cover the expression's own window (240 bars for `ts_zscore(close, 240)`) is refused rather
+than decided flat, and so is a warm-up the dataset cannot reach back for. The manifest's `warmup`
+block records the trade dates read and the bars they held. With 0 the run is exactly the ADR-0095
+one.
+
+**A walk-forward (C5b, ADR-0101).** Folds over the base window's trade dates, trained and selected
+inside each training window, evaluated on the test window that follows:
+
+```bash
+uv run crucible futures walkforward --config examples/futures/es_walkforward_screen.yaml \
+    --store data/processed --artifacts experiments --json
+uv run crucible schema --kind futures-walkforward
+```
+
+The file (`kind: futures_walkforward`) names a `base` futures-run config, the `candidates` (the
+batch format), `train_trade_dates` (N), `test_trade_dates` (M), `scheme` (`rolling` or `anchored`),
+`warmup_trade_dates` (overrides the base's) and `constraints`. Fold k tests on trade dates
+`[N + k*M, N + (k+1)*M)` of the base window and trains on the N before it (`rolling`) or on every
+date from the first one (`anchored`); a trailing remainder shorter than M is reported as
+`unused_trade_dates` and fewer than one complete fold is refused. In each fold every candidate runs
+on the training window, a candidate is ELIGIBLE only if it satisfies every constraint
+(`max_intraday_drawdown_usd` is required; `min_equity_usd`, `max_fills` and `max_time_in_market` are
+optional), and the eligible one with the largest training net P&L is selected (a tie goes to the
+earlier submission). With no eligible candidate the fold is FLAT - zero P&L and zero costs, status
+`no_eligible_candidate` - rather than missing. The selected candidate then runs on the test window
+alone, and the contracts open at its last bar are charged one side of the full per-contract cost as
+its **terminal exit**, so every fold starts and ends flat at a known, pessimistic price.
+
+`<artifacts>/<WFA-ID>/walkforward.json` holds the folds, the out-of-sample summary, the
+`window_stability` list and, under `in_sample_audit`, every training run marked `in_sample: true`;
+`oos_daily.parquet` is the concatenated chain (one row per test trade date, the terminal exit booked
+on the fold's last date), whose `closing_equity_usd` starts each fold at the base capital plus the
+previous folds' net P&L. Only the concatenated series is presented as performance: there is no
+Sharpe, no IC, no interval and the verdict is `not_assessed` (ADR-0095, ADR-0097, ADR-0101).
+Re-running a walk-forward is a reproduction: every run it already computed is `cached` and no
+submission is duplicated.
+
 `futures run --json` and `crucible artifact show <ART-...> --json` print the same **futures-run
 document** (`schema_version: 1`, `crucible schema --kind futures-run-document`; keys in
 `docs/SCHEMAS.md`, ADR-0097). Its verdict is null with a reason:
