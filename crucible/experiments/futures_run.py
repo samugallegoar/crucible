@@ -17,6 +17,12 @@ Three things are enforced here rather than documented:
 - **the trial is counted**: the run registers itself in the root's trial registry before sealing,
   because a statistic from a run whose siblings are not counted cannot be read (ADR-0008).
 
+``fidelity`` (C5a, ADR-0100) makes the run read a coarser, cheaper version of the same series: a
+resolution of ``5m``/``15m`` aggregates both series causally (``crucible.data.resample``) BEFORE
+the bridge sees them, so the bar length downstream is 60 x the resolution and a decision at a close
+still reads only bars that had closed; ``cost_detail: commission_only`` charges commission and fees
+only and records the optimism.
+
 The run id is ``FUT-`` + a SHA-256 over the config hash, the four dataset content hashes, the
 session calendar's table hash, the contract-spec table hash and the simulator version: the same
 id exactly when the same inputs would be simulated the same way. The run directory is the id, and
@@ -44,6 +50,7 @@ from crucible.data.cme_sessions import session_trade_dates, table_summary
 from crucible.data.continuous import calendar_for
 from crucible.data.contracts import END_AT_OPEN, ROLL_SCHEMA
 from crucible.data.futures_specs import futures_spec, spec_table_hash
+from crucible.data.resample import resample_session_bars
 from crucible.data.store import ParquetDataStore, price_basis_of
 from crucible.execution.futures_sim import SIMULATOR_VERSION, simulate_futures
 from crucible.experiments.artifact_id import read_seal, seal_artifact, write_manifest
@@ -213,12 +220,19 @@ class _Bars:
 
 
 def _window_bars(
-    config: FuturesRunConfig, calendar: SessionCalendar, execution_all: pl.DataFrame
+    config: FuturesRunConfig,
+    calendar: SessionCalendar,
+    execution_all: pl.DataFrame,
+    bar_seconds: int | None = None,
 ) -> _Bars:
-    """Keep the bars whose Globex trade date is in the window (refusing an empty window)."""
-    days, on_schedule = session_trade_dates(
-        calendar, execution_all["event_time"].to_numpy(), BAR_SECONDS
-    )
+    """Keep the bars whose Globex trade date is in the window (refusing an empty window).
+
+    ``bar_seconds``: the length of the bars in ``execution_all`` (``None``: the run's own fidelity
+    grid). The bar length is what places a bar in its scheduled segment, so the one-minute source
+    window is measured with ``BAR_SECONDS`` even when the run simulates coarser bars.
+    """
+    step = config.fidelity.bar_seconds if bar_seconds is None else bar_seconds
+    days, on_schedule = session_trade_dates(calendar, execution_all["event_time"].to_numpy(), step)
     date_series = pl.Series("trade_date", days).cast(pl.Date)
     keep = pl.Series(
         "keep",
@@ -245,6 +259,45 @@ def _window_signal(signal: pl.DataFrame, bars: _Bars) -> pl.DataFrame:
     return signal.filter(pl.col("event_time").is_in(bars.execution["event_time"].to_list())).sort(
         "event_time"
     )
+
+
+def _resampled(
+    config: FuturesRunConfig, calendar: SessionCalendar, frame: pl.DataFrame, what: str
+) -> tuple[pl.DataFrame, int, int]:
+    """``frame`` aggregated to the run's fidelity resolution, with its resampling counts.
+
+    ``fidelity.resolution = 1m`` is the identity (the stored series, nothing dropped, no bucket
+    clipped). A coarser resolution aggregates the one-minute bars causally
+    (``resample_session_bars``): a bucket never spans a maintenance break or a session boundary, an
+    off-schedule bar is not aggregated and is counted, and a bucket with no constituent produces no
+    bar. ``what`` names the frame in refusals.
+
+    A bucket CLIPPED by a session's open or close (``partial``) refuses a coarser run: the session
+    rules (``flat_by_close``, ``exit_at``) are evaluated on a bar grid that starts at the
+    session's scheduled open, and a clipped bucket is off that grid, so the run would either treat
+    a tradable bucket as off schedule or pick the wrong final bar. No CME Globex session of this
+    table opens or closes off a 5- or 15-minute boundary, so this is a guard, not a limit.
+    """
+    if not config.fidelity.resampled:
+        return frame, 0, 0
+    try:
+        result = resample_session_bars(
+            frame, calendar=calendar, minutes=config.fidelity.minutes, source_seconds=BAR_SECONDS
+        )
+    except DataQualityError as exc:
+        msg = f"the {what} series cannot be resampled to {config.fidelity.resolution}: {exc}"
+        raise DataQualityError(msg) from exc
+    if result.partial_buckets:
+        clipped = result.bars.filter(pl.col("partial"))["event_time"].to_list()
+        msg = (
+            f"the {what} series has {len(clipped)} {config.fidelity.resolution} bucket(s) clipped "
+            f"by a session open or close (first: event_time={int(clipped[0])} ns): the session "
+            "rules are evaluated on a grid anchored at the session's scheduled open, so a run "
+            "cannot simulate a clipped bucket honestly. Use resolution=1m for this window, or "
+            "fix the session schedule"
+        )
+        raise DataQualityError(msg)
+    return result.bars, result.dropped_off_schedule, result.partial_buckets
 
 
 def _window_rolls(config: FuturesRunConfig, rolls_all: pl.DataFrame, bars: _Bars) -> pl.DataFrame:
@@ -318,21 +371,66 @@ def run_id_basis(
     return "|".join(parts)
 
 
+def _run_id(config: FuturesRunConfig, refs: Mapping[str, DatasetRef], calendar_hash: str) -> str:
+    """``FUT-`` + the truncated SHA-256 of ``run_id_basis``."""
+    return (
+        RUN_ID_PREFIX
+        + hashlib.sha256(run_id_basis(config, refs, calendar_hash).encode("utf-8")).hexdigest()[
+            :RUN_ID_HEX
+        ]
+    )
+
+
+def futures_run_id(config: FuturesRunConfig, *, store_root: Path) -> str:
+    """The run id ``config`` would get against ``store_root``, WITHOUT simulating anything.
+
+    Same basis as ``run_futures`` (the config hash, the four datasets' content hashes, the session
+    calendar's table hash, the contract-spec table hash and the simulator version), so a caller can
+    ask "has this exact run been computed already?" by looking for ``artifacts_root/run_id``. Reads
+    only the datasets' manifests; refuses the same missing/undeclared datasets a run would.
+    """
+    calendar = calendar_for(config.root)
+    store = ParquetDataStore(store_root)
+    names = {role: getattr(config.datasets, role) for role in DATASET_ROLES}
+    refs = {
+        role: _dataset_ref(role, names[role], _manifest(store, store_root, names[role], role))
+        for role in DATASET_ROLES
+    }
+    return _run_id(config, refs, str(table_summary(calendar.table)["sha256"]))
+
+
 def _approximations(
-    config: FuturesRunConfig, rolls: pl.DataFrame, signal_record: Mapping[str, object]
+    config: FuturesRunConfig,
+    rolls: pl.DataFrame,
+    signal_record: Mapping[str, object],
+    fidelity: Mapping[str, object],
 ) -> list[str]:
     """What the run assumed: the OHLC marks, uncalibrated costs, approximate rolls, unverified
-    sessions. Each entry says the thing in plain words, because a reader of the artifact needs to
-    know what is measured and what is assumed."""
+    sessions, and what a reduced fidelity level leaves out. Each entry says the thing in plain
+    words, because a reader of the artifact needs to know what is measured and what is assumed."""
     out = [UNHEDGED_MARK_NOTE]
     costs = config.costs
-    if not (costs.spread_calibrated and costs.slippage_calibrated):
+    if config.fidelity.cost_detail == "commission_only":
+        out.append("costs reduced to commission and fees (fidelity screen): optimistic")
+    elif not (costs.spread_calibrated and costs.slippage_calibrated):
         uncalibrated = [
             name for name in ("spread", "slippage") if not getattr(costs, f"{name}_calibrated")
         ]
         out.append(
             f"costs uncalibrated: {' and '.join(uncalibrated)} in ticks are the config's "
             "assumption, not a measurement on this instrument and period"
+        )
+    if config.fidelity.resampled:
+        out.append(
+            f"bars aggregated to {config.fidelity.resolution} by a causal resampling of the "
+            f"{BAR_SECONDS}s series: a bucket never spans a maintenance break or a session "
+            f"boundary, {fidelity['dropped_off_schedule']} off-schedule bar(s) were not "
+            f"aggregated and {fidelity['partial_buckets']} bucket(s) are clipped by a session "
+            "open or close"
+        )
+        out.append(
+            "causal rolls execute at the first coarse-bar open at or after the first joint 1m "
+            "print (delay up to one coarse bar)"
         )
     approximate = rolls.filter(pl.col("mode") == "reference_approximation")
     if approximate.height:
@@ -392,7 +490,9 @@ def run_futures(
     except the artifact seal. Pessimism: fills come from ``simulate_futures`` (next-eligible-open
     by default, stops before targets, nothing fills off schedule), the daily ledger is asserted
     against the marks, and an unverified session or an approximate roll is recorded as an
-    approximation rather than passed off as measured.
+    approximation rather than passed off as measured. A fidelity resolution coarser than ``1m``
+    aggregates both series causally BEFORE the bridge sees them (``_resampled``), so the decision
+    at a bar's close still reads only bars that had closed by then.
     """
     calendar = calendar_for(config.root)
     spec = futures_spec(config.root)
@@ -401,15 +501,25 @@ def run_futures(
     manifests = {role: _manifest(store, store_root, names[role], role) for role in DATASET_ROLES}
     refs = {role: _dataset_ref(role, names[role], manifests[role]) for role in DATASET_ROLES}
 
-    bars = _window_bars(config, calendar, _read(store, names["execution"]).collect())
+    # the window of the SOURCE series first: its one-minute bars are what a coarser resolution
+    # aggregates, so the signal series is read for exactly the same source instants and both are
+    # aggregated with the same function (the bridge's alignment check then passes by construction)
+    source_bars = _window_bars(
+        config, calendar, _read(store, names["execution"]).collect(), BAR_SECONDS
+    )
     # the signal, rolls and raw scans are bounded before they are materialized: the C3 store
     # holds years of minute bars and the whole contract history, and only these rows are read
-    signal = _window_signal(
+    signal_source = (
         _read(store, names["signal"])
-        .filter(pl.col("event_time").is_between(bars.first_ns, bars.last_ns))
-        .collect(),
-        bars,
+        .filter(pl.col("event_time").is_between(source_bars.first_ns, source_bars.last_ns))
+        .collect()
     )
+    execution, dropped_execution, partial_execution = _resampled(
+        config, calendar, source_bars.execution, "execution"
+    )
+    signal, dropped_signal, partial_signal = _resampled(config, calendar, signal_source, "signal")
+    bars = _window_bars(config, calendar, execution)
+    signal = _window_signal(signal, bars)
     rolls = _window_rolls(config, _read(store, names["rolls"]).collect(), bars)
     raw = _window_raw(_read(store, names["raw"]).collect(), bars)
     missing = [name for name in _RAW_COLUMNS if name not in raw.columns]
@@ -420,6 +530,10 @@ def run_futures(
         )
         raise DataQualityError(msg)
     first_ns, last_ns = bars.first_ns, bars.last_ns
+    fidelity = config.fidelity.record(
+        dropped_off_schedule=dropped_execution + dropped_signal,
+        partial_buckets=partial_execution + partial_signal,
+    )
 
     targets = futures_targets(
         root=config.root,
@@ -432,7 +546,7 @@ def run_futures(
         signal_input=config.signal.input,
         session=config.session_policy(),
         params=config.strategy.params,
-        bar_seconds=BAR_SECONDS,
+        bar_seconds=config.fidelity.bar_seconds,
     )
     simulation = simulate_futures(
         bars=bars.execution.with_columns(targets.on_schedule),
@@ -467,12 +581,7 @@ def run_futures(
     )
 
     calendar_summary = table_summary(calendar.table)
-    run_id = (
-        RUN_ID_PREFIX
-        + hashlib.sha256(
-            run_id_basis(config, refs, str(calendar_summary["sha256"])).encode("utf-8")
-        ).hexdigest()[:RUN_ID_HEX]
-    )
+    run_id = _run_id(config, refs, str(calendar_summary["sha256"]))
     run_dir = artifacts_root / run_id
     prior = read_seal(run_dir) if run_dir.is_dir() else None
     _replace(run_dir, overwrite)
@@ -485,7 +594,7 @@ def run_futures(
         mode=MODE,
         start_ns=first_ns,
         end_ns=last_ns,
-        period_ns=BAR_SECONDS * NS_PER_S,
+        period_ns=config.fidelity.bar_seconds * NS_PER_S,
     )
 
     manifest: dict[str, object] = {
@@ -501,12 +610,13 @@ def run_futures(
             "end": config.window.end.isoformat(),
         },
         "datasets": {role: asdict(refs[role]) for role in DATASET_ROLES},
+        "fidelity": fidelity,
         "signal": targets.record,
         "execution_policy": simulation.policy,
         "strict_execution": simulation.strict_execution,
         "session_calendar": calendar_summary,
         "marking_policy": MARKING_POLICY,
-        "approximations": _approximations(config, rolls, targets.record),
+        "approximations": _approximations(config, rolls, targets.record, fidelity),
         "files": sorted(RESULT_FILES),
         "bars": marks.height,
         "trade_dates": daily.height,
@@ -552,6 +662,7 @@ __all__ = [
     "RUN_ID_PREFIX",
     "SCHEMA_VERSION",
     "FuturesRunResult",
+    "futures_run_id",
     "run_futures",
     "run_id_basis",
 ]

@@ -126,5 +126,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0097](0097-futures-run-document.md) | The futures-run document: a null verdict with a reason, a versioned schema, `artifact show`, `--home` | accepted | One constructor, one schema. `crucible.experiments.futures_document.futures_document(run_dir)` builds the document from the sealed run directory alone, after verifying the seal |
 | [0098](0098-dsl-evaluation-and-compilation.md) | DSL evaluation semantics, availability, the CompiledSignal, and expressions in the futures run | accepted | Streams and windows |
 | [0099](0099-dsl-cross-section-similarity-live.md) | Cross-sectional rank, structural similarity, and the incremental evaluator with parity | accepted | `cs_rank` |
+| [0100](0100-futures-fidelity-and-batch.md) | Futures fidelity levels (causal session-bounded resampling, cost detail) and batch evaluation | accepted | Resampling (`crucible.data.resample.resample_session_bars`) |
 
 <!-- END GENERATED: adr-index -->

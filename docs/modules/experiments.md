@@ -12,13 +12,25 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
     compiled at load (`FuturesStrategyConfig.compiled_signal(signal_input)`), so a type, window,
     parameter or scale error surfaces at `futures check`, which also prints the canonical text and
     the three ids; its `params` bind the `$` parameters and `contracts` sizes the side.
-  - **`run_futures`** selects the window by trade date and calls `futures_targets` and
+  - **`fidelity`** (C5a, ADR-0100; `FuturesFidelityConfig`): `resolution` (`1m` default, `5m`,
+    `15m`), `cost_detail` (`full` default, `commission_only`) and the optional `preset`
+    (`screen` = 15m + commission_only, `standard` = 5m + full, `full` = 1m + full;
+    `FIDELITY_PRESETS`, `FIDELITY_TABLE_VERSION = "1"`). A preset that contradicts an explicit
+    field is refused, and so is an explicitly non-zero `costs.spread_ticks`/`slippage_ticks` under
+    `commission_only` (the run would silently drop it). `resolution` decides the bar length
+    everywhere downstream (session masks, availability check, the simulator, the marks, the
+    registry's `period_ns`); `cost_detail: commission_only` zeroes the tick costs and adds the
+    approximation "costs reduced to commission and fees (fidelity screen): optimistic".
+  - **`run_futures`** selects the window by trade date, resamples BOTH series when the resolution
+    is not `1m` (`_resampled` -> `crucible.data.resample.resample_session_bars`, same buckets for
+    execution and signal, so the bridge's alignment check holds), and calls `futures_targets` and
     `simulate_futures`. It builds the marks, the daily ledger, the fills, the rolls and the
     descriptive `metrics.json` (no Sharpe), and checks the ledger identities
     (`check_daily_ledger`). It then registers the trial (mandatory) and seals the run
-    (`FUT-` run id, `ART-` artifact id).
-  - **Interfaces:** `crucible futures run|check` and MCP `crucible_futures_run|check`. The
-    schemas are in `docs/SCHEMAS.md`, and the marking policy is in the manifest.
+    (`FUT-` run id, `ART-` artifact id). `futures_run_id(config, store_root=)` gives the id a
+    config WOULD get without simulating (the batch uses it to reuse a sealed run).
+  - **Interfaces:** `crucible futures run|check|batch` and MCP `crucible_futures_run|check|batch`.
+    The schemas are in `docs/SCHEMAS.md`, and the marking policy is in the manifest.
 - `futures_document.py` — the futures-run document (ADR-0097): `futures_document(run_dir)` builds
   one versioned document (`FUTURES_DOCUMENT_SCHEMA_VERSION`) from the sealed run directory alone
   (manifest + metrics, after `verify_artifact`), so `futures run --json`, `futures run`'s human
@@ -30,6 +42,33 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   no statistic (ADR-0095) and refuses (a) a directory that is not a futures run, (b) one whose seal
   does not verify, and (c) a descriptive metric that claims an interval. Its JSON Schema is the
   output kind `futures-run-document`; `verdict_document` and `metric_document` hold the invariants.
+  Since C5a (ADR-0100) the document also carries `fidelity` `{resolution, cost_detail, preset,
+  table_version, resampled, dropped_off_schedule, partial_buckets}`; adding the key is additive, so
+  `FUTURES_DOCUMENT_SCHEMA_VERSION` stays 1, and a manifest written before C5a (no `fidelity` key)
+  reads as `1m` + `full` (`DEFAULT_FIDELITY`).
+- `futures_batch.py` — batch evaluation of N DSL expressions on ONE base config (C5a, ADR-0100):
+  `load_futures_batch(path)` (`FuturesBatchFile` = the file's contract and its JSON Schema,
+  `futures_batch_json_schema`), `batch_id(base, candidates)` (`BAT-` + the hash of the base config
+  and the ORDERED candidates), `candidate_config(base, candidate)` (only `strategy` and `run.name`
+  change; the dump is `exclude_unset` so a base default is not turned into an explicit setting) and
+  `run_futures_batch(batch, *, store_root, artifacts_root, overwrite=False)` -> `BatchResult`
+  (`batch_dir`, `batch_id`, `document`). A candidate is a `BatchCandidate` (`position`, `name`,
+  `expression`, `params`, and nothing else: any other key is refused). Deduplication is by
+  `crucible.dsl.identity.parameterization_id` after canonicalization and binding: a repeat computes
+  ONE run, and the later candidates are `cached` with the first one's run and artifact ids; a run
+  directory that already exists and verifies is `cached` too.
+  The output is `<artifacts>/<BAT-ID>/batch.json` (`schema_version` 1): the batch identity, the
+  family, the base config hash, the `fidelity` block, one row per candidate in SUBMISSION order
+  (never sorted by a metric) with its status and the five descriptive metrics
+  (`CANDIDATE_METRICS`: `net_pnl_usd`, `total_costs_usd`, `fills`, `max_intraday_drawdown_usd`,
+  `min_equity_usd`, each `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`),
+  `submitted`, `distinct_runs` and the null verdict (`not_assessed`, ADR-0097's reason). Every
+  submitted candidate is recorded in the registry's `submissions` table; each computed run
+  registers its trial as any futures run does. Nothing in the module computes, ranks or assesses a
+  statistic (ADR-0095's restriction): C6 owns that, including how submissions count toward
+  `total_trials`.
+  The keys of `batch.json` are in `docs/SCHEMAS.md`; the CLI and MCP surfaces are
+  `crucible futures batch` and `crucible_futures_batch`.
 - `futures_signals.py` — the futures signal bridge (ADR-0094, ADR-0098): `futures_targets` turns a
   `StrategySpec`, a `FuturesSignalFunction` or a compiled DSL `CompiledSignal` into the targets and
   the `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the

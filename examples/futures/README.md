@@ -16,10 +16,28 @@ refused before any data is read; `futures run` records the same document in the 
 be refused at compile time. The expression language is documented in
 [`docs/modules/dsl.md`](../../docs/modules/dsl.md).
 
+`es_zscore_screen.yaml` is the same z-score run at a **fidelity level** (`fidelity: {preset:
+screen}` = 15-minute bars + commission-only costs, ADR-0100): the cheap first pass over many
+expressions. It is OPTIMISTIC about the cost of trading — spread and slippage are not charged — and
+the manifest's `approximations` says so; a candidate that survives a screen must be re-run at
+`standard` (5m, full costs) or `full` (1m, full costs). Its family is its own: marks at 15-minute
+spacing are not poolable with 1-minute ones (ADR-0071).
+
+`es_batch_screen.yaml` is a **batch** of three candidates on that base: `z60` and `z120` (the same
+expression with `$n` bound to 60 and to 120: one structure id, two parameterizations) and
+`z60-swapped`, a deliberate duplicate of `z60` written with `max(2, x)` instead of `max(x, 2)`. The
+duplicate canonicalizes to the same expression, so the batch computes TWO runs and reports the third
+candidate as `cached` with the first one's run and artifact ids. Every submitted candidate is
+recorded in the trial registry's `submissions` table, while `trials` keeps one row per distinct run.
+
 ```bash
 # validate the config without touching any data
 uv run crucible futures check --config examples/futures/es_sma_cross.yaml
 uv run crucible futures check --config examples/futures/es_zscore_reversion.yaml
+uv run crucible futures check --config examples/futures/es_zscore_screen.yaml
+
+# three expressions on that base, one sealed run each (plus the batch document)
+uv run crucible futures batch --batch examples/futures/es_batch_screen.yaml     --store data/processed --artifacts experiments
 
 # the run: one sealed artifact under experiments/
 uv run crucible futures run --config examples/futures/es_sma_cross.yaml \
@@ -57,6 +75,8 @@ a book. The artifact's `metrics.json` is descriptive (fills, costs, final balanc
 intraday drawdown); a headline statistic with its confidence interval, trial count and DSR belongs
 to `crucible run`/`validate`, not here (ADR-0008).
 
-Tests: `tests/integration/test_futures_cli.py` validates this config on every run and runs it
+Tests: `tests/integration/test_futures_cli.py` validates these configs on every run and runs them
 against a real store only under `-m bench`
-(`CRUCIBLE_DATA_STORE=… uv run pytest -m bench tests/integration/test_futures_cli.py`).
+(`CRUCIBLE_DATA_STORE=… uv run pytest -m bench tests/integration/test_futures_cli.py`); the batch
+example is exercised (including the "no 15-minute bar spans a maintenance break" check) by
+`tests/integration/test_futures_batch.py` under `-m bench`.

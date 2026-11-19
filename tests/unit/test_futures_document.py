@@ -48,6 +48,7 @@ DOCUMENT_KEYS = {
     "trial_count",
     "root",
     "window",
+    "fidelity",
     "run_dir",
     "datasets",
     "approximations",
@@ -131,6 +132,15 @@ def test_the_document_has_the_versioned_shape(run_dir: Path) -> None:
     assert doc["trial_count"] == 1
     assert doc["root"] == "ES"
     assert doc["window"] == {"start": "2024-03-05", "end": "2024-03-06"}
+    assert doc["fidelity"] == {
+        "resolution": "1m",
+        "cost_detail": "full",
+        "preset": None,
+        "table_version": "1",
+        "resampled": False,
+        "dropped_off_schedule": 0,
+        "partial_buckets": 0,
+    }
     assert doc["run_dir"] == run_dir.resolve().as_posix()
     assert "/" in str(doc["run_dir"])  # posix-style, even on Windows
     assert "\\" not in str(doc["run_dir"])

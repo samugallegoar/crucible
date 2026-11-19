@@ -246,9 +246,23 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   dollar value per contract, and the dollars per 1.0 of price (ES: 0.25, $12.50, $50). The table
   is `crucible/data/futures_specs.py` (ADR-0090).
 - **causal roll** — a roll executed as two trades (close the old contract, open the new one) at the
-  first minute at or after the roll decision in which both contracts traded, on raw prices; the
-  default of the futures simulator. Its labelled alternative is the reference-price approximation
-  (ADR-0090).
+  OPEN of the first simulated bar at or after the roll decision at which both contracts have a raw
+  one-minute bar opening: on one-minute bars that is the first minute both contracts traded, on a
+  resampled grid it waits for such a bar open (at most one coarse bar of delay, never earlier). Raw
+  prices price both legs; the default of the futures simulator. Its labelled alternative is the
+  reference-price approximation (ADR-0090, ADR-0100).
+- **fidelity level** — how finely and how expensively a futures run reads its series: a
+  `resolution` (`1m`, or `5m`/`15m` causally resampled) and a `cost_detail` (`full`, or
+  `commission_only`, which is optimistic). The named presets are `screen` (15m, commission only),
+  `standard` (5m, full) and `full` (1m, full); it is part of the run id (ADR-0100).
+- **resampled bucket / partial bucket** — the bars a coarser resolution aggregates: the bar ENDS in
+  `(k·m, (k+1)·m]` minutes inside ONE scheduled session segment, labelled by the bucket's end
+  clipped to the session close. A `partial` bucket is one clipped by a session open or close that
+  is not on the `m`-minute grid; an empty bucket produces no bar (ADR-0100).
+- **submission / batch** — a batch is one base futures config plus an ordered list of candidate
+  expressions (only the strategy and run name change per candidate); every candidate is a
+  *submission* (recorded in the registry's `submissions` table), while a *trial* is one distinct
+  run. How submissions count toward `total_trials` is decided in C6 (ADR-0100).
 - **Globex trade date / session regime** — the CME trading day a minute belongs to: its session
   opens the evening before (Monday's on Sunday 17:00; before 2012-11-19 at 15:30) and closes on
   the trade date. A regime is the regular week of a period (open, close, daily breaks); holidays

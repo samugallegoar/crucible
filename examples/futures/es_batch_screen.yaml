@@ -1,0 +1,33 @@
+# A batch of THREE candidate expressions on ONE base config (C5a): first pass of a screen, at the
+# base's fidelity (15m bars, commission-only costs).
+#
+#   uv run crucible futures check --config examples/futures/es_zscore_screen.yaml   # the base
+#   uv run crucible futures batch --batch examples/futures/es_batch_screen.yaml \
+#       --store data/processed --artifacts experiments
+#
+# Every candidate runs with the base's root, window, contracts, costs, execution, session and
+# fidelity; only `strategy` (expression + params) and `run.name` differ, so the candidates share
+# their comparison conditions by construction. A candidate entry accepts exactly name, expression
+# and params: passing anything else (contracts, costs, a window) is refused, not ignored.
+#
+# `z60-swapped` is a DELIBERATE duplicate of `z60`: `max(2, x)` and `max(x, 2)` canonicalize to the
+# same form, so both have the same DSP- parameterization id and the batch computes ONE run for
+# them (the second is `cached` and reports the first one's run and artifact ids). `z120` binds the
+# same expression's `$n` to 120, which keeps the structure id (DSX-) and changes the
+# parameterization id (DSP-), so it is a second run.
+#
+# What the batch reports is DESCRIPTIVE: net P&L, costs, fills, the conservative intraday
+# drawdown and the minimum equity of each run, with null confidence intervals and a null verdict
+# (`not_assessed`). The candidate list stays in submission order and is never ranked: Sharpe, IC,
+# PSR, DSR, p-values and confidence intervals begin in C6, and an absence of assessment is not
+# evidence of no edge (ADR-0095, ADR-0097).
+kind: futures_batch
+base: es_zscore_screen.yaml
+candidates:
+  - name: z60
+    expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(max(ts_zscore(close, $n), 2) > 2, -1, 0))
+  - name: z120
+    expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(max(ts_zscore(close, $n), 2) > 2, -1, 0))
+    params: {n: 120}
+  - name: z60-swapped
+    expression: if(ts_zscore(close, $n:int[10,240]=60) < -2, 1, if(max(2, ts_zscore(close, $n)) > 2, -1, 0))

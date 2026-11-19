@@ -26,6 +26,18 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   session, bars, minutes absent inside the session's span, largest hole, short and weekend sessions,
   contract violations (`ok`), optional session-date comparison with a calendar; behind
   `crucible data integrity` and the MCP tool `crucible_data_integrity`. Read-only.
+- `resample.py` — causal resampling of a continuous futures series (ADR-0100):
+  `resample_session_bars(bars, *, calendar, minutes, source_seconds=60)` aggregates a one-minute
+  `CONTINUOUS_BAR_SCHEMA` series into 5- or 15-minute bars and returns a `ResampleResult`
+  (`bars`, `dropped_off_schedule`, `buckets`, `partial_buckets`). A bucket is the half-open interval
+  of bar ENDS `(k·m, (k+1)·m]` on the UTC clock within ONE scheduled segment, so it never spans the
+  maintenance break, a halt or a session boundary; its label is its end clipped to the segment's
+  scheduled close (a segment open/close off the grid gives a shorter first/last bucket, flagged
+  `partial`). OHLCV is first/max/min/last/sum with a `bars` count of constituents,
+  `available_at = max(label, last constituent's available_at)`, an empty bucket produces no row, an
+  off-schedule bar is dropped and counted, and a bucket holding two contracts is refused. Any other
+  `minutes` is refused (1m is the source series, not a resample). Used by a futures run whose
+  `fidelity.resolution` is `5m` or `15m`, for the execution AND the signal series (same buckets).
 - `futures_specs.py` — the versioned futures contract specification table (ADR-0090): per root the
   tick size, point value and tick value, currency, exchange, source and effective date range
   (`FuturesContractSpec`, `SPEC_TABLE`, `futures_spec`, `spec_table_document`, `spec_table_hash`).
@@ -238,6 +250,12 @@ provider**. A fetch writes a dataset with `build_dataset`, and runs name the sto
   table replaces it. `CMES` is used for session dates only: it models a 24 h block with no
   maintenance break or early closes (ADR-0087, ADR-0088). The roll cost at each roll is not charged
   yet (milestone C3).
+- A resampled (`5m`/`15m`) series is a READING, not a dataset: `resample_session_bars` builds the
+  bars a run simulates but writes nothing to the store, so a resolution is rebuilt on every run and
+  a run's identity covers the config, not a stored aggregate. A fidelity run whose sessions would
+  produce a `partial` bucket is refused (`experiments.futures_run._resampled`): the session rules
+  are evaluated on a bar grid anchored at the scheduled open, and no CME session of the current
+  table opens or closes off a 5- or 15-minute boundary.
 - The integrity report cannot tell a minute with no trade from a minute the source lost (Databento's
   OHLCV-1m omits empty minutes); it reports the absent minutes and leaves the judgement to the caller
   (ADR-0088).

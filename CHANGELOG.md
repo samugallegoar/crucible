@@ -8,6 +8,56 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C5a: futures fidelity levels and batch evaluation (ADR-0100)
+- **C5 stays descriptive.** No Sharpe, IC, PSR, DSR, p-values, confidence intervals or statistical
+  edge claims are added. Every metric keeps `assessment: "descriptive"` with null intervals, and
+  every verdict stays null with reason `not_assessed`. C6 is the first stage that may introduce
+  them.
+- **Causal session-bounded resampling** (`crucible.data.resample.resample_session_bars`).
+  - It builds 5m and 15m bars from 1m bars. A bucket collects the bar ends in `(k·m, (k+1)·m]` and
+    is clipped to its CME trade-date session, so no bar spans the maintenance break or a session
+    edge.
+  - Off-schedule bars are dropped and counted, and an empty bucket produces no bar.
+  - `available_at` is the later of the bucket label and its constituents' `available_at`.
+  - A bucket that mixes contracts is refused.
+- **Fidelity in the futures run.** The new `fidelity` field takes `resolution` (`1m`, `5m` or
+  `15m`), `cost_detail` (`full` or `commission_only`) and an optional `preset` (`screen`,
+  `standard` or `full`). `FIDELITY_TABLE_VERSION` is "1".
+  - A preset that contradicts an explicit field is refused.
+  - `commission_only` refuses explicitly non-zero spread or slippage ticks, and the manifest
+    records it as an optimistic approximation.
+  - The manifest and the futures document gain an additive `fidelity` block. Neither
+    `schema_version` changes.
+  - A coarse run refuses a partial (session-clipped) bucket. None occurs on the current session
+    table.
+- **Causal roll on a coarse grid** (`simulate_futures`).
+  - A causal roll executes at the open of the first simulated bar that is at or after its decision
+    and at which both contracts have a raw 1m bar opening. Both legs are priced at those raw 1m
+    opens.
+  - At 1m this is the previous rule, and every 1m output is byte-identical. `SIMULATOR_VERSION`
+    stays 2.
+  - At 1m, a missing first joint minute in the series now moves the roll to the next bar where
+    both contracts trade, where strict mode used to refuse it.
+  - The policy records `roll_execution_grid_seconds` and `roll_execution_grid`.
+- **Batch evaluation.**
+  - Entry points: `crucible futures batch --batch FILE`, the MCP tool `crucible_futures_batch` and
+    `crucible schema --kind futures-batch`.
+  - Every candidate shares the base config. Only the strategy and the run name change.
+  - The batch id is `BAT-<16 hex>`.
+  - A canonical duplicate or an already sealed run is `cached` and never recomputed.
+  - `batch.json` lists the candidates in submission order, never ranked, with descriptive dollar
+    metrics.
+- **Every submission is recorded.** The trial registry gains an additive `submissions` table keyed
+  by (batch_id, position). The `trials` table is unchanged, and C6 decides how submissions count
+  toward the trial total.
+- **Compatibility: every futures run id changes.** `FuturesRunConfig` gained `fidelity`, and the
+  config hash dumps defaults (`docs/COMPATIBILITY.md` §2). So every existing futures config gets a
+  new `FUT-` id, even at 1m, although its marks, fills, ledger and metrics do not change. Old run
+  directories stay valid as names of old runs.
+- **Examples.** `examples/futures/es_zscore_screen.yaml` and `es_batch_screen.yaml` run on the real
+  store: three candidates, two distinct runs and one `cached`, at 15m with the March 2024 roll
+  executed causally.
+
 ### Fathom C4c: cross-sectional rank, structural similarity, incremental evaluator (ADR-0099)
 - **`cs_rank` is evaluated on a panel.**
   - The universe at each `event_time` is the symbols with a row exactly at that time and a

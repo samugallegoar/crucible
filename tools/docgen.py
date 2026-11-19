@@ -824,6 +824,7 @@ def _artifact_blocks() -> dict[str, str]:
             + _table(("Key", "JSON type", "Nullable", "Written by", "Meaning"), manifest_rows)
         ),
         "trial-registry": _trial_registry_table(),
+        "trial-submissions": _trial_submissions_table(),
     }
 
 
@@ -849,6 +850,27 @@ def _trial_registry_table() -> str:
 
 
 # ---- pydantic models -> tables
+
+
+def _trial_submissions_table() -> str:
+    import tempfile
+
+    import duckdb
+
+    from crucible.validation.trial_registry import DuckDBTrialRegistry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "trial_registry.duckdb"
+        DuckDBTrialRegistry(path)
+        with duckdb.connect(str(path)) as conn:
+            rows = conn.execute(
+                "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
+                "WHERE table_name = 'submissions' ORDER BY ordinal_position"
+            ).fetchall()
+    return _table(
+        ("Column", "DuckDB type", "Nullable"),
+        [(f"`{name}`", str(dtype), str(nullable).lower()) for name, dtype, nullable in rows],
+    )
 
 
 def _ref_name(ref: str) -> str:

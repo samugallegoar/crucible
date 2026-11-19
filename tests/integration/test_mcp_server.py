@@ -30,6 +30,7 @@ EXPECTED_TOOLS = {
     "crucible_run_vectorized",
     "crucible_futures_run",
     "crucible_futures_check",
+    "crucible_futures_batch",
     "crucible_promote",
     "crucible_debug",
     "crucible_validate",
@@ -194,6 +195,12 @@ def _captured_calls() -> list[list[str]]:
                 "overwrite": True,
             },
             "crucible_futures_check": {"config": "c.yaml"},
+            "crucible_futures_batch": {
+                "batch": "b.yaml",
+                "store": "s",
+                "artifacts": "a",
+                "overwrite": True,
+            },
             "crucible_validate": {
                 "config": "c.yaml",
                 "artifacts": "a",
@@ -309,7 +316,7 @@ def test_every_tool_builds_an_argv_the_real_parser_accepts() -> None:
     from crucible.cli.main import build_parser
 
     calls = _captured_calls()
-    assert len(calls) == 23
+    assert len(calls) == 24
     for argv in calls:
         build_parser().parse_args(argv)  # a mistyped flag would exit(2) here
 

@@ -49,12 +49,23 @@ equity in USD (`Decimal(38, 6)`), plus a fills table and a rolls table. No compo
   - Non-integer tick counts are refused, so no percentage stops.
 - **Off-schedule bars** (an optional `on_schedule` column, ADR-0091) are not eligible for any fill
   or bracket exit.
-- **Rolls** are two trades. `causal` (default, strict): both legs at the opens of the first minute at
-  or after the roll's decision in which both contracts traded in the raw data; until then the
-  position stays in the old contract, marked and bracketed on its raw bars; no such minute refuses.
+- **Rolls** are two trades. `causal` (default, strict): the execution instants are the OPENS of the
+  simulated bars (`event_time - bar_seconds`). The first candidate is taken whose open is at or
+  after the roll's decision and at which BOTH contracts have a raw one-minute bar opening exactly
+  there (`RAW_BAR_SECONDS = 60`: the raw dataset is one-minute bars by contract); the two legs are
+  priced at those raw one-minute opens. On one-minute bars every bar open is a raw minute, so that
+  is exactly "the first joint print at or after the decision"; on a coarser grid (a resampled
+  fidelity level, ADR-0100) the roll waits for such a bar open, at most one bar of delay, instead
+  of being priced inside a bar it cannot see — never earlier, so never optimistic. A candidate
+  whose instant has only one side trading is skipped; if there is none before the next roll (or the
+  end of the series) strict mode refuses. Until the roll executes the position stays in the old
+  contract, marked and bracketed on its raw bars.
   `reference_approximation` values the roll at `reference_time` prices and makes
   `strict_execution` False. The rolls table reports every roll's execution and the approximation
-  error in ticks and USD per contract.
+  error in ticks and USD per contract; `delay_minutes` is the execution bar's close minus the first
+  bar of the new contract (0 at 1m when both legs trade in the first minute after the switch).
+  The policy record carries `roll_execution`, `roll_execution_grid_seconds` (the bar length the
+  instants come from) and a one-line description of the rule.
 - **Exactness.** Prices in integer ticks (a price off the tick grid is refused: an adjusted series
   can drive signals, never fills), money in integer micro-dollars.
 - `execution_policy()` records every assumption, with the spec table's version and SHA-256.

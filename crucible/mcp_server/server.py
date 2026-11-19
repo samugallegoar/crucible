@@ -379,8 +379,9 @@ def build_server() -> MCPServer:
     @server.tool()
     async def crucible_schema(kind: str = "experiment") -> dict[str, object]:
         """A JSON Schema: the experiment config (default, `experiment`), the strategy spec
-        (`strategy-spec`), the futures-run config (`futures-run`), or an output document Crucible
-        prints: `run`, `verification`, `error`, `manifest`."""
+        (`strategy-spec`), the futures-run config (`futures-run`), the futures-batch file
+        (`futures-batch`), or an output document Crucible prints: `run`, `verification`, `error`,
+        `manifest`, `futures-run-document`."""
         return await run_cli(build_argv("schema", [], {"kind": kind}))
 
     @server.tool()
@@ -476,6 +477,36 @@ def build_server() -> MCPServer:
         canonical config. Call it before `crucible_futures_run` to see how a config will be read."""
         options: dict[str, Option] = {"config": absolute(config), "json": True}
         return await run_cli(build_argv(["futures", "check"], [], options))
+
+    @server.tool()
+    async def crucible_futures_batch(
+        batch: str,
+        store: str | None = None,
+        home: str | None = None,
+        artifacts: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, object]:
+        """Run N DSL expressions on one futures base config (C5a). Every candidate shares the
+        base's data, window, contracts, costs, execution, session and fidelity; only the strategy
+        and the run name change. Reads the four datasets from `store`; writes the sealed run of
+        each distinct candidate plus `<batch id>/batch.json` under `artifacts` (default: the
+        Crucible home). `home` gives both roots (its experiments/ and data/ folders; pass it or
+        `artifacts`, never both). Returns the batch document: the ids, the candidates in SUBMISSION
+        order with their descriptive metrics (null intervals) and the null verdict, which is not
+        an assessment of edge. Re-running the same batch reuses the runs it already computed."""
+        options: dict[str, Option] = {
+            "batch": absolute(batch),
+            "store": absolute(store),
+            "overwrite": overwrite,
+            "json": True,
+        }
+        if home is not None:
+            options["home"] = absolute(home)
+        if artifacts is not None:
+            options["artifacts"] = absolute(artifacts)
+        if home is None and artifacts is None:
+            options["artifacts"] = _home_paths()[0]
+        return await run_cli(build_argv(["futures", "batch"], [], options))
 
     @server.tool()
     async def crucible_validate(
