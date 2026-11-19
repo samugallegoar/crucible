@@ -1058,7 +1058,8 @@ futures runs above, unchanged. `walkforward.json` has `schema_version` **1**
 | `folds` | array | one entry per fold, in date order (below) |
 | `oos` | object | the out-of-sample summary, computed from `oos_daily.parquet` alone (below) |
 | `window_stability` | object | `fold_oos_net_pnl_usd` (one metric per fold) and `folds_positive`/`folds_negative`/`folds_flat`: counts, never a statistic |
-| `in_sample_audit` | object | every fold's training runs, `note` and `folds[].candidates[]`, each candidate `in_sample: true` with its `candidate_id`, `metrics`, `statistics`, `checks`, `violations`, `eligible` and `time_in_market` |
+| `in_sample_audit` | object | every fold's training runs: `note`, `folds[].candidates[]` (each `in_sample: true` with its `candidate_id`, `metrics`, `statistics`, `checks`, `violations`, `eligible` and `time_in_market`) and — C6b, only when the file asks for PBO — `pbo_panel` (below) |
+| `pbo` | object | C6b (ADR-0104), PRESENT only when the file carries `pbo: {n_groups: N}`: a POINTER, `{pointer: "in_sample_audit.pbo_panel", note}`. The numbers live in the audit, because they come from in-sample runs |
 | `unused_trade_dates` | array<string> | the trailing base-window trade dates no fold evaluated (fewer than M) |
 | `terminal_exit` | string | how the fold boundary is costed, in words |
 | `trials` | object | the family's `submission_count`, `unique_candidate_count` and `total_trials` after the walk-forward (C6a) |
@@ -1073,7 +1074,8 @@ number is 0.
 
 `oos` holds `net_pnl_usd`, `total_costs_usd`, `fills`, `trade_dates`, `max_drawdown_usd` and
 `folds_with_selection`, each `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`,
-plus the C6a `statistics` block described under the futures-run document (below). The drawdown is
+plus the C6a `statistics` block described under the futures-run document (below), which carries
+the C6b `supplementary` reading computed on the OOS chain. The drawdown is
 peak-to-trough on the concatenated daily closing equity, in USD. `oos.statistics` is computed on
 the CONCATENATED OOS chain ALONE (`owner_id` = the `WFA-` id, via `daily_returns_from_oos`) and
 defined by the FAMILY's `total_trials`; its `ic_mean` is null with a reason, because a
@@ -1102,6 +1104,57 @@ starts at the base capital plus the previous folds' net P&L *after* their termin
 each fold's terminal exit (one side of the full per-contract cost times the contracts open at its
 last bar) is booked on that fold's last trade date as `costs_usd` and as a reduction of
 `closing_equity_usd`. A flat fold (no eligible candidate) has one zero row per test trade date.
+
+**The walk-forward PBO panel (C6b, ADR-0104).** A walk-forward file may carry `pbo: {n_groups:
+N}` (even, at least 4). When it does, EVERY distinct candidate is simulated ONCE more on the
+BASE window with the base config and the same warm-up (`run.name` = `<base>/wf/full/<name>`).
+Those runs record their trial like any futures run, with their existing `candidate_id`, so
+`total_trials` does NOT grow (they are further trials of candidates already counted) and
+`submission_count` does not move either: a panel run is recorded with `mode = "pbo_panel"`, so
+it is a trial of the family without being an event of the search, and no count in `trials`
+changes because of the option. The panel is those runs' daily returns on the base window, reported under
+`in_sample_audit.pbo_panel`, marked `in_sample: true`, with `{value, n_groups, n_combinations,
+n_candidates, n_observations, assessment, method, tie_rule, reason, candidates: [{candidate_id,
+name, run_id, status, n_obs}], note}`. The selected OUT-OF-SAMPLE path is never an input:
+`pbo` at the top level only POINTS at the block (`{"pointer": "in_sample_audit.pbo_panel",
+"note": ...}`), because a PBO computed on the one selected fold chain would answer a question
+nobody asked.
+
+### `trials.json` (C6b, ADR-0104)
+
+`crucible futures trials --family F` writes `<artifacts>/<EFT-ID>/trials.json`
+(`TRIALS_SCHEMA_VERSION` = 1, keys sorted, LF) and prints the same object with `--json`. It is
+written OUTSIDE every sealed run: a report reads artifacts and the registry, never changes
+them. `EFT-` + 16 hex digits hashes the family, the sorted (candidate id, representative run
+id) pairs and the options (`rho_threshold`, `min_overlap_trade_dates`), so another threshold or
+another representative run is another report. Its JSON Schema is `crucible schema --kind
+futures-trials`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `schema_version` | int | `1` |
+| `kind` | string | `futures_trials` |
+| `trials_id` | string | `EFT-<16 hex>` (the directory name) |
+| `family` | string | the trial family the report covers |
+| `counts` | object | `{submission_count, unique_candidate_count, total_trials}` at write time (C6a's counts) |
+| `candidates` | array | one entry per DISTINCT candidate, by candidate id: `{candidate_id, run_id, n_obs, sharpe_per_period}`. `run_id` is the representative run (most observations, tie to the earliest recorded) |
+| `pairs` | array | every unordered pair, by candidate id: `{a, b, status, overlap, rho, differing_keys, detail}`. `status` is `ok`, `insufficient_overlap`, `incompatible`, `constant_series`, `unverified` or `missing`; `rho` is null exactly when the status is not `ok`, and `detail` says why |
+| `estimator` | object | the ESTIMATE: `{assessment: "estimator", note, status: "ok" or "unavailable", effective_trials, threshold, clusters, reasons, method}` (below) |
+| `sensitivity` | object | `rho* -> {effective_trials, clusters}` for `0.3`, `0.5`, `0.7` and `0.9`; EMPTY when the estimate is unavailable (there is no matrix to cluster) |
+| `verdict` | object | the null verdict with the `robustness_not_assessed` reason: an estimate feeds no verdict |
+
+`estimator.method` records what the number is and how it was made: `name`
+(`average_linkage`), `linkage` (`average`), `distance` (`d = sqrt((1 - rho) / 2)`),
+`threshold`, `threshold_distance`, `threshold_rule` ("merge while the smallest mean
+inter-cluster distance <= sqrt((1 - threshold) / 2)"), `tie_rule` ("lexicographically
+smallest pair of sorted member tuples"), `min_overlap_trade_dates`, `overlap_rule` (the inner
+join, and that Pearson of the daily returns equals Pearson of the daily P&L), `key_rule` (only
+equal comparison keys are correlated), `unavailable_rule` ("never replaced by 0 or 1"),
+`sensitivity_thresholds` and `candidate_ids`. `note` is `"threshold-dependent; not a count of
+independent hypotheses"` and `assessment` is `"estimator"`: the count is NOT a probability,
+NOT a count of independent hypotheses and NOT the primary deflation. `1 <=
+effective_trials <= unique_candidate_count` always, and a pair without a valid correlation
+makes the whole estimate `unavailable` with its `reasons` — never a smaller count.
 
 ### The futures-run document (ADR-0097)
 
@@ -1167,6 +1220,7 @@ next to the descriptive ones:
 | `psr` | `probability` | no | `probabilistic_sharpe_ratio` against a benchmark of 0, skew/kurtosis corrected; `method` says so |
 | `dsr` | `probability` | no | `deflated_sharpe_ratio` over `total_trials` and the family's distinct candidate Sharpes; null with a reason below 2 candidate Sharpes |
 | `ic_mean` | `correlation` | yes | mean per-trade-date Spearman IC of a DSL expression; null with a reason for a spec or Python strategy |
+| `dsr_effective_trials` | `probability` | no | the SUPPLEMENTARY deflation (C6b, ADR-0104): the same series and the same candidate-Sharpe dispersion as `dsr` with `N` = the family's effective number of trials; null with a reason when that estimate is unavailable. Also written under `statistics.supplementary` (below). It NEVER replaces `dsr` |
 
 **The `statistics` block.** The manifest, a walk-forward's `oos.statistics` and the document's
 `statistics` key carry the recipe and the counts beside the numbers:
@@ -1182,6 +1236,7 @@ next to the descriptive ones:
 | `missing_sessions` | int | session-calendar trade dates of the window that produced no bar (excluded, counted) |
 | `zero_position_days` | int | observed trade dates on which the run held nothing (real zeros) |
 | `ic` | object | `{horizon_bars, days, pairs, by_month, reason}`; `by_month` maps `YYYY-MM` -> `{ic_mean, ic_days}` |
+| `supplementary` | object | C6b (ADR-0104): readings that sit BESIDE the primary ones, absent for a manifest written before it. `dsr_effective_trials`: `{value, ci_low: null, ci_high: null, assessment: "inferential", unit: "probability", method, reason, threshold, effective_trials, candidate_ids}` |
 
 A window with fewer than 3 daily observations, or a series with no dispersion, reports the
 Sharpe-family statistics as nulls with reasons rather than zeros. A walk-forward's
@@ -1232,12 +1287,16 @@ batch.
 | `submitted` | int | number of submitted candidates |
 | `distinct_runs` | int | number of distinct run ids among them (the trials this batch records) |
 | `trials` | object | the family's `submission_count`, `unique_candidate_count` and `total_trials` after the batch (C6a) |
+| `pbo` | object | C6b (ADR-0104), PRESENT only when the batch file asks for it with `pbo: {n_groups: N}`: `{value, n_groups, n_combinations, n_candidates, n_observations, assessment: "inferential", method: "CSCV", tie_rule, reason}` (below) |
 | `verdict` | object | the null verdict and its `robustness_not_assessed` reason (ADR-0097, above) |
 | `ordering` | string | the note that the list is the submission's order and is never ranked |
 
 A candidate row: `position` (0-based submission index), `name`, `status` (`computed` | `cached`),
 `run_id` (`FUT-`), `artifact_id` (`ART-`), `structure_id` (`DSX-`), `parameterization_id` (`DSP-`),
-`candidate_id` (`CND-`), `metrics` and `statistics`. `metrics` is exactly `net_pnl_usd`,
+`candidate_id` (`CND-`), `metrics`, `statistics` and `supplementary`. `supplementary` is C6b
+(ADR-0104): `dsr_effective_trials` as described under the statistics block, computed at the
+batch's write time from the family's candidates then, and sitting beside the candidate's
+primary `dsr`. `metrics` is exactly `net_pnl_usd`,
 `total_costs_usd`, `fills`, `max_intraday_drawdown_usd` and `min_equity_usd`, each
 `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`. `statistics` is the
 run's own C6a report — `sharpe_per_period`, `sharpe_annualized`, `mean_daily_return`, `psr`, `dsr`,
@@ -1247,6 +1306,18 @@ run it reuses.
 `parameterization_id` after canonicalization and binding, or its sealed run directory already
 existed and verified. A cached row reports the same `run_id`/`artifact_id`/`metrics` as the run it
 reuses.
+
+**The PBO option (C6b, ADR-0104).** A batch file may carry `pbo: {n_groups: 8}`: `n_groups`
+must be even and at least 4 (CSCV splits `n_groups` into halves, and the splitter needs at
+least 3 groups), and it joins the batch id, because the option changes the document. With the
+option, the panel is the DISTINCT candidates' daily returns on the batch window (a cached
+duplicate enters once) and `pbo` reports the probability of backtest overfitting; without it,
+no `pbo` key is written at all. The panel requires an IDENTICAL set of trade dates across
+candidates: otherwise `value` is null with the dates that differ, and nothing is filled,
+dropped or intersected. Fewer than 2 candidates, or fewer observations than `n_groups`, is
+also null with a reason. `method` is `CSCV` and `tie_rule` says how ties are resolved (by
+expectation under uniform random tie-breaking), so a degenerate panel reports about 0.5
+rather than 1.
 
 **The C5 boundary.** Everything a batch reports is descriptive: totals, counts and a conservative
 drawdown, with null intervals and a null verdict. No Sharpe, IC, PSR, DSR, p-value, confidence
@@ -1299,8 +1370,10 @@ member could not be read). `status` is one of:
   does not exist;
 - `incompatible`: the comparison keys differ (the pair was not simulated under the same
   execution and session rules), so there is no value;
-- `unverified`: the member's seal (a run's, or a walk-forward test run's) does not verify. It
-  is listed with no metrics and no value, never dropped.
+- `unverified`: the member's seal (a run's, or a walk-forward test run's) does not verify, or
+  its sealed `config.yaml` does not parse back into a futures config (the detail then starts
+  with `config_reload_failed:`, because a member's comparison key is its config's). It is
+  listed with no metrics and no value, never dropped.
 
 `metrics` (of the target and of every member that was read) is exactly: `marked_pnl_usd`,
 `realized_pnl_usd`, `total_costs_usd`, `max_drawdown_usd`, `max_intraday_drawdown_usd`,

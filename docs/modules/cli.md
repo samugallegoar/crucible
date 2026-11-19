@@ -7,15 +7,17 @@ options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-path
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
 `data fetch`, `data check`, `data integrity`, `data catalog`, `data list`, `futures run`,
-`futures check`, `futures batch`, `futures walkforward`, `futures compare`. Handlers are
+`futures check`, `futures batch`, `futures walkforward`, `futures compare`, `futures trials`.
+Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
 stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
 the `--json` document); `artifact show <ART-.../EXP-...>` prints the same document for a finished
 run, `artifact verify` recomputes its id from the files; a futures run's `artifact show` prints its
 futures-run document (`experiments.futures_document`, ADR-0097); `schema --kind` also serves `run`,
-`verification`, `error`, `manifest`, `futures-run-document`, `futures-batch`, `futures-walkforward`
-and `futures-compare` (the comparison document of C5c, ADR-0102). stdout and
+`verification`, `error`, `manifest`, `futures-run-document`, `futures-batch`, `futures-walkforward`,
+`futures-compare` (the comparison document of C5c, ADR-0102) and `futures-trials` (the
+effective-trials report of C6b, ADR-0104). stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
 `UnicodeEncodeError` on a legacy Windows code page.
 
@@ -180,6 +182,17 @@ The `crucible` command.
   it (`--json`) or a table of the pool in ID ORDER with the target's metrics, each member's status,
   overlap and value, the largest absolute correlation and the verdict line. No Sharpe, no interval,
   no significance and no ranking by any statistic.
+- `crucible futures trials --family F [--threshold R] [--min-overlap N] [--artifacts DIR | --home
+  DIR] [--json]` — the family's EFFECTIVE number of trials (C6b, `experiments.futures_trials`,
+  ADR-0104). Reads the artifacts root only: no `--store`, no simulation, no new trial. `--threshold`
+  is the estimator's `rho*` (default 0.5, a correlation in [-1, 1]) and `--min-overlap N` the
+  overlapping trade dates a pair's correlation needs (default 20, refused below 10). Writes
+  `<artifacts>/<EFT-ID>/trials.json` and prints it (`--json`) or the counts, each candidate with its
+  representative run, every pair with its status/overlap/rho, the estimate with its threshold and
+  clusters, the sensitivity table for `rho*` 0.3/0.5/0.7/0.9, the reasons when it is unavailable and
+  the verdict line. The estimate is labelled an estimator, is threshold-dependent, is never a count
+  of independent hypotheses and never replaces the primary `dsr` deflated by `total_trials`.
+  `schema --kind futures-trials` prints the report's JSON Schema.
 - `crucible data check --store S --dataset D --calendar C` — quality
   battery; `data list --store S` — datasets with manifest hashes;
   `--skip NAME --skip-reason TEXT` (repeatable) skips named checks with a

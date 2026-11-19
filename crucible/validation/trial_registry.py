@@ -17,6 +17,10 @@ optimization-mode trial in this family already see this evaluation's data
 window?" from the registry alone, without re-reading every past trial's
 ``manifest.json``/``config.yaml`` off the artifact store.
 
+Since C6b (ADR-0104) ``mode`` may also be ``pbo_panel``: a walk-forward's PBO panel run is an
+evaluation of a candidate the family already holds, kept in ``trials`` for audit but not
+counted as a submission event (``PBO_PANEL_MODE``).
+
 Since C6a (ADR-0103) a row may also carry ``candidate_id`` (the ``CND-`` identity of the CANDIDATE
 the run evaluated: the strategy plus its parameter values, on these datasets, under these costs,
 this execution, fidelity, session and signal policy, and NOT its window or name), ``n_obs`` (the
@@ -38,6 +42,22 @@ import duckdb
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateTrial:
+    """One candidate's REPRESENTATIVE recorded run (ADR-0103 decision 3, ADR-0104 decision 1).
+
+    ``experiment_id`` is the run with the most observations for ``candidate_id`` (a tie going to
+    the earliest recorded); ``sharpe`` and ``n_obs`` are that run's. The effective-trials report
+    reads the representative run's daily returns from it, which is why the run id travels here and
+    not only the Sharpe.
+    """
+
+    candidate_id: str
+    experiment_id: str
+    sharpe: float | None
+    n_obs: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +137,20 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS candidate_id VARCHAR;
 # over (``candidate_sharpes`` keeps the row with the most of them). seq: insertion order, so the
 # tie-break "earliest recorded" of ADR-0103 decision 3 is reproducible without a wall clock.
 
+PBO_PANEL_MODE = "pbo_panel"
+"""The ``mode`` of a trial a walk-forward's PBO panel records (C6b, ADR-0104 decision 6).
+
+A panel run is a real futures run of an EXISTING candidate, made once on the base window so
+the family has a comparable panel. It is not a submission to the selection process (nothing
+submitted it, no fold selected it), so :meth:`DuckDBTrialRegistry.submission_count` leaves it
+out of its standalone part, while the row itself stays in ``trials``: the panel run is
+auditable like every other evaluation, it just does not count as an event of the search. It
+never changes ``unique_candidate_count`` or ``total_trials`` either, because it evaluates a
+candidate the family already holds. ``mode`` is otherwise the run's own mode (``futures``,
+``optimization``, ...), and contamination reads only ``mode = 'optimization'``, so this value
+is inert everywhere else.
+"""
+
 FREQUENCY_TOLERANCE = 1.5
 """Two trials' return periods count as the same frequency when they differ by less than this
 factor (daily marks on an exchange calendar and on 24/7 both have a median of one day)."""
@@ -180,6 +214,12 @@ class DuckDBTrialRegistry:
 
         ``candidate_id``/``n_obs`` (ADR-0103) are additive: a row recorded without them keeps
         counting by ``experiment_id``, exactly as before C6a.
+
+        ``mode`` is what the row was recorded FOR: a run of the futures path records
+        ``futures`` (``futures_run.MODE``), an optimization sweep ``optimization`` (which
+        contamination reads), and a walk-forward's PBO panel run ``pbo_panel``
+        (:data:`PBO_PANEL_MODE`, C6b): an evaluation of a candidate the family already holds,
+        kept in ``trials`` for audit but not counted as a submission event.
         """
         with duckdb.connect(str(self._path)) as conn:
             conn.execute(_SCHEMA)
@@ -300,6 +340,12 @@ class DuckDBTrialRegistry:
         candidate: its training candidates were), and it is counted, so every run the family
         recorded is one of the two kinds and nothing is counted twice.
 
+        The ONE exception is a walk-forward's PBO panel run (``mode = PBO_PANEL_MODE``, C6b,
+        ADR-0104 decision 6): it is an extra evaluation of a candidate the family already
+        holds, made only to build a comparable panel, so it is NOT an event of the search. It
+        stays in ``trials`` (auditable) and counts toward neither this count nor
+        ``unique_candidate_count``.
+
         Rows recorded before C6a (no ``candidate_id``) contribute nothing here: they were not
         submitted through the C6a paths, and their family's count stays what it was.
         """
@@ -308,9 +354,10 @@ class DuckDBTrialRegistry:
             row = conn.execute(
                 "SELECT (SELECT COUNT(*) FROM submissions WHERE family = ?) + "
                 "(SELECT COUNT(*) FROM trials WHERE family = ? AND candidate_id IS NOT NULL "
+                "AND COALESCE(mode, '') <> ? "
                 "AND experiment_id NOT IN (SELECT experiment_id FROM submissions "
                 "WHERE family = ?))",
-                [family, family, family],
+                [family, family, PBO_PANEL_MODE, family],
             ).fetchone()
             assert row is not None
             return int(row[0])
@@ -343,30 +390,55 @@ class DuckDBTrialRegistry:
         """
         return self.unique_candidate_count(family)
 
+    def candidate_trials(self, family: str) -> list[CandidateTrial]:
+        """One REPRESENTATIVE trial per distinct candidate of ``family`` (ADR-0103 decision 3).
+
+        The representative run of a candidate is the one with the most observations (``n_obs``), a
+        tie going to the earliest recorded row (``seq``), so the choice never depends on the order
+        DuckDB happens to return rows in. Rows recorded before C6a have neither ``n_obs`` nor
+        ``seq``; they group by ``experiment_id`` and order as if they were the first recorded,
+        which is what "one per distinct experiment_id" meant before C6a. A candidate whose
+        representative row has no Sharpe still gets an entry (``sharpe`` null): it counts toward
+        ``total_trials`` and cannot contribute to the cross-trial dispersion (ADR-0071).
+
+        Sorted by the candidate key, so two calls over the same registry give the same list. This
+        is the one place the representative rule lives: :meth:`candidate_sharpes` reads it, and so
+        does the effective-trials report (ADR-0104 decision 1), which needs the run id too.
+        """
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            rows = conn.execute(
+                "SELECT COALESCE(candidate_id, 'EXP:' || experiment_id) AS candidate, "
+                "experiment_id, sharpe, n_obs FROM trials WHERE family = ? "
+                "ORDER BY candidate, COALESCE(n_obs, -1) DESC, COALESCE(seq, 0) ASC, "
+                "experiment_id ASC",
+                [family],
+            ).fetchall()
+        best: dict[str, CandidateTrial] = {}
+        for candidate, experiment_id, sharpe, n_obs in rows:  # first row per candidate wins
+            best.setdefault(
+                str(candidate),
+                CandidateTrial(
+                    candidate_id=str(candidate),
+                    experiment_id=str(experiment_id),
+                    sharpe=None if sharpe is None else float(sharpe),
+                    n_obs=None if n_obs is None else int(n_obs),
+                ),
+            )
+        return [best[key] for key in sorted(best)]
+
     def candidate_sharpes(self, family: str) -> list[float]:
         """One per-period Sharpe per distinct candidate of ``family`` (ADR-0103 decision 3).
 
         A candidate's Sharpe is the one from its run with the most observations (``n_obs``); a
         tie goes to the earliest recorded row (``seq``), so the list never depends on the order
         DuckDB happens to return rows in. Candidates with no recorded Sharpe are omitted (they
-        still count toward ``total_trials``: ADR-0071). Rows recorded before C6a have neither
-        ``n_obs`` nor ``seq``; they group by ``experiment_id`` and order as if they were the
-        first recorded, which is what "one per distinct experiment_id" meant before C6a.
+        still count toward ``total_trials``: ADR-0071).
 
-        Sorted by the candidate key, so two calls over the same registry give the same list.
+        Sorted by the candidate key, so two calls over the same registry give the same list. The
+        representative rule itself lives in :meth:`candidate_trials`.
         """
-        with duckdb.connect(str(self._path)) as conn:
-            conn.execute(_SCHEMA)
-            rows = conn.execute(
-                "SELECT COALESCE(candidate_id, 'EXP:' || experiment_id) AS candidate, "
-                "sharpe, n_obs, seq FROM trials WHERE family = ? AND sharpe IS NOT NULL "
-                "ORDER BY candidate, COALESCE(n_obs, -1) DESC, COALESCE(seq, 0) ASC",
-                [family],
-            ).fetchall()
-        best: dict[str, float] = {}
-        for candidate, sharpe, _n_obs, _seq in rows:  # first row per candidate wins
-            best.setdefault(str(candidate), float(sharpe))
-        return [best[key] for key in sorted(best)]
+        return [trial.sharpe for trial in self.candidate_trials(family) if trial.sharpe is not None]
 
     def trial_sharpes(self, family: str) -> list[float]:
         """Per-period Sharpe of every distinct trial recorded for

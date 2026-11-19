@@ -38,11 +38,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+import polars as pl
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from crucible.core.canonical import canonical_json
 from crucible.core.errors import ConfigurationError, ExperimentError
+from crucible.data.continuous import calendar_for
 from crucible.experiments.artifact_id import read_seal, verify_artifact
 from crucible.experiments.futures_config import (
     FuturesRunConfig,
@@ -53,7 +55,14 @@ from crucible.experiments.futures_config import (
 )
 from crucible.experiments.futures_document import metric_document, verdict_document
 from crucible.experiments.futures_run import futures_run_id, run_futures
-from crucible.experiments.futures_stats import STATISTICS_METRICS
+from crucible.experiments.futures_stats import STATISTICS_METRICS, ReturnsSeries, daily_returns
+from crucible.experiments.futures_trials import (
+    DEFAULT_PBO_GROUPS,
+    PanelSeries,
+    futures_effective_trials,
+    pbo_on_panel,
+    supplementary_block,
+)
 from crucible.validation.trial_registry import DuckDBTrialRegistry
 
 BATCH_SCHEMA_VERSION = 1
@@ -122,6 +131,40 @@ class FuturesBatchCandidateFile(_StrictModel):
     )
 
 
+class FuturesPboFile(_StrictModel):
+    """The PBO option of a batch (C6b, ADR-0104 decision 6): how many CSCV groups to split into.
+
+    PBO is computed only when this key is present: a reader that does not ask for it gets no
+    ``pbo`` block rather than an invented number. ``n_groups`` must be even (CSCV splits the panel
+    into two halves) and at least 4, the fewest even count ``CombinatorialPurgedCVSplitter``
+    accepts with ``n_test_groups == n_groups // 2``.
+    """
+
+    n_groups: int = Field(
+        default=DEFAULT_PBO_GROUPS,
+        description="CSCV groups the panel's period axis is cut into: even, at least 4 "
+        "(default 8). Every combination of n_groups/2 groups is an out-of-sample set.",
+    )
+
+    @field_validator("n_groups")
+    @classmethod
+    def _even_and_splittable(cls, value: int) -> int:
+        if value % 2 != 0:
+            msg = (
+                f"pbo.n_groups = {value}: CSCV needs an EVEN number of groups, because "
+                "n_test_groups = n_groups / 2 must be a whole number of groups"
+            )
+            raise ValueError(msg)
+        if value < 4:
+            msg = (
+                f"pbo.n_groups = {value}: CSCV needs at least 4 groups (an even count, with "
+                "n_test_groups = n_groups / 2 inside a splitter that requires at least 3 groups). "
+                "Use 4, 6, 8, ... or leave the key out"
+            )
+            raise ValueError(msg)
+        return value
+
+
 class FuturesBatchFile(_StrictModel):
     """The batch file: a base futures-run config and the ordered candidates to run on it."""
 
@@ -135,6 +178,12 @@ class FuturesBatchFile(_StrictModel):
     )
     candidates: list[FuturesBatchCandidateFile] = Field(
         min_length=1, description="The candidates, in submission order (kept, never sorted)."
+    )
+    pbo: FuturesPboFile | None = Field(
+        default=None,
+        description="Optional PBO (C6b, ADR-0104): the CSCV group count. When present, "
+        "batch.json reports the probability of backtest overfitting of the candidates' daily "
+        "returns panel; when absent, no pbo block is written at all.",
     )
 
 
@@ -150,11 +199,13 @@ class BatchCandidate:
 
 @dataclass(frozen=True, slots=True)
 class FuturesBatch:
-    """A loaded batch: the file's path, the base config it resolved and its candidates."""
+    """A loaded batch: the file's path, the base config it resolved, its candidates and options."""
 
     path: Path
     base: FuturesRunConfig
     candidates: tuple[BatchCandidate, ...]
+    pbo: FuturesPboFile | None = None
+    """The PBO option, or None when the file does not ask for one (C6b, ADR-0104 decision 6)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +274,7 @@ def load_futures_batch(path: Path) -> FuturesBatch:
         )
         for position, candidate in enumerate(parsed.candidates)
     )
-    return FuturesBatch(path=path, base=base, candidates=candidates)
+    return FuturesBatch(path=path, base=base, candidates=candidates, pbo=parsed.pbo)
 
 
 def futures_batch_json_schema() -> dict[str, object]:
@@ -231,11 +282,20 @@ def futures_batch_json_schema() -> dict[str, object]:
     return FuturesBatchFile.model_json_schema()
 
 
-def batch_id(base: FuturesRunConfig, candidates: tuple[BatchCandidate, ...]) -> str:
-    """``BAT-`` + the SHA-256 of the base config and the ORDERED candidates (their order is part of
-    the submission, so the same candidates in another order are another batch)."""
+def batch_id(
+    base: FuturesRunConfig,
+    candidates: tuple[BatchCandidate, ...],
+    pbo: FuturesPboFile | None = None,
+) -> str:
+    """``BAT-`` + the SHA-256 of the base config, the ORDERED candidates and the PBO option.
+
+    The order is part of the submission, so the same candidates in another order are another batch.
+    The PBO option is part of the identity too (C6b): the group count changes ``batch.json``'s
+    ``pbo`` block, and two documents under one id would be two different answers to one name.
+    """
     basis = {
         "base": base.model_dump(mode="json"),
+        "pbo": None if pbo is None else {"n_groups": pbo.n_groups},
         "candidates": [
             {
                 "name": candidate.name,
@@ -341,6 +401,55 @@ def _candidate_document(
     }
 
 
+def _panel(
+    rows: list[dict[str, object]], *, base: FuturesRunConfig, artifacts_root: Path
+) -> tuple[list[PanelSeries], dict[str, ReturnsSeries]]:
+    """The candidates' daily returns on the batch window, keyed by DISTINCT candidate (C6b).
+
+    Every candidate ran the same base config, so the window, the capital and the calendar are the
+    base's; ``daily_returns`` is the one returns function (ADR-0103 decision 1), so a panel here is
+    the series the run's own Sharpe was computed from. A cached duplicate enters ONCE
+    (``candidate_id``), and nothing is filled: whether the dates align is
+    :func:`crucible.experiments.futures_trials.pbo_on_panel`'s question, not this one's.
+    """
+    calendar = calendar_for(base.root)
+    window = (base.window.start, base.window.end)
+    series_by_candidate: dict[str, ReturnsSeries] = {}
+    panel: list[PanelSeries] = []
+    for row in rows:
+        run_id = str(row["run_id"])
+        candidate = str(row["candidate_id"])
+        if candidate in series_by_candidate:
+            continue
+        daily = _daily_frame(artifacts_root / run_id)
+        series = daily_returns(
+            daily, initial_capital=base.capital, calendar=calendar, window=window
+        )
+        series_by_candidate[candidate] = series
+        panel.append(
+            PanelSeries(
+                candidate_id=candidate,
+                trade_dates=series.trade_dates,
+                returns=series.returns,
+                source=run_id,
+            )
+        )
+    return panel, series_by_candidate
+
+
+def _daily_frame(run_dir: Path) -> pl.DataFrame:
+    """A sealed candidate's ``daily.parquet`` (its seal verified first)."""
+    verify_artifact(run_dir)
+    try:
+        return pl.read_parquet(run_dir / "daily.parquet")
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        msg = (
+            f"cannot read the daily ledger of {run_dir} ({exc}): a batch's PBO panel and "
+            "supplementary DSR read each candidate's own daily series. Re-run the candidate"
+        )
+        raise ExperimentError(msg).at(path=str(run_dir)) from exc
+
+
 def run_futures_batch(
     batch: FuturesBatch | Path | str,
     *,
@@ -363,7 +472,7 @@ def run_futures_batch(
     """
     loaded = load_futures_batch(Path(batch)) if isinstance(batch, str | Path) else batch
     base = loaded.base
-    identifier = batch_id(base, loaded.candidates)
+    identifier = batch_id(base, loaded.candidates, loaded.pbo)
     registry = DuckDBTrialRegistry(artifacts_root / REGISTRY_FILE)
     computed: dict[str, tuple[str, str, dict[str, object]]] = {}
     """``parameterization_id -> (run_id, artifact_id, metrics)``: what computed it."""
@@ -417,6 +526,14 @@ def run_futures_batch(
                 metrics,
             )
         )
+    # C6b (ADR-0104): the family's effective number of trials at write time, and -- only when the
+    # batch file asks for it -- the PBO of the candidates' own daily-returns panel.
+    panel, series_by_candidate = _panel(rows, base=base, artifacts_root=artifacts_root)
+    estimate = futures_effective_trials(base.run.family, artifacts_root=artifacts_root)
+    for entry in rows:
+        entry["supplementary"] = supplementary_block(
+            series_by_candidate[str(entry["candidate_id"])].returns, report=estimate
+        )
     document: dict[str, object] = {
         "schema_version": BATCH_SCHEMA_VERSION,
         "kind": "futures_batch",
@@ -435,6 +552,8 @@ def run_futures_batch(
         "verdict": verdict_document().model_dump(mode="json"),
         "ordering": RANKING_NOTE,
     }
+    if loaded.pbo is not None:
+        document["pbo"] = pbo_on_panel(panel, n_groups=loaded.pbo.n_groups).record()
     batch_dir = artifacts_root / identifier
     batch_dir.mkdir(parents=True, exist_ok=True)
     (batch_dir / "batch.json").write_text(

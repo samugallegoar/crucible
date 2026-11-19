@@ -54,7 +54,11 @@ CANDIDATE_KEYS = {
     "candidate_id",
     "metrics",
     "statistics",
+    "supplementary",
 }
+"""The keys of one candidate's row. ``supplementary`` is C6b (ADR-0104 decision 4): the family's
+effective-trials deflation, computed when the batch was written, beside the candidate's primary
+``dsr`` in ``statistics``."""
 DOCUMENT_KEYS = {
     "schema_version",
     "kind",
@@ -375,7 +379,7 @@ def test_the_batch_schema_kind_prints_its_contract(capsys: pytest.CaptureFixture
     assert schema["title"] == "FuturesBatchFile"
     assert schema["additionalProperties"] is False
     properties = schema["properties"]
-    assert set(properties) == {"kind", "base", "candidates"}
+    assert set(properties) == {"kind", "base", "candidates", "pbo"}
     candidate = schema["$defs"]["FuturesBatchCandidateFile"]
     assert candidate["additionalProperties"] is False
     assert set(candidate["properties"]) == {"name", "expression", "params"}

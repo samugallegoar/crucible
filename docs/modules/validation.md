@@ -6,10 +6,16 @@ Gate 4 statistics. Detail sections follow.
 
 - `splits.py` — `WalkForwardSplitter`, `PurgedKFoldSplitter`, `CombinatorialPurgedCVSplitter`;
   `config.py` / `registry.py` — their configs and `build_splitter`.
-- `trial_registry.py` — `DuckDBTrialRegistry`, `TrialRecord`, `SubmissionRecord` and the C6a counts
-  (`submission_count`, `unique_candidate_count`, `total_trials`, `candidate_sharpes`).
-  `dsr.py` — `deflated_sharpe_ratio`, `probabilistic_sharpe_ratio`, `skewness`,
-  `per_period_sharpe`. `pbo.py` — `probability_of_backtest_overfitting`.
+- `trial_registry.py` — `DuckDBTrialRegistry`, `TrialRecord`, `SubmissionRecord`, `CandidateTrial`
+  and the C6a counts (`submission_count`, `unique_candidate_count`, `total_trials`,
+  `candidate_sharpes`, `candidate_trials`).
+  `dsr.py` — `deflated_sharpe_ratio`, `deflated_sharpe_ratio_over_effective_trials`,
+  `probabilistic_sharpe_ratio`, `skewness`, `per_period_sharpe`. `pbo.py` —
+  `probability_of_backtest_overfitting`.
+- `effective_trials.py` — `estimate_effective_trials`, `average_linkage_clusters`,
+  `correlation_distance`, `threshold_distance`, `unavailable_effective_trials`,
+  `EffectiveTrialsResult` and the constants `SENSITIVITY_THRESHOLDS`, `DISTANCE_FORMULA`,
+  `ESTIMATOR_NOTE` (C6b, ADR-0104).
 - `sensitivity.py` — `sensitivity_surface_1d`, `sensitivity_surface_2d`.
 - `monte_carlo.py` — `ReturnOrderShuffleTest`, `StartDateShiftTest`, `BlockBootstrapTest`.
 - `resampling.py` — `stationary_bootstrap_indices`, `optimal_block_length` (ADR-0083).
@@ -116,7 +122,14 @@ bootstrap CIs, contamination flagging.
     a `trials` row that carries a `candidate_id` and whose `experiment_id` no submission row of
     the family names. A walk-forward's test run is such a standalone run (nothing submitted it as
     a candidate: its training candidates were), so every run the family recorded is one of the two
-    kinds and nothing is counted twice.
+    kinds and nothing is counted twice. The ONE exception is a walk-forward's PBO panel run (C6b,
+    ADR-0104 decision 6): it is recorded with `mode = PBO_PANEL_MODE` (`"pbo_panel"`), because it
+    is an extra evaluation of a candidate the family already holds, made only to build a
+    comparable panel — nothing submitted it and no fold selected it, so it is not an event of the
+    search. The row stays in `trials` (fully auditable, and contamination reads only
+    `mode = 'optimization'`, so the new value is inert for it) and counts toward neither
+    `submission_count` nor `unique_candidate_count`/`total_trials`; a run keeps its `mode` in the
+    registry, so `record_trial(mode=...)` is the only thing C6b adds there.
   - `unique_candidate_count(family)`: `COUNT(DISTINCT COALESCE(candidate_id, 'EXP:' ||
     experiment_id))`, i.e. one per distinct candidate and (for a pre-C6a row) one per experiment —
     so the same candidate evaluated on several windows, or across several walk-forward folds,
@@ -124,12 +137,55 @@ bootstrap CIs, contamination flagging.
   - `total_trials(family)`: what a deflation is computed against; in C6a it equals
     `unique_candidate_count` and is kept as its own method because C6b (effective trials) and C6c
     (the holdout vault) may add to it.
-  - `candidate_sharpes(family)`: one per-period Sharpe per distinct candidate — the one from its
-    run with the most `n_obs`, a tie going to the earliest `seq`, so the list never depends on the
-    order DuckDB returns rows in. Candidates with no recorded Sharpe are omitted and still count
-    toward `total_trials`.
+  - `candidate_trials(family)`: one `CandidateTrial` per distinct candidate — the representative
+    run id, its `n_obs` and its Sharpe — where "the representative run" is the one with the most
+    `n_obs`, a tie going to the earliest `seq`, so the choice never depends on the order DuckDB
+    returns rows in. It is the ONE place that rule lives; `candidate_sharpes(family)` reads it (and
+    omits candidates with no recorded Sharpe, which still count toward `total_trials`), and so does
+    the C6b effective-trials report, which needs the run id to read the series.
   `candidate_id(config)` itself lives in `experiments/futures_config.py` (it needs the config, and
   `validation` sits below `experiments`).
+
+## Effective trials (`crucible/validation/effective_trials.py`)
+
+An ESTIMATE of how many effectively independent trials a family holds, from its candidates'
+pairwise return correlations (C6b, ADR-0104 decision 3). It is supplementary: the primary deflation
+is still `deflated_sharpe_ratio` over `total_trials`.
+
+- **`estimate_effective_trials(ids, corr, *, rho_threshold=0.5) -> EffectiveTrialsResult`** —
+  agglomerative clustering of a COMPLETE `n x n` correlation matrix. The distance is
+  `d = sqrt((1 - rho) / 2)` (identical series 0, perfectly opposed 1); clusters merge by **average
+  linkage** (the mean over every cross-cluster member pair) while the smallest mean inter-cluster
+  distance is `<= d* = sqrt((1 - rho*) / 2)`, and stop when it exceeds it. `effective_trials` is the
+  number of clusters left, with `1 <= effective_trials <= n` asserted. A tie for the smallest
+  distance goes to the LEXICOGRAPHICALLY smallest pair of sorted member tuples, so the same matrix
+  always gives the same clusters. The result carries the clusters, the threshold, the method record
+  (linkage, distance formula, threshold rule, tie rule, `candidate_ids`) and the sensitivity table
+  for `rho*` in `SENSITIVITY_THRESHOLDS` = {0.3, 0.5, 0.7, 0.9}, each row being the cluster count and
+  the cluster membership at that threshold.
+- **`average_linkage_clusters(ids, corr, *, rho_threshold)`** — the clustering alone, so a caller can
+  show a threshold's partition without re-deriving it.
+- **Why average linkage**: it is the linkage whose merge decision uses ALL the members of two
+  clusters, so a chain of candidates that each correlate with their neighbour (`a-b = b-c = 0.9`,
+  `a-c = 0`) does not collapse into one cluster at a threshold single linkage would take
+  (`tests/unit/test_effective_trials.py` pins the case where the two disagree). Complete linkage
+  would take the opposite extreme and merge almost nothing; the mean is the reading that matches
+  "how much of one hypothesis is this set".
+- **It is labelled an estimator**, never a count: `assessment: "estimator"` and the note
+  "threshold-dependent; not a count of independent hypotheses" travel with every result. As `rho*`
+  decreases, `d*` grows, more pairs may merge, and `effective_trials` is non-increasing (tested as a
+  property).
+- **Refusals** (a matrix that is not a correlation matrix is never clustered): non-square or the
+  wrong size, repeated ids, an empty family, a non-finite entry, an entry outside `[-1, 1]`, a
+  non-symmetric matrix and a diagonal that is not 1. A pair with no valid correlation is not
+  passed in at all: `unavailable_effective_trials(ids, reasons, ...)` builds a result with
+  `status: "unavailable"`, no number, no sensitivity table and the reasons — a missing coefficient
+  is never replaced by 0 or 1.
+- **`deflated_sharpe_ratio_over_effective_trials(returns, trial_sharpes, effective_trials)`**
+  (in `dsr.py`) is the SUPPLEMENTARY DSR reading: the same per-period Sharpe and the same
+  cross-trial dispersion as `deflated_sharpe_ratio`, with `N` replaced by the effective count. That
+  is the one place the Sharpe array may be LONGER than `N`, which the primary function refuses by
+  design. It never feeds a verdict.
 
 ## Implementations (`crucible/validation/dsr.py`, `pbo.py`)
 - `deflated_sharpe_ratio(returns, trial_sharpes) -> DsrResult` — PSR
@@ -348,7 +404,11 @@ implement `Splitter`. All stochastic components take an explicit
   `n_tied_splits`. The CLI JSON carries it.
 - DSR's `N` is the number of trials recorded in the family; the registry cannot know about trials
   run elsewhere, so the correction is a lower bound on the true search (the one-step result says
-  so in `validation.trial_count_scope`, ADR-0070). No effective-independent-trials estimate.
+  so in `validation.trial_count_scope`, ADR-0070).
 - `total_trials` counts distinct candidates, not effective independent trials: correlated variants
-  of one idea overstate `N` (ADR-0070, and ADR-0104 for the effective count). A submission is
-  recorded and counted as an EVENT, never as a trial.
+  of one idea overstate `N`. C6b ANSWERS that with an estimate (ADR-0104), and the limits of that
+  answer are real: it is threshold-dependent (read it with its sensitivity table), it needs a
+  COMPLETE correlation matrix — one pair with too little overlap, incompatible keys, a constant
+  series or an unverifiable artifact makes the whole estimate unavailable — it clusters on one
+  distance (Pearson, no lags, no rolling window) and its count is not an integer decomposition of
+  independent hypotheses. A submission is recorded and counted as an EVENT, never as a trial.

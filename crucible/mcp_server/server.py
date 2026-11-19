@@ -577,6 +577,41 @@ def build_server() -> MCPServer:
         return await run_cli(build_argv(["futures", "compare"], [], options))
 
     @server.tool()
+    async def crucible_futures_trials(
+        family: str,
+        threshold: float = 0.5,
+        min_overlap: int = 20,
+        home: str | None = None,
+        artifacts: str | None = None,
+    ) -> dict[str, object]:
+        """Estimate a futures family's EFFECTIVE number of trials from its candidates' daily
+        returns (C6b, ADR-0104) and write `<EFT-...>/trials.json`. Reads the artifacts root only.
+        Each distinct candidate is represented by its run with the most observations; every pair
+        gets the C5c overlap and compatibility check (an inner join on trade dates, nothing filled)
+        and a Pearson correlation, and agglomerative AVERAGE-LINKAGE clustering of d =
+        sqrt((1 - rho) / 2) gives the cluster count at `threshold` (rho*, default 0.5). This is a
+        threshold-dependent ESTIMATOR, not a count of independent hypotheses: the report carries
+        the sensitivity table for rho* 0.3, 0.5, 0.7 and 0.9, and any pair without a valid
+        correlation (fewer than `min_overlap` shared trade dates, default 20 and never below 10,
+        incompatible keys, a constant series, a missing or unverified artifact) makes it
+        `unavailable` with the reasons - a missing coefficient is never replaced by 0 or 1. The
+        deflation it supports (`dsr_effective_trials`) is SUPPLEMENTARY: the primary `dsr`
+        deflated by `total_trials` is unchanged, and no verdict is stated."""
+        options: dict[str, Option] = {
+            "family": family,
+            "threshold": str(threshold),
+            "min_overlap": str(min_overlap),
+            "json": True,
+        }
+        if home is not None:
+            options["home"] = absolute(home)
+        if artifacts is not None:
+            options["artifacts"] = absolute(artifacts)
+        if home is None and artifacts is None:
+            options["artifacts"] = _home_paths()[0]
+        return await run_cli(build_argv(["futures", "trials"], [], options))
+
+    @server.tool()
     async def crucible_validate(
         config: str,
         artifacts: str | None = None,

@@ -591,8 +591,11 @@ def test_no_training_result_is_presented_as_out_of_sample(
                     assert metric["ci_low"] is None
                     assert metric["ci_high"] is None
                 if name not in entry["statistics"]:
-                    # everything outside the C6a statistics is a descriptive total or count
-                    assert metric["assessment"] == "descriptive"
+                    # everything outside the C6a statistics is a descriptive total or count, plus
+                    # the C6b supplementary deflation (ADR-0104), which is inferential and is not
+                    # one of the C6a statistics
+                    expected = "inferential" if name == "dsr_effective_trials" else "descriptive"
+                    assert metric["assessment"] == expected
             # the training run's own statistics are audit-only, marked in_sample like the rest
             assert set(entry["statistics"]) == {
                 "sharpe_per_period",
@@ -747,6 +750,7 @@ def test_the_schema_kind_prints_its_contract(capsys: pytest.CaptureFixture[str])
         "scheme",
         "warmup_trade_dates",
         "constraints",
+        "pbo",
     }
     constraints = schema["$defs"]["FuturesWalkForwardConstraints"]
     assert constraints["additionalProperties"] is False

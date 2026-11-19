@@ -5,7 +5,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from crucible.validation.trial_registry import DuckDBTrialRegistry, TrialRecord
+from crucible.validation.trial_registry import (
+    PBO_PANEL_MODE,
+    DuckDBTrialRegistry,
+    TrialRecord,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -231,3 +235,51 @@ def test_a_registry_from_before_the_period_column_is_migrated(tmp_path: Path) ->
     registry.record_trial("f", "NEW", sharpe=0.2, period_ns=_DAY)
     assert registry.trial_count("f") == 2
     assert registry.trial_periods("f") == [_DAY]
+
+
+def test_a_pbo_panel_trial_is_auditable_but_is_not_a_submission_event(tmp_path: Path) -> None:
+    """A walk-forward's PBO panel run is a trial of an existing candidate, not a search event.
+
+    C6b (ADR-0104 decision 6): the panel run is recorded in ``trials`` (so the family can show
+    every evaluation it made) with ``mode = PBO_PANEL_MODE``, which keeps it out of
+    ``submission_count`` while leaving ``unique_candidate_count`` and ``total_trials`` alone: a
+    candidate evaluated one more time is still one candidate, and nothing submitted or selected
+    that run.
+    """
+    registry = DuckDBTrialRegistry(tmp_path / "r.duckdb")
+    # one candidate submitted and run, plus a standalone run of a second candidate
+    registry.record_submission(
+        "BAT-1", 0, "fam", "FUT-1", "DSX-1", "DSP-1", "cand", "computed", candidate_id="CND-1"
+    )
+    registry.record_trial(
+        "fam", "FUT-1", sharpe=0.1, mode="futures", candidate_id="CND-1", n_obs=20
+    )
+    registry.record_trial(
+        "fam", "FUT-2", sharpe=0.2, mode="futures", candidate_id="CND-2", n_obs=20
+    )
+    assert registry.submission_count("fam") == 2  # one submitted + one standalone run
+    assert registry.unique_candidate_count("fam") == 2
+    assert registry.total_trials("fam") == 2
+    # the audit panel: the same candidates, once more, on the base window
+    registry.record_trial(
+        "fam",
+        "FUT-3",
+        sharpe=0.3,
+        mode=PBO_PANEL_MODE,
+        candidate_id="CND-1",
+        n_obs=40,
+    )
+    registry.record_trial(
+        "fam",
+        "FUT-4",
+        sharpe=0.4,
+        mode=PBO_PANEL_MODE,
+        candidate_id="CND-2",
+        n_obs=40,
+    )
+    assert registry.trial_count("fam") == 4, "every panel run stays in trials: auditable"
+    assert registry.submission_count("fam") == 2, "a panel run is not an event of the search"
+    assert registry.unique_candidate_count("fam") == 2
+    assert registry.total_trials("fam") == 2
+    # and the panel runs are still readable back, with their mode
+    assert {record.mode for record in registry.all_trials("fam")} == {"futures", PBO_PANEL_MODE}

@@ -42,7 +42,9 @@ from crucible.experiments.futures_config import (
     FIDELITY_PRESETS,
     FIDELITY_TABLE_VERSION,
     FuturesRunConfig,
+    canonical_futures_yaml,
     futures_config_hash,
+    load_futures_config,
     parse_futures_config,
 )
 from crucible.experiments.futures_document import futures_document
@@ -324,6 +326,128 @@ def test_commission_only_refuses_an_explicit_tick_cost() -> None:
         .spread_ticks
         == 0
     )
+
+
+_ROUND_TRIP_CASES: tuple[tuple[str, dict[str, object]], ...] = (
+    ("1m-full", {"fidelity": {"resolution": "1m", "cost_detail": "full"}}),
+    ("5m-full", {"fidelity": {"resolution": "5m", "cost_detail": "full"}}),
+    ("15m-full", {"fidelity": {"resolution": "15m", "cost_detail": "full"}}),
+    ("preset-screen", {"fidelity": {"preset": "screen"}}),
+    ("preset-standard", {"fidelity": {"preset": "standard"}}),
+    ("preset-full", {"fidelity": {"preset": "full"}}),
+    ("commission-only-explicit", {"fidelity": {"cost_detail": "commission_only"}}),
+    (
+        "commission-only-explicit-zero-ticks",
+        {
+            "fidelity": {"cost_detail": "commission_only"},
+            "costs": {"commission": "2.00", "spread_ticks": 0, "slippage_ticks": 0},
+        },
+    ),
+    ("full-with-ticks", {"costs": {"commission": "2.00", "spread_ticks": 2, "slippage_ticks": 1}}),
+    (
+        "full-calibrated-costs",
+        {
+            "costs": {
+                "commission": "2.00",
+                "spread_ticks": 0,
+                "slippage_ticks": 0,
+                "spread_calibrated": True,
+                "slippage_calibrated": True,
+            }
+        },
+    ),
+)
+"""Every fidelity shape a run can carry, by name: the three presets, an explicit resolution with
+``full`` costs, ``commission_only`` with the ticks left alone and with them explicitly zeroed, and
+``full`` costs with explicit ticks and with calibrated (zero-tick) costs."""
+
+
+@pytest.mark.parametrize(("label", "overrides"), _ROUND_TRIP_CASES)
+def test_a_sealed_config_reloads_into_an_equal_model_and_hash(
+    label: str, overrides: dict[str, object], tmp_path: Path
+) -> None:
+    """``load -> canonical yaml -> reload`` is the identity, for every fidelity shape.
+
+    The sealed ``config.yaml`` is read back by every reader of a finished run (a comparison member
+    and its comparison key, the effective-trials report of C6b), so a run whose own config cannot
+    be reloaded is an artifact nobody can correlate. This is the regression the
+    ``commission_only`` dump used to fail: it wrote the default ``spread_ticks``/``slippage_ticks``
+    explicitly and the validator then refused them (C5a/C5c bug fixed in C6b).
+    """
+    original = config(**overrides)
+    path = tmp_path / f"{label}.yaml"
+    path.write_text(canonical_futures_yaml(original), encoding="utf-8", newline="\n")
+    reloaded = load_futures_config(path)
+    assert reloaded == original, label
+    assert futures_config_hash(reloaded) == futures_config_hash(original), label
+    # the dump is stable: reloading and dumping again is byte-identical
+    assert canonical_futures_yaml(reloaded) == path.read_text(encoding="utf-8"), label
+    if original.fidelity.cost_detail == "commission_only" and (
+        "spread_ticks" not in original.costs.model_fields_set
+    ):
+        text = path.read_text(encoding="utf-8")
+        assert "spread_ticks" not in text, (
+            "an unset tick under commission_only must not be written: writing it explicitly is "
+            "what made the sealed config refuse to reload"
+        )
+
+
+def test_the_dump_fix_leaves_the_config_hash_and_the_run_id_alone(
+    store: Path, tmp_path: Path
+) -> None:
+    """What changed is the BYTES of ``config.yaml``, never the identity of the run.
+
+    ``config_hash`` (and so the ``FUT-`` id) is a hash of the MODEL, not of the YAML: a screen run
+    keeps its hash and its run id across the fix, while its ``config.yaml`` loses the two lines the
+    reload could not survive.
+    """
+    cheap = config(fidelity={"preset": "screen"})
+    full = config(fidelity={"preset": "full"})
+    # the hashes are what they always were: the model dump still carries the ticks
+    assert "spread_ticks" in cheap.model_dump(mode="json")["costs"]
+    assert futures_config_hash(cheap) == futures_config_hash(
+        parse_futures_config(mapping(fidelity={"preset": "screen"}))
+    )
+    assert futures_config_hash(full) == futures_config_hash(
+        parse_futures_config(mapping(fidelity={"preset": "full"}))
+    )
+    assert futures_config_hash(cheap) != futures_config_hash(full)
+    # the run ids are the configs' own: the dump does not enter them
+    path = tmp_path / "screen.yaml"
+    path.write_text(canonical_futures_yaml(cheap), encoding="utf-8", newline="\n")
+    assert futures_run_id(cheap, store_root=store) == futures_run_id(
+        load_futures_config(path), store_root=store
+    )
+    assert "spread_ticks" not in canonical_futures_yaml(cheap)
+    assert "spread_ticks" in canonical_futures_yaml(full)
+
+
+def test_a_run_whose_config_does_not_reload_is_reported_as_such(
+    store: Path, artifacts: Path
+) -> None:
+    """A sealed config that cannot be parsed back is ``unverified`` with the reason, not a crash.
+
+    C5c reads a member's comparison key from its own config (ADR-0102 decision 4) and C6b's
+    effective-trials report reads the same member, so a config that does not reload means the
+    member has no key. The refusal names the cause (``config_reload_failed``) instead of leaking a
+    ``ConfigurationError`` out of a read.
+    """
+    from crucible.experiments.artifact_id import seal_artifact
+    from crucible.experiments.futures_compare import load_member
+
+    result = run_futures(
+        config(fidelity={"preset": "screen"}), store_root=store, artifacts_root=artifacts
+    )
+    # the shape the old dump wrote: the default ticks spelled out under commission_only
+    broken = canonical_futures_yaml(config(fidelity={"preset": "screen"})).replace(
+        "  commission: '2.00'", "  commission: '2.00'\n  spread_ticks: '1'"
+    )
+    (result.run_dir / "config.yaml").write_text(broken, encoding="utf-8", newline="\n")
+    seal_artifact(result.run_dir)
+    member = load_member(artifacts, result.run_id)
+    assert member.status == "unverified"
+    assert "config_reload_failed" in str(member.detail)
+    assert "silently ignore" in str(member.detail)
 
 
 def test_the_fidelity_is_part_of_the_config_hash() -> None:

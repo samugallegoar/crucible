@@ -35,6 +35,7 @@
 | `crucible futures check` | `--config --json` | Load and validate a futures config only (no store, no run) |
 | `crucible futures compare` | `--artifacts --home --json --min-overlap --target` | Compare a futures run or walk-forward against the artifact pool (C5c) |
 | `crucible futures run` | `--artifacts --config --home --json --overwrite --store` | Simulate a futures config and write its sealed artifact (ADR-0095) |
+| `crucible futures trials` | `--artifacts --family --home --json --min-overlap --threshold` | Estimate the family's EFFECTIVE number of trials and read the family's daily series correlations (C6b, ADR-0104) |
 | `crucible futures walkforward` | `--artifacts --config --home --json --overwrite --store` | Train candidates per fold, select inside the training window and concatenate the out-of-sample windows (C5b) |
 | `crucible optimize` | `<config> --artifacts --json --metric --override --param --pbo-groups --values --vectorized --workers` | 1D parameter sweep, tagged as trials, assembling a PBO panel (R4.3/R4.9) |
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
@@ -168,6 +169,9 @@ Gate 4 and the data gates: what a researcher calls to judge a result. Splitters,
 | `shuffle_overnight_gaps` | function | `crucible.data.transforms` |
 | `sign_flip_returns` | function | `crucible.data.transforms` |
 | `synthetic_gbm_like` | function | `crucible.data.transforms` |
+| `futures_effective_trials` | function | `crucible.experiments.futures_trials` |
+| `pbo_on_panel` | function | `crucible.experiments.futures_trials` |
+| `run_futures_trials` | function | `crucible.experiments.futures_trials` |
 | `null_test_shuffle` | function | `crucible.experiments.null_tests` |
 | `null_test_sign_flip` | function | `crucible.experiments.null_tests` |
 | `null_test_synthetic_gbm` | function | `crucible.experiments.null_tests` |
@@ -178,7 +182,10 @@ Gate 4 and the data gates: what a researcher calls to judge a result. Splitters,
 | `validate_run` | function | `crucible.experiments.validate` |
 | `check_contamination` | function | `crucible.validation.contamination` |
 | `deflated_sharpe_ratio` | function | `crucible.validation.dsr` |
+| `deflated_sharpe_ratio_over_effective_trials` | function | `crucible.validation.dsr` |
 | `per_period_sharpe` | function | `crucible.validation.dsr` |
+| `average_linkage_clusters` | function | `crucible.validation.effective_trials` |
+| `estimate_effective_trials` | function | `crucible.validation.effective_trials` |
 | `factor_regression` | function | `crucible.validation.factor_regression` |
 | `compare_to_null` | function | `crucible.validation.null_tests` |
 | `compare_to_single_null` | function | `crucible.validation.null_tests` |

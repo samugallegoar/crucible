@@ -8,6 +8,40 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C6b: effective trials, supplementary DSR and PBO on futures candidate panels (ADR-0104)
+- **Effective trials** (`crucible.validation.effective_trials`, numpy only).
+  - Agglomerative clustering with average linkage on `d = sqrt((1 − ρ)/2)`, with a default
+    threshold of ρ* = 0.5. Ties go to the lexicographically smallest pair.
+  - Every report includes a sensitivity table for ρ* ∈ {0.3, 0.5, 0.7, 0.9}.
+  - The result is labelled an estimator: threshold-dependent, and not a count of independent
+    hypotheses.
+  - The correlations follow the C5c rules: intersection of trade dates, equal comparison keys and a
+    minimum overlap.
+  - If any pair lacks a valid correlation, the estimate is `unavailable` and the reasons are listed.
+    No value is substituted.
+- **Supplementary DSR.**
+  - `dsr_effective_trials` uses the same Sharpe and dispersion as the primary DSR, with N replaced by
+    the effective count.
+  - It is reported under `supplementary`. The primary `dsr` over `total_trials` is unchanged and
+    remains the conservative result.
+  - It never feeds a verdict, which stays `robustness_not_assessed`.
+- **Entry points.** `crucible futures trials --family F`, the MCP tool `crucible_futures_trials` and
+  `schema --kind futures-trials`. They write `EFT-<id>/trials.json` with the counts, the candidates,
+  the pairs, the estimator and the sensitivity table.
+- **PBO by CSCV.**
+  - **On a batch.** The panel is the distinct candidates, and every candidate must have an
+    identical set of trade dates. Otherwise PBO is `unavailable`.
+  - **On a walk-forward.** It uses a separate full-window panel with one run per candidate, never
+    the selected OOS path.
+  - The option is `pbo: {n_groups}`, which must be even and at least 4.
+  - Panel runs are recorded as trials with `mode = 'pbo_panel'`. They do not change
+    `submission_count` or `total_trials`.
+- **Fix: a sealed `commission_only` config now reloads.** The canonical dump no longer writes the
+  unset spread and slippage ticks.
+  - Before this, comparisons and the estimator marked screen-fidelity runs `unverified`.
+  - The config hash and the run ids do not change; only those runs' `config.yaml` bytes do.
+  - A reload failure is now reported as `config_reload_failed: <error>`.
+
 ### Fathom C6a: futures statistics (ADR-0103)
 - **Inferential statistics begin; the verdict does not.**
   - Every futures output keeps `verdict_level: null`, now with

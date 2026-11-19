@@ -411,6 +411,38 @@ single signal), and the verdict is `robustness_not_assessed` (ADR-0095, ADR-0097
 ADR-0103). Re-running a walk-forward is a reproduction: every run it already computed is `cached`
 and no submission is duplicated.
 
+**Effective trials and PBO (C6b, ADR-0104).** A family's Deflated Sharpe Ratio is deflated by
+`total_trials`, its count of distinct candidates; two variants that differ only in a window
+length are not two independent bets, so C6b ESTIMATES the effective number of trials and
+reports a second deflation beside the first:
+
+```bash
+uv run crucible futures trials --family es-screen --artifacts experiments --json
+uv run crucible futures trials --family es-screen --threshold 0.7 --min-overlap 20
+uv run crucible schema --kind futures-trials
+```
+
+`crucible futures trials` reads the artifacts root ONLY (no store, no simulation, no new
+trial): each distinct candidate is represented by its run with the most observations, every
+pair is correlated over the trade dates both have (an inner join, nothing filled, at least
+`--min-overlap` dates, default 20 and never below 10) and only when their comparison keys
+agree, and average-linkage clustering of `d = sqrt((1 - rho) / 2)` counts the clusters at
+`--threshold` (`rho*`, default 0.5). It writes `<artifacts>/<EFT-ID>/trials.json`: the
+counts, each candidate with its representative run, every pair with its status and `rho`,
+the estimate with its threshold and clusters, the sensitivity table for `rho*` 0.3/0.5/0.7/0.9
+and the null verdict. Read it as an ESTIMATOR: threshold-dependent, not a count of independent
+hypotheses, and UNAVAILABLE (never 0, never 1) when any pair has too little overlap, an
+incompatible key, a constant series or an artifact that does not verify.
+
+Every futures run, `batch.json` and a walk-forward's `oos.statistics` carry the SUPPLEMENTARY
+reading (`supplementary.dsr_effective_trials`) computed when they were written: the same
+series and the same candidate-Sharpe dispersion as the primary `dsr`, with `N` = the effective
+count. The primary `dsr` is unchanged and remains the conservative result. PBO is optional:
+put `pbo: {n_groups: 8}` in a batch file (even, at least 4) to get `batch.json`'s `pbo` block
+for the candidates' own daily-returns panel, or in a walk-forward file to get
+`in_sample_audit.pbo_panel` from one extra run per distinct candidate on the base window — the
+selected out-of-sample chain is never an input, and those runs do not grow `total_trials`.
+
 `futures run --json` and `crucible artifact show <ART-...> --json` print the same **futures-run
 document** (`schema_version: 1`, `crucible schema --kind futures-run-document`; keys in
 `docs/SCHEMAS.md`, ADR-0097, ADR-0103). Its verdict is null with a reason:

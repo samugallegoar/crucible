@@ -69,11 +69,13 @@ METRIC_UNITS = {
     "trade_dates": "trade_dates",
     "max_contracts": "contracts",
     **STATISTICS_METRIC_UNITS,
+    "dsr_effective_trials": "probability",
 }
 """The unit of every metric a futures run reports: the descriptive totals and counts of ADR-0095
 and the statistics of ADR-0103 (per-period and annualized Sharpe, mean daily return, PSR, DSR, mean
-IC). A metric name outside this table refuses the document: a value with no unit cannot be read
-(``docs/CONVENTIONS.md`` §2)."""
+IC) plus the SUPPLEMENTARY deflation of ADR-0104 (``dsr_effective_trials``, a probability that is
+never the primary reading). A metric name outside this table refuses the document: a value with no
+unit cannot be read (``docs/CONVENTIONS.md`` §2)."""
 
 METRIC_UNIT_NAMES = (
     "usd",
@@ -311,11 +313,42 @@ class FuturesICDocument(_Document):
     reason: str | None = None
 
 
+class FuturesSupplementaryMetricDocument(_Document):
+    """The SUPPLEMENTARY deflation beside the primary ``dsr`` (C6b, ADR-0104 decision 4).
+
+    ``value`` is the DSR computed with ``N`` = the effective number of trials, keeping the primary
+    reading's per-period Sharpe and cross-trial dispersion. It is ``assessment: "inferential"``
+    with null intervals (a probability computed in closed form, like PSR and DSR), it records the
+    threshold and the effective count it used and the candidate ids it covered, and it is null
+    with a reason when the estimate is unavailable. It NEVER feeds a verdict: the primary ``dsr``,
+    deflated by ``total_trials``, stays the conservative reading.
+    """
+
+    value: float | None
+    ci_low: float | None
+    ci_high: float | None
+    assessment: Literal["inferential"]
+    unit: Literal["probability"]
+    method: str
+    reason: str | None = None
+    threshold: float
+    effective_trials: int | None
+    candidate_ids: list[str]
+
+
+class FuturesSupplementaryDocument(_Document):
+    """The supplementary readings of a statistics block: at C6b, the effective-trials DSR."""
+
+    dsr_effective_trials: FuturesSupplementaryMetricDocument
+
+
 class FuturesStatisticsDocument(_Document):
     """The run's statistics block (C6a, ADR-0103): conventions, intervals, counts and the IC.
 
     Null for a manifest written before C6a (adding the key is additive, so
-    ``FUTURES_DOCUMENT_SCHEMA_VERSION`` stays 1).
+    ``FUTURES_DOCUMENT_SCHEMA_VERSION`` stays 1). ``supplementary`` is the C6b addition (ADR-0104
+    decision 4): readings that sit beside the primary ones and never replace them, null for a
+    manifest written before C6b.
     """
 
     returns_convention: str
@@ -327,6 +360,7 @@ class FuturesStatisticsDocument(_Document):
     missing_sessions: int
     zero_position_days: int
     ic: FuturesICDocument
+    supplementary: FuturesSupplementaryDocument | None = None
 
 
 class FuturesRunDocument(_Document):

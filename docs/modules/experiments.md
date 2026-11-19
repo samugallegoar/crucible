@@ -46,8 +46,15 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
     renames every futures run id; with `0` the extended and window series are the same frame, so the
     run is exactly the ADR-0095 one. The manifest records it in its `warmup` block:
     `{trade_dates, first_trade_date, last_trade_date, bars, signal_bars_required}`.
-  - **Interfaces:** `crucible futures run|check|batch|walkforward|compare` and MCP
-    `crucible_futures_run|check|batch|walkforward|compare`.
+  - **`canonical_futures_yaml(config)`** is the sealed `config.yaml`, and it RELOADS: for a
+    `fidelity.cost_detail: commission_only` run it omits a `costs.spread_ticks`/
+    `costs.slippage_ticks` the caller did not set, because writing the defaults explicitly is
+    exactly what the validator refuses (the run would silently ignore them) and every reader
+    of a finished run parses the file back (a comparison member's key, the effective-trials
+    report). The config hash and the run id hash the MODEL, so they are untouched; only the
+    bytes of a `commission_only` run's file change (`docs/COMPATIBILITY.md` §3).
+  - **Interfaces:** `crucible futures run|check|batch|walkforward|compare|trials` and MCP
+    `crucible_futures_run|check|batch|walkforward|compare|trials`.
     The schemas are in `docs/SCHEMAS.md`, and the marking policy is in the manifest.
 - `futures_stats.py` — the futures statistics (C6a, ADR-0103): the ONE returns function and the
   inferential report every futures path (standalone, batch, walk-forward, comparison) reads.
@@ -87,6 +94,51 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
     `resamples` default 1000, `>= 200`; `confidence` default 0.95, `0.5..0.999`, all
     `extra="forbid"`). It joins the config hash, so adding the section renamed every futures run
     id (results unchanged, `docs/COMPATIBILITY.md` §3).
+- `futures_trials.py` — effective trials, the supplementary DSR and PBO panels (C6b, ADR-0104).
+  - **`futures_effective_trials(family, *, artifacts_root, rho_threshold=0.5,
+    min_overlap_trade_dates=20, owner=None) -> FuturesTrialsReport`**: the family's effective number
+    of trials. Each distinct candidate is represented by its representative run
+    (`DuckDBTrialRegistry.candidate_trials`: most `n_obs`, tie to the earliest `seq`) and its daily
+    series; every pair is correlated with the C5c rules (`futures_compare.daily_correlation`, and
+    `comparison_key`/`key_diff` — an inner join on trade dates, nothing filled, at least
+    `min_overlap_trade_dates` shared dates, never below `MIN_OVERLAP_FLOOR` = 10, never for a
+    constant series). The correlation runs on daily P&L and Pearson of the daily returns equals
+    Pearson of the daily P&L (a return is `P&L / initial_capital` and a family shares one capital),
+    so the C5c series is reused rather than re-derived. `owner` is the run being written at that
+    moment: it has no seal yet, so it hands its in-memory series and its config-derived comparison
+    key (`futures_compare.config_comparison_key`) in instead. ONE pair without a valid correlation
+    makes the estimate `unavailable` with the reasons (a missing or unverified artifact, a
+    non-futures run id, too little overlap, incompatible keys, a constant series) — never 0, never
+    1. Label: `assessment: "estimator"`, note "threshold-dependent; not a count of independent
+    hypotheses", plus the method (linkage, distance, threshold rule, tie rule, overlap and key
+    rules) and the candidate ids.
+  - **`run_futures_trials(family, ...)`** writes `<artifacts>/EFT-<16 hex>/trials.json` (sorted
+    keys, `schema_version` 1, `kind: futures_trials`): the family's counts, each candidate (id,
+    representative `run_id`, `n_obs`, `sharpe_per_period`), every pair with its status, overlap and
+    `rho`, the `estimator` block, the `sensitivity` table and the null verdict. The id hashes the
+    family, the sorted (candidate id, run id) pairs and the options, so another threshold is another
+    report. `futures_trials_json_schema()` is the output kind `futures-trials`.
+  - **`supplementary_dsr(returns, *, report)` / `supplementary_block(...)`**: the
+    `dsr_effective_trials` entry that sits under a `supplementary` key beside the PRIMARY `dsr`,
+    which is unchanged: `deflated_sharpe_ratio_over_effective_trials` on the same series with the
+    same candidate-Sharpe dispersion and `N` = the effective count. Null with a reason when the
+    estimate is unavailable, when the family has fewer than 2 candidate Sharpes or when the series
+    cannot be scored; it records the threshold, the effective count and the candidate ids, carries
+    no interval, and feeds no verdict. It is written by `run_futures` (into the manifest's
+    `statistics.supplementary` and `metrics.json`), by `run_futures_batch` (per candidate, computed
+    at the batch's write time) and by `run_futures_walkforward` (into `oos.statistics.supplementary`,
+    computed on the OOS chain).
+  - **`pbo_on_panel(panel, *, n_groups=8) -> PboOutcome`**: the probability of backtest overfitting
+    of a candidate panel, through `probability_of_backtest_overfitting` with
+    `CombinatorialPurgedCVSplitter(n_groups, n_test_groups=n_groups // 2, embargo=0)`. The panel must
+    hold at least two DISTINCT candidates over an IDENTICAL set of trade dates; unequal dates,
+    fewer than two candidates or fewer observations than groups make it unavailable with the reason
+    (and the dates that differ), never a number. `n_groups` must be even and at least 4.
+    A walk-forward's panel runs are `run_futures(..., mode=PBO_PANEL_MODE)`
+    (`"pbo_panel"`, `crucible.validation.trial_registry`): they stay auditable in `trials` and
+    move no count at all — `submission_count`, `unique_candidate_count` and `total_trials` are
+    exactly what the same walk-forward reports without the option — because nothing submitted
+    or selected them.
 - `futures_document.py` — the futures-run document (ADR-0097): `futures_document(run_dir)` builds
   one versioned document (`FUTURES_DOCUMENT_SCHEMA_VERSION`) from the sealed run directory alone
   (manifest + metrics, after `verify_artifact`), so `futures run --json`, `futures run`'s human
@@ -489,10 +541,16 @@ the whole model.
   batches), C5b (walk-forward), C5c (cross-run metrics) and C6a (statistics) are done;
   what remains:
   - **Statistics without a verdict.** C6a reports the per-period and annualized Sharpe, the mean
-    daily return, PSR, DSR, bootstrap intervals and (for a DSL expression) the IC, but no
-    ROBUSTNESS assessment: `verdict_level` is null everywhere with `robustness_not_assessed`
-    (C7). `total_trials` counts distinct candidates, not effective independent trials (C6b,
-    ADR-0104), and there is no holdout vault yet (C6c).
+    daily return, PSR, DSR, bootstrap intervals and (for a DSL expression) the IC, and C6b adds the
+    SUPPLEMENTARY effective-trials deflation and PBO on a valid panel, but no ROBUSTNESS
+    assessment: `verdict_level` is null everywhere with `robustness_not_assessed` (C7). There is no
+    holdout vault yet (C6c), and `dsr_effective_trials` is a second reading of the same evidence,
+    never a replacement for the primary deflation by `total_trials`.
+  - **The effective count and PBO are estimates with stated limits.** The effective count is
+    threshold-dependent and needs a complete correlation matrix (one bad pair makes it unavailable);
+    PBO needs a comparable panel, so the batch reports it only when the batch file asks for it and a
+    walk-forward only by running each distinct candidate once more on the base window (an in-sample
+    panel). Neither is a probability that the strategy is profitable.
   - The IC is time series only (one root, ADR-0099): no cross-sectional IC, no rolling window and
     no IC for a spec or Python strategy (null with a reason).
   - The intervals are percentile block-bootstrap intervals over the daily series, not a
