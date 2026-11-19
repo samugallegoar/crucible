@@ -419,6 +419,31 @@ def build_parser() -> argparse.ArgumentParser:
         "run and artifact ids)",
     )
     _add_json(futures_walkforward)
+    futures_compare = futures_sub.add_parser(
+        "compare",
+        help="Compare a futures run or walk-forward against the artifact pool (C5c)",
+    )
+    futures_compare.add_argument(
+        "--target",
+        required=True,
+        help="Artifact id of the target: a FUT-... run or a WFA-... walk-forward",
+    )
+    futures_compare.add_argument(
+        "--artifacts",
+        default=None,
+        help="Artifact store root holding the members (default: experiments/, or the --home's "
+        "experiments folder). A comparison reads artifacts only: no store and no simulation",
+    )
+    _add_home(futures_compare)
+    futures_compare.add_argument(
+        "--min-overlap",
+        type=_positive_int,
+        default=20,
+        dest="min_overlap",
+        help="Overlapping trade dates a correlation needs (default 20, never below 10): fewer "
+        "is insufficient_overlap and no value",
+    )
+    _add_json(futures_compare)
 
     schema = subparsers.add_parser(
         "schema",
@@ -440,7 +465,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="which schema: the experiment config, the no-code strategy spec (ADR-0067), the "
         "futures-run config (ADR-0095), the futures-batch file (C5a), the futures-walkforward "
         "file (C5b), or an output document: run, verification, error, manifest (ADR-0084), "
-        "futures-run-document (the document a sealed futures run prints, ADR-0097)",
+        "futures-run-document (the document a sealed futures run prints, ADR-0097), "
+        "futures-compare (cross_run.json, C5c)",
     )
 
     data = subparsers.add_parser(
@@ -1303,6 +1329,11 @@ def _cmd_futures(args: argparse.Namespace) -> int:
     eligible one with the largest training net P&L, evaluates it on the fold's test window and
     writes ``<artifacts>/<WFA-ID>/`` (``walkforward.json`` + ``oos_daily.parquet``); it prints the
     document (``--json``) or the fold table.
+
+    ``compare`` reads the artifacts root only (no store, no simulation): it reports the target's
+    descriptive metrics and window stability and, for every other ``FUT-``/``WFA-`` artifact there,
+    a DESCRIPTIVE daily P&L correlation over the trade dates both have. Nothing is ranked and
+    nothing is assessed (C5c, ADR-0102).
     """
     import json
 
@@ -1316,6 +1347,8 @@ def _cmd_futures(args: argparse.Namespace) -> int:
         return _cmd_futures_batch(args)
     if args.futures_command == "walkforward":
         return _cmd_futures_walkforward(args)
+    if args.futures_command == "compare":
+        return _cmd_futures_compare(args)
     config = load_futures_config(Path(args.config))
     if args.futures_command == "check":
         config_hash = futures_config_hash(config)
@@ -1500,6 +1533,96 @@ def _cmd_futures_walkforward(args: argparse.Namespace) -> int:
     lines.append(f"walk-forward dir: {result.walkforward_dir}")
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
+
+
+def _cmd_futures_compare(args: argparse.Namespace) -> int:
+    """``crucible futures compare``: a target against the artifact pool, in dollars (C5c).
+
+    ``--json`` prints ``cross_run.json`` itself (``<artifacts>/<CMP-ID>/cross_run.json``), so the
+    CLI and the file cannot drift. The text rendering is one row per pool member in ID ORDER (never
+    sorted by a correlation), each with its status, the overlapping trade dates and the value when
+    there is one, then the summary and the verdict line: nothing here ranks a member or assesses a
+    result (ADR-0102).
+    """
+    from crucible.experiments.futures_compare import compare_futures
+
+    artifacts_root = _artifacts_root(args)
+    result = compare_futures(
+        args.target,
+        artifacts_root=artifacts_root,
+        min_overlap_trade_dates=args.min_overlap,
+    )
+    if args.json:
+        machine.emit(result.document)
+        return 0
+    document = result.document
+    target = document["target"]
+    assert isinstance(target, dict)
+    target_metrics = target["metrics"]
+    assert isinstance(target_metrics, dict)
+    pool = document["pool"]
+    assert isinstance(pool, list)
+    summary = document["summary"]
+    assert isinstance(summary, dict)
+    options = document["options"]
+    assert isinstance(options, dict)
+    lines = [
+        f"comparison:   {result.cmp_id}",
+        f"target:       {target['id']} ({target['kind']})",
+        f"  net {_value(target_metrics, 'net_pnl_usd')} USD, "
+        f"costs {_value(target_metrics, 'total_costs_usd')} USD, "
+        f"trades {_value(target_metrics, 'trades')}, fills {_value(target_metrics, 'fills')}, "
+        f"max drawdown {_value(target_metrics, 'max_drawdown_usd')} USD, "
+        f"intraday {_value(target_metrics, 'max_intraday_drawdown_usd')} USD",
+        f"  {_value(target_metrics, 'trade_dates')} trade date(s), "
+        f"{_value(target_metrics, 'days_in_market')} in market",
+        f"pool:         {summary['members']} member(s), min overlap "
+        f"{options['min_overlap_trade_dates']} trade date(s)",
+    ]
+    for entry in pool:
+        assert isinstance(entry, dict)
+        overlap = entry["overlap"]
+        correlation = entry["correlation"]
+        assert isinstance(overlap, dict)
+        assert isinstance(correlation, dict)
+        value = correlation["value"]
+        overlap_text = (
+            "-"
+            if overlap["trade_dates"] is None
+            else f"{overlap['trade_dates']} ({overlap['first']}..{overlap['last']})"
+        )
+        lines.append(
+            f"  {entry['id']}  {entry['kind']:<18} {entry['status']:<21} "
+            f"overlap {overlap_text:<28} "
+            f"correlation {'-' if value is None else value}"
+        )
+        differing = entry["differing_keys"]
+        assert isinstance(differing, list)
+        if differing:
+            lines.append(f"    differs at: {', '.join(str(path) for path in differing)}")
+    maximum = summary["max_abs_correlation"]
+    if isinstance(maximum, dict):
+        lines.append(
+            f"largest |correlation|: {maximum['value']} ({maximum['member_id']}) - descriptive, "
+            "not a ranking"
+        )
+    lines.append(FUTURES_VERDICT_LINE)
+    lines.append(f"comparison dir: {result.compare_dir}")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
+_CRUCIBLE_VALUE_MISSING = "-"
+"""The text rendering's placeholder for a value the document does not carry."""
+
+
+def _value(metrics: dict[str, object], name: str) -> str:
+    """The text rendering of one metric's value (``docs/CONVENTIONS.md``: numbers, no units)."""
+    entry = metrics.get(name)
+    if not isinstance(entry, dict):
+        return _CRUCIBLE_VALUE_MISSING
+    value = entry.get("value")
+    return _CRUCIBLE_VALUE_MISSING if value is None else str(value)
 
 
 def _cmd_schema(args: argparse.Namespace) -> int:

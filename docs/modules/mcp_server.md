@@ -48,9 +48,16 @@ and returns the batch document (`BAT-` id, the candidates in submission order wi
 descriptive metrics, the null verdict). `crucible_futures_walkforward(config, store=None,
 home=None, artifacts=None, overwrite=False)` (C5b, ADR-0101) runs a walk-forward and returns its
 document (`WFA-` id, the folds with their selection and out-of-sample run, the concatenated `oos`
-summary, the disjoint `in_sample_audit` and the null verdict). All four are thin `build_argv` +
-`run_cli` wrappers over `crucible futures run|check|batch|walkforward` (ADR-0066), with absolute
-paths and the home's experiments folder as the default `artifacts`.
+summary, the disjoint `in_sample_audit` and the null verdict). `crucible_futures_compare(target,
+home=None, artifacts=None, min_overlap=20)` (C5c, ADR-0102) reads the artifacts root only (no
+`store`): it compares a `FUT-`/`WFA-` target with every other `FUT-`/`WFA-` artifact there and
+returns `cross_run.json` — the target's descriptive metrics and window stability, the pool in ID
+order with each member's status (`ok`, `incompatible` with the differing comparison-key paths,
+`insufficient_overlap`, `constant_series`, `unverified`), the overlap, the descriptive correlation
+(null intervals) and the null verdict. `min_overlap` is how many overlapping trade dates a value
+needs (default 20, refused below 10). All five are thin `build_argv` + `run_cli` wrappers over
+`crucible futures run|check|batch|walkforward|compare` (ADR-0066), with absolute paths and the
+home's experiments folder as the default `artifacts`.
 
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
 (`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).

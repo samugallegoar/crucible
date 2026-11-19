@@ -543,6 +543,40 @@ def build_server() -> MCPServer:
         return await run_cli(build_argv(["futures", "walkforward"], [], options))
 
     @server.tool()
+    async def crucible_futures_compare(
+        target: str,
+        home: str | None = None,
+        artifacts: str | None = None,
+        min_overlap: int = 20,
+    ) -> dict[str, object]:
+        """Compare a sealed futures run or a walk-forward with the artifact pool (C5c). Reads the
+        artifacts root only: nothing is simulated. Every other `<FUT-...>` run and `<WFA-...>`
+        walk-forward there becomes a pool member, and each pair gets a comparison-key check (the
+        simulator version, fidelity, execution, session and signal input must agree) and then a
+        DESCRIPTIVE Pearson correlation of the two daily USD P&L series over the trade dates both
+        of them have - an inner join, so a missing date is never a zero. A member whose seal does
+        not verify is listed as `unverified`; a pair whose keys differ is `incompatible` with the
+        differing paths; fewer overlapping dates than `min_overlap` (default 20, never below 10)
+        is `insufficient_overlap`; a constant series is `constant_series`. Returns
+        `<CMP-ID>/cross_run.json`: the target's descriptive metrics and window stability, the pool
+        in ID ORDER (never sorted by a correlation), the counts per status and the null verdict.
+        No Sharpe, IC, p-value, confidence interval, significance or ranking: every number is
+        descriptive with null intervals (ADR-0102), so the pool says how close a candidate is to
+        what already exists and never whether it is better."""
+        options: dict[str, Option] = {
+            "target": target,
+            "min_overlap": str(min_overlap),
+            "json": True,
+        }
+        if home is not None:
+            options["home"] = absolute(home)
+        if artifacts is not None:
+            options["artifacts"] = absolute(artifacts)
+        if home is None and artifacts is None:
+            options["artifacts"] = _home_paths()[0]
+        return await run_cli(build_argv(["futures", "compare"], [], options))
+
+    @server.tool()
     async def crucible_validate(
         config: str,
         artifacts: str | None = None,

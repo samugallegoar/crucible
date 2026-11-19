@@ -1203,6 +1203,92 @@ drawdown, with null intervals and a null verdict. No Sharpe, IC, PSR, DSR, p-val
 interval or ranking by a statistic appears here; **descriptive only; Sharpe, IC, CIs and
 statistical assessment begin in C6**.
 
+### `cross_run.json` (C5c, ADR-0102)
+
+`crucible futures compare --target ID` writes `<artifacts>/<CMP-ID>/cross_run.json`
+(`COMPARE_SCHEMA_VERSION` = 1, keys sorted, LF) and prints the same object with `--json`.
+It is written OUTSIDE every sealed run directory: a comparison only reads artifacts, so it
+never changes one. `CMP-` + 16 hex digits is the SHA-256 of the target id, the sorted ids of
+the pool members whose seal VERIFIED and the overlap option, so a corrupted member does not
+change the id and a re-run is byte-identical. Its JSON Schema is
+`crucible schema --kind futures-compare`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `schema_version` | int | `1` |
+| `kind` | string | `futures_compare` |
+| `cmp_id` | string | `CMP-<16 hex>` (the directory name) |
+| `target` | object | `id`, `kind` (`futures_run` \| `futures_walkforward`), `metrics`, `window_stability`, `comparison_key` |
+| `options` | object | `min_overlap_trade_dates`: the option the comparison ran with |
+| `pool` | array | one entry per other member, SORTED BY ID and never by a correlation |
+| `summary` | object | `members`, `by_status` (counts per status, statuses that occur) and `max_abs_correlation` (`{value, member_id}` or null; `value` is that member's correlation, signed, and `|value|` is the largest in the pool) |
+| `correlation_note` | string | what the number is, in words: the inner join, and that it is descriptive only |
+| `verdict` | object | the null verdict with the `not_assessed` reason (ADR-0097) |
+
+`comparison_key` is the equality test for compatibility: `simulator_version`, `fidelity`
+(`resolution`, `cost_detail`, `table_version`; a pre-C5a manifest reads `1m`/`full`/`"1"`),
+`execution` (`fill`, `roll_execution`, `strict`, and `brackets`: `stop_ticks`, `target_ticks`,
+`target_fill_through_ticks`, `reentry`), `session` (`flat_by_close`, `exit_at`,
+`entry_window`, `allow_unverified_sessions`) and `signal.input`. Root, contracts, cost
+amounts, strategy, window, family and capital are deliberately absent: a USD daily P&L is
+scale free, so a cross-asset pool is the point.
+
+A `pool[]` entry has `id`, `kind`, `status`, `differing_keys` (the dotted key paths that do
+not match, empty when they do), `overlap` (`{trade_dates, first, last}`, nulls when no
+correlation was computed), `correlation` (`{value, ci_low: null, ci_high: null,
+assessment: "descriptive", unit: "correlation"}`) and `metrics` (null exactly when the
+member could not be read). `status` is one of:
+
+- `ok`: the keys agree and the value is Pearson's coefficient over the overlapping trade
+  dates;
+- `insufficient_overlap`: fewer overlapping trade dates than `min_overlap_trade_dates` (the
+  default 20, never below 10);
+- `constant_series`: one of the two series is constant over the overlap, so the coefficient
+  does not exist;
+- `incompatible`: the comparison keys differ (the pair was not simulated under the same
+  execution and session rules), so there is no value;
+- `unverified`: the member's seal (a run's, or a walk-forward test run's) does not verify. It
+  is listed with no metrics and no value, never dropped.
+
+`metrics` (of the target and of every member that was read) is exactly: `marked_pnl_usd`,
+`realized_pnl_usd`, `total_costs_usd`, `max_drawdown_usd`, `max_intraday_drawdown_usd`,
+`trades`, `fills`, `turnover_contracts`, `trade_dates`, `days_in_market`, each `{value,
+ci_low: null, ci_high: null, assessment: "descriptive", unit}` with `unit` one of `usd`,
+`count`, `contracts`, `trade_dates`.
+
+- **`marked_pnl_usd`** is the sum of the daily MARKED P&L (a run's
+  `closing_equity_usd - opening_equity_usd` per trade date, a walk-forward's
+  `oos_daily.parquet` `net_pnl_usd`, terminal exits included): final closing equity minus
+  capital, so it includes the mark of a position still open at the last bar.
+- **`realized_pnl_usd`** is the run's OWN `metrics.json` `net_pnl_usd` (final BALANCE minus
+  capital) and is null for a walk-forward, which has no balance of its own. The two keys
+  name two different numbers on purpose: this document never reuses a run's key for a new
+  meaning (`docs/COMPATIBILITY.md` §3). A null is a missing number, never a zero.
+- The rest: `max_drawdown_usd` is peak-to-trough on the daily closing equity (the opening
+  equity as the first peak) and `max_intraday_drawdown_usd` is the conservative OHLC one;
+  `trades` counts position episodes (flat to non-flat and back, a still-open one counted, a
+  long-to-short flip being one episode ending and one starting), `turnover_contracts` is the
+  sum of `|Δposition|` (a roll adds none) and `days_in_market` counts the trade dates with a
+  non-zero position on at least one bar.
+
+`window_stability` is `months` (`{month, net_pnl_usd, trade_dates}` for each `YYYY-MM`, by
+trade date) plus `months_positive`, `months_negative` and `months_flat`, and
+`fold_oos_net_pnl_usd` for a walk-forward: counts and lists only. Every value there is
+MARKED, like `marked_pnl_usd` — a month's `net_pnl_usd` and a fold's `fold_oos_net_pnl_usd`
+are final equity minus capital over the period, nested under their own keys and never the
+run's realized `net_pnl_usd`.
+
+**A missing trade date is never zero.** The correlation joins the two series on
+`trade_date` alone (an inner join): a date one member has and the other does not is excluded,
+not filled, because a zero would be an invented flat day. (A walk-forward's flat FOLD does
+have real zero rows: being flat was a decision.)
+
+**The C5 boundary.** Everything here is descriptive: a number over an overlap, its size and
+its dates, with null intervals, no significance and no statistic naming it. The pool is
+sorted by id, never by a correlation, and `max_abs_correlation` is a summary, not a ranking.
+`not_assessed` means the run has not been assessed, never that there is no edge. **Sharpe,
+IC, PSR, DSR, p-values, confidence intervals and any statistical assessment begin in C6.**
+
 ## Known gaps
 
 - The Polars schemas describe the dtypes but not value domains (`side` in `{buy, sell}`,

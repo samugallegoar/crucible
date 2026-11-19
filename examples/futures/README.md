@@ -74,6 +74,39 @@ fills, the final balance and equity, every approximation the run recorded and th
 unless `--overwrite`, and a reproduction keeps the same artifact id and does not grow the family's
 trial count.
 
+## Comparing the two examples with each other (C5c)
+
+`crucible futures compare` reads the artifacts root only — no store, no simulation — and
+reports, for a target run, its dollar metrics and the DESCRIPTIVE daily P&L correlation of
+every other `FUT-`/`WFA-` artifact there with it (ADR-0102):
+
+```bash
+uv run crucible futures run --config examples/futures/es_sma_cross.yaml \
+    --store data/processed --artifacts experiments
+uv run crucible futures run --config examples/futures/es_zscore_reversion.yaml \
+    --store data/processed --artifacts experiments
+
+# each run printed its own FUT-... id above; the target is compared with every other FUT-/WFA-
+# artifact under experiments/ (the z-score run, plus any earlier batch or walk-forward members)
+uv run crucible futures compare --target <FUT-ID> --artifacts experiments
+uv run crucible futures compare --target <FUT-ID> --artifacts experiments --json
+uv run crucible schema --kind futures-compare
+```
+
+The two examples are **not** correlated with each other, and the document says why:
+`es_sma_cross.yaml` carries a bracket policy (`execution.stop_ticks: 16`,
+`target_ticks: 32`) while `es_zscore_reversion.yaml` carries none, so their comparison keys
+differ at `execution.brackets.stop_ticks` and `execution.brackets.target_ticks` and the pair
+comes back `incompatible` with no value. That is the key doing its job: two runs that exit
+on different rules did not trade the same thing, and their daily P&L is not comparable.
+Two runs that differ ONLY in their strategy, window, family, capital or root DO compare:
+their keys are equal and the value is Pearson's correlation of their daily USD P&L over the
+trade dates they both have (a missing date is excluded, never a zero).
+
+What the comparison never does: it does not rank the pool by the value, does not attach an
+interval to it, and does not call a high correlation evidence of anything. The verdict is
+`not_assessed`; Sharpe, IC and any statistical assessment begin in C6.
+
 ## What it needs
 
 The four `v3` continuous datasets of one CME root, built from the Databento delivery described in

@@ -46,8 +46,8 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
     renames every futures run id; with `0` the extended and window series are the same frame, so the
     run is exactly the ADR-0095 one. The manifest records it in its `warmup` block:
     `{trade_dates, first_trade_date, last_trade_date, bars, signal_bars_required}`.
-  - **Interfaces:** `crucible futures run|check|batch|walkforward` and MCP
-    `crucible_futures_run|check|batch|walkforward`.
+  - **Interfaces:** `crucible futures run|check|batch|walkforward|compare` and MCP
+    `crucible_futures_run|check|batch|walkforward|compare`.
     The schemas are in `docs/SCHEMAS.md`, and the marking policy is in the manifest.
 - `futures_document.py` — the futures-run document (ADR-0097): `futures_document(run_dir)` builds
   one versioned document (`FUTURES_DOCUMENT_SCHEMA_VERSION`) from the sealed run directory alone
@@ -127,6 +127,80 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
     intervals and the verdict is `not_assessed` (ADR-0095, ADR-0097, ADR-0101).
   - **Interfaces:** `crucible futures walkforward` and MCP `crucible_futures_walkforward`; the keys
     and columns are in `docs/SCHEMAS.md`.
+- `futures_compare.py` — cross-run metrics and a DESCRIPTIVE daily P&L correlation against
+  the artifact pool (C5c, ADR-0102). It reads sealed artifacts and never simulates, so it
+  cannot change a result; the only file it writes is `<artifacts>/<CMP-ID>/cross_run.json`,
+  outside every sealed run directory.
+  - **`load_member(artifacts_root, member_id)` -> `Member`** reads a `FUT-` run (daily P&L =
+    `closing_equity_usd - opening_equity_usd` per trade date from `daily.parquet`, plus its
+    marks for the episodes, the turnover, the days in market and the conservative intraday
+    drawdown, and its fills) or a `WFA-` walk-forward (`oos_daily.parquet`'s `net_pnl_usd` per
+    trade date, its per-fold OOS net P&L, and its test runs' marks and fills for the
+    aggregates: a flat fold contributes nothing). Every seal involved is verified first; a
+    member that does not verify comes back with status `unverified` and the reason in its
+    `detail` — listed, never skipped, never read as if it were sound.
+  - **`comparison_key(member)`** (decision 4) is the simulator version, `fidelity`
+    (`resolution`, `cost_detail`, `table_version`; a pre-C5a manifest reads `1m`/`full`/`"1"`),
+    the execution section (fill, roll execution, strictness, the bracket policy and
+    `reentry`), the session section (flatten rules, entry window, unverified-session policy)
+    and the signal input. Root, contracts, cost amounts, strategy, window, family and capital
+    are NOT in it. It is read from the run's sealed `config.yaml` and `manifest.json`; a
+    walk-forward's key is its BASE config's key, taken from a fold's own run (a fold changes
+    only the strategy, the name and the window) plus the `fidelity` block `walkforward.json`
+    records. `key_diff(a, b)` lists the differing dotted paths (`fidelity.resolution`,
+    `execution.brackets.stop_ticks`, ...).
+  - **`member_metrics(member)`** (decision 3) reports, from exact `Decimal` money rounded only
+    when it is reported, in the
+    `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}` shape:
+    `marked_pnl_usd` (the sum of the daily MARKED P&L, so an open position's mark is included:
+    final closing equity minus capital), `realized_pnl_usd` (the run's OWN `metrics.json`
+    `net_pnl_usd`, final BALANCE minus capital; null for a walk-forward, which has no balance of
+    its own), `total_costs_usd`, `max_drawdown_usd` (peak-to-trough on the daily CLOSING equity,
+    the opening equity as the first peak), `max_intraday_drawdown_usd` (the OHLC rule of
+    `build_metrics`; for a walk-forward the worst of its test runs), `trades`, `fills`,
+    `turnover_contracts`, `trade_dates`, `days_in_market`. The marked total is deliberately NOT
+    called `net_pnl_usd`: that key already means the realized number in a run's own
+    `metrics.json`, and a document never repurposes a key (`docs/COMPATIBILITY.md` §3).
+    **Trades** are position episodes: a
+    maximal run of bars with the same non-zero SIGN, a still-open episode counting, and a
+    long-to-short flip counting as one episode ending plus one starting. **Turnover** is the
+    sum of `|Δposition|` in contracts, in total and per trade date (the run starting flat); a
+    roll keeps the net position, so it adds none. **`days_in_market`** counts the trade dates
+    with a non-zero position on at least one bar. `window_stability(member)` gives each
+    calendar month's net P&L (by trade date) and the counts of positive/negative/flat months,
+    and a walk-forward's `fold_oos_net_pnl_usd` — counts and lists, never a dispersion
+    statistic. Every value there is MARKED (final equity minus capital over the period), nested
+    under its own keys, so nothing reads as the run's realized `net_pnl_usd`.
+  - **`daily_correlation(a, b, *, min_overlap)`** -> `CorrelationResult(status, value,
+    overlap_trade_dates, first, last)` is Pearson's coefficient over the INNER JOIN of the two
+    series' trade dates: nothing is filled, so a date missing from either side is excluded
+    and never treated as a zero P&L. Fewer than `min_overlap` overlapping dates is
+    `insufficient_overlap` with no value; a series constant over the overlap is
+    `constant_series` with no value; otherwise `ok` with the value, computed in float64 from
+    the exact Decimals and clamped to [-1, 1] only for rounding (an out-of-range value raises
+    `InvariantViolation` instead of being clamped).
+  - **`compare_futures(target_id, *, artifacts_root, min_overlap_trade_dates=20)`** ->
+    `CompareResult(compare_dir, cmp_id, document)` builds the pool (every `FUT-`/`WFA-`
+    directory except the target, minus a walk-forward target's own training and test runs
+    read from `walkforward.json`), gives each pair a status (`ok`, `incompatible` with its
+    `differing_keys`, `insufficient_overlap`, `constant_series`, `unverified`) and writes
+    `cross_run.json` (`COMPARE_SCHEMA_VERSION` 1, sorted keys): the target with its metrics,
+    its window stability and its comparison key, the `options`, the pool SORTED BY ID with
+    each member's status, differing keys, overlap, correlation and metrics, a `summary`
+    (members, `by_status`, the largest absolute correlation with its member id) and the null
+    verdict (`not_assessed`). `cmp_id` is `CMP-` + the hash of the target, the sorted
+    VERIFIED pool ids and the overlap option, so a corrupted member does not change it and a
+    re-run is byte-identical. `min_overlap_trade_dates` below 10 is refused
+    (`ConfigurationError`, `MIN_OVERLAP_FLOOR`), and so is an unverified target. Listing the
+    artifacts root counts only `FUT-`/`WFA-` directories as members, so a `BAT-` or `CMP-`
+    document is never mistaken for a run.
+  - **Restriction** (ADR-0095, ADR-0097, ADR-0100, ADR-0101, ADR-0102): no Sharpe, IC, PSR,
+    DSR, p-value, confidence interval or significance anywhere, every correlation
+    `assessment: "descriptive"` with null intervals, the verdict `not_assessed`, and the pool
+    never sorted by a statistic. C6 is the first milestone allowed to add inference.
+  - **Interfaces:** `crucible futures compare` and MCP `crucible_futures_compare`;
+    `crucible schema --kind futures-compare` prints `cross_run.json`'s JSON Schema; the keys
+    are in `docs/SCHEMAS.md`.
 - `futures_signals.py` — the futures signal bridge (ADR-0094, ADR-0098): `futures_targets` turns a
   `StrategySpec`, a `FuturesSignalFunction` or a compiled DSL `CompiledSignal` into the targets and
   the `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the
@@ -356,13 +430,27 @@ in their phase; hash coverage extends automatically because the hash is over
 the whole model.
 
 ## Known gaps
-- The futures run (ADR-0095):
+- The futures path (ADR-0095, ADR-0100, ADR-0101, ADR-0102). C5a (fidelity and batches),
+  C5b (walk-forward) and C5c (cross-run metrics and the descriptive correlation) are done;
+  what remains:
+  - **No statistic of any kind until C6.** There is no Sharpe, no rolling IC, no PSR, no
+    DSR, no p-value and no confidence interval on the futures path, and the comparison
+    reports its correlations as descriptive numbers with null intervals. C6 owns
+    multiple-testing inference (and how batch and walk-forward submissions count toward
+    `total_trials`); C7 owns robustness and prop-firm rules.
+  - The verdict is null until C6/C7: every futures document and every `cross_run.json` says
+    `not_assessed` with a reason, and no metric carries an interval (`futures_document.py`,
+    ADR-0097).
+  - The comparison key is deliberately conservative: two runs that differ only in the
+    bracket policy or the fill timing are `incompatible` and get no correlation (ADR-0102),
+    and loosening it is a later decision. There is no override and no way to compare a member
+    with a hand-made series.
+  - The correlation is Pearson over the overlap only: no lag, no rolling window, no
+    partial or factor-adjusted version.
   - It does not stop or flag an account whose equity falls to zero or below. It keeps trading;
     `min_equity_usd` and the daily ledger show it. Ruin and prop-firm rules are C7.
-  - The verdict is null until C6/C7: the document says `not_assessed` with a reason and no
-    metric carries an interval (`futures_document.py`, ADR-0097).
   - `FuturesSignalFunction` is a stub Protocol: no implementation ships in the package (the tests
-  hold fixtures; a spec goes through `spec_positions`).
+    hold fixtures; a spec goes through `spec_positions`).
 - `artifact_id` is verified, not enforced: nothing stops a process with disk access from editing an
   artifact and re-sealing it (ADR-0084). Runs written before it have no id (`verify` says so).
 - `ArtifactStore` and `RunRegistry` are stub Protocols: `run_experiment` writes the layout itself and `crucible compare` reads the trial registry directly.

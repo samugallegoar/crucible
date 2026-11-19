@@ -33,6 +33,7 @@
 | `crucible debug` | `<experiment_id> --artifacts --at --json --order` | Replay a recorded experiment, stepping the event loop |
 | `crucible futures batch` | `--artifacts --batch --home --json --overwrite --store` | Run N DSL expressions on one futures base config and write the batch document (C5a) |
 | `crucible futures check` | `--config --json` | Load and validate a futures config only (no store, no run) |
+| `crucible futures compare` | `--artifacts --home --json --min-overlap --target` | Compare a futures run or walk-forward against the artifact pool (C5c) |
 | `crucible futures run` | `--artifacts --config --home --json --overwrite --store` | Simulate a futures config and write its sealed artifact (ADR-0095) |
 | `crucible futures walkforward` | `--artifacts --config --home --json --overwrite --store` | Train candidates per fold, select inside the training window and concatenate the out-of-sample windows (C5b) |
 | `crucible optimize` | `<config> --artifacts --json --metric --override --param --pbo-groups --values --vectorized --workers` | 1D parameter sweep, tagged as trials, assembling a PBO panel (R4.3/R4.9) |
