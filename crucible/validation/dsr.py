@@ -17,7 +17,9 @@ skill-less trials. It is not the probability that the strategy is profitable, it
 only for the ``N`` trials actually recorded in the family (an unrecorded search is invisible
 to it), and ``N`` is the raw count of recorded trials, not an estimate of the effective
 number of independent trials (correlated variants overstate ``N``; the cross-trial Sharpe
-dispersion partly compensates). The variance of the Sharpe estimator assumes i.i.d. returns;
+dispersion partly compensates). ``N`` stays that raw count: ADR-0104 adds the effective count as a
+SUPPLEMENTARY reading (``deflated_sharpe_ratio_over_effective_trials``), never a replacement. The
+variance of the Sharpe estimator assumes i.i.d. returns;
 autocorrelated returns make the reported probability too confident. A zero-variance series
 has no Sharpe ratio and is refused rather than scored.
 """
@@ -174,6 +176,16 @@ def deflated_sharpe_ratio(
             "fraction every period), so the Sharpe ratio is undefined"
         )
         raise CrucibleError(msg)
+    return _deflate(returns, sharpes, n)
+
+
+def _deflate(returns: NDArray[np.float64], sharpes: NDArray[np.float64], n: int) -> DsrResult:
+    """The DSR itself, over an already validated return series and Sharpe array.
+
+    ``n`` is the number of trials the benchmark's expected maximum is taken over; the dispersion
+    always comes from every Sharpe in ``sharpes`` (ADR-0104 decision 4: the supplementary reading
+    changes ``N`` alone).
+    """
     sharpe_hat = per_period_sharpe(returns)
     benchmark = _expected_max_sharpe(sharpes.tolist(), n)
     dsr = probabilistic_sharpe_ratio(
@@ -186,3 +198,57 @@ def deflated_sharpe_ratio(
         n_trials=n,
         n_trials_with_sharpe=len(sharpes),
     )
+
+
+def deflated_sharpe_ratio_over_effective_trials(
+    returns: NDArray[np.float64],
+    trial_sharpes: Sequence[float],
+    effective_trials: int,
+) -> DsrResult:
+    """The SUPPLEMENTARY DSR reading: the same per-period Sharpe and the same candidate-Sharpe
+    dispersion as :func:`deflated_sharpe_ratio`, with ``N`` replaced by an effective count
+    (ADR-0104 decision 4).
+
+    Only ``N`` changes: ``trial_sharpes`` is still every distinct candidate's per-period Sharpe, so
+    the cross-trial variance that estimates the expected maximum is untouched, and the benchmark
+    is ``E[max]`` over ``effective_trials`` rather than over the recorded count. That is why the
+    Sharpe array may be LONGER than ``N`` here, which :func:`deflated_sharpe_ratio` refuses: the
+    effective count is an estimate of independent hypotheses, not a trial count, and it never
+    replaces the primary result.
+
+    Refuses (``CrucibleError``) fewer than two candidate Sharpes (the dispersion would be
+    invented), a non-positive effective count, and the same unscoreable return series the primary
+    refuses (fewer than three observations, non-finite values, zero variance).
+    """
+    sharpes = np.asarray(trial_sharpes, dtype=np.float64)
+    if effective_trials < 1:
+        msg = (
+            f"cannot compute the supplementary DSR over {effective_trials} effective trial(s): "
+            "an effective count is at least 1 (the estimate never returns 0)"
+        )
+        raise CrucibleError(msg)
+    if len(sharpes) < 2:
+        msg = (
+            "cannot compute the supplementary DSR: it needs at least 2 distinct candidate Sharpe "
+            f"ratios for the cross-trial dispersion, and this family has {len(sharpes)}"
+        )
+        raise CrucibleError(msg)
+    if not np.all(np.isfinite(sharpes)):
+        msg = "cannot compute the supplementary DSR: a candidate Sharpe is NaN or infinite"
+        raise CrucibleError(msg)
+    if len(returns) < 3:
+        msg = (
+            f"cannot compute the supplementary DSR from {len(returns)} return observations; "
+            "need >= 3"
+        )
+        raise CrucibleError(msg)
+    if not np.all(np.isfinite(returns)):
+        msg = "cannot compute the supplementary DSR: the return series has NaN or infinite values"
+        raise CrucibleError(msg)
+    if is_degenerate_returns(returns):
+        msg = (
+            "cannot compute the supplementary DSR: the returns have zero variance (no "
+            "dispersion at all), so the Sharpe ratio is undefined"
+        )
+        raise CrucibleError(msg)
+    return _deflate(returns, sharpes, effective_trials)

@@ -339,6 +339,9 @@ def _metric_section() -> Section:
 # Curated entry points: the statistics and orchestrators a researcher calls to judge a result.
 _VALIDATORS: tuple[tuple[str, str, str], ...] = (
     ("deflated_sharpe_ratio", "crucible.validation.dsr", "function"),
+    ("deflated_sharpe_ratio_over_effective_trials", "crucible.validation.dsr", "function"),
+    ("estimate_effective_trials", "crucible.validation.effective_trials", "function"),
+    ("average_linkage_clusters", "crucible.validation.effective_trials", "function"),
     ("per_period_sharpe", "crucible.validation.dsr", "function"),
     ("probability_of_backtest_overfitting", "crucible.validation.pbo", "function"),
     ("sensitivity_surface_1d", "crucible.validation.sensitivity", "function"),
@@ -348,6 +351,9 @@ _VALIDATORS: tuple[tuple[str, str, str], ...] = (
     ("compare_to_null", "crucible.validation.null_tests", "function"),
     ("compare_to_single_null", "crucible.validation.null_tests", "function"),
     ("DuckDBTrialRegistry", "crucible.validation.trial_registry", "class"),
+    ("futures_effective_trials", "crucible.experiments.futures_trials", "function"),
+    ("run_futures_trials", "crucible.experiments.futures_trials", "function"),
+    ("pbo_on_panel", "crucible.experiments.futures_trials", "function"),
     ("optimize_1d", "crucible.experiments.optimize", "function"),
     ("validate_run", "crucible.experiments.validate", "function"),
     ("sweep_1d", "crucible.experiments.sensitivity", "function"),
