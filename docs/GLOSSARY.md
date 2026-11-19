@@ -316,6 +316,16 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
 - **signal warm-up (futures)** — the `window.warmup_trade_dates` Globex trade dates immediately
   before a futures run's window that the run READS only to compute the signal and then drops: no
   fill, mark, ledger row, position or roll comes from them (ADR-0101).
+- **comparison key (futures)** — what makes two futures artifacts comparable (ADR-0102): the
+  simulator version, the `fidelity` level, the execution section (fill timing, roll execution,
+  strictness, bracket policy), the session section and the signal input. Root, contracts, cost
+  amounts, strategy, window, family and capital are deliberately NOT in it, because a USD daily P&L
+  is scale free; two members with equal keys may be correlated, and a pair whose keys differ is
+  reported `incompatible` with the differing paths.
+- **overlap (trade dates)** — the trade dates two members BOTH have, i.e. the inner join of their
+  daily series. It is the only basis of a cross-run correlation: a date one member does not have is
+  excluded, never filled with a zero P&L (a zero would be an invented flat day). A walk-forward's
+  flat FOLD is different: its zero rows are real, because being flat was a decision (ADR-0102).
 - **session boundary** — the point after the last event of a timestamp was
   fully handled (dispatched, callbacks flushed, marked); where `run_until`
   returns and `checkpoint` is legal (ADR-0041).

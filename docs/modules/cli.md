@@ -7,14 +7,15 @@ options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-path
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
 `data fetch`, `data check`, `data integrity`, `data catalog`, `data list`, `futures run`,
-`futures check`, `futures batch`, `futures walkforward`. Handlers are
+`futures check`, `futures batch`, `futures walkforward`, `futures compare`. Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
 stdout, ADR-0084). `run` and `run-vectorized` take `--detail` (full manifest and file inventory in
 the `--json` document); `artifact show <ART-.../EXP-...>` prints the same document for a finished
 run, `artifact verify` recomputes its id from the files; a futures run's `artifact show` prints its
 futures-run document (`experiments.futures_document`, ADR-0097); `schema --kind` also serves `run`,
-`verification`, `error`, `manifest`, `futures-run-document` and `futures-batch`. stdout and
+`verification`, `error`, `manifest`, `futures-run-document`, `futures-batch`, `futures-walkforward`
+and `futures-compare` (the comparison document of C5c, ADR-0102). stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
 `UnicodeEncodeError` on a legacy Windows code page.
 
@@ -166,6 +167,19 @@ The `crucible` command.
   and the verdict line. A re-run reuses every run it already computed (`cached`) and records no
   duplicate submission. The `--home` / `--artifacts` / `--store` precedence is `futures run`'s.
   `schema --kind futures-walkforward` prints the walk-forward file's JSON Schema.
+- `crucible futures compare --target ID [--artifacts DIR | --home DIR] [--min-overlap N] [--json]`
+  — the cross-run comparison (`experiments.futures_compare.compare_futures`, ADR-0102, C5c). Reads
+  the artifacts root ONLY: no store, no `--store`, no simulation. `--target` is a `FUT-...` run or a
+  `WFA-...` walk-forward, and the pool is every other `FUT-`/`WFA-` directory there (minus the
+  target and, for a walk-forward target, its own training and test runs). Each pair gets a status
+  (`ok`, `incompatible` with the differing comparison-key paths, `insufficient_overlap`,
+  `constant_series`, `unverified` for a member whose seal does not verify) and, when the keys agree,
+  a DESCRIPTIVE Pearson correlation of the two daily USD P&L series over the trade dates they both
+  have. `--min-overlap N` (default 20, refused below 10) is how many overlapping trade dates a
+  value needs. Writes `<artifacts>/<CMP-ID>/cross_run.json` (never inside a sealed run) and prints
+  it (`--json`) or a table of the pool in ID ORDER with the target's metrics, each member's status,
+  overlap and value, the largest absolute correlation and the verdict line. No Sharpe, no interval,
+  no significance and no ranking by any statistic.
 - `crucible data check --store S --dataset D --calendar C` — quality
   battery; `data list --store S` — datasets with manifest hashes;
   `--skip NAME --skip-reason TEXT` (repeatable) skips named checks with a

@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, ConfigDict
 
 from crucible.experiments.artifacts import MANIFEST_FIELDS, SCHEMA_VERSION
+from crucible.experiments.futures_compare import futures_compare_json_schema
 from crucible.experiments.futures_document import futures_document_json_schema
 
 if TYPE_CHECKING:
@@ -205,10 +206,19 @@ def manifest_json_schema() -> dict[str, object]:
     }
 
 
-OUTPUT_SCHEMAS = ("run", "verification", "error", "manifest", "futures-run-document")
+OUTPUT_SCHEMAS = (
+    "run",
+    "verification",
+    "error",
+    "manifest",
+    "futures-run-document",
+    "futures-compare",
+)
 """The ``crucible schema --kind`` values this module serves. ``futures-run`` is the futures-run
 CONFIG (``futures_config.futures_config_json_schema``); ``futures-run-document`` is the JSON Schema
-of the document a sealed futures run prints (ADR-0097, ``futures_document``)."""
+of the document a sealed futures run prints (ADR-0097, ``futures_document``); ``futures-compare``
+is the JSON Schema of ``cross_run.json``, the comparison document of C5c
+(``futures_compare.futures_compare_json_schema``, ADR-0102)."""
 
 
 def output_json_schema(kind: str) -> dict[str, object]:
@@ -223,5 +233,7 @@ def output_json_schema(kind: str) -> dict[str, object]:
         return manifest_json_schema()
     if kind == "futures-run-document":
         return futures_document_json_schema()
+    if kind == "futures-compare":
+        return futures_compare_json_schema()
     msg = f"unknown output schema {kind!r}; choose one of {', '.join(OUTPUT_SCHEMAS)}"
     raise ValueError(msg)

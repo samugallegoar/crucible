@@ -8,6 +8,35 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C5c: futures cross-run metrics and descriptive daily P&L correlation (ADR-0102)
+- **C5 stays descriptive.** No Sharpe, IC, PSR, DSR, p-values, confidence intervals, significance
+  or ranking by a statistic is added. Every metric and correlation keeps
+  `assessment: "descriptive"` with null intervals, and the verdict stays `not_assessed`. C6 is the
+  first stage that may add inference.
+- **Entry points:** `crucible futures compare --target ID`, the MCP tool `crucible_futures_compare`
+  and `crucible schema --kind futures-compare`. The target and the pool members are sealed futures
+  runs (`FUT-`) and walk-forwards (`WFA-`, whose series is the concatenated OOS).
+- **Metrics per member.**
+  - P&L: `marked_pnl_usd` and `realized_pnl_usd`.
+  - Costs, closing drawdown and intraday drawdown.
+  - Trades: position episodes, where a long-to-short flip counts as two.
+  - Fills, turnover in contracts (total and per trade date), and days in market.
+  - Window stability: net P&L per calendar month, with the counts of positive, negative and flat
+    months, plus per-fold OOS P&L for a walk-forward.
+- **Correlation.**
+  - It is Pearson's correlation of the daily marked P&L over the intersection of trade dates only.
+    A missing date is excluded, never treated as zero.
+  - Fewer than `--min-overlap` overlapping dates (default 20, floor 10) gives
+    `insufficient_overlap`. A constant series gives `constant_series`. Neither has a value.
+  - Only members with an equal comparison key are correlated. The key covers the simulator
+    version, fidelity, execution, session and signal input. Other pairs are `incompatible`, and
+    the differing keys are listed.
+  - A member whose seal fails is listed as `unverified`.
+- **Output.** `cross_run.json` goes under `CMP-<16 hex>/`, outside every sealed run. The pool is
+  sorted by id, never by correlation.
+- **Example.** The two shipped ES examples are `incompatible`, because their bracket tick settings
+  differ.
+
 ### Fathom C5b: futures walk-forward with constrained in-sample selection and concatenated OOS (ADR-0101)
 - **C5 stays descriptive.** No Sharpe, IC, PSR, DSR, p-values, confidence intervals or statistical
   edge claims are added. Every metric keeps `assessment: "descriptive"` with null intervals, and

@@ -382,6 +382,46 @@ assessed the run statistically before milestones C6 and C7, and an absence of as
 evidence of no edge. Every metric is `{value, ci_low, ci_high, assessment: "descriptive", unit}`
 with null intervals: a null interval means "not assessed", never "assessed and uninformative".
 
+**Comparing a run with what you already have (C5c, ADR-0102).** A comparison reads the
+artifacts root only — no store, no simulation — and reports the target's dollar metrics and
+the DESCRIPTIVE daily P&L correlation of every other `FUT-`/`WFA-` artifact there with it:
+
+```bash
+uv run crucible futures compare --target FUT-0123456789abcdef --artifacts experiments
+uv run crucible futures compare --target WFA-0123456789abcdef --home ~/crucible --json
+uv run crucible schema --kind futures-compare
+```
+
+The text output is one row per member IN ID ORDER (never sorted by a correlation): its id,
+its kind, its status, how many trade dates it shares with the target (and the first and
+last) and the coefficient when there is one. `--json` prints `cross_run.json` itself
+(`<artifacts>/<CMP-ID>/cross_run.json`, keys in `docs/SCHEMAS.md`).
+
+How to read it:
+
+- `ok` — the two members were simulated under the same rules (their *comparison key*: the
+  simulator version, the fidelity level, the execution section, the session section and the
+  signal input — NOT the root, size, costs, strategy, window or capital) and the value is
+  Pearson's correlation of their daily USD P&L over the trade dates they BOTH have. A date
+  one of them does not have is excluded, never treated as a zero P&L; `--min-overlap`
+  (default 20, never below 10) is how many shared dates a value needs.
+- `insufficient_overlap` — fewer shared trade dates than that: no value, because there is
+  nothing to read.
+- `constant_series` — one of the two series never moved over the overlap, so the coefficient
+  does not exist.
+- `incompatible` — the keys differ; `differing_keys` names the paths (for example
+  `fidelity.resolution` for a 1m run against a 15m one, or `execution.brackets.stop_ticks`
+  for a bracketed run against a bare one). Two runs that differ only in how they filled or
+  what they bracketed are not comparable, and no value is reported.
+- `unverified` — the member's seal (a run's, or a walk-forward test run's) does not verify.
+  It is listed with no value, never silently dropped.
+
+The comparison makes no claim: the value carries null intervals, the verdict is
+`not_assessed`, no member is ranked by it, and `max_abs_correlation` is a summary of what was
+computed rather than a leaderboard. A correlation near 1 means the two runs earned and lost
+on the same days; it says nothing about whether either is good. (**Sharpe, IC, CIs and any
+statistical assessment begin in C6.**)
+
 ## Known gaps
 
 - No Python API to *list* experiments in an artifact root; use `crucible compare <family>` or
