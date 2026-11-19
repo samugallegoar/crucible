@@ -302,8 +302,39 @@ The sealed run directory holds:
 - `metrics.json`: descriptive totals only.
 
 `manifest.json` records the datasets with their hashes, the signal and scale checks, the execution
-policy, the calendar version, the marking policy, the **fidelity** block and every approximation.
-There is no Sharpe, and the result makes no performance claim (ADR-0095).
+policy, the calendar version, the marking policy, the **fidelity** block, the **statistics** block
+and every approximation. The statistics are inferential; the run still makes no performance claim
+(ADR-0095, ADR-0103).
+
+**What the statistics mean (C6a, ADR-0103).** Every futures run reports six statistics next to its
+descriptive totals: `sharpe_per_period` (mean daily return over its standard deviation — the one
+PSR and DSR use), `sharpe_annualized` (`x sqrt(252)`, PRESENTATION only), `mean_daily_return`,
+`psr`, `dsr` and `ic_mean`. The daily return is
+`(closing_equity_t - closing_equity_{t-1}) / initial_capital`: FIXED capital, so the series does
+not compound, a session with no position is a real zero, and a session with no bars is excluded and
+counted as `missing_sessions` instead of being filled with zero. The Sharpe, the mean return and the
+IC carry a seeded circular-block-bootstrap interval; PSR and DSR are closed-form probabilities with
+no interval; a statistic that cannot be computed is null WITH its reason (fewer than 3 daily
+observations, a series with no dispersion, fewer than 2 candidate Sharpes for DSR).
+
+`config.statistics` decides only the interval: `ic_horizon_bars` (default 1), `resamples` (default
+1000, at least 200) and `confidence` (default 0.95). The manifest's `statistics` block records the
+returns convention, `annualization: {periods_per_year: 252, convention: "sqrt"}`, the bootstrap
+recipe (`numpy.random.PCG64`, the seed of each statistic, `ceil(sqrt(n))` block length, the block
+length, resamples, confidence), the family's `trials` counts, the `candidate_id`, `missing_sessions`,
+`zero_position_days` and the IC record (`horizon_bars`, `days`, `by_month`, `reason`). The seed is a
+function of the run id and the statistic's name, so a re-run reproduces every interval byte for byte.
+
+The information coefficient exists for a DSL expression only: it is the per-trade-date Spearman
+correlation between the score at each decision bar and the close-to-close return over
+`ic_horizon_bars` bars of the signal series, with pairs that cross a session edge or a contract
+change dropped and trade dates with fewer than 10 valid pairs skipped. A spec or Python strategy
+records a null IC with the reason.
+
+**Still no verdict.** `verdict.verdict_level` stays null with
+`verdict.verdict_reason.code: "robustness_not_assessed"`: robustness and prop-firm rules are C7, so
+no document states an edge. Read the statistics as numbers with stated uncertainty, never as a
+recommendation.
 
 **Fidelity (C5a, ADR-0100).** `fidelity` decides how finely and how expensively the run reads its
 series: `resolution` (`1m` default, `5m`, `15m`, a causal aggregate of the stored one-minute
@@ -324,13 +355,16 @@ uv run crucible schema --kind futures-batch
 Every candidate shares the base's data, window, contracts, costs, execution, session and fidelity;
 only its strategy and its run name change, so all candidates are compared under the same
 conditions. `<artifacts>/<BAT-ID>/batch.json` lists them in **submission order** (never sorted by a
-metric) with their status (`computed`/`cached`), run and artifact ids and five descriptive metrics
-(net P&L, costs, fills, the conservative intraday drawdown, the minimum equity), each with null
-intervals; the batch's verdict is null with the same `not_assessed` reason. A candidate that
-duplicates an earlier one after canonicalization and binding is `cached` and reuses that run, and
-one whose sealed run already exists is `cached` too (re-running a batch is a reproduction). Every
-submitted candidate is recorded in the trial registry's `submissions` table, while `trials` keeps
-one row per distinct run: how submissions count toward `total_trials` is decided in C6.
+metric) with their status (`computed`/`cached`), run and artifact ids, five descriptive metrics
+(net P&L, costs, fills, the conservative intraday drawdown, the minimum equity) with null
+intervals, their `CND-` `candidate_id` and a `statistics` block copied from the run (Sharpe, PSR,
+DSR, IC with their intervals and reasons); the batch's verdict is null with
+`robustness_not_assessed`. A candidate that duplicates an earlier one after canonicalization and
+binding is `cached` and reuses that run, and one whose sealed run already exists is `cached` too
+(re-running a batch is a reproduction). Every submitted candidate is recorded in the trial
+registry's `submissions` table with its `candidate_id`, while `trials` keeps one row per distinct
+run; `batch.json`'s `trials` block reports the family's `submission_count`,
+`unique_candidate_count` and `total_trials` (ADR-0103).
 
 **A signal warm-up (C5b, ADR-0101).** `window.warmup_trade_dates` (integer, default 0) makes the
 run READ the N Globex trade dates immediately before its window to compute the signal, and then
@@ -365,22 +399,27 @@ earlier submission). With no eligible candidate the fold is FLAT - zero P&L and 
 alone, and the contracts open at its last bar are charged one side of the full per-contract cost as
 its **terminal exit**, so every fold starts and ends flat at a known, pessimistic price.
 
-`<artifacts>/<WFA-ID>/walkforward.json` holds the folds, the out-of-sample summary, the
-`window_stability` list and, under `in_sample_audit`, every training run marked `in_sample: true`;
+`<artifacts>/<WFA-ID>/walkforward.json` holds the folds, the out-of-sample summary (with its C6a
+`statistics`, computed on the OOS chain alone and deflated by the family's `total_trials`), the
+`window_stability` list, the family's `trials` counts and, under `in_sample_audit`, every training
+run marked `in_sample: true` with its own statistics;
 `oos_daily.parquet` is the concatenated chain (one row per test trade date, the terminal exit booked
 on the fold's last date), whose `closing_equity_usd` starts each fold at the base capital plus the
-previous folds' net P&L. Only the concatenated series is presented as performance: there is no
-Sharpe, no IC, no interval and the verdict is `not_assessed` (ADR-0095, ADR-0097, ADR-0101).
-Re-running a walk-forward is a reproduction: every run it already computed is `cached` and no
-submission is duplicated.
+previous folds' net P&L. Only the concatenated series is presented as out-of-sample performance; the
+training numbers are audit only, the OOS IC is null with a reason (a concatenation of folds has no
+single signal), and the verdict is `robustness_not_assessed` (ADR-0095, ADR-0097, ADR-0101,
+ADR-0103). Re-running a walk-forward is a reproduction: every run it already computed is `cached`
+and no submission is duplicated.
 
 `futures run --json` and `crucible artifact show <ART-...> --json` print the same **futures-run
 document** (`schema_version: 1`, `crucible schema --kind futures-run-document`; keys in
-`docs/SCHEMAS.md`, ADR-0097). Its verdict is null with a reason:
-`verdict.verdict_level: null`, `verdict.verdict_reason.code: "not_assessed"` — Crucible has not
-assessed the run statistically before milestones C6 and C7, and an absence of assessment is not
-evidence of no edge. Every metric is `{value, ci_low, ci_high, assessment: "descriptive", unit}`
-with null intervals: a null interval means "not assessed", never "assessed and uninformative".
+`docs/SCHEMAS.md`, ADR-0097, ADR-0103). Its verdict is null with a reason:
+`verdict.verdict_level: null`, `verdict.verdict_reason.code: "robustness_not_assessed"` — Crucible
+reports the statistics but has not assessed robustness before milestone C7, and an absence of a
+verdict is not evidence of no edge. A metric is `{value, ci_low, ci_high, assessment, unit,
+method, reason}`: a `descriptive` one carries null intervals, an `inferential` one carries the
+bootstrap interval of its statistic (or none, with a `method`, when it is a closed-form probability
+like PSR/DSR), and a null value always states a `reason` — never a zero.
 
 **Comparing a run with what you already have (C5c, ADR-0102).** A comparison reads the
 artifacts root only — no store, no simulation — and reports the target's dollar metrics and
@@ -416,11 +455,13 @@ How to read it:
 - `unverified` — the member's seal (a run's, or a walk-forward test run's) does not verify.
   It is listed with no value, never silently dropped.
 
-The comparison makes no claim: the value carries null intervals, the verdict is
-`not_assessed`, no member is ranked by it, and `max_abs_correlation` is a summary of what was
-computed rather than a leaderboard. A correlation near 1 means the two runs earned and lost
-on the same days; it says nothing about whether either is good. (**Sharpe, IC, CIs and any
-statistical assessment begin in C6.**)
+The comparison makes no claim: the correlation's value carries null intervals, the verdict is
+`robustness_not_assessed`, no member is ranked by it, and `max_abs_correlation` is a summary of what
+was computed rather than a leaderboard. A correlation near 1 means the two runs earned and lost on
+the same days; it says nothing about whether either is good. The comparison also repeats each
+member's OWN recorded statistics (`sharpe_per_period`, `sharpe_annualized`, `psr`, `dsr`) — read
+from its artifact, never recomputed — so a pool member's numbers are the ones its own document
+reports. (Inferential statistics from C6a; no edge verdict before C7.)
 
 ## Known gaps
 

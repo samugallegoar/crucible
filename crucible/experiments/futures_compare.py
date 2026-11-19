@@ -5,11 +5,12 @@ be read back and compared with what the artifacts folder already holds. This mod
 Nothing here simulates, so nothing here can change a result; the only file it writes is
 ``<artifacts_root>/<CMP-ID>/cross_run.json``, outside every sealed run directory (ADR-0102).
 
-Hard restriction (ADR-0095, ADR-0097, ADR-0100, ADR-0101, ADR-0102): there is no Sharpe, no IC, no
-PSR, no DSR, no p-value, no confidence interval, no shrinkage and no significance anywhere in this
-module, and the pool is NEVER sorted by a statistic. A correlation is a descriptive number of the
-overlapping trade dates, reported with null intervals (``assessment: "descriptive"``) and the
-verdict ``not_assessed`` (ADR-0097's reason). C6 is the first stage allowed to add inference.
+Hard restriction (ADR-0095, ADR-0097, ADR-0100, ADR-0101, ADR-0102, ADR-0103): a correlation is a
+descriptive number of the overlapping trade dates, reported with null intervals
+(``assessment: "descriptive"``), and the pool is NEVER sorted by a statistic. Since C6a the
+comparison also REPEATS each member's own recorded statistics (``sharpe_per_period``,
+``sharpe_annualized``, ``psr``, ``dsr``) — read from its artifact, never recomputed — and the
+verdict stays ``robustness_not_assessed``: C7 owns the edge decision.
 
 The four rules that make the number honest:
 
@@ -66,10 +67,10 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 import polars as pl
@@ -86,6 +87,7 @@ from crucible.experiments.futures_document import (
     MetricUnit,
     verdict_document,
 )
+from crucible.experiments.futures_stats import STATISTICS_METRIC_UNITS
 
 COMPARE_SCHEMA_VERSION = 1
 """Version of ``cross_run.json`` (``docs/COMPATIBILITY.md`` §3: adding a key is additive;
@@ -146,6 +148,18 @@ POOL_STATUSES: tuple[PoolStatus, ...] = (
 )
 """Every pool status, in the order the summary counts them."""
 
+STATISTICS_COMPARE_METRICS: tuple[str, ...] = (
+    "sharpe_per_period",
+    "sharpe_annualized",
+    "psr",
+    "dsr",
+)
+"""The C6a statistics a comparison repeats per member (ADR-0103 decision 7): the per-period
+Sharpe PSR and DSR are computed on, the annualized one for presentation, and the two
+probabilities. They are READ from the member's own sealed record (its ``metrics.json``, or a
+walk-forward's ``oos.statistics``), never recomputed here: a comparison reads artifacts, so it
+cannot produce a number an artifact does not already contain."""
+
 COMPARE_METRIC_UNITS: dict[str, MetricUnit] = {
     "marked_pnl_usd": "usd",
     "realized_pnl_usd": "usd",
@@ -157,6 +171,10 @@ COMPARE_METRIC_UNITS: dict[str, MetricUnit] = {
     "turnover_contracts": "contracts",
     "trade_dates": "trade_dates",
     "days_in_market": "trade_dates",
+    **{
+        name: cast("MetricUnit", STATISTICS_METRIC_UNITS[name])
+        for name in STATISTICS_COMPARE_METRICS
+    },
 }
 """The unit of every cross-run metric, in reading order: what the member made on its marks,
 what it banked, what it cost, its closing and intraday drawdown, its position episodes, its
@@ -207,6 +225,7 @@ class Member:
     in_market: frozenset[dt.date]
     fold_oos: tuple[Decimal, ...]
     key: Mapping[str, object] | None
+    statistics: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
     @property
     def verified(self) -> bool:
@@ -367,6 +386,21 @@ def _intraday_drawdown(marks: pl.DataFrame) -> Decimal:
     return drawdown
 
 
+def _recorded_statistics(metrics: Mapping[str, object]) -> dict[str, Mapping[str, object]]:
+    """The member's own C6a statistics, as its artifact recorded them (missing ones omitted).
+
+    A member written before C6a records none: those keys are then absent, and
+    :func:`member_metrics` reports the statistic as a null with a reason rather than a recomputed
+    number (a comparison never invents a statistic).
+    """
+    out: dict[str, Mapping[str, object]] = {}
+    for name in STATISTICS_COMPARE_METRICS:
+        entry = metrics.get(name)
+        if isinstance(entry, Mapping):
+            out[name] = {str(key): value for key, value in entry.items()}
+    return out
+
+
 def _run_member(directory: Path, member_id: str) -> Member:
     """A sealed futures run read as a member: the daily ledger, the marks and the fills."""
     verify_artifact(directory)
@@ -397,6 +431,7 @@ def _run_member(directory: Path, member_id: str) -> Member:
         in_market=in_market,
         fold_oos=(),
         key=_key_from_config(config, _fidelity_record(manifest)),
+        statistics=_recorded_statistics(_json_object(directory / "metrics.json", "metrics")),
     )
 
 
@@ -462,6 +497,37 @@ def walkforward_run_ids(directory: Path) -> tuple[str, ...]:
             if train_id is not None:
                 ids.add(train_id)
     return tuple(sorted(ids))
+
+
+def _walkforward_statistics(
+    document: Mapping[str, object], directory: Path
+) -> dict[str, Mapping[str, object]]:
+    """A walk-forward's OOS statistics, as its ``walkforward.json`` recorded them (C6a).
+
+    ``oos.statistics`` carries the walk-forward's own report: the metrics under ``metrics`` and
+    the conventions, bootstrap recipe and trial counts beside them. A walk-forward written before
+    C6a has none, which the member reports as nulls with a reason.
+    """
+    oos = document.get("oos")
+    if not isinstance(oos, Mapping):
+        return {}
+    statistics = oos.get("statistics")
+    if not isinstance(statistics, Mapping):
+        return {}
+    metrics = statistics.get("metrics")
+    if not isinstance(metrics, Mapping):
+        msg = (
+            f"the walk-forward document at {directory / 'walkforward.json'} records "
+            "oos.statistics without a metrics block: a C6a walk-forward writes its statistics "
+            "there. Re-run it with `crucible futures walkforward`"
+        )
+        raise ExperimentError(msg).at(path=str(directory))
+    out: dict[str, Mapping[str, object]] = {}
+    for name in STATISTICS_COMPARE_METRICS:
+        entry = metrics.get(name)
+        if isinstance(entry, Mapping):
+            out[name] = {str(key): value for key, value in entry.items()}
+    return out
 
 
 def _walkforward_member(
@@ -535,6 +601,7 @@ def _walkforward_member(
         in_market=frozenset(in_market),
         fold_oos=tuple(fold_net[index] for index in fold_order),
         key=key,
+        statistics=_walkforward_statistics(document, directory),
     )
 
 
@@ -599,6 +666,7 @@ def _unverified(member_id: str, kind: MemberKind, directory: Path, detail: str) 
         in_market=frozenset(),
         fold_oos=(),
         key=None,
+        statistics={},
     )
 
 
@@ -796,6 +864,46 @@ def _closing_drawdown(member: Member) -> Decimal:
     return drawdown
 
 
+def _recorded_metric(name: str, recorded: Mapping[str, Mapping[str, object]]) -> CompareMetric:
+    """One statistic as the member's artifact recorded it (never recomputed here).
+
+    The value, its interval, its assessment and its reason come from the member's own
+    ``metrics.json`` (or its ``oos.statistics``), so two documents can never disagree about a
+    number. A member written before C6a carries none: the metric is then null with a reason
+    saying so, because a null is a missing number and never a zero.
+    """
+    unit = COMPARE_METRIC_UNITS[name]
+    entry = recorded.get(name)
+    if entry is None:
+        return CompareMetric(
+            value=None,
+            ci_low=None,
+            ci_high=None,
+            assessment="inferential",
+            unit=unit,
+            method=None,
+            reason=(
+                f"the member records no {name}: it was written before C6a, or its artifact was "
+                "not run with the statistics of ADR-0103. Re-run it to get the number"
+            ),
+        )
+    value = entry.get("value")
+    ci_low = entry.get("ci_low")
+    ci_high = entry.get("ci_high")
+    method = entry.get("method")
+    reason = entry.get("reason")
+    assessment = entry.get("assessment", "descriptive")
+    return CompareMetric(
+        value=None if value is None else round(float(cast("float", value)), 6),
+        ci_low=None if ci_low is None else round(float(cast("float", ci_low)), 6),
+        ci_high=None if ci_high is None else round(float(cast("float", ci_high)), 6),
+        assessment="inferential" if assessment == "inferential" else "descriptive",
+        unit=unit,
+        method=None if method is None else str(method),
+        reason=None if reason is None else str(reason),
+    )
+
+
 def member_metrics(member: Member) -> dict[str, CompareMetric]:
     """The member's descriptive metrics (ADR-0102 decision 3), in ``COMPARE_METRIC_UNITS`` order.
 
@@ -819,6 +927,7 @@ def member_metrics(member: Member) -> dict[str, CompareMetric]:
         "turnover_contracts": _metric(sum(member.turnover.values()), "contracts"),
         "trade_dates": _metric(len(member.net), "trade_dates"),
         "days_in_market": _metric(len(member.in_market), "trade_dates"),
+        **{name: _recorded_metric(name, member.statistics) for name in STATISTICS_COMPARE_METRICS},
     }
     assert tuple(metrics) == tuple(COMPARE_METRIC_UNITS), "the metric table drifted from its units"
     return metrics
@@ -882,10 +991,12 @@ class CompareMetric(_Document):
     """
 
     value: float | None
-    ci_low: None
-    ci_high: None
-    assessment: Literal["descriptive"]
+    ci_low: float | None
+    ci_high: float | None
+    assessment: Literal["descriptive", "inferential"]
     unit: MetricUnit
+    method: str | None = None
+    reason: str | None = None
 
 
 class CompareOverlap(_Document):
@@ -904,9 +1015,10 @@ class CompareOverlap(_Document):
 class CompareCorrelation(_Document):
     """One descriptive correlation: a value (or null), null intervals and the unit ``correlation``.
 
-    The intervals are typed null: a futures comparison computes no confidence interval
-    before C6, and an interval here would read as a claim about a population this
-    milestone says nothing about (ADR-0095, ADR-0102).
+    The intervals are typed null: a correlation is a descriptive number of an overlap, with no
+    population claim behind it (ADR-0102 decision 5). The inferential metrics beside it
+    (``sharpe_per_period``, ``psr``, ...) are the ones a member's own artifact recorded, with the
+    intervals and reasons it recorded.
     """
 
     value: float | None

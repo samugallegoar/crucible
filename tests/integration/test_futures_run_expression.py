@@ -124,7 +124,18 @@ def test_an_expression_run_prints_the_futures_document(store: Path, tmp_path: Pa
     result = run_futures(expression_config(), store_root=store, artifacts_root=artifacts)
     document = futures_document(result.run_dir)
     assert document["schema_version"] == FUTURES_DOCUMENT_SCHEMA_VERSION
-    assert all(metric["assessment"] == "descriptive" for metric in document["metrics"].values())
+    metrics = document["metrics"]
+    # the descriptive totals stay descriptive with null intervals, and C6a adds the inferential
+    # statistics next to them (ADR-0103)
+    for name in ("net_pnl_usd", "fills", "trade_dates"):
+        assert metrics[name]["assessment"] == "descriptive"
+        assert metrics[name]["ci_low"] is None
+    assert metrics["sharpe_per_period"]["assessment"] == "inferential"
+    assert metrics["psr"]["assessment"] == "inferential"
+    assert document["statistics"]["annualization"] == {
+        "periods_per_year": 252,
+        "convention": "sqrt",
+    }
 
 
 # ------------------------------------------------------------------------------- the CLI

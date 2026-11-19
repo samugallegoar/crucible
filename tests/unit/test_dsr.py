@@ -10,7 +10,11 @@ import numpy as np
 import pytest
 
 from crucible.core.errors import CrucibleError
-from crucible.validation.dsr import DsrResult, _psr, deflated_sharpe_ratio
+from crucible.validation.dsr import (
+    DsrResult,
+    deflated_sharpe_ratio,
+    probabilistic_sharpe_ratio,
+)
 
 _RETURNS = np.array(
     [0.01, 0.02, -0.01, 0.015, 0.005, 0.02, -0.005, 0.01, 0.015, 0.0]
@@ -78,7 +82,7 @@ def test_psr_refuses_a_non_positive_denominator() -> None:
     # kurtosis >= skew**2 + 1 inequality) that drive the PSR denominator
     # to exactly zero: denom = 1 - skew*sharpe + (kurtosis-1)/4*sharpe**2.
     with pytest.raises(CrucibleError, match="non-positive"):
-        _psr(sharpe_hat=2.0, benchmark=0.0, n=10, skew=1.0, kurtosis=1.0)
+        probabilistic_sharpe_ratio(sharpe_hat=2.0, benchmark=0.0, n=10, skew=1.0, kurtosis=1.0)
 
 
 # --- ADR-0071: trial count, missing metadata and independent references -------------------

@@ -6,7 +6,9 @@ Gate 4 statistics. Detail sections follow.
 
 - `splits.py` — `WalkForwardSplitter`, `PurgedKFoldSplitter`, `CombinatorialPurgedCVSplitter`;
   `config.py` / `registry.py` — their configs and `build_splitter`.
-- `trial_registry.py` — `DuckDBTrialRegistry`, `TrialRecord`. `dsr.py` — `deflated_sharpe_ratio`,
+- `trial_registry.py` — `DuckDBTrialRegistry`, `TrialRecord`, `SubmissionRecord` and the C6a counts
+  (`submission_count`, `unique_candidate_count`, `total_trials`, `candidate_sharpes`).
+  `dsr.py` — `deflated_sharpe_ratio`, `probabilistic_sharpe_ratio`, `skewness`,
   `per_period_sharpe`. `pbo.py` — `probability_of_backtest_overfitting`.
 - `sensitivity.py` — `sensitivity_surface_1d`, `sensitivity_surface_2d`.
 - `monte_carlo.py` — `ReturnOrderShuffleTest`, `StartDateShiftTest`, `BlockBootstrapTest`.
@@ -100,11 +102,34 @@ bootstrap CIs, contamination flagging.
   `ON CONFLICT (batch_id, position) DO NOTHING`, so re-running a batch neither duplicates a
   submission nor rewrites the status first recorded; `submissions(batch_id=None, family=None)`
   returns `SubmissionRecord`s in `(batch_id, position)` order (submission order, never a metric's);
-  `submission_count(family)` counts a family's submissions across batches. The `trials` table is
-  UNCHANGED (one row per distinct `experiment_id`), so a batch's three candidates with one
-  duplicate are 3 submissions and 2 trials. **How submissions count toward `total_trials` is
-  decided in C6**, not here: until then the table is the complete record of what was submitted and
-  the trial count stays what DSR reads.
+  `submission_count(family)` counts a family's submission EVENTS (below). The `trials` table is
+  UNCHANGED in what it keys on (one row per distinct `experiment_id`), so a batch's three
+  candidates with one duplicate are 3 submissions and 2 trials.
+- **Candidates and trial counts (C6a, ADR-0103 decision 4)**: three additive columns —
+  `trials.candidate_id` (the `CND-` identity of the candidate the run evaluated), `trials.n_obs`
+  (how many observations the recorded Sharpe was measured over) and `trials.seq` (insertion
+  order); `submissions.candidate_id` too. All are `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so
+  a database written before C6a keeps working and its rows keep counting exactly as they did.
+  `record_trial(..., candidate_id=None, n_obs=None)` and `record_submission(..., candidate_id=None)`
+  take them. Per family the registry reports:
+  - `submission_count(family)`: the rows of `submissions` plus every STANDALONE futures run, i.e.
+    a `trials` row that carries a `candidate_id` and whose `experiment_id` no submission row of
+    the family names. A walk-forward's test run is such a standalone run (nothing submitted it as
+    a candidate: its training candidates were), so every run the family recorded is one of the two
+    kinds and nothing is counted twice.
+  - `unique_candidate_count(family)`: `COUNT(DISTINCT COALESCE(candidate_id, 'EXP:' ||
+    experiment_id))`, i.e. one per distinct candidate and (for a pre-C6a row) one per experiment —
+    so the same candidate evaluated on several windows, or across several walk-forward folds,
+    counts once.
+  - `total_trials(family)`: what a deflation is computed against; in C6a it equals
+    `unique_candidate_count` and is kept as its own method because C6b (effective trials) and C6c
+    (the holdout vault) may add to it.
+  - `candidate_sharpes(family)`: one per-period Sharpe per distinct candidate — the one from its
+    run with the most `n_obs`, a tie going to the earliest `seq`, so the list never depends on the
+    order DuckDB returns rows in. Candidates with no recorded Sharpe are omitted and still count
+    toward `total_trials`.
+  `candidate_id(config)` itself lives in `experiments/futures_config.py` (it needs the config, and
+  `validation` sits below `experiments`).
 
 ## Implementations (`crucible/validation/dsr.py`, `pbo.py`)
 - `deflated_sharpe_ratio(returns, trial_sharpes) -> DsrResult` — PSR
@@ -324,5 +349,6 @@ implement `Splitter`. All stochastic components take an explicit
 - DSR's `N` is the number of trials recorded in the family; the registry cannot know about trials
   run elsewhere, so the correction is a lower bound on the true search (the one-step result says
   so in `validation.trial_count_scope`, ADR-0070). No effective-independent-trials estimate.
-- The `submissions` table is recorded but nothing reads it yet: C6 decides whether (and how) a
-  submission counts toward `total_trials`, and no statistic uses it.
+- `total_trials` counts distinct candidates, not effective independent trials: correlated variants
+  of one idea overstate `N` (ADR-0070, and ADR-0104 for the effective count). A submission is
+  recorded and counted as an EVENT, never as a trial.

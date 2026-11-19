@@ -16,6 +16,15 @@ contamination flagging (``validation.contamination``) answer "did an
 optimization-mode trial in this family already see this evaluation's data
 window?" from the registry alone, without re-reading every past trial's
 ``manifest.json``/``config.yaml`` off the artifact store.
+
+Since C6a (ADR-0103) a row may also carry ``candidate_id`` (the ``CND-`` identity of the CANDIDATE
+the run evaluated: the strategy plus its parameter values, on these datasets, under these costs,
+this execution, fidelity, session and signal policy, and NOT its window or name), ``n_obs`` (the
+observations the recorded Sharpe was measured over) and ``seq`` (insertion order). Those three are
+what let a family report ``submission_count``, ``unique_candidate_count``, ``total_trials`` and
+``candidate_sharpes`` -- the counts a Deflated Sharpe Ratio needs -- without changing what
+``trial_count`` meant before: one row per distinct ``experiment_id``. A row recorded without them
+behaves exactly as it did, so an older database keeps its counts.
 """
 
 from __future__ import annotations
@@ -49,9 +58,11 @@ class SubmissionRecord:
 
     The ``trials`` table counts distinct evaluations; a batch's submissions count what the
     researcher actually asked for, including the candidates that turned out to be duplicates of
-    another (status ``cached``) or that hit an existing run directory. C6 decides how submissions
-    count toward ``total_trials``; until then this table is the record and ``trials`` stays
-    unchanged (one row per distinct ``experiment_id``).
+    another (status ``cached``) or that hit an existing run directory. Since C6a (ADR-0103) the
+    registry also reports ``submission_count``, ``unique_candidate_count`` and ``total_trials``:
+    the first counts submission EVENTS (these rows plus standalone runs), the second counts the
+    distinct ``candidate_id``s a family evaluated, and ``total_trials`` is what a deflation is
+    computed against (today the same as the unique count).
     """
 
     batch_id: str
@@ -62,6 +73,9 @@ class SubmissionRecord:
     parameterization_id: str
     candidate_name: str
     status: str
+    candidate_id: str | None = None
+    """The ``CND-`` identity of the candidate the submitted run evaluated (ADR-0103); null on a
+    row recorded before C6a."""
 
 
 _SCHEMA = """
@@ -75,6 +89,9 @@ CREATE TABLE IF NOT EXISTS trials (
     PRIMARY KEY (family, experiment_id)
 );
 ALTER TABLE trials ADD COLUMN IF NOT EXISTS period_ns BIGINT;
+ALTER TABLE trials ADD COLUMN IF NOT EXISTS candidate_id VARCHAR;
+ALTER TABLE trials ADD COLUMN IF NOT EXISTS n_obs BIGINT;
+ALTER TABLE trials ADD COLUMN IF NOT EXISTS seq BIGINT;
 CREATE TABLE IF NOT EXISTS submissions (
     batch_id VARCHAR NOT NULL,
     position INTEGER NOT NULL,
@@ -86,12 +103,19 @@ CREATE TABLE IF NOT EXISTS submissions (
     status VARCHAR NOT NULL,
     PRIMARY KEY (batch_id, position)
 );
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS candidate_id VARCHAR;
 """
 # period_ns (ADR-0071): the trial's median spacing between equity marks, i.e. the return
 # frequency its per-period Sharpe is measured at. Null for rows from before the column existed.
 # submissions (Fathom C5a): every candidate a futures batch submitted, in submission order. It is
 # ADDITIVE: the trials table keeps one row per distinct experiment_id, and the primary key makes
 # re-running a batch a no-op instead of a duplicate.
+# candidate_id (ADR-0103 decision 4): the CND- identity of the CANDIDATE a row evaluates, so a
+# family can count distinct candidates instead of distinct run directories. Additive: rows from
+# before the column existed have none and keep counting by experiment_id (see
+# ``unique_candidate_count``). n_obs: the number of observations the recorded Sharpe was measured
+# over (``candidate_sharpes`` keeps the row with the most of them). seq: insertion order, so the
+# tie-break "earliest recorded" of ADR-0103 decision 3 is reproducible without a wall clock.
 
 FREQUENCY_TOLERANCE = 1.5
 """Two trials' return periods count as the same frequency when they differ by less than this
@@ -149,14 +173,32 @@ class DuckDBTrialRegistry:
         start_ns: int | None = None,
         end_ns: int | None = None,
         period_ns: int | None = None,
+        candidate_id: str | None = None,
+        n_obs: int | None = None,
     ) -> int:
+        """Record one distinct evaluation; returns the family's trial-row count.
+
+        ``candidate_id``/``n_obs`` (ADR-0103) are additive: a row recorded without them keeps
+        counting by ``experiment_id``, exactly as before C6a.
+        """
         with duckdb.connect(str(self._path)) as conn:
             conn.execute(_SCHEMA)
             conn.execute(
-                "INSERT INTO trials "
-                "(family, experiment_id, sharpe, mode, start_ns, end_ns, period_ns) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (family, experiment_id) DO NOTHING",
-                [family, experiment_id, sharpe, mode, start_ns, end_ns, period_ns],
+                "INSERT INTO trials (family, experiment_id, sharpe, mode, start_ns, end_ns, "
+                "period_ns, candidate_id, n_obs, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "(SELECT COALESCE(MAX(seq), 0) + 1 FROM trials)) "
+                "ON CONFLICT (family, experiment_id) DO NOTHING",
+                [
+                    family,
+                    experiment_id,
+                    sharpe,
+                    mode,
+                    start_ns,
+                    end_ns,
+                    period_ns,
+                    candidate_id,
+                    n_obs,
+                ],
             )
             return self._count(conn, family)
 
@@ -177,19 +219,22 @@ class DuckDBTrialRegistry:
         parameterization_id: str,
         candidate_name: str,
         status: str,
+        candidate_id: str | None = None,
     ) -> int:
         """Record one submitted candidate; returns the batch's submission count.
 
         ``(batch_id, position)`` is the key, so re-running a batch never duplicates a submission
         and never rewrites the status first recorded (a candidate that computed keeps
-        ``computed``; the run it names is reused on a re-run).
+        ``computed``; the run it names is reused on a re-run). ``candidate_id`` (ADR-0103) is the
+        candidate identity the run recorded; it is additive.
         """
         with duckdb.connect(str(self._path)) as conn:
             conn.execute(_SCHEMA)
             conn.execute(
                 "INSERT INTO submissions (batch_id, position, family, experiment_id, "
-                "structure_id, parameterization_id, candidate_name, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (batch_id, position) DO NOTHING",
+                "structure_id, parameterization_id, candidate_name, status, candidate_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (batch_id, position) DO NOTHING",
                 [
                     batch_id,
                     int(position),
@@ -199,6 +244,7 @@ class DuckDBTrialRegistry:
                     parameterization_id,
                     candidate_name,
                     status,
+                    candidate_id,
                 ],
             )
             row = conn.execute(
@@ -225,8 +271,8 @@ class DuckDBTrialRegistry:
             conn.execute(_SCHEMA)
             rows = conn.execute(
                 "SELECT batch_id, position, family, experiment_id, structure_id, "
-                f"parameterization_id, candidate_name, status FROM submissions {where} "
-                "ORDER BY batch_id, position",
+                f"parameterization_id, candidate_name, status, candidate_id FROM submissions "
+                f"{where} ORDER BY batch_id, position",
                 params,
             ).fetchall()
         return [
@@ -239,19 +285,88 @@ class DuckDBTrialRegistry:
                 parameterization_id=str(row[5]),
                 candidate_name=str(row[6]),
                 status=str(row[7]),
+                candidate_id=None if row[8] is None else str(row[8]),
             )
             for row in rows
         ]
 
     def submission_count(self, family: str) -> int:
-        """How many candidates were submitted under ``family`` across every batch."""
+        """How many SUBMISSION EVENTS ``family`` has (ADR-0103 decision 4).
+
+        A submission event is either a row of the ``submissions`` table (a candidate a batch or a
+        walk-forward submitted) or a standalone futures run: a ``trials`` row of the family that
+        carries a ``candidate_id`` and whose ``experiment_id`` no submission row of the family
+        names. A walk-forward's TEST run is such a standalone run (nothing submitted it as a
+        candidate: its training candidates were), and it is counted, so every run the family
+        recorded is one of the two kinds and nothing is counted twice.
+
+        Rows recorded before C6a (no ``candidate_id``) contribute nothing here: they were not
+        submitted through the C6a paths, and their family's count stays what it was.
+        """
         with duckdb.connect(str(self._path)) as conn:
             conn.execute(_SCHEMA)
             row = conn.execute(
-                "SELECT COUNT(*) FROM submissions WHERE family = ?", [family]
+                "SELECT (SELECT COUNT(*) FROM submissions WHERE family = ?) + "
+                "(SELECT COUNT(*) FROM trials WHERE family = ? AND candidate_id IS NOT NULL "
+                "AND experiment_id NOT IN (SELECT experiment_id FROM submissions "
+                "WHERE family = ?))",
+                [family, family, family],
             ).fetchone()
             assert row is not None
             return int(row[0])
+
+    def unique_candidate_count(self, family: str) -> int:
+        """How many DISTINCT candidates ``family`` evaluated (ADR-0103 decision 4).
+
+        A row with a ``candidate_id`` counts once per distinct id (so the same candidate
+        evaluated on several windows, or across several walk-forward folds, counts once); a row
+        recorded before C6a without one counts by ``experiment_id``, exactly as
+        :meth:`trial_count` counts. That keeps every pre-C6a family's count unchanged.
+        """
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            row = conn.execute(
+                "SELECT COUNT(*) FROM (SELECT DISTINCT "
+                "COALESCE(candidate_id, 'EXP:' || experiment_id) AS candidate "
+                "FROM trials WHERE family = ?)",
+                [family],
+            ).fetchone()
+            assert row is not None
+            return int(row[0])
+
+    def total_trials(self, family: str) -> int:
+        """The number of trials a deflation is computed against (ADR-0103 decision 4).
+
+        In C6a this equals :meth:`unique_candidate_count`: counting submissions instead would
+        deflate a strategy against its own duplicates. Kept as its own method because C6b (the
+        effective number of trials) and C6c (the holdout vault) may add to it.
+        """
+        return self.unique_candidate_count(family)
+
+    def candidate_sharpes(self, family: str) -> list[float]:
+        """One per-period Sharpe per distinct candidate of ``family`` (ADR-0103 decision 3).
+
+        A candidate's Sharpe is the one from its run with the most observations (``n_obs``); a
+        tie goes to the earliest recorded row (``seq``), so the list never depends on the order
+        DuckDB happens to return rows in. Candidates with no recorded Sharpe are omitted (they
+        still count toward ``total_trials``: ADR-0071). Rows recorded before C6a have neither
+        ``n_obs`` nor ``seq``; they group by ``experiment_id`` and order as if they were the
+        first recorded, which is what "one per distinct experiment_id" meant before C6a.
+
+        Sorted by the candidate key, so two calls over the same registry give the same list.
+        """
+        with duckdb.connect(str(self._path)) as conn:
+            conn.execute(_SCHEMA)
+            rows = conn.execute(
+                "SELECT COALESCE(candidate_id, 'EXP:' || experiment_id) AS candidate, "
+                "sharpe, n_obs, seq FROM trials WHERE family = ? AND sharpe IS NOT NULL "
+                "ORDER BY candidate, COALESCE(n_obs, -1) DESC, COALESCE(seq, 0) ASC",
+                [family],
+            ).fetchall()
+        best: dict[str, float] = {}
+        for candidate, sharpe, _n_obs, _seq in rows:  # first row per candidate wins
+            best.setdefault(str(candidate), float(sharpe))
+        return [best[key] for key in sorted(best)]
 
     def trial_sharpes(self, family: str) -> list[float]:
         """Per-period Sharpe of every distinct trial recorded for

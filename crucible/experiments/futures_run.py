@@ -4,8 +4,8 @@
 continuous build (ADR-0086), cut them to a window of Globex trade dates on the CME session
 calendar (ADR-0091), decide signed whole-contract targets with the signal bridge
 (``futures_targets``), simulate them with ``simulate_futures`` (ADR-0090), and write the artifact:
-per-bar marks, the daily ledger, fills, rolls, ``config.yaml``, descriptive ``metrics.json`` and a
-manifest that says exactly what was assumed.
+per-bar marks, the daily ledger, fills, rolls, ``config.yaml``, ``metrics.json`` and a manifest that
+says exactly what was assumed.
 
 Three things are enforced here rather than documented:
 
@@ -16,6 +16,15 @@ Three things are enforced here rather than documented:
   identity refuses the run instead of shipping a plausible-looking file;
 - **the trial is counted**: the run registers itself in the root's trial registry before sealing,
   because a statistic from a run whose siblings are not counted cannot be read (ADR-0008).
+
+``statistics`` (C6a, ADR-0103) makes the run report inferential numbers: after the simulation the
+run builds the daily returns on its FIXED capital (``futures_stats.daily_returns``), records its
+per-period Sharpe and its `CND-` candidate id in the trial registry, and then reports the Sharpe
+(per period and annualized), the mean daily return, PSR, DSR (deflated by the family's
+``total_trials``) and — for a DSL expression — the information coefficient, each with its seeded
+bootstrap interval or its reason for being null. The manifest's ``statistics`` block records the
+returns convention, the annualization, the bootstrap recipe, the trial counts, the candidate id and
+the session counts, so no Sharpe travels without the evidence AGENTS.md §9 demands.
 
 ``fidelity`` (C5a, ADR-0100) makes the run read a coarser, cheaper version of the same series: a
 resolution of ``5m``/``15m`` aggregates both series causally (``crucible.data.resample``) BEFORE
@@ -46,12 +55,13 @@ import json
 import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import polars as pl
 
 from crucible.core.errors import ConfigurationError, DataQualityError
+from crucible.core.stats import is_degenerate_returns, per_period_sharpe
 from crucible.core.types import NS_PER_S, DatasetId, TimestampNs
 from crucible.data.cme_sessions import session_trade_dates, table_summary
 from crucible.data.continuous import calendar_for
@@ -75,10 +85,18 @@ from crucible.experiments.futures_artifacts import (
 from crucible.experiments.futures_config import (
     BAR_SECONDS,
     FuturesRunConfig,
+    candidate_id,
     canonical_futures_yaml,
     futures_config_hash,
 )
 from crucible.experiments.futures_signals import DatasetRef, FuturesSignalFunction, futures_targets
+from crucible.experiments.futures_stats import (
+    InformationCoefficient,
+    daily_returns,
+    futures_statistics,
+    information_coefficient,
+    no_information_coefficient,
+)
 from crucible.experiments.runner import import_entrypoint
 from crucible.strategy_spec.models import parse_spec
 from crucible.validation.trial_registry import DuckDBTrialRegistry
@@ -119,6 +137,9 @@ RESULT_FILES = (
 """The result files of a run directory (the artifact digest covers exactly these)."""
 
 _NS_PER_DAY = 86_400 * NS_PER_S
+"""Nanoseconds in one trade date: the period a futures run's per-period Sharpe is measured
+at (its returns are daily, ADR-0103 decision 1), recorded in the registry's ``period_ns``."""
+
 _RAW_COLUMNS = ("symbol", "event_time", "open", "high", "low", "close")
 
 
@@ -451,6 +472,7 @@ class _Prepared:
     raw: pl.DataFrame
     fidelity: dict[str, object]
     warmup: dict[str, object]
+    ic: InformationCoefficient
 
 
 def run_id_basis(
@@ -679,6 +701,43 @@ def _prepare(config: FuturesRunConfig, store_root: Path) -> _Prepared:
         raw=raw,
         fidelity=fidelity,
         warmup=warmup,
+        ic=_information_coefficient(config, strategy, extended_signal, bars, calendar),
+    )
+
+
+def _information_coefficient(
+    config: FuturesRunConfig,
+    strategy: StrategySpec | FuturesSignalFunction | CompiledSignal,
+    extended_signal: pl.DataFrame,
+    bars: _Bars,
+    calendar: SessionCalendar,
+) -> InformationCoefficient:
+    """The run's information coefficient, or a null IC with the reason it has none (ADR-0103).
+
+    Only a DSL expression has one: its score is a number per bar that can be ranked against the
+    forward return. A spec or a ``FuturesSignalFunction`` decides positions (a sign, a size), not
+    a score, so ranking it would measure something the strategy never used. The IC is computed on
+    the WINDOW's signal series only (the warm-up rows are gone, exactly as they are for the
+    simulator), on the series the signal actually read.
+    """
+    if not isinstance(strategy, CompiledSignal):
+        what = "spec" if config.strategy.spec is not None else "entrypoint"
+        return no_information_coefficient(
+            f"only a DSL expression has an information coefficient: this run decides with a "
+            f"strategy {what}, whose bars carry a position rather than a score to rank against "
+            "the forward return. Use strategy.expression to measure an IC",
+            horizon_bars=config.statistics.ic_horizon_bars,
+        )
+    window_signal = _window_signal(extended_signal, bars)
+    outputs = strategy.evaluate(
+        window_signal, calendar=calendar, bar_seconds=config.fidelity.bar_seconds
+    )
+    return information_coefficient(
+        outputs,
+        window_signal,
+        horizon_bars=config.statistics.ic_horizon_bars,
+        calendar=calendar,
+        bar_seconds=config.fidelity.bar_seconds,
     )
 
 
@@ -751,15 +810,43 @@ def run_futures(
     _replace(run_dir, overwrite)
 
     registry = DuckDBTrialRegistry(artifacts_root / "trial_registry.duckdb")
+    returns_series = daily_returns(
+        daily,
+        initial_capital=config.capital,
+        calendar=calendar,
+        window=(config.window.start, config.window.end),
+    )
+    sharpe = (
+        None
+        if is_degenerate_returns(returns_series.returns)
+        else per_period_sharpe(returns_series.returns)
+    )
+    candidate = candidate_id(config)
     trial_count = registry.record_trial(
         config.run.family,
         run_id,
-        sharpe=None,
+        sharpe=sharpe,
         mode=MODE,
         start_ns=first_ns,
         end_ns=last_ns,
-        period_ns=config.fidelity.bar_seconds * NS_PER_S,
+        period_ns=_NS_PER_DAY,
+        candidate_id=candidate,
+        n_obs=returns_series.n_observations,
     )
+    report = futures_statistics(
+        returns_series,
+        owner_id=run_id,
+        total_trials=registry.total_trials(config.run.family),
+        trial_sharpes=registry.candidate_sharpes(config.run.family),
+        config=config.statistics,
+        ic=prepared.ic,
+    )
+    statistics_block = _statistics_block(config, report, candidate, registry)
+    statistics_metrics = cast("dict[str, dict[str, object]]", report["metrics"])
+    all_metrics: dict[str, dict[str, object]] = {
+        **{name: dict(entry) for name, entry in metrics.items()},
+        **statistics_metrics,
+    }
 
     manifest: dict[str, object] = {
         "kind": "futures_run",
@@ -786,6 +873,7 @@ def run_futures(
         "bars": marks.height,
         "trade_dates": daily.height,
         "trial_count": trial_count,
+        "statistics": statistics_block,
     }
     (run_dir / "config.yaml").write_text(
         canonical_futures_yaml(config), encoding="utf-8", newline="\n"
@@ -796,7 +884,7 @@ def run_futures(
     _write_parquet(fills, run_dir / "fills.parquet")
     _write_parquet(rolls, run_dir / "rolls.parquet")
     (run_dir / "metrics.json").write_text(
-        json.dumps(metrics, sort_keys=True, indent=2) + "\n", encoding="utf-8", newline="\n"
+        json.dumps(all_metrics, sort_keys=True, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
     artifact_id = seal_artifact(run_dir, prior=prior)
     summary: dict[str, object] = {
@@ -818,6 +906,28 @@ def run_futures(
         trial_count=trial_count,
         summary=summary,
     )
+
+
+def _statistics_block(
+    config: FuturesRunConfig,
+    report: dict[str, object],
+    candidate: str,
+    registry: DuckDBTrialRegistry,
+) -> dict[str, object]:
+    """The manifest's ``statistics`` block: the report's own block plus the family's counts.
+
+    ``submission_count``/``unique_candidate_count`` are read from the registry AFTER this run's
+    trial was recorded, so the numbers describe the family including the run that reports them:
+    ``total_trials`` is what the Deflated Sharpe Ratio was deflated by (ADR-0103 decision 4).
+    """
+    family = config.run.family
+    block = dict(cast("dict[str, object]", report["block"]))
+    trials = dict(cast("dict[str, object]", block["trials"]))
+    trials["submission_count"] = registry.submission_count(family)
+    trials["unique_candidate_count"] = registry.unique_candidate_count(family)
+    block["trials"] = trials
+    block["candidate_id"] = candidate
+    return block
 
 
 __all__ = [

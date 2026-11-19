@@ -31,7 +31,8 @@ from crucible.experiments.futures_compare import (
 )
 
 D = [dt.date(2024, 3, day) for day in (4, 5, 6, 7, 8)]
-FORBIDDEN = ("p_value", "sharpe", "ic", "dsr", "psr")
+STATISTICS = ("sharpe_per_period", "sharpe_annualized", "psr", "dsr")
+"""The C6a statistics a comparison repeats per member (ADR-0103)."""
 
 
 def _member(**overrides: object) -> Member:
@@ -267,7 +268,14 @@ def test_member_metrics_are_hand_computed_and_descriptive() -> None:
     assert (values["trades"], values["fills"]) == (3, 5)
     assert values["turnover_contracts"] == 7
     assert (values["trade_dates"], values["days_in_market"]) == (3, 2)
-    for entry in metrics.values():
+    for name, entry in metrics.items():
+        if name in STATISTICS:
+            # a member built by hand records no statistics: nulls WITH a reason, never zeros
+            assert entry.value is None
+            assert entry.reason
+            assert entry.assessment == "inferential"
+            assert entry.unit in ("sharpe", "probability")
+            continue
         assert entry.assessment == "descriptive"
         assert entry.ci_low is None
         assert entry.ci_high is None
@@ -309,6 +317,8 @@ def test_the_month_stability_is_months_and_counts_only() -> None:
                 "ci_high": None,
                 "assessment": "descriptive",
                 "unit": "usd",
+                "method": None,
+                "reason": None,
             },
             "trade_dates": 1,
         },
@@ -320,6 +330,8 @@ def test_the_month_stability_is_months_and_counts_only() -> None:
                 "ci_high": None,
                 "assessment": "descriptive",
                 "unit": "usd",
+                "method": None,
+                "reason": None,
             },
             "trade_dates": 2,
         },
@@ -343,5 +355,16 @@ def test_a_walk_forward_stability_lists_its_fold_net_pnl() -> None:
     assert (stability["months_positive"], stability["months_negative"]) == (1, 0)
 
 
-def test_no_metric_name_is_a_statistic() -> None:
-    assert not [name for name in COMPARE_METRIC_UNITS if any(word in name for word in FORBIDDEN)]
+def test_the_statistics_are_the_only_statistical_metric_names() -> None:
+    # the cross-run metrics are the descriptive facts plus the four statistics C6a repeats; no
+    # p-value, IC or other inferential name sneaks in through the metrics table
+    statistical = [
+        name
+        for name in COMPARE_METRIC_UNITS
+        if any(word in name for word in ("sharpe", "psr", "dsr", "p_value", "ic"))
+    ]
+    assert tuple(statistical) == STATISTICS
+    assert {COMPARE_METRIC_UNITS[name] for name in STATISTICS} == {
+        "sharpe",
+        "probability",
+    }

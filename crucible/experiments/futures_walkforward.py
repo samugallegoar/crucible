@@ -20,13 +20,16 @@ The out-of-sample series concatenates the folds' daily ledgers in date order
 (``oos_daily.parquet``): fold k's equity starts at the base capital plus the net P&L of folds 0 to
 k-1 *after their terminal exit costs*, so the chain has no free close and no carried position.
 
-Hard restriction (ADR-0095, ADR-0097, ADR-0101): this module computes NO statistic. There is no
-Sharpe, IC, PSR, DSR, p-value, confidence interval, ranking by a statistic or claim of edge
-anywhere in its output. Every number is ``assessment: "descriptive"`` with null intervals, the
-verdict is null with the ``not_assessed`` reason, and ``window_stability`` lists each fold's OOS
-net P&L with counts of positive/negative/flat folds - counts, never a statistic. The training
-results are kept for AUDIT only: they live under ``in_sample_audit``, each entry marked
-``in_sample: true``, and are never presented as out-of-sample.
+Hard restriction (ADR-0095, ADR-0097, ADR-0101, ADR-0103): this module ranks nothing, and no EDGE
+statement appears in its output. Since C6a the out-of-sample series carries the inferential
+statistics of ADR-0103 (``oos.statistics``: per-period and annualized Sharpe, mean daily return,
+PSR, DSR defined by the family's ``total_trials``), computed on the CONCATENATED chain ALONE; its
+IC is null with a reason, because a concatenation of folds has no single signal to rank. The
+training numbers — descriptive metrics and their own statistics — are kept for AUDIT only: they
+live under ``in_sample_audit``, each entry marked ``in_sample: true``, and are never presented as
+out-of-sample. ``window_stability`` lists each fold's OOS net P&L with counts of
+positive/negative/flat folds — counts, never a statistic — and the verdict stays
+``robustness_not_assessed`` (C7).
 
 Identity: ``wf_id`` = ``WFA-`` + the SHA-256 of the walk-forward file (its base path excluded) and
 the resolved base config, so the same submission is the same walk-forward and re-running it is a
@@ -45,7 +48,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import polars as pl
 import yaml
@@ -74,12 +77,19 @@ from crucible.experiments.futures_batch import (
 from crucible.experiments.futures_config import (
     BAR_SECONDS,
     FuturesRunConfig,
+    candidate_id,
     futures_config_hash,
     load_futures_config,
     parse_futures_config,
 )
 from crucible.experiments.futures_document import metric_document, verdict_document
 from crucible.experiments.futures_run import futures_run_id, run_futures
+from crucible.experiments.futures_stats import (
+    STATISTICS_METRICS,
+    daily_returns_from_oos,
+    futures_statistics,
+    no_information_coefficient,
+)
 from crucible.validation.trial_registry import DuckDBTrialRegistry
 
 WALKFORWARD_SCHEMA_VERSION = 1
@@ -883,6 +893,75 @@ def _oos_summary(frame: pl.DataFrame, capital: Decimal) -> dict[str, object]:
     }
 
 
+OOS_IC_REASON = (
+    "a walk-forward's out-of-sample series is a concatenation of folds, so there is no single "
+    "signal whose score could be ranked against a forward return: an information coefficient "
+    "belongs to one fold's run, and the training runs' own ICs are IN-SAMPLE only"
+)
+"""Why the OOS statistics carry no information coefficient (ADR-0103 decision 7)."""
+
+
+def _statistics_metrics(metrics: dict[str, object], run_id: str) -> dict[str, object]:
+    """A run's own C6a statistics, as its sealed ``metrics.json`` recorded them.
+
+    Used for the training runs under ``in_sample_audit``: they were measured IN SAMPLE when the run
+    executed, and re-deriving them here would be a second implementation of the same number.
+    """
+    out: dict[str, object] = {}
+    for name in STATISTICS_METRICS:
+        entry = metrics.get(name)
+        if not isinstance(entry, dict):
+            msg = (
+                f"the run {run_id} has no {name!r} statistic: since C6a every futures run reports "
+                "its statistics in metrics.json (ADR-0103). Re-run it with `crucible futures run`"
+            )
+            raise ExperimentError(msg).at(key=name)
+        out[name] = metric_document(name, entry).model_dump(mode="json")
+    return out
+
+
+def _oos_statistics(
+    oos_frame: pl.DataFrame,
+    *,
+    base: FuturesRunConfig,
+    identifier: str,
+    registry: DuckDBTrialRegistry,
+) -> dict[str, object]:
+    """The walk-forward's statistics, computed on the OOS chain ALONE (ADR-0101, ADR-0103).
+
+    The series is ``oos_daily.parquet``'s ``closing_equity_usd`` chain, whose folds already start
+    and end flat with the terminal exit cost booked: nothing of a training run leaks in. The
+    deflation uses the FAMILY's ``total_trials`` (the walk-forward's own training and test runs are
+    part of the search that produced the selected candidates, so deflating by anything smaller
+    would flatter the result). ``owner_id`` is the ``WFA-`` id, so the bootstrap seeds are the
+    walk-forward's own.
+    """
+    if oos_frame.height == 0:
+        msg = "the out-of-sample chain has no row: a walk-forward evaluates at least one fold"
+        raise InvariantViolation(msg)
+    dates = oos_frame["trade_date"].to_list()
+    series = daily_returns_from_oos(
+        oos_frame,
+        initial_capital=base.capital,
+        calendar=calendar_for(base.root),
+        window=(dates[0], dates[-1]),
+    )
+    report = futures_statistics(
+        series,
+        owner_id=identifier,
+        total_trials=registry.total_trials(base.run.family),
+        trial_sharpes=registry.candidate_sharpes(base.run.family),
+        config=base.statistics,
+        ic=no_information_coefficient(OOS_IC_REASON, horizon_bars=base.statistics.ic_horizon_bars),
+    )
+    block = dict(cast("dict[str, object]", report["block"]))
+    trials = dict(cast("dict[str, object]", block["trials"]))
+    trials["submission_count"] = registry.submission_count(base.run.family)
+    trials["unique_candidate_count"] = registry.unique_candidate_count(base.run.family)
+    block["trials"] = trials
+    return {"metrics": report["metrics"], **block}
+
+
 def _write_parquet(frame: pl.DataFrame, path: Path) -> None:
     """Deterministic Parquet: uncompressed, no statistics, so identical frames are identical
     bytes (ADR-0011)."""
@@ -967,6 +1046,7 @@ def run_futures_walkforward(
                 config.strategy.compiled_signal(config.signal.input).parameterization_id,
                 candidate.name,
                 status,
+                candidate_id=candidate_id(config),
             )
             trained.append(_Computed(candidate, config, status, facts))
 
@@ -996,6 +1076,7 @@ def run_futures_walkforward(
                     "status": entry.status,
                     "structure_id": strategy.structure_id,
                     "parameterization_id": strategy.parameterization_id,
+                    "candidate_id": candidate_id(entry.config),
                     "run_id": entry.facts.run_id,
                     "artifact_id": entry.facts.artifact_id,
                     "metrics": {
@@ -1003,6 +1084,7 @@ def run_futures_walkforward(
                         for name, value in sorted(entry.facts.metrics.items())
                         if isinstance(value, dict)
                     },
+                    "statistics": _statistics_metrics(entry.facts.metrics, entry.facts.run_id),
                     "time_in_market": _metric(float(entry.facts.time_in_market), "fraction"),
                     "checks": checks,
                     "violations": violations,
@@ -1136,11 +1218,21 @@ def run_futures_walkforward(
         "warmup_trade_dates": warmup,
         "constraints": constraints.model_dump(mode="json"),
         "folds": folds_document,
-        "oos": _oos_summary(oos_frame, base.capital),
+        "oos": {
+            **_oos_summary(oos_frame, base.capital),
+            "statistics": _oos_statistics(
+                oos_frame, base=base, identifier=identifier, registry=registry
+            ),
+        },
         "window_stability": stability,
         "in_sample_audit": {"note": IN_SAMPLE_NOTE, "folds": audit_folds},
         "unused_trade_dates": [day.isoformat() for day in unused],
         "terminal_exit": TERMINAL_EXIT_NOTE,
+        "trials": {
+            "submission_count": registry.submission_count(base.run.family),
+            "unique_candidate_count": registry.unique_candidate_count(base.run.family),
+            "total_trials": registry.total_trials(base.run.family),
+        },
         "verdict": verdict_document().model_dump(mode="json"),
     }
     walkforward_dir = artifacts_root / identifier

@@ -149,7 +149,8 @@ crucible/
   experiments/ ExperimentConfig + canonical hash/yaml, run_experiment (quality gate -> engine ->
                artifacts), artifacts.py (artifact schemas, schema_version, load_experiment),
                scenario fan-out, sweeps, perturbation, null tests, promotion, vectorized runner,
-               futures_config/run/artifacts/signals/document + futures_batch (ADR-0095/0100)
+               futures_config/run/artifacts/signals/document + futures_batch + futures_stats
+               (ADR-0095/0100/0103)
   live/        DataFeed/Broker Protocols, ReplayDataFeed, PaperBroker/PaperRuntime, SimulatedVenue,
                VenueDataFeed, VenueExecution, LiveRuntime (behind `live.enabled`)
   strategy_spec/ declarative strategy specs (YAML/JSON) compiled to a vectorized SignalFunction

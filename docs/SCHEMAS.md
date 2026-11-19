@@ -863,6 +863,9 @@ Append-only count of parameter evaluations per trial family (ADR-0008/0014). One
 | `start_ns` | BIGINT | yes |
 | `end_ns` | BIGINT | yes |
 | `period_ns` | BIGINT | yes |
+| `candidate_id` | VARCHAR | yes |
+| `n_obs` | BIGINT | yes |
+| `seq` | BIGINT | yes |
 
 <!-- END GENERATED: trial-registry -->
 
@@ -884,6 +887,7 @@ submissions count toward `total_trials` is decided in C6.
 | `parameterization_id` | VARCHAR | no |
 | `candidate_name` | VARCHAR | no |
 | `status` | VARCHAR | no |
+| `candidate_id` | VARCHAR | yes |
 
 <!-- END GENERATED: trial-submissions -->
 
@@ -1054,10 +1058,11 @@ futures runs above, unchanged. `walkforward.json` has `schema_version` **1**
 | `folds` | array | one entry per fold, in date order (below) |
 | `oos` | object | the out-of-sample summary, computed from `oos_daily.parquet` alone (below) |
 | `window_stability` | object | `fold_oos_net_pnl_usd` (one metric per fold) and `folds_positive`/`folds_negative`/`folds_flat`: counts, never a statistic |
-| `in_sample_audit` | object | every fold's training runs, `note` and `folds[].candidates[]`, each candidate `in_sample: true` with its `metrics`, `checks`, `violations`, `eligible` and `time_in_market` |
+| `in_sample_audit` | object | every fold's training runs, `note` and `folds[].candidates[]`, each candidate `in_sample: true` with its `candidate_id`, `metrics`, `statistics`, `checks`, `violations`, `eligible` and `time_in_market` |
 | `unused_trade_dates` | array<string> | the trailing base-window trade dates no fold evaluated (fewer than M) |
 | `terminal_exit` | string | how the fold boundary is costed, in words |
-| `verdict` | object | the null verdict with the `not_assessed` reason (ADR-0097) |
+| `trials` | object | the family's `submission_count`, `unique_candidate_count` and `total_trials` after the walk-forward (C6a) |
+| `verdict` | object | the null verdict with the `robustness_not_assessed` reason (ADR-0097, ADR-0103) |
 
 A `folds[]` entry has `fold` (int), `status` (`selected` or `no_eligible_candidate`), `train` and
 `test` (`{start, end, trade_dates}`), `selection` (`{candidate, position}`, null when no candidate
@@ -1067,10 +1072,15 @@ open_contracts_at_last_bar, time_in_market}`. In a flat fold the run fields are 
 number is 0.
 
 `oos` holds `net_pnl_usd`, `total_costs_usd`, `fills`, `trade_dates`, `max_drawdown_usd` and
-`folds_with_selection`, each `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`.
-The drawdown is peak-to-trough on the concatenated daily closing equity, in USD. Nothing in this
-file is a statistic: C5b reports no Sharpe, IC, PSR, DSR, p-value or confidence interval, and the
-verdict is `not_assessed` (ADR-0095, ADR-0097, ADR-0101). The training numbers are audit only.
+`folds_with_selection`, each `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`,
+plus the C6a `statistics` block described under the futures-run document (below). The drawdown is
+peak-to-trough on the concatenated daily closing equity, in USD. `oos.statistics` is computed on
+the CONCATENATED OOS chain ALONE (`owner_id` = the `WFA-` id, via `daily_returns_from_oos`) and
+defined by the FAMILY's `total_trials`; its `ic_mean` is null with a reason, because a
+concatenation of folds has no single signal whose score could be ranked. Every training run's own
+statistics are repeated under `in_sample_audit.folds[].candidates[]` with `in_sample: true` and a
+`candidate_id`, and nowhere else. The verdict is `robustness_not_assessed` (ADR-0095, ADR-0097,
+ADR-0101, ADR-0103).
 
 <!-- BEGIN GENERATED: artifact-futures-walkforward-oos -->
 
@@ -1122,28 +1132,63 @@ one bumps the version (`docs/COMPATIBILITY.md` §3).
 | `approximations` | array<string> | every assumption of the run, verbatim from the manifest |
 | `strict_execution` | boolean | whether the run refused off-schedule fills |
 | `verdict` | object | the null verdict and its reason (below) |
-| `headline` | array<string> | the headline metrics, in reading order: `net_pnl_usd`, `final_equity_usd`, `min_equity_usd`, `max_intraday_drawdown_usd`, `total_costs_usd`, `fills` |
-| `metrics` | object | metric name -> `{value, ci_low, ci_high, assessment, unit}` |
+| `headline` | array<string> | the headline metrics, in reading order: `net_pnl_usd`, `final_equity_usd`, `min_equity_usd`, `max_intraday_drawdown_usd`, `total_costs_usd`, `fills`, `sharpe_annualized`, `psr`, `dsr` |
+| `metrics` | object | metric name -> `{value, ci_low, ci_high, assessment, unit, method, reason}` |
+| `statistics` | object\|null | the C6a statistics block (convention, annualization, bootstrap recipe, trial counts, `candidate_id`, session counts, IC record); null for a manifest written before C6a |
 | `files` | array<string> | the result files of the run |
 
 **The verdict is null, with a reason.** `verdict.verdict_level` is `null` exactly when
 `verdict.verdict_reason.code` is present (the constructor refuses the other combinations). The
-reason code is a closed set (`VERDICT_REASON_CODES`), today only `not_assessed`, with
-`assessed_by: ["C6", "C7"]` and a fixed message. `verdict.vocabulary` repeats the levels of
+reason code is a closed set (`VERDICT_REASON_CODES`), today only `robustness_not_assessed`, with
+`assessed_by: ["C7"]` and a fixed message. `verdict.vocabulary` repeats the levels of
 `crucible backtest` (`some_evidence`, `not_conclusive`, `no_edge_detected`) so a consumer reads the
-same vocabulary; a futures run assigns none of them before milestones C6 and C7.
+same vocabulary; a futures artifact assigns none of them before milestone C7.
 
-**An absence of assessment is never negative evidence.** `not_assessed` is not
-`no_edge_detected`: the latter is a negative result, the former says no test was run. A consumer
-must not map one onto the other (the message states it in words; ADR-0095, ADR-0097).
+**An absence of a verdict is never negative evidence.** `robustness_not_assessed` is not
+`no_edge_detected`: the latter is a negative result, the former says no verdict was reached. A
+consumer must not map one onto the other (the message states it in words; ADR-0097, ADR-0103).
 
-**Every metric is descriptive.** `assessment` is a closed set, `descriptive` | `statistical`; every
-futures metric is `descriptive` and a descriptive metric MUST carry null intervals, which the
-constructor enforces — so `ci_low`/`ci_high` are typed `null` in the schema, and a null interval
-reads as "not assessed", never as "assessed and uninformative". `unit` is a closed set: `usd`,
-`count`, `contracts`, `trade_dates`. Nothing in this document is a Sharpe, a deflated Sharpe, a
-confidence interval, a null test or any other edge claim (ADR-0095); such a metric arrives with C6
-and bumps `schema_version`.
+**A metric is descriptive or inferential.** `assessment` is a closed set, `descriptive` |
+`inferential` | `statistical`. A `descriptive` metric (a total, a count, a conservative drawdown)
+MUST carry null intervals, which the constructor enforces; an `inferential` metric (C6a, ADR-0103)
+carries the bootstrap interval of its statistic, or none when it is a closed-form probability (PSR,
+DSR) and then states how it was computed in `method`. An inferential metric whose value is null
+MUST state a `reason`. `unit` is a closed set: `usd`, `count`, `contracts`, `trade_dates`,
+`sharpe`, `fraction`, `probability`, `correlation`.
+
+**The statistics (C6a, ADR-0103).** `metrics.json` and the document carry six inferential metrics
+next to the descriptive ones:
+
+| Metric | Unit | Interval | What it is |
+|---|---|---|---|
+| `sharpe_per_period` | `sharpe` | yes | mean daily return over its ddof=1 standard deviation: the Sharpe PSR and DSR use |
+| `sharpe_annualized` | `sharpe` | yes | `per_period x sqrt(252)`, PRESENTATION ONLY (the block records the convention) |
+| `mean_daily_return` | `fraction` | yes | the mean of the daily returns on the fixed capital (descriptive when the series has no dispersion) |
+| `psr` | `probability` | no | `probabilistic_sharpe_ratio` against a benchmark of 0, skew/kurtosis corrected; `method` says so |
+| `dsr` | `probability` | no | `deflated_sharpe_ratio` over `total_trials` and the family's distinct candidate Sharpes; null with a reason below 2 candidate Sharpes |
+| `ic_mean` | `correlation` | yes | mean per-trade-date Spearman IC of a DSL expression; null with a reason for a spec or Python strategy |
+
+**The `statistics` block.** The manifest, a walk-forward's `oos.statistics` and the document's
+`statistics` key carry the recipe and the counts beside the numbers:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `returns_convention` | string | what one number in the series means (daily marked P&L over the FIXED initial capital, `RETURNS_CONVENTION`) |
+| `annualization` | object | `{periods_per_year: 252, convention: "sqrt"}` |
+| `bootstrap` | object | `{rng: "numpy.random.PCG64", seed, block_length_policy: "ceil(sqrt(n))", block_length, resamples, confidence, observations, seeds}` |
+| `trials` | object | `{submission_count, unique_candidate_count, total_trials, trials_with_sharpe}` |
+| `candidate_id` | string | the `CND-` identity of the candidate the run evaluated |
+| `observations` | int | daily return observations behind the statistics |
+| `missing_sessions` | int | session-calendar trade dates of the window that produced no bar (excluded, counted) |
+| `zero_position_days` | int | observed trade dates on which the run held nothing (real zeros) |
+| `ic` | object | `{horizon_bars, days, pairs, by_month, reason}`; `by_month` maps `YYYY-MM` -> `{ic_mean, ic_days}` |
+
+A window with fewer than 3 daily observations, or a series with no dispersion, reports the
+Sharpe-family statistics as nulls with reasons rather than zeros. A walk-forward's
+`oos.statistics` block is the same minus `candidate_id`: the chain names no single candidate (each
+fold selected one), and each training run's own block is under `in_sample_audit` instead. A
+`batch.json` candidate row carries only the six metrics of its run (not the block): the block lives
+in that run's own manifest.
 
 ### The fidelity block (C5a)
 
@@ -1186,13 +1231,18 @@ batch.
 | `candidates` | array | one row per submitted candidate, in SUBMISSION order (below) |
 | `submitted` | int | number of submitted candidates |
 | `distinct_runs` | int | number of distinct run ids among them (the trials this batch records) |
-| `verdict` | object | the null verdict and its `not_assessed` reason (ADR-0097, above) |
+| `trials` | object | the family's `submission_count`, `unique_candidate_count` and `total_trials` after the batch (C6a) |
+| `verdict` | object | the null verdict and its `robustness_not_assessed` reason (ADR-0097, above) |
 | `ordering` | string | the note that the list is the submission's order and is never ranked |
 
 A candidate row: `position` (0-based submission index), `name`, `status` (`computed` | `cached`),
-`run_id` (`FUT-`), `artifact_id` (`ART-`), `structure_id` (`DSX-`), `parameterization_id` (`DSP-`)
-and `metrics`: exactly `net_pnl_usd`, `total_costs_usd`, `fills`, `max_intraday_drawdown_usd` and
-`min_equity_usd`, each `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`.
+`run_id` (`FUT-`), `artifact_id` (`ART-`), `structure_id` (`DSX-`), `parameterization_id` (`DSP-`),
+`candidate_id` (`CND-`), `metrics` and `statistics`. `metrics` is exactly `net_pnl_usd`,
+`total_costs_usd`, `fills`, `max_intraday_drawdown_usd` and `min_equity_usd`, each
+`{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`. `statistics` is the
+run's own C6a report — `sharpe_per_period`, `sharpe_annualized`, `mean_daily_return`, `psr`, `dsr`,
+`ic_mean` — copied from its sealed `metrics.json`, so a cached candidate reports the numbers of the
+run it reuses.
 `status: cached` means the run was reused: another candidate of this batch has the same
 `parameterization_id` after canonicalization and binding, or its sealed run directory already
 existed and verified. A cached row reports the same `run_id`/`artifact_id`/`metrics` as the run it
@@ -1200,8 +1250,10 @@ reuses.
 
 **The C5 boundary.** Everything a batch reports is descriptive: totals, counts and a conservative
 drawdown, with null intervals and a null verdict. No Sharpe, IC, PSR, DSR, p-value, confidence
-interval or ranking by a statistic appears here; **descriptive only; Sharpe, IC, CIs and
-statistical assessment begin in C6**.
+interval or ranking by a statistic appears here. **Inferential statistics from C6a; no edge
+verdict before C7.** Each candidate row carries its own run's statistics with their intervals and
+reasons, the document records the family's `trials` counts, and the verdict stays null with
+`robustness_not_assessed`.
 
 ### `cross_run.json` (C5c, ADR-0102)
 
@@ -1223,7 +1275,7 @@ change the id and a re-run is byte-identical. Its JSON Schema is
 | `pool` | array | one entry per other member, SORTED BY ID and never by a correlation |
 | `summary` | object | `members`, `by_status` (counts per status, statuses that occur) and `max_abs_correlation` (`{value, member_id}` or null; `value` is that member's correlation, signed, and `|value|` is the largest in the pool) |
 | `correlation_note` | string | what the number is, in words: the inner join, and that it is descriptive only |
-| `verdict` | object | the null verdict with the `not_assessed` reason (ADR-0097) |
+| `verdict` | object | the null verdict with the `robustness_not_assessed` reason (ADR-0097) |
 
 `comparison_key` is the equality test for compatibility: `simulator_version`, `fidelity`
 (`resolution`, `cost_detail`, `table_version`; a pre-C5a manifest reads `1m`/`full`/`"1"`),
@@ -1252,9 +1304,12 @@ member could not be read). `status` is one of:
 
 `metrics` (of the target and of every member that was read) is exactly: `marked_pnl_usd`,
 `realized_pnl_usd`, `total_costs_usd`, `max_drawdown_usd`, `max_intraday_drawdown_usd`,
-`trades`, `fills`, `turnover_contracts`, `trade_dates`, `days_in_market`, each `{value,
-ci_low: null, ci_high: null, assessment: "descriptive", unit}` with `unit` one of `usd`,
-`count`, `contracts`, `trade_dates`.
+`trades`, `fills`, `turnover_contracts`, `trade_dates`, `days_in_market`, plus the C6a
+statistics `sharpe_per_period`, `sharpe_annualized`, `psr` and `dsr`. Each is `{value,
+ci_low, ci_high, assessment, unit, method, reason}`: the descriptive ones carry null intervals
+and `unit` one of `usd`, `count`, `contracts`, `trade_dates`; the statistics carry the interval
+their artifact recorded (PSR/DSR none, with a `method`) and `unit` `sharpe` or `probability`. A
+statistic a member did not record is `null` with a reason — the comparison never recomputes one.
 
 - **`marked_pnl_usd`** is the sum of the daily MARKED P&L (a run's
   `closing_equity_usd - opening_equity_usd` per trade date, a walk-forward's
@@ -1286,8 +1341,13 @@ have real zero rows: being flat was a decision.)
 **The C5 boundary.** Everything here is descriptive: a number over an overlap, its size and
 its dates, with null intervals, no significance and no statistic naming it. The pool is
 sorted by id, never by a correlation, and `max_abs_correlation` is a summary, not a ranking.
-`not_assessed` means the run has not been assessed, never that there is no edge. **Sharpe,
-IC, PSR, DSR, p-values, confidence intervals and any statistical assessment begin in C6.**
+**Inferential statistics from C6a; no edge verdict before C7.** Since C6a (ADR-0103) a futures run
+reports its Sharpe, PSR, DSR, intervals and (for a DSL expression) its IC, and every futures output
+keeps `verdict_level` null with `robustness_not_assessed`. The comparison repeats each member's
+OWN recorded statistics (`sharpe_per_period`, `sharpe_annualized`, `psr`, `dsr`, read from its
+`metrics.json` or its `oos.statistics`) and never recomputes one: a member written before C6a
+reports them as nulls with a reason. An inferential metric may carry `method` and `reason` beside
+its value; the correlation itself stays descriptive with null intervals.
 
 ## Known gaps
 

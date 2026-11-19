@@ -29,6 +29,7 @@ Globex trade dates (inclusive), ``contracts`` a whole number of contracts.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -43,6 +44,7 @@ from pydantic import (
     model_validator,
 )
 
+from crucible.core.canonical import canonical_json
 from crucible.core.errors import ConfigurationError
 from crucible.data.continuous import calendar_for
 from crucible.data.futures_specs import futures_spec
@@ -84,6 +86,12 @@ resolution with every cost."""
 FILL_MODES = ("next_eligible_bar_open", "signal_bar_close")
 REENTRY_MODES = ("require_signal_reset", "allow_immediate")
 ROLL_EXECUTIONS = ("causal", "reference_approximation")
+CANDIDATE_PREFIX = "CND-"
+"""Prefix of a candidate id (ADR-0103 decision 4)."""
+CANDIDATE_ID_HEX = 16
+"""Hex digits of the SHA-256 kept in a candidate id (64 bits, like every other id here)."""
+ANNUALIZATION_PERIODS_PER_YEAR = 252
+"""Trade dates a year, for the PRESENTATION-ONLY annualization of a daily Sharpe (ADR-0103)."""
 MICRO = 1_000_000
 """Micro-dollars per dollar: money is kept in exact micro-dollars (6 decimals)."""
 
@@ -382,6 +390,43 @@ class FuturesSignalConfig(_FrozenModel):
     )
 
 
+class FuturesStatisticsConfig(_FrozenModel):
+    """Which statistics a run reports and how their intervals are resampled (ADR-0103, C6a).
+
+    The statistics themselves are not optional -- a sealed futures run always reports its
+    per-period Sharpe, the annualized one, the mean daily return, PSR, DSR and (for a DSL
+    expression) the information coefficient -- but the three knobs that decide the intervals are:
+    the IC horizon, the number of bootstrap resamples and the confidence level. They are explicit
+    so a report can be reproduced from its own config, and they join the config hash, so two runs
+    that disagree about them are two runs.
+    """
+
+    ic_horizon_bars: int = Field(
+        default=1,
+        ge=1,
+        description="Forward horizon, in BARS of the run's resolution, of the information "
+        "coefficient: IC pairs a bar's score with the close-to-close return over the next N bars "
+        "of the same session and contract.",
+    )
+    resamples: int = Field(
+        default=1000,
+        ge=200,
+        description="Bootstrap resamples behind every confidence interval (>= 200: fewer cannot "
+        "resolve a 95% percentile interval).",
+    )
+    confidence: float = Field(
+        default=0.95,
+        ge=0.5,
+        le=0.999,
+        description="Two-sided confidence level of the percentile intervals (0.5..0.999).",
+    )
+
+    @field_validator("ic_horizon_bars", "resamples", mode="before")
+    @classmethod
+    def _whole(cls, value: object) -> object:
+        return _no_bool(value, "statistics")
+
+
 class FuturesSessionConfig(_FrozenModel):
     """Session rules evaluated on the CME Globex calendar (``FuturesSessionPolicy``, ADR-0091)."""
 
@@ -539,6 +584,12 @@ class FuturesRunConfig(_FrozenModel):
     )
     session: FuturesSessionConfig = Field(
         default_factory=FuturesSessionConfig, description="Globex session rules."
+    )
+    statistics: FuturesStatisticsConfig = Field(
+        default_factory=FuturesStatisticsConfig,
+        description="IC horizon, bootstrap resamples and confidence level of the run's "
+        "statistics (C6a, ADR-0103). They join the config hash, so adding this section renamed "
+        "every futures run id; results do not change.",
     )
 
     @field_validator("root")
@@ -793,8 +844,76 @@ def canonical_futures_yaml(config: BaseModel) -> str:
     return canonical_yaml(config)
 
 
+def candidate_id(config: FuturesRunConfig) -> str:
+    """``CND-<16 hex>``: the identity of the CANDIDATE ``config`` evaluates (ADR-0103 decision 4).
+
+    Two configs share a candidate id exactly when they evaluate the same thing under the same
+    conditions, so a family can count distinct candidates instead of distinct run directories:
+
+    - the strategy: a DSL expression contributes its canonical ``structure_id`` and
+      ``parameterization_id`` (so a renamed parameter or a re-spelled, canonically equal
+      expression is the same candidate, and a changed window or value is not); a spec its
+      canonical dump; an entrypoint its dotted path and its ``params``;
+    - the size (``contracts``), the root and the four dataset ids;
+    - the execution and costs sections;
+    - the fidelity's EFFECTIVE level (resolution, cost detail and the preset table's version, so
+      ``preset: screen`` and the equivalent explicit fields are one candidate);
+    - the session and signal sections.
+
+    It excludes the window, the warm-up, ``run.name``, ``run.family`` and the ``statistics``
+    section: one candidate evaluated on several windows or reported with another bootstrap is
+    still one candidate, which is what ``total_trials`` has to count. ``capital`` is excluded too:
+    it scales the P&L, not the strategy, and the daily returns are measured against it.
+    """
+    strategy: dict[str, object]
+    if config.strategy.expression is not None:
+        compiled = config.strategy.compiled_signal(config.signal.input)
+        strategy = {
+            "kind": "dsl",
+            "structure_id": compiled.structure_id,
+            "parameterization_id": compiled.parameterization_id,
+            "contracts": config.contracts,
+        }
+    elif config.strategy.spec is not None:
+        strategy = {
+            "kind": "spec",
+            "spec": parse_spec(config.strategy.spec).model_dump(mode="json"),
+            "contracts": config.contracts,
+        }
+    else:
+        strategy = {
+            "kind": "entrypoint",
+            "entrypoint": config.strategy.entrypoint,
+            "params": config.strategy.params,
+        }
+    basis = {
+        "root": config.root,
+        "datasets": {
+            "execution": config.datasets.execution,
+            "signal": config.datasets.signal,
+            "rolls": config.datasets.rolls,
+            "raw": config.datasets.raw,
+        },
+        "strategy": strategy,
+        "costs": config.costs.model_dump(mode="json"),
+        "execution": config.execution.model_dump(mode="json"),
+        "fidelity": {
+            "resolution": config.fidelity.resolution,
+            "cost_detail": config.fidelity.cost_detail,
+            "table_version": FIDELITY_TABLE_VERSION,
+        },
+        "session": config.session.model_dump(mode="json"),
+        "signal": config.signal.model_dump(mode="json"),
+    }
+    digest = hashlib.sha256(canonical_json(basis).encode("utf-8")).hexdigest()[:CANDIDATE_ID_HEX]
+    return CANDIDATE_PREFIX + digest
+
+
 __all__ = [
+    "ANNUALIZATION_PERIODS_PER_YEAR",
     "BAR_SECONDS",
+    "CANDIDATE_ID_HEX",
+    "CANDIDATE_PREFIX",
     "FIDELITY_COST_DETAIL",
     "FIDELITY_PRESETS",
     "FIDELITY_RESOLUTIONS",
@@ -810,8 +929,10 @@ __all__ = [
     "FuturesRunHeader",
     "FuturesSessionConfig",
     "FuturesSignalConfig",
+    "FuturesStatisticsConfig",
     "FuturesStrategyConfig",
     "FuturesWindow",
+    "candidate_id",
     "canonical_futures_yaml",
     "default_datasets",
     "futures_config_hash",

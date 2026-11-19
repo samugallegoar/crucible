@@ -8,6 +8,50 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C6a: futures statistics (ADR-0103)
+- **Inferential statistics begin; the verdict does not.**
+  - Every futures output keeps `verdict_level: null`, now with
+    `verdict_reason.code = "robustness_not_assessed"`. This covers the run document, `batch.json`,
+    `walkforward.json` and `cross_run.json`.
+  - No edge is stated before C7.
+- **Daily returns on fixed capital** (`crucible.experiments.futures_stats`).
+  - `(closing_equity_t − closing_equity_{t−1}) / initial_capital`, with marked P&L and all costs
+    counted once.
+  - A session with no position is a real zero. A missing session is excluded and counted in
+    `missing_sessions`, never zero-filled.
+  - One function serves standalone runs, batch candidates, walk-forward OOS and comparisons.
+- **New metrics.**
+  - The per-period Sharpe, which feeds PSR and DSR, and an annualized Sharpe (√252) for
+    presentation only, its convention recorded in the manifest.
+  - Mean daily return.
+  - PSR with the skew and kurtosis correction (`validation.dsr.probabilistic_sharpe_ratio`, now
+    public).
+  - DSR deflated by the family's `total_trials`, null with a reason below two candidate Sharpes.
+- **Seeded circular block bootstrap intervals.**
+  - The manifest records the RNG (PCG64), seed, block-length policy, block length, resamples and
+    confidence.
+  - Each seed is derived from the artifact id and the statistic name, so results do not depend on
+    execution order or parallelism.
+- **Information coefficient.** The daily Spearman correlation of the expression score with the
+  `h`-bar forward return on the signal series. Pairs that cross a session edge or a roll are
+  dropped, and a day with fewer than 10 pairs has no IC. Mean IC comes with an interval, and IC is
+  also given per month.
+- **Candidate identity and trial counts.**
+  - `CND-<16 hex>` covers the strategy (structure and parameterization), size, root, datasets,
+    execution, costs, effective fidelity, session and signal. It excludes window, warm-up, name,
+    family, capital and statistics.
+  - The registry gains additive columns (`trials.candidate_id`, `trials.n_obs`, `trials.seq`,
+    `submissions.candidate_id`).
+  - It reports `submission_count`, `unique_candidate_count` and `total_trials`. A duplicate is
+    recorded but never counted twice, and a candidate evaluated across walk-forward folds counts
+    once.
+- **Configuration.** `FuturesRunConfig.statistics` takes `ic_horizon_bars`, `resamples` and
+  `confidence`.
+- **Compatibility.** The new section renames every futures run id, because the config hash dumps
+  defaults. A futures trial's period is now one trade date. Simulation results are unchanged.
+- **Test fix.** `test_product_backtest.py::test_a_second_variant_is_a_second_trial` no longer
+  depends on test order.
+
 ### Fathom C5c: futures cross-run metrics and descriptive daily P&L correlation (ADR-0102)
 - **C5 stays descriptive.** No Sharpe, IC, PSR, DSR, p-values, confidence intervals, significance
   or ranking by a statistic is added. Every metric and correlation keeps

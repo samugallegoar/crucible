@@ -129,5 +129,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0100](0100-futures-fidelity-and-batch.md) | Futures fidelity levels (causal session-bounded resampling, cost detail) and batch evaluation | accepted | Resampling (`crucible.data.resample.resample_session_bars`) |
 | [0101](0101-futures-walk-forward.md) | Futures walk-forward with constrained in-sample selection and concatenated out-of-sample evaluation | accepted | Signal warm-up (`window.warmup_trade_dates`, integer, default 0) |
 | [0102](0102-futures-cross-run-metrics.md) | Futures cross-run metrics and descriptive daily P&L correlation against the artifact pool | accepted | Members. A comparison has a *target* and a *pool* |
+| [0103](0103-futures-statistics.md) | Futures statistics — daily returns on fixed capital, Sharpe, PSR, DSR with total trials, bootstrap intervals and IC | accepted | Daily return |
 
 <!-- END GENERATED: adr-index -->

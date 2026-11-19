@@ -349,7 +349,9 @@ def test_a_rerun_in_place_keeps_the_trial_count_and_the_id(store: Path, tmp_path
     assert again.trial_count == 1
     registry = DuckDBTrialRegistry(artifacts / "trial_registry.duckdb")
     assert registry.trial_count(FAMILY) == 1
-    assert registry.trial_periods(FAMILY) == [60 * 1_000_000_000]
+    # the per-period Sharpe of a futures run is measured on DAILY returns (ADR-0103 decision 1),
+    # so the trial's period is one trade date, not one bar
+    assert registry.trial_periods(FAMILY) == [86_400 * 1_000_000_000]
 
 
 def test_a_second_config_of_the_family_is_a_second_trial(store: Path, tmp_path: Path) -> None:

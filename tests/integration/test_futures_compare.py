@@ -53,6 +53,7 @@ from crucible.data.contracts import (
 from crucible.data.store import build_dataset
 from crucible.experiments.artifact_id import verify_artifact
 from crucible.experiments.futures_compare import (
+    COMPARE_METRIC_UNITS,
     COMPARE_SCHEMA_VERSION,
     CORRELATION_UNIT,
     DEFAULT_MIN_OVERLAP_TRADE_DATES,
@@ -109,7 +110,7 @@ POOL_KEYS = {
     "correlation",
     "metrics",
 }
-FORBIDDEN_KEYS = ("p_value", "sharpe", "ic", "dsr", "psr", "ci")
+STATISTICS_COMPARE_METRICS = ("sharpe_per_period", "sharpe_annualized", "psr", "dsr")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -451,18 +452,7 @@ def test_the_compatible_pair_is_ok_with_the_hand_computed_inner_join_value(
     # the metrics are the run's own: the sealed metrics.json, recomputed from the daily ledger
     metrics = entry["metrics"]
     assert isinstance(metrics, dict)
-    assert set(metrics) == {
-        "marked_pnl_usd",
-        "realized_pnl_usd",
-        "total_costs_usd",
-        "max_drawdown_usd",
-        "max_intraday_drawdown_usd",
-        "trades",
-        "fills",
-        "turnover_contracts",
-        "trade_dates",
-        "days_in_market",
-    }
+    assert set(metrics) == set(COMPARE_METRIC_UNITS)
     sealed = json.loads((root / pool["compatible"] / "metrics.json").read_text(encoding="utf-8"))
     # ``marked_pnl_usd`` is the MARKED change of the series (decision 2): final equity minus
     # capital, which includes the mark of a position still open at the last bar.
@@ -590,28 +580,41 @@ def test_the_comparison_is_reproducible_byte_for_byte(pool: dict[str, str]) -> N
     assert (second.compare_dir / "cross_run.json").read_bytes() == first_bytes
 
 
-def test_no_statistic_key_and_no_interval_appears_anywhere(pool: dict[str, str]) -> None:
+def test_the_statistics_are_recorded_and_no_verdict_is(pool: dict[str, str]) -> None:
     root = Path(pool["root"])
     document = compare_futures(
         pool["target"], artifacts_root=root, min_overlap_trade_dates=MIN_OVERLAP
     ).document
 
+    statistics = set(STATISTICS_COMPARE_METRICS)
+    intervals = 0
+
     def walk(node: object, path: str) -> None:
+        nonlocal intervals
         if isinstance(node, dict):
             for key, value in node.items():
-                assert str(key).lower() not in FORBIDDEN_KEYS, f"{path}/{key} is a statistic"
                 walk(value, f"{path}/{key}")
         elif isinstance(node, list):
             for index, value in enumerate(node):
                 walk(value, f"{path}[{index}]")
         elif path.endswith("ci_low") or path.endswith("ci_high"):
-            assert node is None, f"{path} carries an interval"
-        elif path.endswith("assessment"):
-            assert node == "descriptive", f"{path} is not descriptive"
+            if node is not None:  # only an inferential metric carries an interval
+                intervals += 1
+        elif path.endswith("assessment") and node == "inferential":
+            assert "metrics" in path, f"{path} is inferential but is not a metric"
 
     walk(document, "")
+    # every member repeats the C6a statistics it recorded, with the intervals it recorded
+    target_metrics = document["target"]["metrics"]
+    assert statistics <= set(target_metrics)
+    assert target_metrics["psr"]["assessment"] == "inferential"
+    assert intervals > 0  # a Sharpe whose interval was recorded is repeated, not dropped
+    # the correlation itself stays descriptive, with no interval
+    for entry in document["pool"]:
+        assert entry["correlation"]["assessment"] == "descriptive"
+        assert entry["correlation"]["ci_low"] is None
     assert document["verdict"]["verdict_level"] is None
-    assert document["verdict"]["verdict_reason"]["code"] == "not_assessed"
+    assert document["verdict"]["verdict_reason"]["code"] == "robustness_not_assessed"
     assert "meta" not in document  # and no ninth top-level section to hide a statistic in
 
     # the pool is never ordered by the correlation

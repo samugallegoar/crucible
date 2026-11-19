@@ -61,14 +61,20 @@ class DsrResult:
     count toward ``N`` (ADR-0071)."""
 
 
-def _skew(returns: NDArray[np.float64]) -> float:
+def skewness(returns: NDArray[np.float64]) -> float:
+    """Sample skewness of a return series (0.0 for a series with no dispersion).
+
+    Public because the Probabilistic Sharpe Ratio needs exactly this moment: a caller that
+    computed its own skew would be scoring a different distribution than
+    :func:`deflated_sharpe_ratio` (ADR-0015).
+    """
     std = returns.std(ddof=1)
     if std == 0.0:
         return 0.0
     return float(np.mean(((returns - returns.mean()) / std) ** 3))
 
 
-def _kurtosis(returns: NDArray[np.float64]) -> float:
+def pearson_kurtosis(returns: NDArray[np.float64]) -> float:
     """Pearson kurtosis (normal distribution = 3), not excess kurtosis."""
     std = returns.std(ddof=1)
     if std == 0.0:
@@ -90,7 +96,20 @@ def _expected_max_sharpe(trial_sharpes: Sequence[float], n: int | None = None) -
     return sigma_n * (term1 + term2)
 
 
-def _psr(sharpe_hat: float, benchmark: float, n: int, skew: float, kurtosis: float) -> float:
+def probabilistic_sharpe_ratio(
+    sharpe_hat: float, benchmark: float, n: int, skew: float, kurtosis: float
+) -> float:
+    """PSR: the probability that the true per-period Sharpe exceeds ``benchmark`` (ADR-0015).
+
+    ``sharpe_hat`` is the PER-PERIOD Sharpe (never annualized: annualizing would decouple the
+    estimator's scale from ``n`` and the higher-moment correction), ``benchmark`` is the Sharpe a
+    skill-less strategy would be expected to reach (0 for PSR, the expected maximum of ``N``
+    trials for DSR), ``n`` the number of observations, ``skew`` :func:`skewness` and
+    ``kurtosis`` :func:`pearson_kurtosis` of the same series.
+
+    Refuses (``CrucibleError``) a non-positive denominator: the normal approximation is then not
+    applicable, and a number computed anyway would be a confident-looking lie.
+    """
     denom = 1.0 - skew * sharpe_hat + (kurtosis - 1.0) / 4.0 * sharpe_hat**2
     if denom <= 0.0:
         msg = (
@@ -157,7 +176,9 @@ def deflated_sharpe_ratio(
         raise CrucibleError(msg)
     sharpe_hat = per_period_sharpe(returns)
     benchmark = _expected_max_sharpe(sharpes.tolist(), n)
-    dsr = _psr(sharpe_hat, benchmark, len(returns), _skew(returns), _kurtosis(returns))
+    dsr = probabilistic_sharpe_ratio(
+        sharpe_hat, benchmark, len(returns), skewness(returns), pearson_kurtosis(returns)
+    )
     return DsrResult(
         dsr=dsr,
         observed_sharpe=sharpe_hat,

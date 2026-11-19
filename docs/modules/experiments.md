@@ -49,17 +49,62 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   - **Interfaces:** `crucible futures run|check|batch|walkforward|compare` and MCP
     `crucible_futures_run|check|batch|walkforward|compare`.
     The schemas are in `docs/SCHEMAS.md`, and the marking policy is in the manifest.
+- `futures_stats.py` — the futures statistics (C6a, ADR-0103): the ONE returns function and the
+  inferential report every futures path (standalone, batch, walk-forward, comparison) reads.
+  - **`daily_returns(daily, *, initial_capital, calendar, window) -> ReturnsSeries`**: the daily
+    marked P&L over the FIXED initial capital, `(closing_equity_t - closing_equity_{t-1}) /
+    initial_capital` (previous trade date's closing equity, capital on the first one). The
+    differences are exact `Decimal`; only the division is float64. A trade date with on-schedule
+    bars and no position (`max_contracts == 0`) is a real zero-return observation; a trade date of
+    the session calendar with no row is `missing_sessions` — excluded and counted, NEVER zero-filled.
+    `daily_returns_from_oos(oos_daily, ...)` is the same function over a walk-forward's
+    `closing_equity_usd` chain (terminal exits included); the chain has no position column, so a
+    day on which no candidate was selected (a flat fold) is its zero-position day.
+  - **`futures_statistics(returns, *, owner_id, total_trials, trial_sharpes, config, ic=None)`**
+    -> `{"metrics": ..., "block": ...}`: per-period Sharpe (`core.stats.per_period_sharpe`), the
+    annualized Sharpe (`x sqrt(252)`, PRESENTATION only), the mean daily return, PSR against a
+    benchmark of 0 (`validation.dsr.probabilistic_sharpe_ratio`, skew/kurtosis corrected) and DSR
+    (`deflated_sharpe_ratio`, deflated by `total_trials` over the family's distinct candidate
+    Sharpes). PSR/DSR carry no interval (closed-form probabilities) and say how they were made;
+    the Sharpe, the annualized Sharpe, the mean return and the mean IC carry a percentile interval.
+    A statistic that cannot be computed is `null` WITH a reason: fewer than 3 observations, a
+    series with no dispersion, or fewer than 2 candidate Sharpes (DSR is never computed from an
+    invented variance).
+  - **`bootstrap_seed(owner_id, statistic_name)`** = `int(sha256(f"{owner}:{name}")
+    .hexdigest()[:16], 16)`: each statistic's interval is a seeded CIRCULAR block bootstrap
+    (`block_length = ceil(sqrt(n))`, `numpy.random.PCG64`, `resamples` and `confidence` from the
+    config). The seed is a pure function of the artifact's id and the statistic's name, so the
+    numbers do not depend on the order or the parallelism the artifacts were computed in (a test
+    proves it with a thread pool).
+  - **`information_coefficient(outputs, signal_bars, *, horizon_bars, calendar, bar_seconds)`**:
+    the time-series IC — per trade date, Spearman (average ties) between the expression's score at
+    each decision bar and the close-to-close return over `horizon_bars` bars of the SIGNAL series.
+    A pair crossing a session edge or a contract change is dropped, never filled; a trade date with
+    fewer than `MIN_IC_PAIRS` (10) valid pairs gives no IC. Returns the mean, the per-date values,
+    `by_month` and the pair count, or a null with a reason. Only a DSL expression has one: a spec or
+    a Python `FuturesSignalFunction` decides a position, not a score, and records null with a reason.
+  - **`StatisticsConfig`** = `FuturesRunConfig.statistics` (`ic_horizon_bars` default 1, `>= 1`;
+    `resamples` default 1000, `>= 200`; `confidence` default 0.95, `0.5..0.999`, all
+    `extra="forbid"`). It joins the config hash, so adding the section renamed every futures run
+    id (results unchanged, `docs/COMPATIBILITY.md` §3).
 - `futures_document.py` — the futures-run document (ADR-0097): `futures_document(run_dir)` builds
   one versioned document (`FUTURES_DOCUMENT_SCHEMA_VERSION`) from the sealed run directory alone
   (manifest + metrics, after `verify_artifact`), so `futures run --json`, `futures run`'s human
   output, `artifact show` and the MCP tools all emit the same document. It carries the identity,
   the window, the datasets, the approximations, a **null verdict with a reason**
-  (`VERDICT_REASON_CODES`, today only `not_assessed`, plus the `backtest` `VERDICT_VOCABULARY`), and
+  (`VERDICT_REASON_CODES`, today only `robustness_not_assessed`, plus the `backtest`
+  `VERDICT_VOCABULARY`), and
   every metric as `{value, ci_low, ci_high, assessment, unit}` where `assessment` is a closed set
-  (`METRIC_ASSESSMENTS`) and every futures metric is `descriptive` with null intervals. It computes
-  no statistic (ADR-0095) and refuses (a) a directory that is not a futures run, (b) one whose seal
-  does not verify, and (c) a descriptive metric that claims an interval. Its JSON Schema is the
-  output kind `futures-run-document`; `verdict_document` and `metric_document` hold the invariants.
+  (`METRIC_ASSESSMENTS`: `descriptive`, `inferential`, `statistical`) — a descriptive metric must
+  have null intervals and an inferential one may carry them, and an inferential metric with a null
+  value must state a `reason` — plus (C6a) a `statistics` block: the returns convention, the
+  annualization, the bootstrap recipe (rng, seed, block policy and length, resamples, confidence),
+  the family's `trials` counts, the `candidate_id`, `missing_sessions`, `zero_position_days` and
+  the IC record (`horizon_bars`, `days`, `pairs`, `by_month`, `reason`). A manifest written before
+  C6a has no block and the document reports `statistics: null`. It refuses (a) a directory that is
+  not a futures run, (b) one whose seal does not verify, (c) a descriptive metric that claims an
+  interval, (d) a metric with half an interval and (e) a null inferential metric with no reason.
+  Its JSON Schema is the output kind `futures-run-document`; `verdict_document` and `metric_document` hold the invariants.
   Since C5a (ADR-0100) the document also carries `fidelity` `{resolution, cost_detail, preset,
   table_version, resampled, dropped_off_schedule, partial_buckets}`; adding the key is additive, so
   `FUTURES_DOCUMENT_SCHEMA_VERSION` stays 1, and a manifest written before C5a (no `fidelity` key)
@@ -80,11 +125,13 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   (never sorted by a metric) with its status and the five descriptive metrics
   (`CANDIDATE_METRICS`: `net_pnl_usd`, `total_costs_usd`, `fills`, `max_intraday_drawdown_usd`,
   `min_equity_usd`, each `{value, ci_low: null, ci_high: null, assessment: "descriptive", unit}`),
-  `submitted`, `distinct_runs` and the null verdict (`not_assessed`, ADR-0097's reason). Every
-  submitted candidate is recorded in the registry's `submissions` table; each computed run
-  registers its trial as any futures run does. Nothing in the module computes, ranks or assesses a
-  statistic (ADR-0095's restriction): C6 owns that, including how submissions count toward
-  `total_trials`.
+  `submitted`, `distinct_runs`, the family's `trials` counts and the null verdict
+  (`robustness_not_assessed`). Since C6a each candidate row also carries its `candidate_id` and a
+  `statistics` block copied from its run's sealed `metrics.json` (a `cached` candidate reports the
+  numbers of the run it reuses), so the batch document ranks nothing but states every candidate's
+  Sharpe, PSR, DSR and IC with their intervals and reasons. Every submitted candidate is recorded
+  in the registry's `submissions` table (with its `candidate_id`), and each computed run registers
+  its trial as any futures run does.
   The keys of `batch.json` are in `docs/SCHEMAS.md`; the CLI and MCP surfaces are
   `crucible futures batch` and `crucible_futures_batch`.
 - `futures_walkforward.py` — walk-forward evaluation of N DSL expressions on ONE base config (C5b,
@@ -123,8 +170,14 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   - **Trials**: every training and test run is a sealed futures run that registers its trial, and
     each fold's candidates are `submissions` with `batch_id = wf_id` and position
     `fold * K + candidate`, so re-running is idempotent (every run `cached`, no duplicate
-    submission). Nothing here computes a statistic: every metric is `descriptive` with null
-    intervals and the verdict is `not_assessed` (ADR-0095, ADR-0097, ADR-0101).
+    submission). Each submission and each trial row carries the candidate's `CND-` id, so a
+    candidate trained in several folds counts ONCE while every fold's row stays (ADR-0103).
+  - **Statistics (C6a, ADR-0103)**: `oos.statistics` is the C6a report computed on the
+    CONCATENATED OOS chain alone (`daily_returns_from_oos`, `owner_id = wf_id`) and deflated by the
+    FAMILY's `total_trials`; its IC is null with a reason (a concatenation of folds has no single
+    signal to rank). Each training run's own statistics are repeated under `in_sample_audit` with
+    `in_sample: true`, and the document's `trials` block carries the family's counts. The verdict
+    stays null with `robustness_not_assessed`: robustness is C7.
   - **Interfaces:** `crucible futures walkforward` and MCP `crucible_futures_walkforward`; the keys
     and columns are in `docs/SCHEMAS.md`.
 - `futures_compare.py` — cross-run metrics and a DESCRIPTIVE daily P&L correlation against
@@ -188,16 +241,18 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
     its window stability and its comparison key, the `options`, the pool SORTED BY ID with
     each member's status, differing keys, overlap, correlation and metrics, a `summary`
     (members, `by_status`, the largest absolute correlation with its member id) and the null
-    verdict (`not_assessed`). `cmp_id` is `CMP-` + the hash of the target, the sorted
+    verdict (`robustness_not_assessed`). `cmp_id` is `CMP-` + the hash of the target, the sorted
     VERIFIED pool ids and the overlap option, so a corrupted member does not change it and a
     re-run is byte-identical. `min_overlap_trade_dates` below 10 is refused
     (`ConfigurationError`, `MIN_OVERLAP_FLOOR`), and so is an unverified target. Listing the
     artifacts root counts only `FUT-`/`WFA-` directories as members, so a `BAT-` or `CMP-`
     document is never mistaken for a run.
-  - **Restriction** (ADR-0095, ADR-0097, ADR-0100, ADR-0101, ADR-0102): no Sharpe, IC, PSR,
-    DSR, p-value, confidence interval or significance anywhere, every correlation
-    `assessment: "descriptive"` with null intervals, the verdict `not_assessed`, and the pool
-    never sorted by a statistic. C6 is the first milestone allowed to add inference.
+  - **Statistics (C6a, ADR-0103)**: `member_metrics` also repeats each member's OWN recorded
+    statistics — `sharpe_per_period`, `sharpe_annualized`, `psr`, `dsr` — read from its
+    `metrics.json` (or a walk-forward's `oos.statistics`), never recomputed: a comparison reads
+    artifacts. A member written before C6a reports them as nulls with a reason. The correlation
+    itself stays descriptive with null intervals, and the verdict is `robustness_not_assessed`
+    (C5c added inference to nothing, and C7 owns the verdict).
   - **Interfaces:** `crucible futures compare` and MCP `crucible_futures_compare`;
     `crucible schema --kind futures-compare` prints `cross_run.json`'s JSON Schema; the keys
     are in `docs/SCHEMAS.md`.
@@ -430,17 +485,19 @@ in their phase; hash coverage extends automatically because the hash is over
 the whole model.
 
 ## Known gaps
-- The futures path (ADR-0095, ADR-0100, ADR-0101, ADR-0102). C5a (fidelity and batches),
-  C5b (walk-forward) and C5c (cross-run metrics and the descriptive correlation) are done;
+- The futures path (ADR-0095, ADR-0100, ADR-0101, ADR-0102, ADR-0103). C5a (fidelity and
+  batches), C5b (walk-forward), C5c (cross-run metrics) and C6a (statistics) are done;
   what remains:
-  - **No statistic of any kind until C6.** There is no Sharpe, no rolling IC, no PSR, no
-    DSR, no p-value and no confidence interval on the futures path, and the comparison
-    reports its correlations as descriptive numbers with null intervals. C6 owns
-    multiple-testing inference (and how batch and walk-forward submissions count toward
-    `total_trials`); C7 owns robustness and prop-firm rules.
-  - The verdict is null until C6/C7: every futures document and every `cross_run.json` says
-    `not_assessed` with a reason, and no metric carries an interval (`futures_document.py`,
-    ADR-0097).
+  - **Statistics without a verdict.** C6a reports the per-period and annualized Sharpe, the mean
+    daily return, PSR, DSR, bootstrap intervals and (for a DSL expression) the IC, but no
+    ROBUSTNESS assessment: `verdict_level` is null everywhere with `robustness_not_assessed`
+    (C7). `total_trials` counts distinct candidates, not effective independent trials (C6b,
+    ADR-0104), and there is no holdout vault yet (C6c).
+  - The IC is time series only (one root, ADR-0099): no cross-sectional IC, no rolling window and
+    no IC for a spec or Python strategy (null with a reason).
+  - The intervals are percentile block-bootstrap intervals over the daily series, not a
+    studentized or stationary-bootstrap variant, and the DSR's cross-trial dispersion is the
+    sample variance of the family's candidate Sharpes (no shrinkage).
   - The comparison key is deliberately conservative: two runs that differ only in the
     bracket policy or the fill timing are `incompatible` and get no correlation (ADR-0102),
     and loosening it is a later decision. There is no override and no way to compare a member
