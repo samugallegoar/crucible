@@ -85,6 +85,7 @@ from crucible.core.errors import (
 )
 from crucible.execution.futures_sim import SIMULATOR_VERSION
 from crucible.experiments.artifact_id import verify_artifact
+from crucible.experiments.artifacts import vault_member_dirs
 from crucible.experiments.futures_config import FuturesRunConfig, load_futures_config
 from crucible.experiments.futures_document import (
     DEFAULT_FIDELITY,
@@ -700,7 +701,7 @@ def _unverified(member_id: str, kind: MemberKind, directory: Path, detail: str) 
     )
 
 
-def load_member(artifacts_root: Path, member_id: str) -> Member:
+def load_member(artifacts_root: Path, member_id: str, *, include_vault: bool = False) -> Member:
     """Read the artifact ``member_id`` under ``artifacts_root`` as a comparison member.
 
     ``FUT-`` members are read from their daily ledger (daily P&L, closing equity, costs) and their
@@ -713,9 +714,16 @@ def load_member(artifacts_root: Path, member_id: str) -> Member:
 
     Refuses an id that is not a member id, and a directory that does not exist (that is a caller
     error: the pool is built by listing the artifacts root).
+
+    ``include_vault`` also looks under ``<artifacts_root>/VAULT/<VR-...>/``, where a holdout-vault
+    evaluation seals its run (ADR-0105). It is off by default: a vault run is out of every pool
+    unless the caller asks for it AFTER the evaluation, and its numbers are in the same document as
+    that fact.
     """
     kind = _kind_of(member_id)
     directory = artifacts_root / member_id
+    if not directory.is_dir() and include_vault:
+        directory = vault_member_dirs(artifacts_root).get(member_id, directory)
     if not directory.is_dir():
         msg = (
             f"no comparison member {member_id!r} under {artifacts_root}: pass the artifacts root "
@@ -1185,7 +1193,7 @@ def futures_compare_json_schema() -> dict[str, object]:
     return schema
 
 
-def _pool_ids(artifacts_root: Path) -> list[str]:
+def _pool_ids(artifacts_root: Path, *, include_vault: bool = False) -> list[str]:
     """Every comparison member directory under ``artifacts_root``, sorted by id.
 
     Only ``FUT-``/``WFA-`` directories are members: ``BAT-``, ``CMP-``, an ``EXP-``
@@ -1199,11 +1207,15 @@ def _pool_ids(artifacts_root: Path) -> list[str]:
             "that holds it"
         )
         raise ConfigurationError(msg).at(path=str(artifacts_root))
-    return sorted(
+    names = {
         path.name
         for path in artifacts_root.iterdir()
         if path.is_dir() and path.name.startswith(RUN_ID_PREFIXES)
-    )
+    }
+    if include_vault:
+        # only a registration that was evaluated has a sealed member there (ADR-0105)
+        names |= set(vault_member_dirs(artifacts_root))
+    return sorted(names)
 
 
 def _overlap(result: CorrelationResult | None) -> CompareOverlap:
@@ -1259,6 +1271,7 @@ def compare_futures(
     *,
     artifacts_root: Path,
     min_overlap_trade_dates: int = DEFAULT_MIN_OVERLAP_TRADE_DATES,
+    include_vault: bool = False,
 ) -> CompareResult:
     """Compare ``target_id`` with every other member under ``artifacts_root`` (ADR-0102).
 
@@ -1276,6 +1289,11 @@ def compare_futures(
     Refuses ``min_overlap_trade_dates`` below 10 (too few overlapping dates for even a descriptive
     reading, ADR-0102 decision 5) and an unverified TARGET (there is nothing to compare a run whose
     own seal failed against).
+
+    ``include_vault`` adds the runs a holdout-vault evaluation sealed under
+    ``<artifacts_root>/VAULT/<VR-...>/`` to the pool (ADR-0105 decision 5). It is off by default:
+    a protected-period result enters a comparison only when the caller asks for it, and only an
+    EVALUATED registration has an artifact to add.
     """
     if min_overlap_trade_dates < MIN_OVERLAP_FLOOR:
         msg = (
@@ -1284,7 +1302,7 @@ def compare_futures(
             "default is 20), or compare members whose windows overlap"
         )
         raise ConfigurationError(msg)
-    target = load_member(artifacts_root, target_id)
+    target = load_member(artifacts_root, target_id, include_vault=include_vault)
     if not target.verified or target.key is None:
         msg = (
             f"the target {target_id} does not verify ({target.detail}): a comparison of "
@@ -1296,11 +1314,15 @@ def compare_futures(
     if target.kind == "futures_walkforward":
         excluded |= set(walkforward_run_ids(target.directory))
     target_key = comparison_key(target)
-    pool_ids = [name for name in _pool_ids(artifacts_root) if name not in excluded]
+    pool_ids = [
+        name
+        for name in _pool_ids(artifacts_root, include_vault=include_vault)
+        if name not in excluded
+    ]
     pool: list[ComparePoolMember] = []
     verified_ids: list[str] = []
     for member_id in pool_ids:
-        member = load_member(artifacts_root, member_id)
+        member = load_member(artifacts_root, member_id, include_vault=include_vault)
         if not member.verified or member.key is None:
             pool.append(_entry(member, "unverified"))  # listed, never dropped (decision 1)
             continue

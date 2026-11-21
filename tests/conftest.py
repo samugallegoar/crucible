@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import socket
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -98,3 +99,28 @@ def _no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
     monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _throwaway_crucible_home(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """Every test session gets its own Crucible home and settings file (ADR-0105).
+
+    The futures holdout vault is declared in the real home AND in the real store, and the guard
+    enforces it if either copy exists. A test that resolved the real home would therefore (a) read
+    the vault's access log into a real file and (b) be refused on synthetic datasets named after a
+    declared root (``es_1m_cont_v3`` in a ``tmp_path`` store). Pointing ``CRUCIBLE_HOME`` and
+    ``CRUCIBLE_SETTINGS`` at a throwaway folder keeps the suite hermetic: no test writes to a
+    person's home, and a declaration in it cannot change a result.
+    """
+    home = tmp_path_factory.mktemp("crucible-home")
+    previous = {name: os.environ.get(name) for name in ("CRUCIBLE_HOME", "CRUCIBLE_SETTINGS")}
+    os.environ["CRUCIBLE_HOME"] = str(home)
+    os.environ["CRUCIBLE_SETTINGS"] = str(home / "settings.json")
+    try:
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value

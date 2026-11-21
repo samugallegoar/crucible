@@ -1422,6 +1422,74 @@ OWN recorded statistics (`sharpe_per_period`, `sharpe_annualized`, `psr`, `dsr`,
 reports them as nulls with a reason. An inferential metric may carry `method` and `reason` beside
 its value; the correlation itself stays descriptive with null intervals.
 
+## The futures holdout vault (C6c, ADR-0105)
+
+Two documents carry the vault: `vault.json` (the declaration, JSON, in the store root and in the
+Crucible home) and `<home>/vault.duckdb` (the registrations, the open counter and the access log).
+Neither is an artifact of a run: no `schema_version` is bumped by them, and they are the only place
+where "may this read happen" is recorded. `crucible schema --kind vault-declaration|vault-registration`
+prints the JSON Schema of the first and of one registration row.
+
+### 7.1 `vault.json` (the declaration)
+
+| Key | Type | Meaning |
+|---|---|---|
+| `vault_id` | string | `VLT-<16 hex>`: the SHA-256 of the locked period (`universe`, `start_trade_date`, `end_trade_date`, `scope`). Deterministic: the same period always has the same id. |
+| `universe` | array<string> | The CME roots the vault covers, upper case and sorted (`["ES","NQ","YM","RTY","NKD"]`). |
+| `start_trade_date` | string (`YYYY-MM-DD`) | First protected Globex **trade date**. Every later trade date is protected too, including data not ingested yet. |
+| `end_trade_date` | `null` | Always null: the vault is open-ended (an end date is refused as a narrowing). |
+| `scope` | `"family"` \| `"root"` | `family`: the declared roots, not bypassable by another trial family. `root`: exactly one root, for explicitly single-instrument research. |
+| `declared_at` | string | UTC ISO timestamp of the declaration (audit only; not part of `vault_id`). |
+| `audit_ref` | string | The exposure audit that justifies the period and records its residual exposure. Locking data later does not make it unseen, so the audit travels with the declaration. |
+| `protected_datasets` | array<string> | The datasets found protected at declaration time (id prefix `<root>_`, or a manifest that names the root). Audit only: the guard re-matches by root on every call, so a dataset built later is covered without re-declaring. |
+| `opens` | integer | **Store copy only**: the open counter this declaration expects `vault.duckdb` to have. A database below it is refused. |
+| `last_log_hash` | string \| null | **Store copy only**: the chained hash of the access-log row the database must contain. A log that does not contain it is refused. |
+
+The two copies must agree on every key except `opens`/`last_log_hash`; a disagreement is refused
+(`ConfigurationError`), never reconciled.
+
+### 7.2 `vault.duckdb` — `registrations`
+
+| Column | DuckDB type | Meaning |
+|---|---|---|
+| `vr_id` | VARCHAR (PK) | `VR-<16 hex>`: the SHA-256 of (vault id, config hash, window). One registration per config and window. |
+| `vault_id` | VARCHAR | The `VLT-` the registration is evaluated against. |
+| `config_hash` | VARCHAR | The COMPLETE config hash of the registered `FuturesRunConfig` (`futures_config_hash`). An edited config hashes differently and refuses its evaluation. |
+| `dataset_hashes` | VARCHAR (JSON) | `{dataset id: content hash}` of the datasets the config reads, as they were at registration. A rebuilt dataset refuses its evaluation. |
+| `candidate_id` | VARCHAR | `CND-<16 hex>`, the candidate identity of ADR-0103. |
+| `window_start`, `window_end` | DATE | The evaluation window's Globex trade dates, which must lie inside the vault. |
+| `requester` | VARCHAR | Who registered it (`CRUCIBLE_VAULT_REQUESTER`, else the OS user): audit. |
+| `status` | VARCHAR | `pending`, `authorized` or `evaluated`. The only transitions are `pending -> authorized -> evaluated`. |
+| `registered_at`, `authorized_at`, `evaluated_at` | VARCHAR | UTC ISO timestamps of each step (null until it happens). |
+| `artifact_id` | VARCHAR \| null | The `ART-` of the sealed run, null before the evaluation and after a crashed one. |
+| `config_path` | VARCHAR | The absolute path of the registered config, so `evaluate --registration VR-...` reloads exactly that file and refuses a changed one. |
+| `store_root` | VARCHAR | The store the registration's dataset hashes were taken from. |
+
+### 7.3 `vault.duckdb` — `counter`
+
+| Column | DuckDB type | Meaning |
+|---|---|---|
+| `vault_id` | VARCHAR (PK) | The vault the counter belongs to. |
+| `opens` | BIGINT | Evaluations opened. Incremented BEFORE any row is read and never decremented: a crash consumes the evaluation. |
+
+### 7.4 `vault.duckdb` — `access_log`
+
+| Column | DuckDB type | Meaning |
+|---|---|---|
+| `seq` | BIGINT (PK) | 1-based insertion order. Rows are only ever appended. |
+| `ts` | VARCHAR | UTC ISO timestamp of the attempt. |
+| `caller` | VARCHAR | Who asked (`data_path`, `data check`, a run name, `authorize`, `register`, `evaluate`, a test). |
+| `purpose` | VARCHAR | `strategy`, `metadata`, `integrity`, `authorize`, `registration` or `evaluate`. |
+| `dataset` | VARCHAR | The dataset asked for (`<root>_*` for a window-level refusal), or `""` for a protocol step. |
+| `as_of` | BIGINT \| null | The requested instant in UTC ns (null for a whole-file or protocol attempt). |
+| `outcome` | VARCHAR | `allowed`, `allowed_metadata`, `allowed_evaluation`, `allowed_authorize`, `allowed_authorize_already`, `allowed_register`, `allowed_evaluate_start`, `allowed_evaluate_done`, `refused`, `refused_session_scope`, `refused_window`, `refused_authorize_token`, `refused_authorize_evaluated`, `refused_evaluate_unauthorized`, `refused_evaluate_second`, `refused_evaluate_config`, `refused_evaluate_datasets`, `evaluate_failed`. |
+| `vr_id` | VARCHAR \| null | The registration the attempt belonged to (the active session's, or the one a protocol step names). |
+| `detail` | VARCHAR | The refusal message (what, where, how to fix) or a short note. Never a token and never a metric. |
+| `chain` | VARCHAR | `sha256(previous chain + canonical row)`: a removed or rewritten row breaks the chain. The store's `last_log_hash` names one of these. |
+
+The access log is written by BOTH the data layer (every read/whole-file attempt on a dataset of a
+protected root) and the protocol (`authorize`, `register`, `evaluate` steps): one log, never two.
+
 ## Known gaps
 
 - The Polars schemas describe the dtypes but not value domains (`side` in `{buy, sell}`,

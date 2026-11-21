@@ -64,9 +64,9 @@ from crucible.core.errors import (
 from crucible.core.types import DatasetId, TimestampNs
 from crucible.data.cme_sessions import session_trade_dates
 from crucible.data.continuous import calendar_for
-from crucible.data.contracts import END_AT_OPEN
 from crucible.data.futures_specs import futures_spec
 from crucible.data.store import ParquetDataStore
+from crucible.data.vault import refuse_protected_window
 from crucible.experiments.futures_artifacts import MICRO
 from crucible.experiments.futures_batch import (
     REGISTRY_FILE,
@@ -450,7 +450,10 @@ def walkforward_trade_dates(config: FuturesRunConfig, *, store_root: Path) -> tu
             "or point the walk-forward at the store that holds them"
         )
         raise DataQualityError(msg)
-    frame = ParquetDataStore(store_root).read(DatasetId(name), TimestampNs(END_AT_OPEN)).collect()
+    # the base window's own horizon (the close of its last trade date), so a walk-forward that
+    # stops before a declared vault start is admissible (ADR-0105)
+    horizon = int(calendar.session(config.window.end).close_ns)
+    frame = ParquetDataStore(store_root).read(DatasetId(name), TimestampNs(horizon)).collect()
     days, on_schedule = session_trade_dates(calendar, frame["event_time"].to_numpy(), BAR_SECONDS)
     placed = pl.DataFrame(
         {
@@ -1108,6 +1111,13 @@ def run_futures_walkforward(
         else walkforward
     )
     base = loaded.base
+    refuse_protected_window(
+        root=base.root,
+        start=base.window.start,
+        end=base.window.end,
+        store_root=store_root,
+        what=f"the futures walk-forward {base.run.name!r}",
+    )
     identifier = walkforward_id(base, loaded.file)
     constraints = loaded.file.constraints
     warmup = loaded.warmup_trade_dates

@@ -7,7 +7,8 @@ The kernel and the run loop. Detail sections follow.
 - `types.py` — `TimestampNs`, identifier NewTypes, the enums (`OrderType`, `OrderSide`,
   `TimeInForce`, `OrderState`, `RealismLevel`, `RunMode`, `TransactionType`, `CorporateActionType`,
   `MissingReason`).
-- `errors.py` — `CrucibleError` and its subclasses (`docs/CONVENTIONS.md` §9).
+- `errors.py` — `CrucibleError` and its subclasses (`docs/CONVENTIONS.md` §9), including
+  `VaultLockedError`: the futures holdout vault refused the attempt (C6c, ADR-0105).
 - `events.py` / `interfaces.py` — the frozen slotted event dataclasses (`BaseEvent`, `BarEvent`,
   `CorporateActionEvent`, `OrderUpdateEvent`, `FillEvent`, `VenueFillEvent`, `VenueClosedEvent`) and
   the Protocols `Event`, `MarketEvent`, `OrderUpdateEvent`, `FillEvent`, `CorporateActionEvent`,

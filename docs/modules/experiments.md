@@ -531,6 +531,43 @@ milestones C2-C4.
   own `manifest.json` when still on disk (`dsr=unknown` otherwise — a
   missing sibling artifact for an old trial is expected, not exceptional).
 
+## Holdout vault protocol (C6c, ADR-0105)
+
+`vault.py` is the protocol around the data-layer lock (`crucible.data.vault`): registration, the
+human authorization and the one evaluation per registration.
+
+- `VaultRegistry(store_root, home, artifacts_root)` (`registry_for`) and its database
+  `<home>/vault.duckdb`: `registrations`, `counter`, `access_log`. Append-only: the code has no
+  UPDATE and no DELETE apart from the two status transitions (`pending` -> `authorized` ->
+  `evaluated`) and the counter increment. `<store>/vault.json` mirrors `{opens, last_log_hash}`, and
+  `verify()` refuses a database that is missing, behind that state, or whose log does not contain the
+  row the mirror names.
+- `register(config_path)` — records `VR-<16 hex>` with the COMPLETE config hash
+  (`futures_config_hash`), the datasets' content hashes, the `CND-` candidate id, the window (which
+  must lie INSIDE the vault), the requester and the config path. It reads manifests only: no
+  protected row. Registering the same config and window twice is refused (one registration).
+- `authorize(vr_id)` — a HUMAN step. The admin token comes from an interactive TTY prompt or
+  `CRUCIBLE_VAULT_TOKEN`, is verified with `hmac.compare_digest` against the salted `scrypt` hash in
+  `<home>/vault_admin` (written by `set_admin`, TTY only, 0600 where supported), and is never
+  generated, printed, logged or stored in clear. `hash_token`/`write_admin_secret` are the
+  primitives (`write_admin_secret` exists so a test can plant a throwaway token in a throwaway
+  home). A wrong token and a non-interactive call without the variable are refused and logged.
+- `evaluate(vr_id)` — recomputes the config hash and every dataset hash (a config or dataset that
+  changed after registration is refused and logged), increments the persistent counter BEFORE any
+  read (a crash consumes the evaluation), opens the `VaultSession`, runs `run_futures` into
+  `<artifacts_root>/VAULT/<VR-...>/`, seals it, and moves the status to `evaluated`. The trial is
+  recorded in the FAMILY's registry (`run_futures(registry_root=<artifacts_root>)`), so the C6a
+  deflation uses the family's `total_trials` while the artifact stays outside every pool. A second
+  evaluation is refused and logged.
+- `status()` / `access_log(limit)` — ids, the open counter, statuses and attempts. No metric:
+  results stay hidden until the evaluation has run.
+- `vault_declaration_json_schema` / `vault_registration_json_schema` — the two `crucible schema
+  --kind` documents.
+- `futures_compare.compare_futures(..., include_vault=...)` and
+  `futures_trials.run_futures_trials(..., include_vault=...)` add the vault members
+  (`experiments.artifacts.vault_member_dirs`) to their pool only when asked; the family's counts
+  include the evaluation either way.
+
 ## Extension points
 New config sections join `ExperimentConfig` as (discriminated-union) fields
 in their phase; hash coverage extends automatically because the hash is over

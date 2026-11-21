@@ -66,10 +66,11 @@ from crucible.core.stats import is_degenerate_returns, per_period_sharpe
 from crucible.core.types import NS_PER_S, DatasetId, TimestampNs
 from crucible.data.cme_sessions import session_trade_dates, table_summary
 from crucible.data.continuous import calendar_for
-from crucible.data.contracts import END_AT_OPEN, ROLL_SCHEMA
+from crucible.data.contracts import ROLL_SCHEMA
 from crucible.data.futures_specs import futures_spec, spec_table_hash
 from crucible.data.resample import resample_session_bars
 from crucible.data.store import ParquetDataStore, price_basis_of
+from crucible.data.vault import refuse_protected_window
 from crucible.dsl.compile import CompiledSignal
 from crucible.execution.futures_sim import SIMULATOR_VERSION, simulate_futures
 from crucible.experiments.artifact_id import read_seal, seal_artifact, write_manifest
@@ -231,10 +232,23 @@ def _dataset_ref(role: str, name: str, manifest: DatasetManifest) -> DatasetRef:
     )
 
 
-def _read(store: ParquetDataStore, name: str) -> pl.LazyFrame:
-    """Every row of a dataset: the open-ended sentinel is a run-level read, not a strategy read
-    (the window is cut from trade dates below, and the bridge decides bar by bar)."""
-    return store.read(DatasetId(name), TimestampNs(END_AT_OPEN))
+def _horizon_ns(config: FuturesRunConfig) -> int:
+    """The last instant a run of this window can read: the CLOSE of ``window.end``'s session.
+
+    It used to be the open-ended sentinel, which is a run-level read rather than a strategy
+    read; it is now the window's own horizon, so the futures holdout vault can admit a run that
+    stops before its start (ADR-0105). A bar of the window cannot be later than that close, so
+    the rows read are the same ones, and rolls and raw per-contract bars carry
+    ``available_at == event_time``.
+    """
+    calendar: SessionCalendar = calendar_for(config.root)
+    return int(calendar.session(config.window.end).close_ns)
+
+
+def _read(store: ParquetDataStore, name: str, horizon_ns: int) -> pl.LazyFrame:
+    """Every row of a dataset up to the run's horizon: a run-level read, not a strategy read (the
+    window is cut from trade dates below, and the bridge decides bar by bar)."""
+    return store.read(DatasetId(name), TimestampNs(horizon_ns))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -614,7 +628,8 @@ def _prepare(config: FuturesRunConfig, store_root: Path) -> _Prepared:
     names = {role: getattr(config.datasets, role) for role in DATASET_ROLES}
     manifests = {role: _manifest(store, store_root, names[role], role) for role in DATASET_ROLES}
     refs = {role: _dataset_ref(role, names[role], manifests[role]) for role in DATASET_ROLES}
-    execution_all = _read(store, names["execution"]).collect()
+    horizon_ns = _horizon_ns(config)
+    execution_all = _read(store, names["execution"], horizon_ns).collect()
     warmup_dates = _warmup_trade_dates(config, calendar, execution_all)
     source_start = warmup_dates[0] if warmup_dates else config.window.start
 
@@ -626,7 +641,7 @@ def _prepare(config: FuturesRunConfig, store_root: Path) -> _Prepared:
     # the signal, rolls and raw scans are bounded before they are materialized: the C3 store
     # holds years of minute bars and the whole contract history, and only these rows are read
     signal_source = (
-        _read(store, names["signal"])
+        _read(store, names["signal"], horizon_ns)
         .filter(pl.col("event_time").is_between(source_bars.first_ns, source_bars.last_ns))
         .collect()
     )
@@ -679,8 +694,8 @@ def _prepare(config: FuturesRunConfig, store_root: Path) -> _Prepared:
         bar_seconds=config.fidelity.bar_seconds,
     )
     window_rows = pl.Series("keep", in_window, dtype=pl.Boolean)
-    rolls = _window_rolls(config, _read(store, names["rolls"]).collect(), bars)
-    raw = _window_raw(_read(store, names["raw"]).collect(), bars)
+    rolls = _window_rolls(config, _read(store, names["rolls"], horizon_ns).collect(), bars)
+    raw = _window_raw(_read(store, names["raw"], horizon_ns).collect(), bars)
     missing = [name for name in _RAW_COLUMNS if name not in raw.columns]
     if missing:
         msg = (
@@ -756,12 +771,18 @@ def run_futures(
     artifacts_root: Path,
     overwrite: bool = False,
     mode: str = MODE,
+    registry_root: Path | None = None,
 ) -> FuturesRunResult:
     """Simulate one futures config and write its sealed artifact.
 
     ``store_root``: the ParquetDataStore root holding the four datasets. ``artifacts_root``: where
-    the run directory and the shared ``trial_registry.duckdb`` live. ``overwrite``: replace an
-    existing run directory (the same config and data reproduce the same artifact id). ``mode``:
+    the run directory and the shared ``trial_registry.duckdb`` live. ``registry_root``: where the
+    family's trial registry and its effective-trials panel live when they are NOT the artifacts
+    root -- the holdout vault (ADR-0105 decision 7) seals its artifact under
+    ``<artifacts>/VAULT/<VR-...>/`` while the trial is counted in, and deflated by, the family's
+    own registry. Defaults to ``artifacts_root``, which is what every research run does.
+    ``overwrite``: replace an existing run directory (the same config and data reproduce the same
+    artifact id). ``mode``:
     what the recorded trial is FOR, ``futures`` for a run of the path itself (the default) and
     ``trial_registry.PBO_PANEL_MODE`` for a walk-forward's audit panel (C6b, ADR-0104 decision
     6): the row stays auditable in ``trials`` but is not counted as a submission event. It does
@@ -778,6 +799,14 @@ def run_futures(
     (``window.warmup_trade_dates``) reads past trade dates to decide the first window bars and is
     dropped before the simulator (``_prepare``), so it adds no fill, mark or ledger row.
     """
+    refuse_protected_window(
+        root=config.root,
+        start=config.window.start,
+        end=config.window.end,
+        store_root=store_root,
+        what=f"the futures run {config.run.name!r}",
+    )
+    ledger_root = artifacts_root if registry_root is None else registry_root
     calendar = calendar_for(config.root)
     prepared = _prepare(config, store_root)
     refs = prepared.refs
@@ -823,7 +852,7 @@ def run_futures(
     prior = read_seal(run_dir) if run_dir.is_dir() else None
     _replace(run_dir, overwrite)
 
-    registry = DuckDBTrialRegistry(artifacts_root / "trial_registry.duckdb")
+    registry = DuckDBTrialRegistry(ledger_root / "trial_registry.duckdb")
     returns_series = daily_returns(
         daily,
         initial_capital=config.capital,
@@ -865,7 +894,7 @@ def run_futures(
         returns_series.returns,
         report=futures_effective_trials(
             config.run.family,
-            artifacts_root=artifacts_root,
+            artifacts_root=ledger_root,
             owner=OwnerSeries(
                 run_id=run_id,
                 candidate_id=candidate,

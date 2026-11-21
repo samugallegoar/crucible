@@ -45,6 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from crucible.core.canonical import canonical_json
 from crucible.core.errors import ConfigurationError, ExperimentError
 from crucible.data.continuous import calendar_for
+from crucible.data.vault import refuse_protected_window
 from crucible.experiments.artifact_id import read_seal, verify_artifact
 from crucible.experiments.futures_config import (
     FuturesRunConfig,
@@ -472,6 +473,13 @@ def run_futures_batch(
     """
     loaded = load_futures_batch(Path(batch)) if isinstance(batch, str | Path) else batch
     base = loaded.base
+    refuse_protected_window(
+        root=base.root,
+        start=base.window.start,
+        end=base.window.end,
+        store_root=store_root,
+        what=f"the futures batch {base.run.name!r}",
+    )
     identifier = batch_id(base, loaded.candidates, loaded.pbo)
     registry = DuckDBTrialRegistry(artifacts_root / REGISTRY_FILE)
     computed: dict[str, tuple[str, str, dict[str, object]]] = {}

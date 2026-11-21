@@ -611,6 +611,60 @@ def build_server() -> MCPServer:
             options["artifacts"] = _home_paths()[0]
         return await run_cli(build_argv(["futures", "trials"], [], options))
 
+    # ---------------------------------------------------------------- the holdout vault tools
+    #
+    # There is deliberately NO MCP tool for `authorize`, `evaluate` or `set-admin` (ADR-0105): the
+    # admin token is a human's, an evaluation is a single human decision, and the research agent
+    # drives everything else. Registering, reading the status and reading the access log are the
+    # three things an agent may do -- and none of them returns a protected-period number.
+
+    @server.tool()
+    async def crucible_vault_status(
+        store: str | None = None, home: str | None = None
+    ) -> dict[str, object]:
+        """Status of the futures holdout vault: the vault id, the protected period, the persistent
+        open counter and every registration with its status (`pending`, `authorized`,
+        `evaluated`). It reports no metric: a vault result is readable from its sealed artifact
+        only after its single authorized evaluation has run. There is no MCP tool to authorize,
+        evaluate or set the admin token: those are human steps."""
+        options: dict[str, Option] = {"json": True}
+        if store is not None:
+            options["store"] = absolute(store)
+        if home is not None:
+            options["home"] = absolute(home)
+        return await run_cli(build_argv(["vault", "status"], [], options))
+
+    @server.tool()
+    async def crucible_vault_register(
+        config: str, store: str | None = None, home: str | None = None
+    ) -> dict[str, object]:
+        """Register a futures config for the holdout vault, which returns a `VR-` and records its
+        complete config hash, the datasets' content hashes, the candidate id and the evaluation
+        window (which must lie inside the vault). It reads no protected row. A human then
+        authorizes it (`crucible vault authorize`) and runs the one evaluation
+        (`crucible vault evaluate`); editing the config afterwards changes its hash and refuses
+        the evaluation."""
+        options: dict[str, Option] = {"config": absolute(config), "json": True}
+        if store is not None:
+            options["store"] = absolute(store)
+        if home is not None:
+            options["home"] = absolute(home)
+        return await run_cli(build_argv(["vault", "register"], [], options))
+
+    @server.tool()
+    async def crucible_vault_log(
+        limit: int = 200, store: str | None = None, home: str | None = None
+    ) -> dict[str, object]:
+        """The holdout vault's access log: every attempt on the protected period, allowed or
+        refused, with the time, caller, purpose, dataset, `as_of`, outcome and registration. Use it
+        to see why a read was refused."""
+        options: dict[str, Option] = {"limit": _text(limit), "json": True}
+        if store is not None:
+            options["store"] = absolute(store)
+        if home is not None:
+            options["home"] = absolute(home)
+        return await run_cli(build_argv(["vault", "log"], [], options))
+
     @server.tool()
     async def crucible_validate(
         config: str,

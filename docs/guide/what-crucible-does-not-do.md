@@ -28,6 +28,28 @@ when every statistical guard passes.
   lag, which is optimistic; the realism check and the event-driven levels are the pessimistic view.
 - **Taxes, borrow availability, dividends on shorts' recall, fees beyond the cost model.**
 
+## It does not keep you out of the holdout period by force
+
+The futures holdout vault (C6c, ADR-0105) locks Globex trade dates from 2025-01-01 for
+`ES, NQ, YM, RTY, NKD` in Crucible's own data path: a read, a run window or a whole-file access that
+reaches it raises `VaultLockedError`, every attempt lands in the access log, a registration carries
+the complete config hash, and the single evaluation needs a human's admin token. Four residual
+risks remain, and they are documented, not solved:
+
+- **Direct file reads.** Anyone with filesystem access can read the Parquet files with another tool.
+  The vault guards and logs Crucible's data path; it is not an access-control system. Keeping the
+  admin token from an agent is the human's responsibility — and `vault set-admin` refuses a
+  non-interactive call for exactly that reason.
+- **The ratio-adjusted series carries one constant.** Backward ratio adjustment multiplies every
+  pre-2025 bar by the product of the post-2025 roll ratios, which is one constant. Signals must be
+  scale invariant (ADR-0094), so that constant carries no usable information; it is recorded anyway.
+- **The period was not unseen.** Locking data later does not make it unseen. The declaration records
+  the exposure audit: strategy-level work on ES in 2024, the execution simulator's full-span
+  buy-and-hold path, and ingestion/integrity counts over the full span.
+- **A copy of the store and a copy of the home.** The declaration lives in both and either copy
+  locks the period, so a copy does not lift it — but deleting both copies deliberately does. That
+  act is outside anything the engine can refuse.
+
 ## What the data covers
 
 - Daily bars from Yahoo Finance (unofficial: it can change or throttle without notice) or Tiingo

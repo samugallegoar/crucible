@@ -160,6 +160,45 @@ New datasets = new contract schema + sort keys. New checks implement
 (`importers/report.py`); `importers/build.py` dispatches it. Step by step for agents:
 `docs/data/adding-a-dataset.md`.
 
+## Holdout vault (C6c, ADR-0105)
+
+`vault.py` is the data-layer lock on the declared protected period of the futures family. It is
+consulted by `ParquetDataStore.read` and `ParquetDataStore.data_path`, so no run, batch,
+walk-forward, CLI command, MCP tool or plain library call reaches a protected row by accident.
+
+- `VaultDeclaration` / `load_declaration` / `declare_vault` / `write_declaration` — the declaration
+  (`vault.json`: `vault_id` `VLT-<16 hex>`, `universe`, `start_trade_date`, `end_trade_date: null`,
+  `scope` `family`|`root`, `declared_at`, `audit_ref`, `protected_datasets`). It is written into the
+  STORE ROOT and into the CRUCIBLE HOME and enforced if EITHER copy exists; two copies that disagree
+  on the locked period are refused, not reconciled. A declaration can only be WIDENED (an earlier or
+  equal start, a superset universe, no end date, no `family` -> `root` narrowing).
+- `first_protected_session` / `vault_start_ns` — the instant the vault starts: the scheduled OPEN of
+  the first protected Globex trade date, from the CME session table of each declared root (the
+  earliest of them). For `start_trade_date = 2025-01-01` that is 2024-12-31T23:00:00Z, the 17:00 CT
+  open of trade date 2025-01-01. Never derived from observed bars.
+- `VaultGuard` (`load`, `check_read`, `check_path`, `protects`) — a read whose `as_of` reaches
+  `vault_start_ns` raises `VaultLockedError`; `data_path` (a whole file) is refused unless the
+  purpose is `metadata` (catalog and integrity tooling: counts, hashes and date bounds, logged) or an
+  evaluation session is active. A `metadata` READ is clipped below the vault start, so a report can
+  be produced and no protected row leaves the vault. `dataset` matching is by ROOT (id prefix
+  `<root>_`, or a manifest that names the root), never by trial family.
+- `VaultSession` / `open_vault_session` / `close_vault_session` / `current_vault_session` — the one
+  exception, set ONLY by the authorized evaluation (`experiments.vault.evaluate`). Inside it a read
+  is admitted only for the registered datasets, only up to the registered window end; anything else
+  is refused.
+- `AccessLog` / `DuckDbAccessLog` / `MemoryAccessLog` / `AccessLogEntry` — every attempt on a
+  dataset of a protected root, allowed or refused, is appended to `<home>/vault.duckdb`
+  (`access_log`, chained hashes). Reads of unrelated datasets are neither locked nor logged.
+- `refuse_protected_window` — the explicit, config-level refusal a run/batch/walk-forward calls
+  first, so the message names the window before a single row is read (the guard is the enforcement,
+  this is the good error).
+- `default_guard` / `clear_guard_cache` — the guard of a store root and home, cached by the
+  declarations' `(mtime, size)`: a store with no declaration pays two `stat` calls and nothing more.
+- `home_root` — the home the guard reads and logs to, resolved in the ADR-0068 order
+  (`CRUCIBLE_HOME`, the settings file's `home`, the platform default). It is duplicated from
+  `product.home` because `crucible.product` sits ABOVE `crucible.data` in the layering rule and a
+  library call must reach the guard; `tests/unit/test_vault_guard.py` pins the two to agree.
+
 ## Importers (ADR-0052)
 `crucible/data/importers/`: `spec.py` (YAML models: `ohlcv_csv`,
 `polymarket_csv`, `polymarket_parquet`; `price_basis` required; OHLC repair

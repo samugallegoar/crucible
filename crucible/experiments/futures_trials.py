@@ -56,6 +56,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from crucible.core.canonical import canonical_json
 from crucible.core.errors import ConfigurationError, CrucibleError, InvariantViolation
+from crucible.experiments.artifacts import vault_member_dirs
 from crucible.experiments.futures_compare import (
     DEFAULT_MIN_OVERLAP_TRADE_DATES,
     MIN_OVERLAP_FLOOR,
@@ -373,15 +374,23 @@ class TrialsResult:
 
 
 def _reason_for(
-    entry: CandidateTrial, artifacts_root: Path
+    entry: CandidateTrial,
+    artifacts_root: Path,
+    *,
+    include_vault: bool = False,
 ) -> tuple[Member | None, CandidateStatus, str | None]:
     """The representative run's daily series, or why it cannot be read (ADR-0104 decision 1).
 
     A missing directory, an unreadable or unverifiable artifact and a run id that is not a futures
     run all give no series and a reason naming the candidate's run: the estimate is then
     ``unavailable`` rather than computed over a shorter list.
+
+    ``include_vault`` also looks for the run under ``<artifacts_root>/VAULT/<VR-...>/``, where a
+    holdout-vault evaluation seals it (ADR-0105).
     """
     directory = artifacts_root / entry.experiment_id
+    if not directory.is_dir() and include_vault:
+        directory = vault_member_dirs(artifacts_root).get(entry.experiment_id, directory)
     if not directory.is_dir():
         return (
             None,
@@ -391,7 +400,7 @@ def _reason_for(
             "makes it unavailable rather than smaller",
         )
     try:
-        member = load_member(artifacts_root, entry.experiment_id)
+        member = load_member(artifacts_root, entry.experiment_id, include_vault=include_vault)
     except ConfigurationError as exc:
         return (
             None,
@@ -412,7 +421,11 @@ def _reason_for(
 
 
 def _candidate_series(
-    entries: Sequence[CandidateTrial], *, artifacts_root: Path, owner: OwnerSeries | None
+    entries: Sequence[CandidateTrial],
+    *,
+    artifacts_root: Path,
+    owner: OwnerSeries | None,
+    include_vault: bool = False,
 ) -> tuple[CandidateSeries, ...]:
     """Every candidate's representative series, in candidate-id order."""
     out: list[CandidateSeries] = []
@@ -430,7 +443,7 @@ def _candidate_series(
                 )
             )
             continue
-        member, status, reason = _reason_for(entry, artifacts_root)
+        member, status, reason = _reason_for(entry, artifacts_root, include_vault=include_vault)
         out.append(
             CandidateSeries(
                 candidate_id=entry.candidate_id,
@@ -657,6 +670,7 @@ def futures_effective_trials(
     rho_threshold: float = DEFAULT_RHO_THRESHOLD,
     min_overlap_trade_dates: int = DEFAULT_MIN_OVERLAP_TRADE_DATES,
     owner: OwnerSeries | None = None,
+    include_vault: bool = False,
 ) -> FuturesTrialsReport:
     """The effective-trials report of ``family``, without writing anything (ADR-0104 decision 5).
 
@@ -670,11 +684,27 @@ def futures_effective_trials(
     Refuses nothing about the candidates' correlations: a pair without a valid coefficient is
     reported and makes the estimate unavailable. It refuses an overlap floor below the C5c floor
     and a threshold that is not a correlation.
+
+    ``include_vault`` (ADR-0105 decision 5) also reads the runs a holdout-vault evaluation sealed
+    under ``<artifacts_root>/VAULT/<VR-...>/``. By default they are EXCLUDED: the family's counts
+    still include the evaluation (its trial is recorded in the same registry, so ``total_trials``
+    deflates for it), but its series is out of the pool, exactly as ``compare`` does. Excluding
+    them is not the same as forgetting them.
     """
     _check_min_overlap(min_overlap_trade_dates)
     registry = DuckDBTrialRegistry(artifacts_root / REGISTRY_FILE)
     entries = registry.candidate_trials(family)
-    candidates = _candidate_series(entries, artifacts_root=artifacts_root, owner=owner)
+    vault_members = vault_member_dirs(artifacts_root)
+    candidates = tuple(
+        candidate
+        for candidate in _candidate_series(
+            entries,
+            artifacts_root=artifacts_root,
+            owner=owner,
+            include_vault=include_vault,
+        )
+        if include_vault or candidate.run_id not in vault_members or candidate.status == "ok"
+    )
     pairs = _pairs(candidates, min_overlap=min_overlap_trade_dates)
     estimate = _estimate(
         candidates, pairs, rho_threshold=rho_threshold, min_overlap=min_overlap_trade_dates
@@ -720,6 +750,7 @@ def run_futures_trials(
     artifacts_root: Path,
     rho_threshold: float = DEFAULT_RHO_THRESHOLD,
     min_overlap_trade_dates: int = DEFAULT_MIN_OVERLAP_TRADE_DATES,
+    include_vault: bool = False,
 ) -> TrialsResult:
     """Compute the report and write ``<artifacts>/<EFT-ID>/trials.json`` (ADR-0104 decision 5).
 
@@ -732,6 +763,7 @@ def run_futures_trials(
         artifacts_root=artifacts_root,
         rho_threshold=rho_threshold,
         min_overlap_trade_dates=min_overlap_trade_dates,
+        include_vault=include_vault,
     )
     directory = artifacts_root / report.trials_id
     directory.mkdir(parents=True, exist_ok=True)

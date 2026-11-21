@@ -131,5 +131,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0102](0102-futures-cross-run-metrics.md) | Futures cross-run metrics and descriptive daily P&L correlation against the artifact pool | accepted | Members. A comparison has a *target* and a *pool* |
 | [0103](0103-futures-statistics.md) | Futures statistics — daily returns on fixed capital, Sharpe, PSR, DSR with total trials, bootstrap intervals and IC | accepted | Daily return |
 | [0104](0104-effective-trials-and-futures-pbo.md) | Effective trials by correlation clustering, supplementary DSR, and PBO on valid futures candidate panels | accepted | Series |
+| [0105](0105-futures-holdout-vault.md) | Futures holdout vault — family-wide locked period, data-layer enforcement, human authorization, one evaluation per registration | accepted | The protected period |
 
 <!-- END GENERATED: adr-index -->

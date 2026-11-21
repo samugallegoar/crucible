@@ -64,5 +64,15 @@ class ExperimentError(CrucibleError):
     """Artifact-store or run-registry failure (missing run, hash mismatch...)."""
 
 
+class VaultLockedError(CrucibleError):
+    """The futures holdout vault refused the attempt: an access, a run or a whole file reaches
+    the declared protected period without an authorized evaluation (C6c, ADR-0105).
+
+    It subclasses ``CrucibleError`` (not ``LookaheadError``): it is not the point-in-time rule,
+    it is the holdout lock — the data exists, is knowable, and is deliberately withheld from the
+    research path until a human authorizes ONE registered evaluation.
+    """
+
+
 class CheckpointError(CrucibleError):
     """A checkpoint could not be written, read, or safely resumed (E7)."""
