@@ -280,6 +280,25 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   is one distinct run. `submission_count` counts submission EVENTS (every submitted candidate plus
   every standalone run), `unique_candidate_count` the distinct candidates, and `total_trials` what
   a deflation is divided by — in C6a the same as the unique count (ADR-0100, ADR-0103).
+- **effective trials (`effective_trials`)** — an ESTIMATE of how many effectively independent
+  trials a futures family holds, from its candidates' pairwise daily-return correlations
+  (C6b, ADR-0104). Distances are `d = sqrt((1 - rho) / 2)` and agglomerative AVERAGE-LINKAGE
+  clustering merges while the smallest mean inter-cluster distance is `<= sqrt((1 - rho*) / 2)`;
+  the count left is `effective_trials`, always between 1 and the number of candidates. It is
+  threshold-dependent (`rho*`, default 0.5) so it always travels with its sensitivity table for
+  `rho*` in {0.3, 0.5, 0.7, 0.9}, it is labelled `assessment: "estimator"`, and one pair with
+  no valid correlation makes it `unavailable` rather than smaller.
+- **supplementary DSR (`dsr_effective_trials`)** — the same Deflated Sharpe Ratio reading with
+  `N` replaced by `effective_trials`, keeping the primary `dsr`'s per-period Sharpe and
+  cross-trial dispersion (C6b, ADR-0104). It sits under a `supplementary` key BESIDE the primary
+  `dsr`, which is deflated by `total_trials` and stays the conservative result; it never feeds a
+  verdict, and it is null with a reason when the estimate is unavailable.
+- **CSCV panel** — the trials x periods returns matrix PBO needs (CSCV, ADR-0015/0070): one
+  column per period, one row per candidate, and the SAME periods for every row. Nothing is
+  filled, so a candidate whose trade dates differ makes PBO unavailable. On the futures path a
+  batch's panel is its distinct candidates' daily returns on the batch window, and a
+  walk-forward's is a separate full-window run per distinct candidate (`in_sample`): the
+  selected out-of-sample chain is never a PBO input (ADR-0104).
 - **information coefficient (IC)** — on the futures path, the per-trade-date Spearman correlation
   between a DSL expression's score at each decision bar and the close-to-close return over
   `statistics.ic_horizon_bars` bars of the signal series; a pair crossing a session edge or a

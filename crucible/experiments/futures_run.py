@@ -54,6 +54,7 @@ import hashlib
 import json
 import shutil
 from dataclasses import asdict, dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -82,6 +83,7 @@ from crucible.experiments.futures_artifacts import (
     build_rolls,
     check_daily_ledger,
 )
+from crucible.experiments.futures_compare import config_comparison_key
 from crucible.experiments.futures_config import (
     BAR_SECONDS,
     FuturesRunConfig,
@@ -96,6 +98,12 @@ from crucible.experiments.futures_stats import (
     futures_statistics,
     information_coefficient,
     no_information_coefficient,
+)
+from crucible.experiments.futures_trials import (
+    DailySeries,
+    OwnerSeries,
+    futures_effective_trials,
+    supplementary_block,
 )
 from crucible.experiments.runner import import_entrypoint
 from crucible.strategy_spec.models import parse_spec
@@ -747,12 +755,18 @@ def run_futures(
     store_root: Path,
     artifacts_root: Path,
     overwrite: bool = False,
+    mode: str = MODE,
 ) -> FuturesRunResult:
     """Simulate one futures config and write its sealed artifact.
 
     ``store_root``: the ParquetDataStore root holding the four datasets. ``artifacts_root``: where
     the run directory and the shared ``trial_registry.duckdb`` live. ``overwrite``: replace an
-    existing run directory (the same config and data reproduce the same artifact id).
+    existing run directory (the same config and data reproduce the same artifact id). ``mode``:
+    what the recorded trial is FOR, ``futures`` for a run of the path itself (the default) and
+    ``trial_registry.PBO_PANEL_MODE`` for a walk-forward's audit panel (C6b, ADR-0104 decision
+    6): the row stays auditable in ``trials`` but is not counted as a submission event. It does
+    not enter the run's identity: the same config and data reproduce the same run id and the
+    same artifact.
 
     Timing: the whole run is a function of the config and the datasets; nothing reads the clock
     except the artifact seal. Pessimism: fills come from ``simulate_futures`` (next-eligible-open
@@ -826,7 +840,7 @@ def run_futures(
         config.run.family,
         run_id,
         sharpe=sharpe,
-        mode=MODE,
+        mode=mode,
         start_ns=first_ns,
         end_ns=last_ns,
         period_ns=_NS_PER_DAY,
@@ -847,6 +861,22 @@ def run_futures(
         **{name: dict(entry) for name, entry in metrics.items()},
         **statistics_metrics,
     }
+    supplementary = supplementary_block(
+        returns_series.returns,
+        report=futures_effective_trials(
+            config.run.family,
+            artifacts_root=artifacts_root,
+            owner=OwnerSeries(
+                run_id=run_id,
+                candidate_id=candidate,
+                series=DailySeries(run_id, _daily_pnl(daily)),
+                key=config_comparison_key(config, fidelity),
+            ),
+        ),
+    )
+    statistics_block["supplementary"] = supplementary
+    supplementary_entry = cast("dict[str, object]", supplementary["dsr_effective_trials"])
+    all_metrics["dsr_effective_trials"] = dict(supplementary_entry)
 
     manifest: dict[str, object] = {
         "kind": "futures_run",
@@ -906,6 +936,23 @@ def run_futures(
         trial_count=trial_count,
         summary=summary,
     )
+
+
+def _daily_pnl(daily: pl.DataFrame) -> dict[dt.date, Decimal]:
+    """The run's daily marked P&L by trade date (``closing_equity_usd - opening_equity_usd``).
+
+    The same series a comparison reads back from ``daily.parquet`` (``_run_member``), built in
+    memory so a run can correlate itself before it is sealed (C6b, ADR-0104).
+    """
+    return {
+        day: Decimal(closing) - Decimal(opening)
+        for day, opening, closing in zip(
+            daily["trade_date"].to_list(),
+            daily["opening_equity_usd"].to_list(),
+            daily["closing_equity_usd"].to_list(),
+            strict=True,
+        )
+    }
 
 
 def _statistics_block(

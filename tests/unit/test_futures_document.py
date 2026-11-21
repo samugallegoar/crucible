@@ -119,6 +119,10 @@ STATISTICS = (
 )
 """The statistics C6a adds (ADR-0103): inferential metrics next to the descriptive totals."""
 
+SUPPLEMENTARY = ("dsr_effective_trials",)
+"""The SUPPLEMENTARY reading C6b adds (ADR-0104 decision 4): an inferential metric that sits
+beside the primary `dsr` and is never one of the C6a statistics."""
+
 
 # ---------------------------------------------------------------------------------------------
 # the shape
@@ -218,7 +222,7 @@ def test_the_metrics_are_descriptive_or_inferential_and_carry_their_units(run_di
             assert metric["ci_high"] is None
             assert isinstance(metric["value"], float)
         else:
-            assert name in STATISTICS
+            assert name in STATISTICS + SUPPLEMENTARY
         if metric["value"] is None:  # a null is a missing number and says why
             assert metric["reason"]
     for name in HEADLINE_METRICS:

@@ -70,14 +70,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 
 import numpy as np
 import polars as pl
 from pydantic import BaseModel, ConfigDict
 
 from crucible.core.canonical import canonical_json
-from crucible.core.errors import ConfigurationError, ExperimentError, InvariantViolation
+from crucible.core.errors import (
+    ConfigurationError,
+    CrucibleError,
+    ExperimentError,
+    InvariantViolation,
+)
 from crucible.execution.futures_sim import SIMULATOR_VERSION
 from crucible.experiments.artifact_id import verify_artifact
 from crucible.experiments.futures_config import FuturesRunConfig, load_futures_config
@@ -268,13 +273,21 @@ def _money(series: pl.Series) -> tuple[Decimal, ...]:
     return tuple(Decimal(value) for value in series.to_list())
 
 
-def _fidelity_record(manifest: Mapping[str, object]) -> dict[str, object]:
-    """The manifest's ``fidelity`` block reduced to the three fields the key compares.
+def _reduced_fidelity(raw: Mapping[str, object]) -> dict[str, object]:
+    """A fidelity block reduced to the three fields the comparison key compares.
 
-    A manifest written before C5a records no ``fidelity``: it simulated the stored one-minute series
-    with the full cost model, so it reads as ``1m`` + ``full`` + table version ``1``
+    A run written before C5a records no ``fidelity``: it simulated the stored one-minute series with
+    the full cost model, so it reads as ``1m`` + ``full`` + table version ``1``
     (``DEFAULT_FIDELITY``), exactly as the futures document reads it.
     """
+    return {
+        name: str(raw.get(name, DEFAULT_FIDELITY[name]))
+        for name in ("resolution", "cost_detail", "table_version")
+    }
+
+
+def _fidelity_record(manifest: Mapping[str, object]) -> dict[str, object]:
+    """The manifest's ``fidelity`` block reduced to the three fields the key compares."""
     raw = manifest.get("fidelity", DEFAULT_FIDELITY)
     if not isinstance(raw, dict):
         msg = (
@@ -282,11 +295,7 @@ def _fidelity_record(manifest: Mapping[str, object]) -> dict[str, object]:
             "compares {resolution, cost_detail, table_version}"
         )
         raise ExperimentError(msg)
-    out: dict[str, object] = {}
-    for name in ("resolution", "cost_detail", "table_version"):
-        value = raw.get(name, DEFAULT_FIDELITY[name])
-        out[name] = str(value)
-    return out
+    return _reduced_fidelity(raw)
 
 
 def _key_from_config(
@@ -412,7 +421,7 @@ def _run_member(directory: Path, member_id: str) -> Member:
     closing = _money(daily["closing_equity_usd"])
     trades, turnover, in_market = _position_facts(marks)
     manifest = _json_object(directory / "manifest.json", "manifest")
-    config = load_futures_config(directory / "config.yaml")
+    config = _reload_config(directory)
     return Member(
         member_id=member_id,
         kind="futures_run",
@@ -433,6 +442,27 @@ def _run_member(directory: Path, member_id: str) -> Member:
         key=_key_from_config(config, _fidelity_record(manifest)),
         statistics=_recorded_statistics(_json_object(directory / "metrics.json", "metrics")),
     )
+
+
+def _reload_config(directory: Path) -> FuturesRunConfig:
+    """The sealed run's own ``config.yaml``, parsed back, or a refusal that names the WHY.
+
+    A member's comparison key is its config's (ADR-0102 decision 4), so a config that does not
+    reload means the member has no key. That is reported as ``unverified`` with
+    ``config_reload_failed: <error>`` rather than propagated as a bare refusal: the artifact is on
+    disk and its seal may well verify, so a caller that aborts (the effective-trials report, C6b)
+    would say "the run is missing" when the truth is "its config cannot be read back".
+    """
+    path = directory / "config.yaml"
+    try:
+        return load_futures_config(path)
+    except (CrucibleError, OSError) as exc:
+        msg = (
+            f"config_reload_failed: the sealed config.yaml of {directory.name} cannot be parsed "
+            f"back into a futures config ({exc}). A member's comparison key is its config's, so "
+            "this run cannot be compared or correlated until its config is readable"
+        )
+        raise ExperimentError(msg).at(path=str(path)) from exc
 
 
 def _fold_rows(document: Mapping[str, object], directory: Path) -> list[Mapping[str, object]]:
@@ -720,6 +750,20 @@ def comparison_key(member: Member) -> dict[str, object]:
     return dict(member.key)
 
 
+def config_comparison_key(
+    config: FuturesRunConfig, fidelity: Mapping[str, object]
+) -> dict[str, object]:
+    """The comparison key of a run that is being WRITTEN, from its config and fidelity record.
+
+    The same key :func:`comparison_key` reads back from a sealed artifact
+    (:func:`_key_from_config`) -- ``fidelity`` may be the manifest's full fidelity block or the
+    reduced record, because both are reduced to the three fields the key compares. A run writing its
+    own effective-trials report has no seal yet, so it cannot be loaded as a member; this hands the
+    key in instead, and the pair check is still the one function (C6b, ADR-0104).
+    """
+    return _key_from_config(config, _reduced_fidelity(fidelity))
+
+
 def key_diff(a: Mapping[str, object], b: Mapping[str, object]) -> list[str]:
     """The dotted paths at which two comparison keys differ, sorted (``[]`` when they agree).
 
@@ -765,7 +809,28 @@ def _constant(values: Sequence[Decimal]) -> bool:
     return all(value == first for value in values[1:])
 
 
-def daily_correlation(a: Member, b: Member, *, min_overlap: int) -> CorrelationResult:
+class _DailyPnl(Protocol):
+    """The part of a member a correlation reads: its id and its daily P&L by trade date.
+
+    A Protocol (and private, so it is not an extension point) because a :class:`Member` is not the
+    only thing that can be correlated: the run that is writing its own effective-trials report has
+    no sealed artifact yet and hands an in-memory series of the same shape to
+    :func:`daily_correlation` (C6b, ADR-0104). The correlation then runs through ONE function, so a
+    pair of candidates is correlated exactly as a pair of pool members.
+    """
+
+    @property
+    def member_id(self) -> str:
+        """The artifact id the series belongs to (named in every refusal)."""
+        ...
+
+    @property
+    def net(self) -> Mapping[dt.date, Decimal]:
+        """The daily marked P&L by trade date; a date the artifact lacks is ABSENT, never zero."""
+        ...
+
+
+def daily_correlation(a: _DailyPnl, b: _DailyPnl, *, min_overlap: int) -> CorrelationResult:
     """Pearson's correlation of two members' daily P&L over the trade dates they BOTH have.
 
     The join is an INNER join on ``trade_date``: a date present in one series and not in

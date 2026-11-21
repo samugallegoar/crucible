@@ -55,9 +55,16 @@ returns `cross_run.json` — the target's descriptive metrics and window stabili
 order with each member's status (`ok`, `incompatible` with the differing comparison-key paths,
 `insufficient_overlap`, `constant_series`, `unverified`), the overlap, the descriptive correlation
 (null intervals) and the null verdict. `min_overlap` is how many overlapping trade dates a value
-needs (default 20, refused below 10). All five are thin `build_argv` + `run_cli` wrappers over
-`crucible futures run|check|batch|walkforward|compare` (ADR-0066), with absolute paths and the
-home's experiments folder as the default `artifacts`.
+needs (default 20, refused below 10). `crucible_futures_trials(family, threshold=0.5,
+min_overlap=20, home=None, artifacts=None)` (C6b, ADR-0104) reads the artifacts root only and
+returns `trials.json`: the family's counts, each candidate's representative run, every pair's status
+and correlation, the ESTIMATE of the effective number of trials (average linkage on
+`d = sqrt((1 - rho) / 2)`, threshold `threshold`) with its sensitivity table for
+`0.3/0.5/0.7/0.9`, the reasons when one pair has no valid correlation, and the null verdict. The
+defletion it supports (`dsr_effective_trials`) is supplementary: the primary `dsr` is unchanged.
+All six are thin `build_argv` + `run_cli` wrappers over
+`crucible futures run|check|batch|walkforward|compare|trials` (ADR-0066), with absolute paths and
+the home's experiments folder as the default `artifacts`.
 
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
 (`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).

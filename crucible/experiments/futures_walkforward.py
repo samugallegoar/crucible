@@ -72,6 +72,7 @@ from crucible.experiments.futures_batch import (
     REGISTRY_FILE,
     BatchCandidate,
     FuturesBatchCandidateFile,
+    FuturesPboFile,
     _cached_run,
 )
 from crucible.experiments.futures_config import (
@@ -83,14 +84,23 @@ from crucible.experiments.futures_config import (
     parse_futures_config,
 )
 from crucible.experiments.futures_document import metric_document, verdict_document
-from crucible.experiments.futures_run import futures_run_id, run_futures
+from crucible.experiments.futures_run import MODE, futures_run_id, run_futures
 from crucible.experiments.futures_stats import (
     STATISTICS_METRICS,
+    daily_returns,
     daily_returns_from_oos,
     futures_statistics,
     no_information_coefficient,
 )
-from crucible.validation.trial_registry import DuckDBTrialRegistry
+from crucible.experiments.futures_trials import (
+    PBO_PANEL_RULE,
+    FuturesTrialsReport,
+    PanelSeries,
+    futures_effective_trials,
+    pbo_on_panel,
+    supplementary_block,
+)
+from crucible.validation.trial_registry import PBO_PANEL_MODE, DuckDBTrialRegistry
 
 WALKFORWARD_SCHEMA_VERSION = 1
 """Version of ``walkforward.json`` (``docs/COMPATIBILITY.md`` §3: adding a key is additive)."""
@@ -280,6 +290,13 @@ class FuturesWalkForwardFile(_StrictModel):
     constraints: FuturesWalkForwardConstraints = Field(
         description="What makes a candidate eligible in the training window (a drawdown ceiling "
         "is required)."
+    )
+    pbo: FuturesPboFile | None = Field(
+        default=None,
+        description="Optional PBO (C6b, ADR-0104 decision 6): the CSCV group count. When present, "
+        "every distinct candidate is also run ONCE on the base window, those runs form a "
+        "full-window panel reported under in_sample_audit.pbo_panel, and the selected "
+        "out-of-sample path is never an input. When absent, no PBO is computed.",
     )
 
     @field_validator("train_trade_dates", "test_trade_dates", "warmup_trade_dates", mode="before")
@@ -728,6 +745,7 @@ def _compute(
     artifacts_root: Path,
     overwrite: bool,
     computed: dict[str, tuple[str, _RunFacts]],
+    mode: str = MODE,
 ) -> tuple[str, _RunFacts, str]:
     """Run ``config`` (or reuse the run it already has) and hand back its status and facts.
 
@@ -735,6 +753,10 @@ def _compute(
     bound expression run ONCE per window, exactly as in a batch. A run directory that already
     exists and verifies is ``cached``, which is what makes re-running a walk-forward a
     reproduction.
+
+    ``mode`` is the ``mode`` the trial is recorded with: ``MODE`` (``futures``) for a fold's
+    training or test run, ``PBO_PANEL_MODE`` for an audit-panel run, which is recorded in
+    ``trials`` and NOT counted as a submission event (C6b, ADR-0104 decision 6).
     """
     compiled = config.strategy.compiled_signal(config.signal.input)
     key = compiled.parameterization_id
@@ -749,7 +771,11 @@ def _compute(
         status = "cached"
     else:
         result = run_futures(
-            config, store_root=store_root, artifacts_root=artifacts_root, overwrite=overwrite
+            config,
+            store_root=store_root,
+            artifacts_root=artifacts_root,
+            overwrite=overwrite,
+            mode=mode,
         )
         run_id = result.run_id
         facts = _facts(result.run_dir)
@@ -926,6 +952,7 @@ def _oos_statistics(
     base: FuturesRunConfig,
     identifier: str,
     registry: DuckDBTrialRegistry,
+    estimate: FuturesTrialsReport,
 ) -> dict[str, object]:
     """The walk-forward's statistics, computed on the OOS chain ALONE (ADR-0101, ADR-0103).
 
@@ -959,6 +986,9 @@ def _oos_statistics(
     trials["submission_count"] = registry.submission_count(base.run.family)
     trials["unique_candidate_count"] = registry.unique_candidate_count(base.run.family)
     block["trials"] = trials
+    # C6b (ADR-0104 decision 4): the SUPPLEMENTARY deflation sits beside the OOS ``dsr``, which
+    # stays the primary reading and is unchanged; only N differs.
+    block["supplementary"] = supplementary_block(series.returns, report=estimate)
     return {"metrics": report["metrics"], **block}
 
 
@@ -970,6 +1000,86 @@ def _write_parquet(frame: pl.DataFrame, path: Path) -> None:
 
 # ---------------------------------------------------------------------------------------------
 # f. the walk-forward
+
+
+def _pbo_panel(
+    loaded: FuturesWalkForward,
+    *,
+    store_root: Path,
+    artifacts_root: Path,
+    overwrite: bool,
+    warmup: int,
+) -> dict[str, object] | None:
+    """The full-window panel of distinct candidates and its PBO (C6b, ADR-0104 decision 6).
+
+    ``None`` when the walk-forward file asks for no PBO. Otherwise every DISTINCT candidate (the
+    compiled parameterization, as the folds dedupe) runs ONCE on the base window with the base
+    config and the same warm-up, under the run name ``<base>/wf/full/<name>``. Those runs record
+    their trial with their ``candidate_id`` and ``mode = PBO_PANEL_MODE``: the candidate already
+    exists in the family, so ``total_trials`` does not grow, no submission row is written and
+    ``submission_count`` does not move either (nothing was submitted or selected: this is an
+    audit panel, not a search), while every panel run stays auditable in the registry. The
+    panel's dates are the runs' own trade dates on the base window, and they must be identical
+    -- nothing is filled.
+    """
+    if loaded.file.pbo is None:
+        return None
+    base = loaded.base
+    calendar = calendar_for(base.root)
+    window = (base.window.start, base.window.end)
+    computed: dict[str, tuple[str, _RunFacts]] = {}
+    panel: list[PanelSeries] = []
+    candidates: list[dict[str, object]] = []
+    for candidate in loaded.candidates:
+        config = _fold_run(
+            base,
+            candidate,
+            name=f"{base.run.name}/wf/full/{candidate.name}",
+            start=base.window.start,
+            end=base.window.end,
+            warmup=warmup,
+        )
+        run_id, facts, status = _compute(
+            config,
+            store_root=store_root,
+            artifacts_root=artifacts_root,
+            overwrite=overwrite,
+            computed=computed,
+            mode=PBO_PANEL_MODE,
+        )
+        identifier = candidate_id(config)
+        if any(entry["candidate_id"] == identifier for entry in candidates):
+            continue
+        series = daily_returns(
+            facts.daily, initial_capital=base.capital, calendar=calendar, window=window
+        )
+        panel.append(
+            PanelSeries(
+                candidate_id=identifier,
+                trade_dates=series.trade_dates,
+                returns=series.returns,
+                source=run_id,
+            )
+        )
+        candidates.append(
+            {
+                "candidate_id": identifier,
+                "name": candidate.name,
+                "run_id": run_id,
+                "status": status,
+                "n_obs": series.n_observations,
+            }
+        )
+    outcome = pbo_on_panel(panel, n_groups=loaded.file.pbo.n_groups)
+    block = outcome.record()
+    block["in_sample"] = True
+    block["candidates"] = candidates
+    block["note"] = (
+        "these runs are IN SAMPLE: each candidate was simulated once on the whole base window to "
+        "form a comparable panel, and nothing of them is out-of-sample. The walk-forward's OOS "
+        "series is a different artifact and is never an input of this PBO"
+    )
+    return block
 
 
 def run_futures_walkforward(
@@ -1199,6 +1309,14 @@ def run_futures_walkforward(
         )
 
     oos_frame = _oos_frame(rows)
+    pbo_panel = _pbo_panel(
+        loaded,
+        store_root=store_root,
+        artifacts_root=artifacts_root,
+        overwrite=overwrite,
+        warmup=warmup,
+    )
+    estimate = futures_effective_trials(base.run.family, artifacts_root=artifacts_root)
     stability = {
         "fold_oos_net_pnl_usd": [_metric(net, "usd") for net in fold_nets],
         "folds_positive": sum(1 for net in fold_nets if net > 0),
@@ -1221,7 +1339,11 @@ def run_futures_walkforward(
         "oos": {
             **_oos_summary(oos_frame, base.capital),
             "statistics": _oos_statistics(
-                oos_frame, base=base, identifier=identifier, registry=registry
+                oos_frame,
+                base=base,
+                identifier=identifier,
+                registry=registry,
+                estimate=estimate,
             ),
         },
         "window_stability": stability,
@@ -1235,6 +1357,19 @@ def run_futures_walkforward(
         },
         "verdict": verdict_document().model_dump(mode="json"),
     }
+    if pbo_panel is not None:
+        audit = cast("dict[str, object]", document["in_sample_audit"])
+        audit["pbo_panel"] = pbo_panel
+        document["pbo"] = {
+            "pointer": "in_sample_audit.pbo_panel",
+            "note": (
+                "the probability of backtest overfitting of this walk-forward is computed on the "
+                "full-window panel of its distinct candidates (one extra run each, recorded as "
+                "trials of the same candidates, so total_trials does not grow) and reported under "
+                "in_sample_audit.pbo_panel. It is never computed on the selected out-of-sample "
+                "path (ADR-0104 decision 6): " + PBO_PANEL_RULE
+            ),
+        }
     walkforward_dir = artifacts_root / identifier
     walkforward_dir.mkdir(parents=True, exist_ok=True)
     (walkforward_dir / "walkforward.json").write_text(

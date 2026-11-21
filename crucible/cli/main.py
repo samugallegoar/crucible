@@ -120,6 +120,19 @@ def _store_root(args: argparse.Namespace) -> Path:
     return resolve_home(home).data
 
 
+def _correlation_threshold(text: str) -> float:
+    """A correlation in [-1, 1] for an option such as ``futures trials --threshold``."""
+    try:
+        value = float(text)
+    except ValueError as exc:
+        msg = f"{text!r} is not a number: a correlation threshold is a value in [-1, 1]"
+        raise argparse.ArgumentTypeError(msg) from exc
+    if not -1.0 <= value <= 1.0:
+        msg = f"{text} is not a correlation: a threshold is in [-1, 1] (0.5 merges rho >= 0.5)"
+        raise argparse.ArgumentTypeError(msg)
+    return value
+
+
 def _positive_int(text: str) -> int:
     value = int(text)
     if value < 1:
@@ -445,6 +458,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(futures_compare)
 
+    futures_trials = futures_sub.add_parser(
+        "trials",
+        help="Estimate the family's EFFECTIVE number of trials and read the family's daily series "
+        "correlations (C6b, ADR-0104)",
+    )
+    futures_trials.add_argument(
+        "--family",
+        required=True,
+        help="Trial family name (ExperimentHeader.family): the report covers its distinct "
+        "candidates, each represented by its run with the most observations",
+    )
+    futures_trials.add_argument(
+        "--threshold",
+        type=_correlation_threshold,
+        default=None,
+        help="rho* of the average-linkage estimator (default 0.5): candidates whose average "
+        "correlation is at least rho* merge. The report always carries the sensitivity table for "
+        "0.3, 0.5, 0.7 and 0.9",
+    )
+    futures_trials.add_argument(
+        "--min-overlap",
+        type=_positive_int,
+        default=20,
+        dest="min_overlap",
+        help="Overlapping trade dates a pair's correlation needs (default 20, never below 10): "
+        "fewer is insufficient_overlap, which makes the estimate unavailable rather than smaller",
+    )
+    futures_trials.add_argument(
+        "--artifacts",
+        default=None,
+        help="Artifact store root holding the sealed runs and the shared trial registry (default: "
+        "experiments/, or the --home's experiments folder). A trials report reads artifacts only: "
+        "no store and no simulation",
+    )
+    _add_home(futures_trials)
+    _add_json(futures_trials)
+
     schema = subparsers.add_parser(
         "schema",
         help="Print a JSON Schema: the experiment config (default), a strategy spec, or an "
@@ -459,6 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
             "futures-run",
             "futures-batch",
             "futures-walkforward",
+            "futures-trials",
             *OUTPUT_SCHEMAS,
         ],
         default="experiment",
@@ -1349,6 +1400,8 @@ def _cmd_futures(args: argparse.Namespace) -> int:
         return _cmd_futures_walkforward(args)
     if args.futures_command == "compare":
         return _cmd_futures_compare(args)
+    if args.futures_command == "trials":
+        return _cmd_futures_trials(args)
     config = load_futures_config(Path(args.config))
     if args.futures_command == "check":
         config_hash = futures_config_hash(config)
@@ -1612,6 +1665,88 @@ def _cmd_futures_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_futures_trials(args: argparse.Namespace) -> int:
+    """``crucible futures trials``: the family's effective number of trials, as a report (C6b).
+
+    ``--json`` prints ``trials.json`` itself (``<artifacts>/<EFT-ID>/trials.json``), so the CLI and
+    the file cannot drift. The text rendering is the counts, each candidate with its representative
+    run, every pair with its status and correlation, the estimate with its threshold and clusters,
+    the sensitivity table and the verdict line. The estimate is an ESTIMATOR: threshold-dependent,
+    never a count of independent hypotheses, and never the primary deflation -- the primary `dsr`
+    stays deflated by ``total_trials`` (ADR-0104).
+    """
+    from crucible.experiments.futures_trials import run_futures_trials
+    from crucible.validation.effective_trials import DEFAULT_RHO_THRESHOLD
+
+    artifacts_root = _artifacts_root(args)
+    result = run_futures_trials(
+        args.family,
+        artifacts_root=artifacts_root,
+        rho_threshold=DEFAULT_RHO_THRESHOLD if args.threshold is None else args.threshold,
+        min_overlap_trade_dates=args.min_overlap,
+    )
+    if args.json:
+        machine.emit(result.document)
+        return 0
+    document = result.document
+    counts = document["counts"]
+    assert isinstance(counts, dict)
+    estimator = document["estimator"]
+    assert isinstance(estimator, dict)
+    method = estimator["method"]
+    assert isinstance(method, dict)
+    candidates = document["candidates"]
+    assert isinstance(candidates, list)
+    pairs = document["pairs"]
+    assert isinstance(pairs, list)
+    sensitivity = document["sensitivity"]
+    assert isinstance(sensitivity, dict)
+    effective = estimator["effective_trials"]
+    lines = [
+        f"trials report: {result.trials_id}",
+        f"family:        {document['family']}",
+        f"counts:        {counts['submission_count']} submission(s), "
+        f"{counts['unique_candidate_count']} distinct candidate(s), "
+        f"total_trials {counts['total_trials']}",
+        f"effective:     {'unavailable' if effective is None else effective} "
+        f"(rho* = {estimator['threshold']}, {method['linkage']} linkage, "
+        f"{method['distance']})",
+        f"               {estimator['note']}",
+    ]
+    for entry in candidates:
+        assert isinstance(entry, dict)
+        sharpe = entry["sharpe_per_period"]
+        lines.append(
+            f"  {entry['candidate_id']}  {entry['run_id']}  n_obs {entry['n_obs']}  "
+            f"sharpe {'-' if sharpe is None else sharpe}"
+        )
+    for entry in pairs:
+        assert isinstance(entry, dict)
+        rho = entry["rho"]
+        lines.append(
+            f"  pair {entry['a']} / {entry['b']}: {entry['status']}, "
+            f"overlap {'-' if entry['overlap'] is None else entry['overlap']}, "
+            f"rho {'-' if rho is None else rho}"
+        )
+    if effective is not None:
+        clusters = estimator["clusters"]
+        assert isinstance(clusters, list)
+        for cluster in clusters:
+            lines.append(f"  cluster: {', '.join(str(member) for member in cluster)}")
+    for threshold in sorted(sensitivity):
+        row = sensitivity[threshold]
+        assert isinstance(row, dict)
+        lines.append(
+            f"  sensitivity rho* {threshold}: {row['effective_trials']} effective trial(s)"
+        )
+    for reason in estimator["reasons"]:
+        lines.append(f"  unavailable: {reason}")
+    lines.append(FUTURES_VERDICT_LINE)
+    lines.append(f"report dir:    {result.trials_dir}")
+    sys.stdout.write(chr(10).join(lines) + chr(10))
+    return 0
+
+
 _CRUCIBLE_VALUE_MISSING = "-"
 """The text rendering's placeholder for a value the document does not carry."""
 
@@ -1644,6 +1779,10 @@ def _cmd_schema(args: argparse.Namespace) -> int:
         from crucible.experiments.futures_walkforward import futures_walkforward_json_schema
 
         schema = futures_walkforward_json_schema()
+    elif args.kind == "futures-trials":
+        from crucible.experiments.futures_trials import futures_trials_json_schema
+
+        schema = futures_trials_json_schema()
     elif args.kind in OUTPUT_SCHEMAS:
         schema = output_json_schema(args.kind)
     else:

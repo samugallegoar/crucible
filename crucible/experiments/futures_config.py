@@ -840,7 +840,34 @@ def futures_config_hash(config: BaseModel) -> str:
 
 
 def canonical_futures_yaml(config: BaseModel) -> str:
-    """Deterministic YAML rendering of the config, written as ``config.yaml`` in the run."""
+    """Deterministic YAML rendering of the config, written as ``config.yaml`` in the run.
+
+    The sealed ``config.yaml`` is the artifact's provenance AND an input: every reader of a
+    finished run parses it back (a comparison member, its comparison key, the effective-trials
+    report). It must therefore RELOAD into an equal model, which one combination would otherwise
+    not do: under ``fidelity.cost_detail == "commission_only"`` the validator refuses an
+    EXPLICITLY set non-zero ``costs.spread_ticks``/``costs.slippage_ticks`` (the run would
+    silently ignore what the config says), and a full model dump writes those DEFAULTS explicitly,
+    so the dump refused its own output. They are omitted here when they were not set: the reload
+    then gives the same model with the same defaults, and a tick the caller DID set (a zero, or a
+    non-zero one under ``full`` costs) is written as usual.
+
+    ``config_hash`` -- and therefore the run id -- is computed from the MODEL
+    (``futures_config_hash``), never from this text, so what is omitted here changes no identity; it
+    changes the bytes of
+    ``config.yaml`` for a ``commission_only`` run and nothing else (``docs/COMPATIBILITY.md`` §3).
+    """
+    if isinstance(config, FuturesRunConfig) and config.fidelity.cost_detail == "commission_only":
+        raw = config.model_dump(mode="json")
+        costs = raw.get("costs")
+        if isinstance(costs, dict):
+            explicit = config.costs.model_fields_set
+            raw["costs"] = {
+                str(name): value
+                for name, value in costs.items()
+                if name not in ("spread_ticks", "slippage_ticks") or name in explicit
+            }
+        return yaml.safe_dump(raw, sort_keys=True, default_flow_style=False)
     return canonical_yaml(config)
 
 
