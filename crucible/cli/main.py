@@ -10,6 +10,7 @@ Implemented: ``backtest`` (the one-step product command, ADR-0068), ``spec``, ``
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import sys
 from collections import deque
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from typing import TYPE_CHECKING, TypedDict
 from crucible import __version__
 from crucible.cli import machine, product_commands
 from crucible.core.errors import ConfigurationError, CrucibleError
+from crucible.data.vault import _iso_ns, declared, first_protected_session
 from crucible.experiments.contracts import OUTPUT_SCHEMAS, output_json_schema
 from crucible.experiments.optimize import DEFAULT_PBO_GROUPS
 
@@ -67,6 +69,9 @@ def _add_home(parser: argparse.ArgumentParser) -> None:
         "two roots, and one family's trial registry lives in one)",
     )
 
+
+EOL = chr(10)
+"""The line separator of the text renderings (never a backslash escape in a patch)."""
 
 FUTURES_VERDICT_LINE = (
     "Verdict: not assessed (C6/C7) — absence of assessment, not evidence of no edge."
@@ -456,6 +461,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overlapping trade dates a correlation needs (default 20, never below 10): fewer "
         "is insufficient_overlap and no value",
     )
+    futures_compare.add_argument(
+        "--include-vault",
+        action="store_true",
+        dest="include_vault",
+        help="Also pool the runs a holdout-vault evaluation sealed under VAULT/<VR-...>/ (C6c, "
+        "ADR-0105): off by default, so a protected-period result is compared only when asked for",
+    )
     _add_json(futures_compare)
 
     futures_trials = futures_sub.add_parser(
@@ -486,6 +498,13 @@ def build_parser() -> argparse.ArgumentParser:
         "fewer is insufficient_overlap, which makes the estimate unavailable rather than smaller",
     )
     futures_trials.add_argument(
+        "--include-vault",
+        action="store_true",
+        dest="include_vault",
+        help="Also read the runs a holdout-vault evaluation sealed under VAULT/<VR-...>/ (C6c, "
+        "ADR-0105): off by default. The family's counts include the evaluation either way",
+    )
+    futures_trials.add_argument(
         "--artifacts",
         default=None,
         help="Artifact store root holding the sealed runs and the shared trial registry (default: "
@@ -510,12 +529,15 @@ def build_parser() -> argparse.ArgumentParser:
             "futures-batch",
             "futures-walkforward",
             "futures-trials",
+            "vault-declaration",
+            "vault-registration",
             *OUTPUT_SCHEMAS,
         ],
         default="experiment",
         help="which schema: the experiment config, the no-code strategy spec (ADR-0067), the "
         "futures-run config (ADR-0095), the futures-batch file (C5a), the futures-walkforward "
-        "file (C5b), or an output document: run, verification, error, manifest (ADR-0084), "
+        "file (C5b), the holdout vault's declaration and registration (C6c, ADR-0105), or an "
+        "output document: run, verification, error, manifest (ADR-0084), "
         "futures-run-document (the document a sealed futures run prints, ADR-0097), "
         "futures-compare (cross_run.json, C5c)",
     )
@@ -674,6 +696,118 @@ def build_parser() -> argparse.ArgumentParser:
         help="refuse to write more rows than this",
     )
     _add_json(fetch)
+
+    vault = subparsers.add_parser(
+        "vault",
+        help="The futures holdout vault: declare | status | register | authorize | evaluate | "
+        "log | set-admin (C6c, ADR-0105). Results stay hidden until the single authorized "
+        "evaluation has run",
+    )
+    vault_sub = vault.add_subparsers(dest="vault_command", required=True)
+    vault_declare = vault_sub.add_parser(
+        "declare",
+        help="Write the locked period into the store root AND the home (widening only)",
+    )
+    vault_declare.add_argument(
+        "--universe",
+        default="ES,NQ,YM,RTY,NKD",
+        help="CME roots the vault covers, comma-separated (default: the whole family, "
+        "ES,NQ,YM,RTY,NKD)",
+    )
+    vault_declare.add_argument(
+        "--start",
+        required=True,
+        help="First protected Globex trade date (YYYY-MM-DD): every later trade date is "
+        "protected too, including data not ingested yet",
+    )
+    vault_declare.add_argument(
+        "--scope",
+        choices=["family", "root"],
+        default="family",
+        help="family (default): the declared roots, not bypassable by another trial family. "
+        "root: exactly one root, for explicitly single-instrument research",
+    )
+    vault_declare.add_argument(
+        "--audit-ref",
+        required=True,
+        dest="audit_ref",
+        help="The exposure audit that justifies the period (recorded in vault.json): locking "
+        "data later does not make it unseen",
+    )
+    vault_declare.add_argument(
+        "--store", default=None, help="Data store root (default: the --home's data folder)"
+    )
+    _add_home(vault_declare)
+    _add_json(vault_declare)
+    vault_status = vault_sub.add_parser(
+        "status",
+        help="The vault id, the open counter and every registration's status (no metric: "
+        "results are not readable here)",
+    )
+    vault_status.add_argument(
+        "--store", default=None, help="Data store root (default: the --home's data folder)"
+    )
+    _add_home(vault_status)
+    _add_json(vault_status)
+    vault_register = vault_sub.add_parser(
+        "register",
+        help="Record a VR- for a futures config: its complete config hash, the dataset content "
+        "hashes and the window (reads no protected row)",
+    )
+    vault_register.add_argument("--config", required=True, help="Path to a futures-run YAML")
+    vault_register.add_argument(
+        "--store", default=None, help="Data store root (default: the --home's data folder)"
+    )
+    _add_home(vault_register)
+    _add_json(vault_register)
+    vault_authorize = vault_sub.add_parser(
+        "authorize",
+        help="A HUMAN step: verify the admin token (TTY prompt or CRUCIBLE_VAULT_TOKEN) and "
+        "authorize one registration",
+    )
+    vault_authorize.add_argument("--registration", required=True, help="The VR- to authorize")
+    vault_authorize.add_argument(
+        "--store", default=None, help="Data store root (default: the --home's data folder)"
+    )
+    _add_home(vault_authorize)
+    _add_json(vault_authorize)
+    vault_evaluate = vault_sub.add_parser(
+        "evaluate",
+        help="Run the registered config exactly once and seal it under "
+        "<artifacts>/VAULT/<VR-...>/ (the open counter is incremented before any read)",
+    )
+    vault_evaluate.add_argument("--registration", required=True, help="The authorized VR-")
+    vault_evaluate.add_argument(
+        "--store", default=None, help="Data store root (default: the --home's data folder)"
+    )
+    vault_evaluate.add_argument(
+        "--artifacts",
+        default=None,
+        help="Artifact store root (default: experiments/, or the --home's experiments folder). "
+        "The sealed vault run lives under its VAULT/ folder and its trial is counted in the "
+        "family's registry here",
+    )
+    _add_home(vault_evaluate)
+    _add_json(vault_evaluate)
+    vault_log = vault_sub.add_parser(
+        "log",
+        help="The access log: every attempt on protected data, allowed and refused",
+    )
+    vault_log.add_argument(
+        "--limit", type=_positive_int, default=200, help="How many rows to print (default 200)"
+    )
+    vault_log.add_argument(
+        "--store", default=None, help="Data store root (default: the --home's data folder)"
+    )
+    _add_home(vault_log)
+    _add_json(vault_log)
+    vault_set_admin = vault_sub.add_parser(
+        "set-admin",
+        help="Set the admin token from an INTERACTIVE TTY (it is never generated, printed or "
+        "stored in clear)",
+    )
+    _add_home(vault_set_admin)
+    _add_json(vault_set_admin)
 
     product_commands.add_parsers(subparsers)
     return parser
@@ -1604,6 +1738,7 @@ def _cmd_futures_compare(args: argparse.Namespace) -> int:
         args.target,
         artifacts_root=artifacts_root,
         min_overlap_trade_dates=args.min_overlap,
+        include_vault=args.include_vault,
     )
     if args.json:
         machine.emit(result.document)
@@ -1684,6 +1819,7 @@ def _cmd_futures_trials(args: argparse.Namespace) -> int:
         artifacts_root=artifacts_root,
         rho_threshold=DEFAULT_RHO_THRESHOLD if args.threshold is None else args.threshold,
         min_overlap_trade_dates=args.min_overlap,
+        include_vault=args.include_vault,
     )
     if args.json:
         machine.emit(result.document)
@@ -1760,6 +1896,175 @@ def _value(metrics: dict[str, object], name: str) -> str:
     return _CRUCIBLE_VALUE_MISSING if value is None else str(value)
 
 
+def _cmd_vault(args: argparse.Namespace) -> int:
+    """``crucible vault declare|status|register|authorize|evaluate|log|set-admin`` (C6c).
+
+    The vault is the separation of research from evaluation (ADR-0105): the protected period is
+    locked in the DATA layer, a registration records a complete config hash, a HUMAN authorizes it
+    with the admin token, and the one evaluation runs under a data-layer session that admits only
+    the registered datasets up to the registered window end. ``status`` and ``log`` report ids,
+    counters, statuses and attempts -- never a metric, because the results stay hidden until the
+    evaluation has run.
+    """
+    from crucible.experiments.vault import registry_for, set_admin
+
+    home = None
+    if getattr(args, "home", None) is not None or args.vault_command in ("declare", "set-admin"):
+        from crucible.product.home import resolve_home
+
+        home = resolve_home(args.home)
+    store = (
+        Path(args.store)
+        if getattr(args, "store", None) is not None
+        else (home.data if home is not None else None)
+    )
+    if args.vault_command == "set-admin":
+        target = home.root if home is not None else _vault_home()
+        path = set_admin(home=target)
+        if args.json:
+            machine.emit({"kind": "vault_admin", "path": str(path)})
+            return 0
+        sys.stdout.write(f"admin token hash written: {path}")
+        sys.stdout.write(EOL)
+        sys.stdout.write("The token itself was not stored, printed or logged.")
+        sys.stdout.write(EOL)
+        return 0
+    artifacts_root = _artifacts_root(args)
+    if store is None:
+        store = _store_root(args)
+    registry = registry_for(store_root=store, home=_home_of(home), artifacts_root=artifacts_root)
+    if args.vault_command == "declare":
+        declaration = registry.declare(
+            universe=[part for part in str(args.universe).split(",") if part.strip()],
+            start_trade_date=dt.date.fromisoformat(str(args.start)),
+            audit_ref=str(args.audit_ref),
+            scope=args.scope,
+        )
+        day, start_ns = first_protected_session(declaration)
+        if args.json:
+            machine.emit(declared(declaration))
+            return 0
+        sys.stdout.write(f"vault:        {declaration.vault_id}{EOL}")
+        sys.stdout.write(f"universe:     {', '.join(declaration.universe)}{EOL}")
+        sys.stdout.write(f"scope:        {declaration.scope}{EOL}")
+        sys.stdout.write(
+            f"protected:    Globex trade dates from {declaration.start_trade_date} "
+            f"(open-ended){EOL}"
+        )
+        sys.stdout.write(f"first session: {day}, opening {_iso_ns(start_ns)} (UTC){EOL}")
+        sys.stdout.write(f"datasets now protected: {len(declaration.protected_datasets)}{EOL}")
+        sys.stdout.write(f"audit:        {declaration.audit_ref}{EOL}")
+        sys.stdout.write(
+            "Declared in the store root AND the home: either copy locks the period, so copying "
+            f"the store or switching home does not lift it.{EOL}"
+        )
+        return 0
+    if args.vault_command == "status":
+        document = registry.status().document()
+        if args.json:
+            machine.emit(document)
+            return 0
+        sys.stdout.write(f"vault:        {document['vault_id']}{EOL}")
+        universe = document["universe"]
+        assert isinstance(universe, list)
+        sys.stdout.write("universe:     " + ", ".join(str(root) for root in universe) + EOL)
+        sys.stdout.write(f"protected:    from {document['start_trade_date']} (open-ended){EOL}")
+        sys.stdout.write(f"opens:        {document['opens']}{EOL}")
+        registrations = document["registrations"]
+        assert isinstance(registrations, list)
+        sys.stdout.write(f"registrations: {len(registrations)}{EOL}")
+        for entry in registrations:
+            assert isinstance(entry, dict)
+            sys.stdout.write(
+                f"  {entry['vr_id']}  {entry['status']:<10} {entry['window_start']}.."
+                f"{entry['window_end']}  config {str(entry['config_hash'])[:12]}  "
+                f"artifact {entry['artifact_id'] or '-'}{EOL}"
+            )
+        sys.stdout.write(str(document["note"]) + EOL)
+        return 0
+    if args.vault_command == "register":
+        document = registry.register(Path(args.config)).document()
+        if args.json:
+            machine.emit(document)
+            return 0
+        sys.stdout.write(f"registration: {document['vr_id']} ({document['status']}){EOL}")
+        sys.stdout.write(f"config hash:  {document['config_hash']}{EOL}")
+        sys.stdout.write(f"window:       {document['window_start']}..{document['window_end']}{EOL}")
+        sys.stdout.write(f"candidate:    {document['candidate_id']}{EOL}")
+        sys.stdout.write(
+            "A HUMAN authorizes it next: `crucible vault authorize --registration "
+            f"{document['vr_id']}` (admin token), then `crucible vault evaluate --registration "
+            f"{document['vr_id']}`.{EOL}"
+        )
+        return 0
+    if args.vault_command == "authorize":
+        document = registry.authorize(str(args.registration)).document()
+        if args.json:
+            machine.emit(document)
+            return 0
+        sys.stdout.write(f"registration: {document['vr_id']} -> {document['status']}{EOL}")
+        sys.stdout.write(f"authorized:   {document['authorized_at']}{EOL}")
+        sys.stdout.write(
+            "One evaluation per registration: `crucible vault evaluate --registration "
+            f"{document['vr_id']}`.{EOL}"
+        )
+        return 0
+    if args.vault_command == "evaluate":
+        document = registry.evaluate(str(args.registration))
+        if args.json:
+            machine.emit(document)
+            return 0
+        summary = document["summary"]
+        assert isinstance(summary, dict)
+        window = document["window"]
+        assert isinstance(window, dict)
+        sys.stdout.write(f"registration: {document['vr_id']} -> {document['status']}{EOL}")
+        sys.stdout.write(f"opens:        {document['opens']} (never decremented){EOL}")
+        sys.stdout.write(f"run:          {document['run_id']}{EOL}")
+        sys.stdout.write(f"artifact:     {document['artifact_id']}{EOL}")
+        sys.stdout.write(f"window:       {window['start']}..{window['end']}{EOL}")
+        sys.stdout.write(
+            f"trade dates:  {summary['trade_dates']}, fills {summary['fills']}, final equity "
+            f"{summary['final_equity_usd']} USD{EOL}"
+        )
+        sys.stdout.write(f"run dir:      {document['run_dir']}{EOL}")
+        sys.stdout.write(f"{document['note']}{EOL}")
+        sys.stdout.write(FUTURES_VERDICT_LINE + EOL)
+        return 0
+    if args.vault_command == "log":
+        rows = registry.access_log(args.limit)
+        if args.json:
+            machine.emit({"kind": "vault_access_log", "entries": list(rows)})
+            return 0
+        for entry in rows:
+            sys.stdout.write(
+                f"{entry['seq']:>6} {entry['ts']}  {entry['outcome']:<24} "
+                f"{entry['purpose']:<12} {entry['dataset']:<24} "
+                f"vr {entry['vr_id'] or '-'}{EOL}"
+            )
+        if not rows:
+            sys.stdout.write(f"no access attempts recorded{EOL}")
+        return 0
+    msg = f"unknown vault command {args.vault_command!r}"
+    raise ConfigurationError(msg)
+
+
+def _vault_home() -> Path:
+    """The effective Crucible home (no ``--home`` given)."""
+    from crucible.data.vault import home_root
+
+    resolved = home_root()
+    if resolved is None:  # pragma: no cover - home_root always resolves on a real platform
+        msg = "the vault needs a Crucible home: pass --home or set CRUCIBLE_HOME"
+        raise ConfigurationError(msg)
+    return resolved
+
+
+def _home_of(home: object) -> Path | None:
+    """The home a vault command works on: ``--home``'s resolved root, else the effective one."""
+    return None if home is None else Path(str(getattr(home, "root", home)))
+
+
 def _cmd_schema(args: argparse.Namespace) -> int:
     """Prints a JSON Schema: the experiment config, the strategy spec, a futures-run config or a
     futures-batch file."""
@@ -1783,6 +2088,14 @@ def _cmd_schema(args: argparse.Namespace) -> int:
         from crucible.experiments.futures_trials import futures_trials_json_schema
 
         schema = futures_trials_json_schema()
+    elif args.kind == "vault-declaration":
+        from crucible.experiments.vault import vault_declaration_json_schema
+
+        schema = vault_declaration_json_schema()
+    elif args.kind == "vault-registration":
+        from crucible.experiments.vault import vault_registration_json_schema
+
+        schema = vault_registration_json_schema()
     elif args.kind in OUTPUT_SCHEMAS:
         schema = output_json_schema(args.kind)
     else:
@@ -1830,7 +2143,10 @@ def _cmd_data(args: argparse.Namespace) -> int:
         return 0
     if args.data_command == "check":
         assert store is not None
-        frame = store.read(DatasetId(args.dataset), TimestampNs(2**63 - 1))
+        # metadata: a protected dataset is still checked, but only over the pre-vault span
+        frame = store.read(
+            DatasetId(args.dataset), TimestampNs(2**63 - 1), purpose="metadata", caller="data check"
+        )
         bounds = frame.select(
             first=pl.col("event_time").min(), last=pl.col("event_time").max()
         ).collect()
@@ -1890,7 +2206,13 @@ def _cmd_data_integrity(args: argparse.Namespace) -> int:
 
     store = ParquetDataStore(Path(args.store))
     report = integrity_report(
-        store.read(DatasetId(args.dataset), TimestampNs(2**63 - 1)),
+        # metadata: a protected dataset is still measured, but only over the pre-vault span
+        store.read(
+            DatasetId(args.dataset),
+            TimestampNs(2**63 - 1),
+            purpose="metadata",
+            caller="data integrity",
+        ),
         bar_seconds=args.bar_seconds,
         session=args.session,
         calendar=args.calendar,
@@ -2160,6 +2482,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_futures(args)
         if args.command == "artifact":
             return _cmd_artifact(args)
+        if args.command == "vault":
+            return _cmd_vault(args)
     except CrucibleError as exc:
         sys.stderr.write(f"refused: {exc}\n")
         if getattr(args, "json", False):

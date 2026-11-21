@@ -16,6 +16,19 @@ Shared vocabulary. Add a term when you introduce it anywhere in code or docs.
   several candidate strategies beats a benchmark once the search over the candidates is paid for
   (`validation/reality_check.py`, ADR-0083): evidence about an edge, unlike a sequence-risk fan.
 - **structure id / parameterization id (DSL)** — `DSX-…` hashes an expression's canonical shape (operators, features, fixed literals, typed parameter placeholders and their binding pattern) and ignores parameter names and values; `DSP-…` adds each parameter's type, value and bounds; `DSC-…` (C4b) adds the compiler and operator versions and the inputs (ADR-0096).
+- **holdout vault** — the declared, data-layer-locked period of the futures family (C6c,
+  ADR-0105): Globex trade dates from 2025-01-01 for `ES, NQ, YM, RTY, NKD`, open-ended. A read whose
+  `as_of` reaches its start (`data/vault.py::vault_start_ns`, the scheduled open of the first
+  protected session) is refused unless an authorized evaluation is running. The declaration lives in
+  the store root AND in the Crucible home, and either copy locks the period.
+- **vault registration** — `VR-<16 hex>`, the identity of one evaluation request: the complete config
+  hash, the datasets' content hashes, the `CND-` candidate id and the window (which must lie inside
+  the vault). It starts `pending`, becomes `authorized` when a human verifies the admin token, and
+  becomes `evaluated` after its single evaluation (or after a crash inside it).
+- **open counter** — the persistent, never-decremented number of evaluations the vault has opened
+  (`vault.duckdb` table `counter`, mirrored as `opens` in the store's `vault.json`). It is
+  incremented BEFORE any row is read, so a failed or crashed evaluation still consumes its
+  registration; a database behind the mirror is refused.
 - **price exponent (DSL)** — the degree of a DSL node in price (close = 1, close/close = 0); a constant unifies only with degree 0, which enforces ADR-0086 scale invariance node by node.
 - **ADV** — Average Daily Volume; participation caps are expressed against it.
 - **arrival rules** — which bar an order may first interact with under

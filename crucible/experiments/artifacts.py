@@ -245,6 +245,35 @@ MANIFEST_FIELDS: dict[str, ManifestField] = {
 }
 
 
+VAULT_ARTIFACTS_DIR = "VAULT"
+"""The folder a holdout-vault evaluation seals its run under: ``<artifacts>/VAULT/<VR-...>/``
+(ADR-0105 decision 5). ``compare`` and ``trials`` scan the top level, so a vault run is out of
+every pool unless they are asked to include the vault."""
+
+VAULT_MEMBER_PREFIXES = ("FUT-", "WFA-")
+
+
+def vault_member_dirs(artifacts_root: Path) -> dict[str, Path]:
+    """Every sealed member under ``<artifacts>/VAULT/<VR-...>/``, as ``member id -> directory``.
+
+    Only ``FUT-``/``WFA-`` directories are members, and only under a ``VR-`` registration folder:
+    that is the shape ``crucible vault evaluate`` writes, so a stray folder is never swept into a
+    comparison pool or a trials panel. Nothing here reads the vault database: the *physical*
+    artifact is the evidence, and it exists only for a registration that was evaluated.
+    """
+    root = artifacts_root / VAULT_ARTIFACTS_DIR
+    if not root.is_dir():
+        return {}
+    found: dict[str, Path] = {}
+    for registration in sorted(root.iterdir()):
+        if not registration.is_dir() or not registration.name.startswith("VR-"):
+            continue
+        for member in sorted(registration.iterdir()):
+            if member.is_dir() and member.name.startswith(VAULT_MEMBER_PREFIXES):
+                found[member.name] = member
+    return found
+
+
 def manifest_keys(path: Literal["event-driven", "vectorized"]) -> set[str]:
     """Keys a freshly written manifest of this runner carries (optional keys excluded)."""
     return {

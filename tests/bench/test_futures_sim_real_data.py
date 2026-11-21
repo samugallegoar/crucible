@@ -3,8 +3,15 @@
 Run: uv run pytest -m bench tests/bench/test_futures_sim_real_data.py
 Needs `data/processed` (or CRUCIBLE_DATA_STORE) with the `*_1m_raw`, `*_1m_cont_v3` and
 `*_1m_rolls_v3` datasets of `docs/data/glbx-futures-1m.md`; skips when they are missing. Holds one
-contract long from the first bar to the end, so every roll is traded. About 15-25 s and a few GB
-of memory per root.
+contract long from the first bar to the END OF THE PRE-VAULT SPAN, so every roll of that span is
+traded. About 15-25 s and a few GB of memory per root.
+
+The span STOPS before the futures holdout vault (ADR-0105): `VAULT_START_NS` is the scheduled open
+of the first protected Globex trade date, and every frame is filtered to `event_time <
+VAULT_START_NS` at the scan, so no row of the protected period is read. The figures below were
+re-measured over that span when the vault was introduced (ADR-0105: "the full-span simulator
+acceptance test now stops before the vault"); the full-span ones are part of the documented
+exposure.
 """
 
 from __future__ import annotations
@@ -22,23 +29,29 @@ from crucible.execution.futures_sim import CostSchedule, simulate_futures
 STORE = Path(os.environ.get("CRUCIBLE_DATA_STORE", "data/processed"))
 pytestmark = pytest.mark.bench
 
+VAULT_START_NS = 1_735_686_000_000_000_000
+"""2024-12-31T23:00:00Z: the open of the first protected Globex trade date (ADR-0105). A bench
+never reads at or after it."""
+
 # root: (rolls, rolls executed after the first bar of the effective session, mean |reference
 # error| in USD per contract) -- the figures of ADR-0090 (on v3 since ADR-0092), measured
 # independently first
 EXPECTED: dict[str, tuple[int, int, float]] = {
-    "es": (66, 0, 28.79),
-    "nq": (66, 1, 61.52),
-    "ym": (66, 1, 51.06),
-    "rty": (37, 1, 47.84),
-    "nkd": (56, 31, 77.23),  # v3 starts at NKD's calendar coverage (ADR-0092); v2: 66, 35, 67.80
+    "es": (59, 0, 28.81),
+    "nq": (59, 1, 57.71),
+    "ym": (59, 0, 47.63),
+    "rty": (30, 0, 50.17),
+    "nkd": (49, 26, 69.39),  # v3 starts at NKD's calendar coverage (ADR-0092)
 }
 
 
 def _need(dataset: str) -> pl.DataFrame:
+    """The dataset's rows BEFORE the holdout vault: the predicate is applied at the scan, so no
+    protected row is ever read (ADR-0105)."""
     path = STORE / dataset / "data.parquet"
     if not path.exists():
         pytest.skip(f"{dataset} not built in {STORE}; see docs/data/glbx-futures-1m.md")
-    return pl.read_parquet(path)
+    return pl.scan_parquet(path).filter(pl.col("event_time") < VAULT_START_NS).collect()
 
 
 @pytest.mark.parametrize("root", sorted(EXPECTED))

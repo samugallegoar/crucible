@@ -8,6 +8,47 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C6c: futures holdout vault (ADR-0105)
+- **The protected period.**
+  - Globex trade dates from 2025-01-01, open-ended.
+  - The universe is ES, NQ, YM, RTY and NKD.
+  - The scope is the family, so creating another family does not bypass it. A single-root vault
+    must be declared explicitly.
+  - The period was chosen after the 2026-11-19 exposure audit. It has no strategy-level exposure;
+    the residual exposure (the simulator acceptance path and the integrity counts) is documented.
+- **Data-layer guard** (`crucible.data.vault.VaultGuard`).
+  - `ParquetDataStore.read` and `data_path` consult it on every construction path.
+  - A read of a protected root whose `as_of` reaches the vault start (2024-12-31 23:00 UTC, the
+    17:00 CT open of the 2025-01-01 session) raises `VaultLockedError`. So does access to a whole
+    file.
+  - A `metadata` access (counts, hashes and date bounds) is still allowed for the catalog.
+  - Every attempt is appended to a persistent access log.
+  - The declaration lives in the store root and in the Crucible home, and is enforced if either
+    copy exists. It can only be widened.
+- **Protocol** (`crucible vault declare|status|register|authorize|evaluate|log|set-admin`).
+  - A registration (`VR-`) records the full config hash, the dataset hashes, the candidate id and
+    the window.
+  - Authorization needs the human admin token. It is checked against a salted scrypt hash that
+    `set-admin` writes outside the repository, from interactive TTY input only. The token is never
+    generated or stored in clear.
+  - Each registration allows one evaluation.
+    - The open counter is incremented before any data is read, so a crash still consumes the
+      evaluation.
+    - The config hash is re-checked.
+    - The result is sealed under `VAULT/<VR->`.
+    - A second evaluation is refused and logged.
+  - Results stay hidden until the evaluation has run. `compare` and `trials` exclude vault
+    artifacts unless asked explicitly.
+  - The MCP server exposes only `status`, `register` and `log`.
+- **Read horizon.** Futures runs now read up to the close of `window.end` instead of an
+  open-ended `as_of`. The rows read and the results are unchanged; on real ES, `es_zscore_reversion`
+  still gives 2,167 fills and a final equity of 6,526.5.
+- **Tests.**
+  - The test suite runs with a throwaway Crucible home (`tests/conftest.py`).
+  - The real-data benches (simulator acceptance, continuous builds) now stop before 2025.
+- **Consequence.** Once the vault is declared, rebuilding a continuous dataset of a protected root,
+  which reads the whole raw series, is refused like any other read that reaches the vault.
+
 ### Fathom C6b: effective trials, supplementary DSR and PBO on futures candidate panels (ADR-0104)
 - **Effective trials** (`crucible.validation.effective_trials`, numpy only).
   - Agglomerative clustering with average linkage on `d = sqrt((1 − ρ)/2)`, with a default

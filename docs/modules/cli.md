@@ -7,7 +7,9 @@ options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-path
 `config show`, `config set-home`, `run`, `run-vectorized`, `promote`, `report`, `debug`, `optimize`, `walk-forward`,
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
 `data fetch`, `data check`, `data integrity`, `data catalog`, `data list`, `futures run`,
-`futures check`, `futures batch`, `futures walkforward`, `futures compare`, `futures trials`.
+`futures check`, `futures batch`, `futures walkforward`, `futures compare`, `futures trials`,
+`vault declare`, `vault status`, `vault register`, `vault authorize`, `vault evaluate`,
+`vault log`, `vault set-admin`.
 Handlers are
 thin and import lazily; a `CrucibleError` becomes `refused: <message>` and exit code 1 (with `--json`
 also the structured `{"error": {schema_version, code, type, message, location}}` document on
@@ -16,8 +18,9 @@ the `--json` document); `artifact show <ART-.../EXP-...>` prints the same docume
 run, `artifact verify` recomputes its id from the files; a futures run's `artifact show` prints its
 futures-run document (`experiments.futures_document`, ADR-0097); `schema --kind` also serves `run`,
 `verification`, `error`, `manifest`, `futures-run-document`, `futures-batch`, `futures-walkforward`,
-`futures-compare` (the comparison document of C5c, ADR-0102) and `futures-trials` (the
-effective-trials report of C6b, ADR-0104). stdout and
+`futures-compare` (the comparison document of C5c, ADR-0102), `futures-trials` (the
+effective-trials report of C6b, ADR-0104), `vault-declaration` and `vault-registration` (the
+holdout vault of C6c, ADR-0105). stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
 `UnicodeEncodeError` on a legacy Windows code page.
 
@@ -249,6 +252,38 @@ The `crucible` command.
   `promote`: edits the config before validation (`config.apply_overrides`), so the hash, id and
   stored config include it.
 - `crucible schema [--out FILE]` prints the `ExperimentConfig` JSON Schema.
+
+## The holdout vault commands (C6c, ADR-0105)
+
+`crucible vault` is the only door to the declared protected period, and it is deliberately split
+between what an agent may do and what a HUMAN must do:
+
+- `vault declare --start 2025-01-01 [--universe ES,NQ,YM,RTY,NKD] [--scope family|root]
+  --audit-ref TEXT [--store DIR]` — writes the declaration into the store root AND the home
+  (widening only; an end date, a later start, a dropped root or a `family` -> `root` narrowing is
+  refused). Prints the vault id and the instant the lock starts (the scheduled open of the first
+  protected session).
+- `vault status` — the vault id, the universe, the persistent open counter and every registration
+  with its status. Statuses, counters and the log only: no metric, because results stay hidden until
+  the authorized evaluation has run.
+- `vault register --config FILE` — records `VR-<16 hex>`: the complete config hash, the dataset
+  content hashes, the candidate id and the window (which must lie inside the vault). Reads no
+  protected row; open to anyone.
+- `vault authorize --registration VR-...` — a HUMAN step: the admin token is read from a TTY (echo
+  off) or from `CRUCIBLE_VAULT_TOKEN`, verified against the salted scrypt hash in the home, and
+  never printed. A non-interactive call without the variable is refused and logged.
+- `vault evaluate --registration VR-...` — runs the registered config exactly once, under the
+  data-layer session, sealing the artifact under `<artifacts>/VAULT/<VR-...>/`. The open counter is
+  incremented before any read (a crash consumes the evaluation) and a second evaluation is refused.
+- `vault log [--limit N]` — every attempt on protected data, allowed or refused, with time, caller,
+  purpose, dataset, `as_of`, outcome and registration.
+- `vault set-admin` — interactive TTY only: it stores the salted hash of the token the human types
+  (0600 where supported) and nothing else.
+
+`futures run|batch|walkforward` refuse a window that reaches the vault with a message naming it, and
+the data layer refuses the read even when a caller bypasses them. `futures compare` and
+`futures trials` exclude the `VAULT/` artifacts unless `--include-vault` is passed (after the
+evaluation).
 
 ## Extension points
 Handlers stay thin: parse args, call into `experiments`/`analytics`/`data`,

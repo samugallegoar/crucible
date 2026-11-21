@@ -145,6 +145,34 @@ fold's TRAINING end leaves that fold's selection and its training audit unchange
 every bar after a fold's TEST window end leaves that fold's OOS rows unchanged (its own test window
 is what decides them).
 
+### The holdout vault (C6c, ADR-0105)
+
+The protected period is locked in the data layer, so the tests that prove it are two layers:
+
+- `tests/unit/test_vault_guard.py` — the guard: a read before the start is admitted, one at or after
+  it is refused, a whole file is refused outside `purpose="metadata"`, either `vault.json` copy
+  enforces, two disagreeing copies are refused, a declaration can only be widened, another root of
+  the family does not bypass it, a `root`-scope vault needs one root, a session admits only its own
+  datasets up to the registered window end, and every attempt is logged both ways. Every test uses a
+  throwaway store and a throwaway home.
+- `tests/integration/test_vault_protocol.py` — the acceptance list: register -> authorize ->
+  evaluate, a wrong token, a config edited after registration, the counter before the read, a crash
+  that consumes the evaluation, a second evaluation refused, the pools excluding the vault artifact,
+  no metric in `status`/`log`, no MCP tool for authorize/evaluate/set-admin, `set_admin` refusing a
+  non-TTY, and the token never reaching a file.
+- `tests/lookahead/test_futures_vault_poisoned_future.py` — a pre-vault run is byte-identical with and
+  without the declaration, the poison inside the vault is real, and the window that reaches it is
+  refused.
+- `tests/bench/test_vault_real_data.py` (`-m bench`) — the same against the real store PATH with a
+  throwaway declaration: a pre-vault read succeeds and a 2025 `as_of` is refused BEFORE
+  `pl.scan_parquet` is ever called.
+
+**`tests/conftest.py` gives every session a throwaway `CRUCIBLE_HOME`/`CRUCIBLE_SETTINGS`.** That is
+not cosmetic: with a vault declared in the real home, a test that resolved it would log into a real
+file and would be refused on a synthetic dataset named `es_1m_cont_v3`. A test that needs a
+declaration declares it in its own `tmp_path` home and passes `home=` to `ParquetDataStore`, so
+nothing is ever written into a real store or home.
+
 ## 7. The other matrices
 
 - **Resume equivalence (I13)** — a new stateful component or strategy joins

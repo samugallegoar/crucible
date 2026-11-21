@@ -33,9 +33,9 @@
 | `crucible debug` | `<experiment_id> --artifacts --at --json --order` | Replay a recorded experiment, stepping the event loop |
 | `crucible futures batch` | `--artifacts --batch --home --json --overwrite --store` | Run N DSL expressions on one futures base config and write the batch document (C5a) |
 | `crucible futures check` | `--config --json` | Load and validate a futures config only (no store, no run) |
-| `crucible futures compare` | `--artifacts --home --json --min-overlap --target` | Compare a futures run or walk-forward against the artifact pool (C5c) |
+| `crucible futures compare` | `--artifacts --home --include-vault --json --min-overlap --target` | Compare a futures run or walk-forward against the artifact pool (C5c) |
 | `crucible futures run` | `--artifacts --config --home --json --overwrite --store` | Simulate a futures config and write its sealed artifact (ADR-0095) |
-| `crucible futures trials` | `--artifacts --family --home --json --min-overlap --threshold` | Estimate the family's EFFECTIVE number of trials and read the family's daily series correlations (C6b, ADR-0104) |
+| `crucible futures trials` | `--artifacts --family --home --include-vault --json --min-overlap --threshold` | Estimate the family's EFFECTIVE number of trials and read the family's daily series correlations (C6b, ADR-0104) |
 | `crucible futures walkforward` | `--artifacts --config --home --json --overwrite --store` | Train candidates per fold, select inside the training window and concatenate the out-of-sample windows (C5b) |
 | `crucible optimize` | `<config> --artifacts --json --metric --override --param --pbo-groups --values --vectorized --workers` | 1D parameter sweep, tagged as trials, assembling a PBO panel (R4.3/R4.9) |
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
@@ -48,6 +48,13 @@
 | `crucible spec check` | `--direction --entry --entry-window --exit --exit-at --flat-by-close --fraction --json --market-on-close --max-holding-bars --name --short-entry --short-exit --spec --stop-loss-pct --take-profit-pct` | Validate a spec and read it back in plain language |
 | `crucible spec templates` | `--json --name` | List ready-made specs to start from |
 | `crucible validate` | `<config> --artifacts --factors --json --override` | Run an experiment, optionally with a factor regression (R4.7) |
+| `crucible vault authorize` | `--home --json --registration --store` | A HUMAN step: verify the admin token (TTY prompt or CRUCIBLE_VAULT_TOKEN) and authorize one registration |
+| `crucible vault declare` | `--audit-ref --home --json --scope --start --store --universe` | Write the locked period into the store root AND the home (widening only) |
+| `crucible vault evaluate` | `--artifacts --home --json --registration --store` | Run the registered config exactly once and seal it under <artifacts>/VAULT/<VR-...>/ (the open counter is incremented before any read) |
+| `crucible vault log` | `--home --json --limit --store` | The access log: every attempt on protected data, allowed and refused |
+| `crucible vault register` | `--config --home --json --store` | Record a VR- for a futures config: its complete config hash, the dataset content hashes and the window (reads no protected row) |
+| `crucible vault set-admin` | `--home --json` | Set the admin token from an INTERACTIVE TTY (it is never generated, printed or stored in clear) |
+| `crucible vault status` | `--home --json --store` | The vault id, the open counter and every registration's status (no metric: results are not readable here) |
 | `crucible walk-forward` | `<config> --artifacts --holdout --json --max-runs --metric --override --param --step --test --train --values` | Choose a parameter on train folds, report only out-of-fold metrics (ADR-0081) |
 
 ## Execution models
@@ -314,6 +321,7 @@ When to raise which, and what the message must contain: `docs/CONVENTIONS.md` §
 | `ProviderRateLimitError` | `crucible.data.providers.errors` | `ProviderError` |
 | `ProviderUnavailableError` | `crucible.data.providers.errors` | `ConfigurationError` |
 | `UnknownSymbolError` | `crucible.data.providers.errors` | `ProviderError` |
+| `VaultLockedError` | `crucible.core.errors` | `CrucibleError` |
 
 ## Pytest markers
 

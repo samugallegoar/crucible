@@ -66,6 +66,17 @@ All six are thin `build_argv` + `run_cli` wrappers over
 `crucible futures run|check|batch|walkforward|compare|trials` (ADR-0066), with absolute paths and
 the home's experiments folder as the default `artifacts`.
 
+Holdout vault tools (C6c, ADR-0105): `crucible_vault_status(store=None, home=None)` returns the
+vault id, the protected period, the persistent open counter and every registration with its status;
+`crucible_vault_register(config, store=None, home=None)` records a `VR-<16 hex>` for a futures config
+(its complete config hash, the datasets' content hashes, the candidate id and the window, which must
+lie inside the vault) and reads no protected row; `crucible_vault_log(limit=200, store=None,
+home=None)` returns the access log — every attempt on protected data, allowed or refused, with the
+caller, the purpose, the dataset, the `as_of` and the outcome. None of the three returns a
+protected-period number. There is deliberately **no** MCP tool for `vault authorize`, `vault
+evaluate` or `vault set-admin`: the admin token is a human's and an evaluation is a single human
+decision, so an agent cannot read the holdout by asking for it.
+
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
 (`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).
 

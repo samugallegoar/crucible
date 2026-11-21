@@ -122,7 +122,9 @@ def _entry(
     if str(manifest.dataset) != str(dataset):
         errors.append(f"the manifest names dataset {manifest.dataset!r}, not {str(dataset)!r}")
 
-    data_path = store.data_path(dataset)
+    # metadata: counts, hashes and date bounds of a protected dataset are allowed and logged; no
+    # row of a protected period ever leaves the vault (ADR-0105 decision 3)
+    data_path = store.data_path(dataset, purpose="metadata")
     if not data_path.is_file():
         errors.append(f"the data file {data_path} is missing: rebuild the dataset")
         return _broken(dataset, manifest, origin, errors)

@@ -7,6 +7,13 @@ content hashes.
 
 There is deliberately no unfiltered read: :meth:`ParquetDataStore.read`
 requires ``as_of`` and filters ``available_at <= as_of`` at the scan level.
+
+Since C6c (ADR-0105) every read and every whole-file access also passes the futures holdout vault
+(:class:`crucible.data.vault.VaultGuard`): a dataset of a declared protected root whose ``as_of``
+reaches the vault start raises ``VaultLockedError``, ``data_path`` refuses the whole file outside
+``purpose="metadata"``, and a read inside an authorized evaluation is clipped to the registered
+window end. A store with no declaration (the overwhelmingly common case, and every synthetic test)
+pays two ``stat`` calls per construction and nothing per read.
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from crucible.core.errors import ConfigurationError, DataQualityError, Experimen
 from crucible.core.types import DatasetId, TimestampNs
 from crucible.data.contracts import END_AT_OPEN
 from crucible.data.interfaces import DatasetManifest
+from crucible.data.vault import VaultGuard, default_guard
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -97,10 +105,30 @@ def price_basis_of(manifest: DatasetManifest) -> str | None:
 
 
 class ParquetDataStore:
-    """Satisfies ``crucible.data.interfaces.DataStore``."""
+    """Satisfies ``crucible.data.interfaces.DataStore``.
 
-    def __init__(self, root: Path) -> None:
+    ``guard``/``home`` are the futures holdout vault's seam (ADR-0105): by default the guard is
+    derived from ``root`` and the Crucible home, so no construction site can forget it. A caller
+    that already holds both passes them; ``tests`` build throwaway declarations in tmp homes.
+    """
+
+    def __init__(
+        self,
+        root: Path,
+        *,
+        guard: VaultGuard | None = None,
+        home: Path | None = None,
+    ) -> None:
         self._root = root
+        self._home = home
+        self._guard = guard
+
+    @property
+    def guard(self) -> VaultGuard | None:
+        """The active vault guard, or ``None`` when no vault is declared for this store/home."""
+        if self._guard is None:
+            self._guard = default_guard(self._root, home=self._home)
+        return self._guard
 
     def _dir(self, dataset: DatasetId) -> Path:
         directory = self._root / dataset
@@ -113,16 +141,45 @@ class ParquetDataStore:
             raise ExperimentError(msg)
         return directory
 
-    def read(self, dataset: DatasetId, as_of: TimestampNs) -> pl.LazyFrame:
+    def read(
+        self,
+        dataset: DatasetId,
+        as_of: TimestampNs,
+        *,
+        purpose: str = "strategy",
+        caller: str | None = None,
+    ) -> pl.LazyFrame:
         """Lazy scan filtered to ``available_at <= as_of``. The filter is part
-        of the read itself; no caller ever sees the unfiltered file."""
-        return pl.scan_parquet(self._dir(dataset) / _DATA_NAME).filter(
+        of the read itself; no caller ever sees the unfiltered file.
+
+        ``purpose`` is what the read is for (``strategy`` by default; ``metadata`` for tooling
+        that aggregates counts and bounds). For a dataset of a declared vault root the guard
+        refuses an ``as_of`` that reaches the vault start and narrows the scan to what the
+        declaration admits (a metadata view never sees a protected row; an authorized evaluation
+        never reads past its registered window end). ``caller`` names the call site in the access
+        log.
+        """
+        guard = self.guard
+        clip: int | None = None
+        if guard is not None:
+            clip = guard.check_read(dataset, as_of, purpose=purpose, caller=caller)
+        frame = pl.scan_parquet(self._dir(dataset) / _DATA_NAME).filter(
             pl.col("available_at") <= int(as_of)
         )
+        if clip is not None and clip < int(as_of):
+            frame = frame.filter(pl.col("available_at") <= int(clip))
+        return frame
 
-    def data_path(self, dataset: DatasetId) -> Path:
+    def data_path(self, dataset: DatasetId, *, purpose: str = "rows") -> Path:
         """Where the dataset's Parquet file is. For integrity and catalog tooling (hashing,
-        metadata) only: rows are read with :meth:`read`, which applies ``as_of``."""
+        metadata) only: rows are read with :meth:`read`, which applies ``as_of``.
+
+        A whole file of a declared vault root is refused outside ``purpose="metadata"`` and
+        outside an authorized evaluation: a file cannot be cut to a date (ADR-0105).
+        """
+        guard = self.guard
+        if guard is not None:
+            guard.check_path(dataset, purpose=purpose, caller="data_path")
         return self._dir(dataset) / _DATA_NAME
 
     def manifest(self, dataset: DatasetId) -> DatasetManifest:
