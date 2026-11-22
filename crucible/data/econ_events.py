@@ -1,16 +1,32 @@
 """Historical, versioned economic-event calendar (Fathom C7b, ADR-0107 section 12).
 
-The release instants of the three events a news restriction has to know about:
+The release instants of the events a news restriction has to know about:
 
 - ``FOMC_STATEMENT`` — every FOMC policy statement the Board publishes: scheduled meetings *and*
   intermeeting actions, from 2010-01-01 to the last date the Fed has published;
-- ``CPI`` — the BLS Consumer Price Index release;
+- ``FOMC_PRESS_CONFERENCE`` — the Chair's press conference after a meeting. The Fed's calendar and
+  yearly historical pages say *which* meetings had one (they link the press-conference page) and
+  the page is dated; **no page we read states the hour of a press conference in HTML**, so those
+  rows carry ``time_known = False`` and mark the day;
+- ``FOMC_MINUTES`` — the release of a meeting's minutes. The meeting calendar / historical page
+  states the release *date* ("Minutes (Released February 18, 2026)"); for a meeting that had a
+  press conference, that meeting's press-conference page states the hour too ("Minutes: PDF |
+  HTML (Released February 18, 2026 at 2:00 p.m.)"). A minutes row is dated by its *release* day,
+  not by the meeting;
+- ``CPI`` and ``PPI`` — the BLS Consumer Price Index and Producer Price Index releases;
 - ``NFP`` — the BLS Employment Situation release (the "nonfarm payrolls" report).
 
+Two row versions are buildable from one snapshot folder: ``dataset_version = 1`` holds the three
+v1 types (``FOMC_STATEMENT``, ``CPI``, ``NFP``) exactly as ``econ_events_v1`` stored them, and
+``dataset_version = 2`` (``econ_events_v2``) adds the three types above. A v1 row is unchanged by
+the v2 build — same id, same instants, same hash — so a consumer that pinned v1 keeps its
+verdicts.
+
 Everything comes from snapshots of **official** pages kept under ``raw/<source>/`` (AGENTS.md
-section 14): ``federalreserve.gov`` for the FOMC calendar, the yearly historical pages and each
-statement press release; ``bls.gov`` for the yearly "Schedule of Selected Releases" page; and, for
-what a page said *before* a shutdown delay, Internet Archive captures of that schedule page. The
+section 14): ``federalreserve.gov`` for the FOMC calendar, the yearly historical pages, each
+statement press release and each press-conference page; ``bls.gov`` for the yearly "Schedule of
+Selected Releases" page (which carries the CPI, PPI and Employment Situation rows); and, for what
+a page said *before* a shutdown delay, Internet Archive captures of that schedule page. The
 raw bytes are never modified and never re-fetched: :func:`fetch_raw` creates the folder and writes
 ``MANIFEST.json`` (url, retrieval instant, sha256, bytes) beside it, and :func:`load_snapshots`
 refuses a page whose bytes no longer hash to what the manifest recorded.
@@ -20,7 +36,9 @@ Timing semantics — what this dataset may and may not be used for:
 - ``scheduled_local`` is the release instant **as the source states it**, ISO 8601 with the UTC
   offset ``America/New_York`` had on that date (a March and a November release differ by an hour).
   ``timezone`` names the zone, ``scheduled_time_source`` says who stated the time of day, and
-  ``time_known`` is ``False`` when nobody did.
+  ``time_known`` is ``False`` when nobody did. A press conference is the standing case: the Fed
+  states its day, never its hour, so a consumer must widen a window over the press conference to
+  the whole local day rather than place it at ``event_time`` (the pessimistic reading).
 - ``event_time`` is the release instant that *materialised* (UTC ns): when the statement or the
   release happened, or is scheduled to happen. When the source states the day but no hour (a
   2010-2015 FOMC statement went out "for immediate release"; the calendar for a future meeting
@@ -46,8 +64,9 @@ Timing semantics — what this dataset may and may not be used for:
 
 Determinism: a row is a pure function of the snapshots' bytes. ``record_sha256`` is the SHA-256 of
 the row's other fields in canonical JSON; ``snapshot_sha256`` names the page the row was read
-from, so a row cites its evidence. Nothing here reads the wall clock except
-:func:`build_econ_events`
+from, so a row cites its evidence (a minutes row cites the press-conference page when that page
+is what stated the hour, the meeting calendar page otherwise). Nothing here reads the wall clock
+except :func:`build_econ_events`
 (the build instant, which lives in the manifest and never in a row) and :func:`fetch_raw` (an I/O
 boundary).
 """
@@ -79,12 +98,25 @@ if TYPE_CHECKING:
 
     from crucible.data.interfaces import DataStore
 
-DATASET: DatasetId = DatasetId("econ_events_v1")
-"""The dataset id this module builds: ``<store root>/econ_events_v1``."""
+DATASET: DatasetId = DatasetId("econ_events_v2")
+"""The dataset id :func:`build_econ_events` builds by default: ``<store root>/econ_events_v2``."""
 
-DATASET_VERSION = "econ_events_v1"
-"""Version of the *rows* (not of the Parquet layout): bump it when a parsing rule changes what a
-row says, so a stale copy in a store can be told from a current one."""
+DATASET_V1: DatasetId = DatasetId("econ_events_v1")
+"""The superseded dataset id. Its rows are still buildable (``version=1``) so a consumer that
+pinned v1 can be shown that nothing it holds moved; a stale copy is never overwritten."""
+
+DATASET_VERSION = 2
+"""Version of the *rows* (not of the Parquet layout) the default build writes: bump it when a
+parsing rule changes what a row says, so a stale copy in a store can be told from a current one."""
+
+DATASET_VERSION_V1 = 1
+"""What a ``version=1`` rebuild carries in ``dataset_version``.
+
+The stored ``econ_events_v1`` holds the dataset *name* (``"econ_events_v1"``) in a ``String``
+column, because v1 kept no separate row version. Rebuilding v1 under the current schema writes the
+integer ``1`` in the ``Int64`` column instead: that column's content is the one thing that differs
+between a v1 row and a v2 copy of it, and it is what tells the two apart
+(``docs/data/econ-events.md``)."""
 
 NEW_YORK = "America/New_York"
 """The zone every source states its release times in: BLS prints "All times on calendar are
@@ -93,18 +125,45 @@ Eastern Time", the Fed "2:00 p.m. EDT"."""
 MANIFEST_NAME = "MANIFEST.json"
 """Index of the raw folder: one entry per fetched page (see :func:`fetch_raw`)."""
 
-EVENT_TYPES: tuple[str, ...] = ("FOMC_STATEMENT", "CPI", "NFP")
-"""The ``event_type`` values this dataset holds, in report order."""
+EVENT_TYPES: tuple[str, ...] = (
+    "FOMC_STATEMENT",
+    "FOMC_PRESS_CONFERENCE",
+    "FOMC_MINUTES",
+    "CPI",
+    "NFP",
+    "PPI",
+)
+"""The ``event_type`` values this dataset holds, in report order (FOMC first, then BLS)."""
 
-EXPECTED_RELEASES_PER_YEAR: dict[str, int] = {"FOMC_STATEMENT": 8, "CPI": 12, "NFP": 12}
+EVENT_TYPES_V1: tuple[str, ...] = ("FOMC_STATEMENT", "CPI", "NFP")
+"""The three types ``econ_events_v1`` held: building ``version=1`` parses only these, so an
+unreadable press-conference page cannot fail a v1 rebuild."""
+
+EXPECTED_RELEASES_PER_YEAR: dict[str, int] = {
+    "FOMC_STATEMENT": 8,
+    "FOMC_PRESS_CONFERENCE": 8,
+    "FOMC_MINUTES": 8,
+    "CPI": 12,
+    "NFP": 12,
+    "PPI": 12,
+}
 """How many releases a year normally holds, as the sources describe them: eight scheduled FOMC
-meetings a year (the Fed's calendar), one CPI release and one Employment Situation release a month
-(the BLS schedule). Used by :class:`BuildReport` to count a year short, never to invent a row."""
+meetings a year (the Fed's calendar) each with a statement, a press conference and later a set of
+minutes; one CPI, PPI and Employment Situation release a month (the BLS schedule). A year with a
+shortfall is reported, never padded: a row is written only where a snapshot states one."""
 
-_CADENCE: dict[str, str] = {"FOMC_STATEMENT": "yearly", "CPI": "monthly", "NFP": "monthly"}
+_CADENCE: dict[str, str] = {
+    "FOMC_STATEMENT": "yearly",
+    "FOMC_PRESS_CONFERENCE": "yearly",
+    "FOMC_MINUTES": "yearly",
+    "CPI": "monthly",
+    "NFP": "monthly",
+    "PPI": "monthly",
+}
 """How a gap in :func:`coverage` is measured per type: a fixed monthly release is a gap in any
-month without one; FOMC meetings are irregular (eight a year, in no fixed months), so only a whole
-calendar year without a statement is a gap. A month without a meeting is a fact, not a hole."""
+month without one; FOMC events are irregular (eight a year, in no fixed months, and a press
+conference or a set of minutes follows a meeting), so only a whole calendar year without one is a
+gap. A month without a meeting is a fact, not a hole."""
 
 _STATUS_RANK: dict[str, int] = {"released": 0, "rescheduled": 1, "scheduled": 2, "cancelled": 3}
 
@@ -141,7 +200,8 @@ _MONTHS: dict[str, int] = {
 
 ECON_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "event_id": pl.String(),  # stable id: <event_type>-<YYYYMMDD>[-<seq>], schedule-dated
-    "event_type": pl.String(),  # FOMC_STATEMENT | CPI | NFP
+    "event_type": pl.String(),  # FOMC_STATEMENT | FOMC_PRESS_CONFERENCE | FOMC_MINUTES
+    #                             | CPI | NFP | PPI
     "scheduled_local": pl.String(),  # stated release instant, ISO 8601 with the New York offset
     "timezone": pl.String(),  # IANA zone scheduled_local is expressed in (America/New_York)
     "event_time": pl.Int64(),  # release instant that materialised (UTC ns); 00:00 local if no hour
@@ -155,7 +215,7 @@ ECON_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "available_at": pl.Int64(),  # UTC ns the schedule entry was publicly known; the provable bound
     "availability_basis": pl.String(),  # schedule_publication_unknown | schedule_page_stated_date
     "record_sha256": pl.String(),  # SHA-256 of this row's other fields in canonical JSON
-    "dataset_version": pl.String(),  # DATASET_VERSION the row was built by
+    "dataset_version": pl.Int64(),  # DATASET_VERSION: 2 from econ_events_v2 on (v1 stored a string)
 }
 ECON_EVENT_SORT_KEYS = ["event_time", "event_type", "event_id"]
 """Stored order: chronologically, then by type and id, so identical inputs rebuild to identical
@@ -183,11 +243,28 @@ _LINK = re.compile(r'<a href="([^"]+)">([^<]*)</a>')
 _NEXT_YEAR_MEETING = re.compile(
     r"Note: A two-day meeting is scheduled for ([A-Z][a-z]+) (\d{1,2})-(\d{1,2}), (\d{4})\."
 )
+# a press-conference page: the Fed spells it both ways and is inconsistent about it in one year
+# (fomcpresconf20110427, fomcpressconf20260128), so the file name is kept as the link spells it
+_FED_PRESCONF_KEY = re.compile(r"(fomcpres{1,2}conf(\d{8})\.htm)")
+# a minutes page: the HTML one (the PDF beside it names the same meeting)
+_FED_MINUTES_KEY = re.compile(r"fomcminutes(\d{8})\.htm")
+# "Minutes (Released February 16, 2011)": the yearly historical page's own form
+_MINUTES_STATED_BEFORE = re.compile(
+    r"Minutes\s*(?:<[^>]*>\s*)*\(Released ([A-Z][a-z]+ \d{1,2}, \d{4})\)"
+)
+# the meeting calendar's form: the link, then "(Released February 18, 2026)" after it
+_MINUTES_STATED_AFTER = re.compile(r"\(Released ([A-Z][a-z]+ \d{1,2}, \d{4})\)")
+# the press-conference page's Related Information entry, with the hour when the Fed states it
+_PRESCONF_MINUTES = re.compile(
+    r"Minutes\s*:?\s*(?:[^()]{0,160}?)\(Released ([A-Z][a-z]+ \d{1,2}, \d{4})"
+    r"(?: at (\d{1,2}):(\d{2}) ([ap])\.m\.)?\)"
+)
 _BLS_SCHEDULE_YEAR = re.compile(r"/schedule/(\d{4})/home\.htm$")
 _BLS_ROW_DATE = re.compile(r"^[A-Z][a-z]+, ([A-Z][a-z]+) (\d{1,2}), (\d{4})$")
 _BLS_ROW_TIME = re.compile(r"^(\d{1,2}):(\d{2}) (AM|PM)$")
 _BLS_CPI = re.compile(r"^Consumer Price Index for (.+)$")
 _BLS_NFP = re.compile(r"^Employment Situation for (.+)$")
+_BLS_PPI = re.compile(r"^Producer Price Index for (.+)$")
 
 
 # ------------------------------------------------------------------------------- time helpers
@@ -221,13 +298,28 @@ def _zone_abbrev_ok(day: dt.date, abbrev: str) -> bool:
     return abbrev == local.strftime("%Z")
 
 
+def _month_number(name: str) -> int | None:
+    """The month a source's month name names, full ("January") or abbreviated ("Jan").
+
+    The Fed's 2010 historical page abbreviates the minutes releases ("Minutes (Released Feb 17,
+    2010)") while later pages spell the month out; both name one day. A three-letter name is only
+    accepted when exactly one month starts with it."""
+    if name in _MONTHS:
+        return _MONTHS[name]
+    if len(name) != 3:
+        return None
+    matches = [number for month, number in _MONTHS.items() if month.startswith(name)]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _us_date(text: str, where: str) -> dt.date:
-    """A date the source prints in long US form ("January 27, 2010")."""
-    match = re.match(r"^([A-Z][a-z]+) (\d{1,2}), (\d{4})$", text.strip())
-    if match is None or match.group(1) not in _MONTHS:
+    """A date the source prints in US long form ("January 27, 2010", or "Feb 17, 2010")."""
+    match = re.match(r"^([A-Z][a-z]+)\.? (\d{1,2}), (\d{4})$", text.strip())
+    month = None if match is None else _month_number(match.group(1))
+    if match is None or month is None:
         msg = f"{where}: cannot read the date {text!r}; expected e.g. 'January 27, 2010'"
         raise DataQualityError(msg)
-    return dt.date(int(match.group(3)), _MONTHS[match.group(1)], int(match.group(2)))
+    return dt.date(int(match.group(3)), month, int(match.group(2)))
 
 
 def _day_of_iso(text: str) -> dt.date:
@@ -236,6 +328,22 @@ def _day_of_iso(text: str) -> dt.date:
 
 def _day_of_ns(value: int) -> dt.date:
     return dt.datetime.fromtimestamp(value / _NS_PER_S, tz=dt.UTC).date()
+
+
+def _day_of_key(key: str) -> dt.date:
+    """The date a Fed page's file-name key spells (``20260128`` in ``fomcpressconf20260128``)."""
+    return dt.date(int(key[:4]), int(key[4:6]), int(key[6:8]))
+
+
+def _clock_of_parts(hour: str, minute: str, half: str) -> dt.time:
+    """A 12-hour clock stamp (`2:00 p.m.`) as a wall time."""
+    return dt.time(int(hour) % 12 + (12 if half == "p" else 0), int(minute))
+
+
+def _flat_text(text: str) -> str:
+    """A page's text with its scripts, tags and runs of whitespace collapsed to single spaces."""
+    body = re.sub(r"<(script|style).*?</\1>", " ", text, flags=re.DOTALL)
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
 
 
 def _ns_of_iso(text: str) -> int:
@@ -298,6 +406,33 @@ class Snapshot:
         return self.capture_at is not None
 
 
+@dataclass(frozen=True, slots=True)
+class MinutesStamp:
+    """The release stamp of a meeting's minutes as a page states it.
+
+    ``clock`` is ``None`` when the page states the release day but no hour: the Fed's meeting
+    calendar always states the day and only some press-conference pages state the hour, so the row
+    keeps ``time_known = False`` rather than inventing 2:00 p.m.
+    """
+
+    day: dt.date
+    clock: dt.time | None
+
+
+@dataclass(frozen=True, slots=True)
+class PressConference:
+    """One press-conference page: where it is and the minutes stamp it states.
+
+    ``key`` is the ``YYYYMMDD`` the Fed files the page under — the meeting's last day, which is
+    also the key its minutes page uses — so a meeting's press conference and its minutes meet on
+    one key. ``minutes`` is ``None`` on a page whose Related Information holds no minutes entry
+    (2024-11-07 is the one such page in this build).
+    """
+
+    url: str
+    minutes: MinutesStamp | None = None
+
+
 def record_sha256(row: Mapping[str, object]) -> str:
     """SHA-256 of a row's other fields in canonical JSON (sorted keys, no whitespace).
 
@@ -315,9 +450,16 @@ def record_sha256(row: Mapping[str, object]) -> str:
 
 
 def _event_rows(
-    events: Sequence[RawEvent], snapshot_sha: Mapping[str, str]
+    events: Sequence[RawEvent],
+    snapshot_sha: Mapping[str, str],
+    dataset_version: int = DATASET_VERSION,
 ) -> list[dict[str, object]]:
-    """The stored rows: ids, instants, availability and hashes attached, in a stable order."""
+    """The stored rows: ids, instants, availability and hashes attached, in a stable order.
+
+    ``dataset_version`` is what every row carries in the column of that name:
+    :data:`DATASET_VERSION` for the default (v2) build, :data:`DATASET_VERSION_V1` for a v1
+    rebuild.
+    """
     ordered = sorted(
         events,
         key=lambda e: (
@@ -365,7 +507,7 @@ def _event_rows(
             "snapshot_sha256": snapshot_sha[event.source_url],
             "available_at": available_at,
             "availability_basis": basis,
-            "dataset_version": DATASET_VERSION,
+            "dataset_version": dataset_version,
         }
         row["record_sha256"] = record_sha256(row)
         rows.append(row)
@@ -395,6 +537,60 @@ def statement_key(url: str) -> str:
         msg = f"{url!r} is not an FOMC statement page URL (expected monetary<YYYYMMDD>a.htm)"
         raise ConfigurationError(msg)
     return key.group(1)
+
+
+def press_conference_url(href_or_url: str) -> str:
+    """The canonical URL of an FOMC press-conference page from any link the Fed serves.
+
+    The Fed spells the file name both ways and is inconsistent about it inside one year
+    (``/monetarypolicy/fomcpresconf20110427.htm``, ``fomcpressconf20260128.htm``, and the 2022
+    calendar links 2022-03-16 as an absolute URL): the *file name the link uses* is the page that
+    exists, so it is kept and only the scheme and host are filled in. Rewriting the spelling would
+    invent a URL the Fed never published — ``fomcpressconf20220316.htm`` is a 404.
+    """
+    key = _FED_PRESCONF_KEY.search(href_or_url)
+    if key is None:
+        msg = (
+            f"{href_or_url!r} is not an FOMC press-conference page URL "
+            "(expected fomcpresconf<YYYYMMDD>.htm or fomcpressconf<YYYYMMDD>.htm)"
+        )
+        raise ConfigurationError(msg)
+    return f"https://www.federalreserve.gov/monetarypolicy/{key.group(1)}"
+
+
+def press_conference_key(url: str) -> str:
+    """The ``YYYYMMDD`` key of a press-conference page: the day it happened, which is the day the
+    meeting's statement came out and the key the meeting's minutes page uses."""
+    key = _FED_PRESCONF_KEY.search(url)
+    if key is None:
+        msg = f"{url!r} is not an FOMC press-conference page URL"
+        raise ConfigurationError(msg)
+    return key.group(2)
+
+
+def parse_press_conference(text: str, url: str) -> MinutesStamp | None:
+    """The minutes release stamp a press-conference page states, or ``None`` when it states none.
+
+    The page's *Related Information* block lists the meeting's documents with the instant each was
+    released:
+
+    - 2011: ``Minutes: PDF | HTML (Released May 18, 2011)`` — the day only;
+    - 2012 on: ``Minutes: PDF | HTML (Released February 20, 2019 at 2:00 p.m.)`` — the day and the
+      hour, which is the only place in HTML where the Fed states a minutes release *hour*;
+    - 2024-11-07: no minutes entry at all, so ``None``.
+
+    A page that states no hour yields ``clock = None`` and the row keeps ``time_known = False``:
+    2:00 p.m. is the Fed's usual hour, but "usual" is not "stated".
+    """
+    flat = _flat_text(text)
+    match = _PRESCONF_MINUTES.search(flat)
+    if match is None:
+        return None
+    day = _us_date(match.group(1), url)
+    if match.group(2) is None:
+        return MinutesStamp(day=day, clock=None)
+    clock = _clock_of_parts(match.group(2), match.group(3), match.group(4))
+    return MinutesStamp(day=day, clock=clock)
 
 
 def parse_fomc_statement(text: str, url: str) -> tuple[dt.date, dt.time | None, str]:
@@ -446,7 +642,12 @@ def parse_fomc_statement(text: str, url: str) -> tuple[dt.date, dt.time | None, 
 
 
 def parse_fomc_historical(
-    text: str, url: str, statements: Mapping[str, tuple[dt.date, dt.time | None, str]]
+    text: str,
+    url: str,
+    statements: Mapping[str, tuple[dt.date, dt.time | None, str]],
+    *,
+    press_conferences: Mapping[str, PressConference] | None = None,
+    event_types: Iterable[str] = EVENT_TYPES,
 ) -> list[RawEvent]:
     """The meetings of one ``fomchistorical<YEAR>.htm`` page (the Fed's pages for 2010-2020).
 
@@ -464,21 +665,26 @@ def parse_fomc_historical(
 
     ``statements`` maps a canonical statement URL to its parsed release stamp: the snapshot of
     every statement a page links must be in the raw folder, or the row would cite a page nobody
-    kept.
+    kept. ``press_conferences`` maps a meeting key to the press-conference page read for it, and
+    supplies the press conference's own row plus the minutes release hour that page states.
     """
     events: list[RawEvent] = []
     panels = list(_PANEL_HEADING.finditer(text))
     for index, panel in enumerate(panels):
         end = panels[index + 1].start() if index + 1 < len(panels) else len(text)
+        block = text[panel.end() : end]
         heading = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", panel.group(1))).strip()
         target = None
-        for href, label in _LINK.findall(text[panel.end() : end]):
+        for href, label in _LINK.findall(block):
             if _FED_STATEMENT_KEY.search(href) is not None and label.strip() == "Statement":
                 target = statement_url(href)
                 break
         if target is None:
             continue
         day, clock, source = _statement_stamp(target, statements)
+        unscheduled = any(
+            marker in heading for marker in ("(unscheduled)", "Conference Call", "(notation vote)")
+        )
         events.append(
             RawEvent(
                 event_type="FOMC_STATEMENT",
@@ -487,19 +693,31 @@ def parse_fomc_historical(
                 scheduled_time_source=source,
                 status="released",
                 actual_day=day,
-                unscheduled=any(
-                    marker in heading
-                    for marker in ("(unscheduled)", "Conference Call", "(notation vote)")
-                ),
+                unscheduled=unscheduled,
                 source_url=target,
                 note=heading,
+            )
+        )
+        events.extend(
+            _meeting_side_events(
+                block,
+                url,
+                day,
+                unscheduled=unscheduled,
+                press_conferences=press_conferences or {},
+                event_types=event_types,
             )
         )
     return events
 
 
 def parse_fomc_calendar(
-    text: str, url: str, statements: Mapping[str, tuple[dt.date, dt.time | None, str]]
+    text: str,
+    url: str,
+    statements: Mapping[str, tuple[dt.date, dt.time | None, str]],
+    *,
+    press_conferences: Mapping[str, PressConference] | None = None,
+    event_types: Iterable[str] = EVENT_TYPES,
 ) -> list[RawEvent]:
     """The scheduled meetings of ``fomccalendars.htm`` (the Fed's page for 2021 onwards).
 
@@ -550,6 +768,16 @@ def parse_fomc_calendar(
                     note=f"{month_text} {date_text} of {year}",
                 )
             )
+            events.extend(
+                _meeting_side_events(
+                    block,
+                    url,
+                    day,
+                    unscheduled=False,
+                    press_conferences=press_conferences or {},
+                    event_types=event_types,
+                )
+            )
     note = _NEXT_YEAR_MEETING.search(text)
     if note is not None:
         month = _MONTHS.get(note.group(1))
@@ -570,6 +798,135 @@ def parse_fomc_calendar(
             )
         )
     return events
+
+
+def _meeting_side_events(
+    block: str,
+    index_url: str,
+    statement_day: dt.date,
+    *,
+    unscheduled: bool,
+    press_conferences: Mapping[str, PressConference],
+    event_types: Iterable[str],
+) -> list[RawEvent]:
+    """The press conference and the minutes release a meeting panel states, if any.
+
+    Both hang off the same ``YYYYMMDD`` key (the meeting's last day, the day the statement came
+    out): a press-conference page is filed under it, and so is the meeting's minutes page. The
+    press conference is dated by that key — the page's own ``Related Information`` states the
+    instant of every document but not the instant of the press conference, so the row states the
+    day only. The minutes are dated by their *release* stamp: the hour comes from the
+    press-conference page when that page states one, and is unknown otherwise.
+
+    A panel with neither link yields nothing. A link whose stated date contradicts its own page is
+    refused rather than reconciled: the sources would disagree about the event.
+    """
+    wanted = set(event_types)
+    events: list[RawEvent] = []
+    press_conference = None
+    for href in re.findall(r'href="([^"]+)"', block):
+        if _FED_PRESCONF_KEY.search(href) is not None:
+            press_conference = press_conference_url(href)
+            break
+    if press_conference is not None and "FOMC_PRESS_CONFERENCE" in wanted:
+        key = press_conference_key(press_conference)
+        day = _day_of_key(key)
+        if day != statement_day:
+            msg = (
+                f"{index_url}: the press-conference page {press_conference} is filed under {day}, "
+                f"but the meeting's statement is dated {statement_day}; the two pages disagree "
+                "about the day of the meeting"
+            )
+            raise DataQualityError(msg)
+        events.append(
+            RawEvent(
+                event_type="FOMC_PRESS_CONFERENCE",
+                scheduled_day=day,
+                scheduled_clock=None,
+                scheduled_time_source=_TIME_SOURCE_NONE,
+                status="released",
+                actual_day=day,
+                unscheduled=unscheduled,
+                source_url=press_conference,
+                note=f"after the {statement_day} statement",
+            )
+        )
+    minutes = _FED_MINUTES_KEY.search(block)
+    if minutes is not None and "FOMC_MINUTES" in wanted:
+        events.append(
+            _minutes_event(
+                block,
+                minutes.group(1),
+                index_url,
+                press_conferences=press_conferences,
+                unscheduled=unscheduled,
+            )
+        )
+    return events
+
+
+def _minutes_event(
+    block: str,
+    key: str,
+    index_url: str,
+    *,
+    press_conferences: Mapping[str, PressConference],
+    unscheduled: bool,
+) -> RawEvent:
+    """The minutes of the meeting a panel belongs to, dated by their release.
+
+    The day is the one the panel states ("Minutes (Released February 16, 2011)" on a yearly
+    historical page, "(Released February 18, 2026)" beside the calendar's minutes link). The hour
+    is only ever stated by the meeting's *press-conference* page, in its ``Related Information``
+    entry for the minutes: where that page states one, it is used and the row cites it; where it
+    does not (no press conference that meeting, or a page that omits the entry), the row states the
+    day and ``time_known = False``. Two pages stating different days for one release of minutes is
+    refused.
+    """
+    stated = _stated_minutes_day(block)
+    page = press_conferences.get(key)
+    if page is not None and page.minutes is not None:
+        if stated is not None and stated != page.minutes.day:
+            msg = (
+                f"{index_url}: the minutes of {key} are (Released {stated.isoformat()}) here but "
+                f"{page.url} states {page.minutes.day.isoformat()}; the two pages disagree"
+            )
+            raise DataQualityError(msg)
+        day, clock = page.minutes.day, page.minutes.clock
+        source_url = page.url
+    else:
+        if stated is None:
+            msg = (
+                f"{index_url}: the minutes of {key} are linked but no page states their release "
+                "date; the row would have nowhere to put the event"
+            )
+            raise DataQualityError(msg)
+        day, clock, source_url = stated, None, index_url
+    return RawEvent(
+        event_type="FOMC_MINUTES",
+        scheduled_day=day,
+        scheduled_clock=clock,
+        scheduled_time_source=_TIME_SOURCE_FED if clock is not None else _TIME_SOURCE_NONE,
+        status="released",
+        actual_day=day,
+        unscheduled=unscheduled,
+        source_url=source_url,
+        note=f"minutes of the meeting filed as {key}",
+    )
+
+
+def _stated_minutes_day(block: str) -> dt.date | None:
+    """The release day a meeting panel states for its minutes, in either page family's form."""
+    before = _MINUTES_STATED_BEFORE.search(block)
+    if before is not None:
+        return _us_date(before.group(1), "minutes release date")
+    link = _FED_MINUTES_KEY.search(block)
+    if link is None:
+        return None
+    after = _MINUTES_STATED_AFTER.search(block, link.end())
+    if after is None or after.start() - link.end() > 200:
+        return None
+    return _us_date(after.group(1), "minutes release date")
 
 
 def _future_meeting(url: str, year: int, month_text: str, date_text: str) -> RawEvent:
@@ -614,10 +971,11 @@ def _statement_stamp(
 
 
 def parse_bls_schedule(text: str, url: str) -> list[RawEvent]:
-    """One BLS "Schedule of Selected Releases" page: its CPI and Employment Situation rows.
+    """One BLS "Schedule of Selected Releases" page: its CPI, PPI and Employment Situation rows.
 
-    Each row is ``date / time / "Release name for period"``. Only the two releases above are kept
-    ("Employment Situation of Veterans" is another report). A row with no time of day keeps
+    Each row is ``date / time / "Release name for period"``. Only the three releases above are kept
+    ("U.S. Import and Export Price Indexes", "Real Earnings", "Employment Situation of Veterans"
+    and the rest of the table are other reports). A row with no time of day keeps
     ``scheduled_clock = None``; every release row of this dataset states 08:30 AM. A row dated
     outside the page's year is refused: it would mean the page and its URL disagree.
     """
@@ -641,6 +999,8 @@ def parse_bls_schedule(text: str, url: str) -> list[RawEvent]:
             event_type, period = "CPI", cpi.group(1)
         elif (nfp := _BLS_NFP.match(desc_text)) is not None:
             event_type, period = "NFP", nfp.group(1)
+        elif (ppi := _BLS_PPI.match(desc_text)) is not None:
+            event_type, period = "PPI", ppi.group(1)
         if event_type is None or period is None:
             continue
         date_match = _BLS_ROW_DATE.match(date_text)
@@ -793,8 +1153,19 @@ def _dedupe(events: Sequence[RawEvent]) -> list[RawEvent]:
     return list(kept.values())
 
 
-def events_from_snapshots(snapshots: Sequence[Snapshot]) -> list[RawEvent]:
-    """Every event the snapshots state, in a deterministic order (the build's parsing step)."""
+def events_from_snapshots(
+    snapshots: Sequence[Snapshot], *, event_types: Iterable[str] = EVENT_TYPES
+) -> list[RawEvent]:
+    """Every event the snapshots state, in a deterministic order (the build's parsing step).
+
+    ``event_types`` narrows the parse: a v1 rebuild (``version=1``) reads only the three v1 types,
+    so a press-conference or minutes page that later becomes unreadable cannot stop it.
+    """
+    wanted = set(event_types)
+    unknown = sorted(wanted - set(EVENT_TYPES))
+    if unknown:
+        msg = f"unknown event_type(s) {unknown}; this module knows {list(EVENT_TYPES)}"
+        raise ConfigurationError(msg)
     statements = {
         statement_url(snapshot.origin_url): parse_fomc_statement(snapshot.text, snapshot.url)
         for snapshot in snapshots
@@ -806,16 +1177,54 @@ def events_from_snapshots(snapshots: Sequence[Snapshot]) -> list[RawEvent]:
             "time the Fed stated; re-run the ingestion (fetch_raw)"
         )
         raise ConfigurationError(msg)
+    press_conferences: dict[str, PressConference] = {}
+    # a v1 rebuild reads no press-conference page at all: the types it holds never cite one, so a
+    # page this build cannot read must not be able to fail it
+    reads_conferences = bool(wanted & {"FOMC_PRESS_CONFERENCE", "FOMC_MINUTES"})
+    for snapshot in snapshots:
+        if not reads_conferences or _FED_PRESCONF_KEY.search(snapshot.origin_url) is None:
+            continue
+        key = press_conference_key(snapshot.origin_url)
+        page = PressConference(
+            url=press_conference_url(snapshot.origin_url),
+            minutes=parse_press_conference(snapshot.text, snapshot.url),
+        )
+        previous = press_conferences.get(key)
+        if previous is not None and previous != page:
+            msg = (
+                f"two press-conference pages are filed under {key} "
+                f"({previous.url} and {page.url}); keep one"
+            )
+            raise ConfigurationError(msg)
+        press_conferences[key] = page
     events: list[RawEvent] = []
     schedules: dict[int, dict[str, list[Snapshot]]] = {}
     for snapshot in snapshots:
         origin = snapshot.origin_url
         if _FED_STATEMENT_KEY.search(origin) is not None:
             continue
+        if _FED_PRESCONF_KEY.search(origin) is not None:
+            continue
         if _FED_CALENDAR.search(origin) is not None:
-            events.extend(parse_fomc_calendar(snapshot.text, origin, statements))
+            events.extend(
+                parse_fomc_calendar(
+                    snapshot.text,
+                    origin,
+                    statements,
+                    press_conferences=press_conferences,
+                    event_types=wanted,
+                )
+            )
         elif _FED_HISTORICAL.search(origin) is not None:
-            events.extend(parse_fomc_historical(snapshot.text, origin, statements))
+            events.extend(
+                parse_fomc_historical(
+                    snapshot.text,
+                    origin,
+                    statements,
+                    press_conferences=press_conferences,
+                    event_types=wanted,
+                )
+            )
         elif (year_match := _BLS_SCHEDULE_YEAR.search(origin)) is not None:
             role = "earlier" if snapshot.archived else "current"
             by_year = schedules.setdefault(int(year_match.group(1)), {"current": [], "earlier": []})
@@ -823,6 +1232,8 @@ def events_from_snapshots(snapshots: Sequence[Snapshot]) -> list[RawEvent]:
     if not schedules:
         msg = "the raw folder holds no BLS release schedule; nothing to build"
         raise ConfigurationError(msg)
+    current: dict[int, Snapshot] = {}
+    earlier: dict[int, list[Snapshot]] = {}
     for year, roles in sorted(schedules.items()):
         if len(roles["current"]) != 1:
             names = ", ".join(s.path.name for s in roles["current"]) or "none"
@@ -833,75 +1244,100 @@ def events_from_snapshots(snapshots: Sequence[Snapshot]) -> list[RawEvent]:
                 "before building"
             )
             raise ConfigurationError(msg)
-        events.extend(_year_of_bls_releases(year, roles["current"][0], roles["earlier"]))
+        current[year] = roles["current"][0]
+        earlier[year] = list(roles["earlier"])
+    events.extend(_bls_releases(current, earlier, wanted))
     return _dedupe(events)
 
 
-def _year_of_bls_releases(
-    year: int, current: Snapshot, earlier: Sequence[Snapshot]
+def _bls_releases(
+    current: Mapping[int, Snapshot],
+    earlier: Mapping[int, Sequence[Snapshot]],
+    event_types: Iterable[str],
 ) -> list[RawEvent]:
-    """One year of CPI and NFP releases: the current schedule, with the earlier readings folded in.
+    """Every BLS release (CPI, PPI, Employment Situation): the current schedules, with the earlier
+    readings folded in.
 
     A release the current schedule lists is ``released``, or ``scheduled`` when its instant is
-    still in the future at the snapshot's retrieval. A release an *earlier* official snapshot of
-    the same schedule lists under another date is ``rescheduled``: the earlier date and time go to
+    still in the future at the snapshot's retrieval. A release an *earlier* official snapshot of a
+    schedule lists under another date is ``rescheduled``: the earlier date and time go to
     ``scheduled_local``, the one that materialised to ``actual_publication_date``. A release only
     an earlier snapshot lists is ``cancelled`` — the current schedule dropped it, so it did not
     happen — unless its earlier instant was still in the future at retrieval.
 
     Releases are matched by reference period ("December 2009"), never by date: a move is
-    recognised, not inferred.
+    recognised, not inferred. The period carries its own year, so the match runs across the yearly
+    pages — the autumn 2025 delays moved "Producer Price Index for November 2025" from the 2025
+    page (2025-12-11) onto the 2026 page (2026-01-14), and matching inside one year would report a
+    cancelled release *and* a released one for a single report.
     """
-    current_events = {
-        (event.event_type, event.period): event
-        for event in parse_bls_schedule(current.text, current.origin_url)
-    }
-    retrieved_day = _day_of_ns(current.retrieved_at)
-    positioned: dict[tuple[str, str | None], RawEvent] = {}
-    for revision in sorted(earlier, key=lambda s: s.capture_at or 0):
-        if revision.capture_at is not None and revision.capture_at > current.retrieved_at:
-            msg = (
-                f"{revision.path.name}: captured at {_iso_of_ns(revision.capture_at)}, after the "
-                f"current schedule was retrieved ({_iso_of_ns(current.retrieved_at)}); an earlier "
-                "reading must be older than the one it revises"
-            )
-            raise ConfigurationError(msg)
-        for original in parse_bls_schedule(revision.text, revision.origin_url):
-            key = (original.event_type, original.period)
-            if key in positioned:
+    wanted = set(event_types)
+    current_events: dict[tuple[str, str | None], tuple[RawEvent, dt.date, str]] = {}
+    for year in sorted(current):
+        snapshot = current[year]
+        retrieved_day = _day_of_ns(snapshot.retrieved_at)
+        for event in parse_bls_schedule(snapshot.text, snapshot.origin_url):
+            if event.event_type not in wanted:
                 continue
-            now = current_events.get(key)
-            if now is not None:
-                if now.scheduled_day == original.scheduled_day:
+            key = (event.event_type, event.period)
+            previous = current_events.get(key)
+            if previous is not None:
+                msg = (
+                    f"{event.event_type} {event.period}: two current BLS schedules state the same "
+                    f"release ({previous[1]} and {year}); resolve the sources by hand"
+                )
+                raise DataQualityError(msg)
+            if event.scheduled_day > retrieved_day:
+                event = replace(event, status="scheduled", actual_day=None)
+            current_events[key] = (event, retrieved_day, snapshot.origin_url)
+    positioned: dict[tuple[str, str | None], RawEvent] = {}
+    for year in sorted(current):
+        snapshot = current[year]
+        retrieved_day = _day_of_ns(snapshot.retrieved_at)
+        for revision in sorted(earlier.get(year, ()), key=lambda s: s.capture_at or 0):
+            if revision.capture_at is not None and revision.capture_at > snapshot.retrieved_at:
+                msg = (
+                    f"{revision.path.name}: captured at {_iso_of_ns(revision.capture_at)}, after "
+                    f"the current schedule was retrieved ({_iso_of_ns(snapshot.retrieved_at)}); "
+                    "an earlier reading must be older than the one it revises"
+                )
+                raise ConfigurationError(msg)
+            for original in parse_bls_schedule(revision.text, revision.origin_url):
+                if original.event_type not in wanted:
                     continue
-                positioned[key] = replace(
-                    now,
-                    scheduled_day=original.scheduled_day,
-                    scheduled_clock=original.scheduled_clock,
-                    status="rescheduled",
-                    source_url=current.origin_url,
-                    note=f"was {original.scheduled_day} in {revision.path.name}",
-                )
-            elif original.scheduled_day <= retrieved_day:
-                positioned[key] = replace(
-                    original,
-                    status="cancelled",
-                    actual_day=None,
-                    source_url=revision.url,
-                    note=f"gone from the {year} schedule",
-                )
-            else:
-                positioned[key] = replace(
-                    original,
-                    status="scheduled",
-                    actual_day=None,
-                    source_url=current.origin_url,
-                )
-    for key, event in current_events.items():
+                key = (original.event_type, original.period)
+                if key in positioned:
+                    continue
+                now = current_events.get(key)
+                if now is not None:
+                    if now[0].scheduled_day == original.scheduled_day:
+                        continue
+                    positioned[key] = replace(
+                        now[0],
+                        scheduled_day=original.scheduled_day,
+                        scheduled_clock=original.scheduled_clock,
+                        status="rescheduled",
+                        source_url=now[2],
+                        note=f"was {original.scheduled_day} in {revision.path.name}",
+                    )
+                elif original.scheduled_day <= retrieved_day:
+                    positioned[key] = replace(
+                        original,
+                        status="cancelled",
+                        actual_day=None,
+                        source_url=revision.url,
+                        note=f"gone from the {year} schedule",
+                    )
+                else:
+                    positioned[key] = replace(
+                        original,
+                        status="scheduled",
+                        actual_day=None,
+                        source_url=snapshot.origin_url,
+                    )
+    for key, (event, _retrieved_day, _url) in current_events.items():
         if key in positioned:
             continue
-        if event.scheduled_day > retrieved_day:
-            event = replace(event, status="scheduled", actual_day=None)
         positioned[key] = event
     return list(positioned.values())
 
@@ -922,14 +1358,28 @@ class BuildReport:
     time_known_rows: int
 
 
-def build_econ_events(raw_dir: Path, store_root: Path) -> BuildReport:
-    """Build ``econ_events_v1`` from the raw snapshots in ``raw_dir`` into ``store_root``.
+def build_econ_events(
+    raw_dir: Path, store_root: Path, *, version: int = DATASET_VERSION
+) -> BuildReport:
+    """Build ``econ_events_v2`` (or, with ``version=1``, ``econ_events_v1``) from the raw
+    snapshots in ``raw_dir`` into ``store_root``.
 
-    Refuses to overwrite an existing ``econ_events_v1``: the dataset is a stable, hash-checked
-    artifact, and silently replacing it would invalidate every rule verdict that cited it. Move
-    the directory aside (or build into another store root) to rebuild.
+    ``version=2`` is the default: the six event types of :data:`EVENT_TYPES`, with every v1 row
+    reproduced exactly as v1 wrote it. ``version=1`` builds the three v1 types under the old
+    dataset id, so a store's ``econ_events_v1`` can be shown to be what the same snapshots still
+    produce.
+
+    Refuses to overwrite an existing dataset of that version: the dataset is a stable,
+    hash-checked artifact, and silently replacing it would invalidate every rule verdict that
+    cited it. Move the directory aside (or build into another store root) to rebuild.
     """
-    target = store_root / DATASET
+    if version not in (1, 2):
+        msg = f"version={version}: this module builds version 1 or 2, not {version}"
+        raise ConfigurationError(msg)
+    dataset = DATASET_V1 if version == 1 else DATASET
+    dataset_version = DATASET_VERSION_V1 if version == 1 else DATASET_VERSION
+    event_types = EVENT_TYPES_V1 if version == 1 else EVENT_TYPES
+    target = store_root / dataset
     if target.exists():
         msg = (
             f"{target} already exists: this build refuses to overwrite a stored dataset. Move it "
@@ -938,30 +1388,35 @@ def build_econ_events(raw_dir: Path, store_root: Path) -> BuildReport:
         raise ConfigurationError(msg)
     snapshots = load_snapshots(raw_dir)
     sha_by_url = {url: snapshot.sha256 for url, snapshot in _snapshot_index(snapshots).items()}
-    events = events_from_snapshots(snapshots)
-    frame = pl.DataFrame(_event_rows(events, sha_by_url), orient="row", schema=ECON_EVENT_SCHEMA)
+    events = events_from_snapshots(snapshots, event_types=event_types)
+    frame = pl.DataFrame(
+        _event_rows(events, sha_by_url, dataset_version),
+        orient="row",
+        schema=ECON_EVENT_SCHEMA,
+    )
     manifest = build_dataset(
         store_root,
-        DATASET,
+        dataset,
         frame,
         schema=ECON_EVENT_SCHEMA,
         sort_keys=ECON_EVENT_SORT_KEYS,
         source=(
             "official releases: federalreserve.gov (FOMC calendar, yearly historical pages, "
-            "statement press releases); bls.gov (/schedule/<year>/home.htm); Internet Archive "
-            "captures of the BLS 2025 schedule; "
-            f"dataset_version={DATASET_VERSION}; snapshots={len(snapshots)}"
+            "statement press releases, press-conference pages); bls.gov "
+            "(/schedule/<year>/home.htm, "
+            "CPI, PPI and Employment Situation rows); Internet Archive captures of the BLS 2025 "
+            f"schedule; dataset_version={dataset_version}; snapshots={len(snapshots)}"
         ),
     )
     stored = pl.read_parquet(target / "data.parquet")
-    per_year = _per_year(stored)
+    per_year = _per_year(stored, event_types)
     return BuildReport(
-        dataset=str(DATASET),
+        dataset=str(dataset),
         rows=manifest.row_count,
         content_hash=manifest.content_hash,
         events_by_type={
             event_type: int(stored.filter(pl.col("event_type") == event_type).height)
-            for event_type in EVENT_TYPES
+            for event_type in event_types
         },
         events_by_status={
             status: int(stored.filter(pl.col("status") == status).height) for status in _STATUS_RANK
@@ -975,13 +1430,15 @@ def build_econ_events(raw_dir: Path, store_root: Path) -> BuildReport:
             }
             for event_type, years in per_year.items()
         },
-        coverage=coverage_of(stored),
+        coverage=coverage_of(stored, event_types),
         snapshots=len(snapshots),
         time_known_rows=int(stored.filter(pl.col("time_known")).height),
     )
 
 
-def _per_year(frame: pl.DataFrame) -> dict[str, dict[int, int]]:
+def _per_year(
+    frame: pl.DataFrame, event_types: Iterable[str] = EVENT_TYPES
+) -> dict[str, dict[int, int]]:
     """Events per type per calendar year of the release day, in New York (an 08:30 ET release is
     still that day in UTC, a 19:00 one would not be, so the local year is the one that counts)."""
     counted = (
@@ -996,7 +1453,7 @@ def _per_year(frame: pl.DataFrame) -> dict[str, dict[int, int]]:
         .group_by("event_type", "year")
         .len()
     )
-    out: dict[str, dict[int, int]] = {event_type: {} for event_type in EVENT_TYPES}
+    out: dict[str, dict[int, int]] = {event_type: {} for event_type in event_types}
     for event_type, year, count in counted.iter_rows():
         out[str(event_type)][int(year)] = int(count)
     return {event_type: dict(sorted(years.items())) for event_type, years in out.items()}
@@ -1046,21 +1503,21 @@ class Coverage:
 def coverage(store: DataStore) -> Coverage:
     """The covered intervals and the gaps of the built dataset, per event type.
 
-    A gap is measured against the type's cadence (:data:`_CADENCE`): a monthly release (CPI, NFP)
-    is missing in any month without a row, and for the irregular FOMC a whole calendar year
-    without a statement is a gap while a month without a meeting is simply a month without a
-    meeting. A ``cancelled`` row still marks its period as covered — the calendar *did* say
-    something about that month, namely that the release would not happen. This is the "a window
-    the calendar does not cover is ``not_modeled``" test of ADR-0107.
+    A gap is measured against the type's cadence (:data:`_CADENCE`): a monthly release (CPI, PPI,
+    NFP) is missing in any month without a row, and for the irregular FOMC a whole calendar year
+    without a statement, a press conference or a set of minutes is a gap while a month without a
+    meeting is simply a month without a meeting. A ``cancelled`` row still marks its period as
+    covered — the calendar *did* say something about that month, namely that the release would not
+    happen. This is the "a window the calendar does not cover is ``not_modeled``" test of ADR-0107.
     """
     return coverage_of(load_econ_events(store, EVENT_TYPES, 0, END_AT_OPEN))
 
 
-def coverage_of(frame: pl.DataFrame) -> Coverage:
+def coverage_of(frame: pl.DataFrame, event_types: Iterable[str] = EVENT_TYPES) -> Coverage:
     """:func:`coverage` over a frame already in hand (the build reports it without a store)."""
     spans: list[CoverageSpan] = []
     gaps: list[CoverageGap] = []
-    for event_type in EVENT_TYPES:
+    for event_type in event_types:
         rows = frame.filter(pl.col("event_type") == event_type)
         if rows.height == 0:
             continue
@@ -1297,11 +1754,14 @@ def fetch_raw(
     """Fetch every page this dataset needs into ``raw_dir`` and write its ``MANIFEST.json``.
 
     The URL set is *discovered from the pages themselves*: the Fed's calendar and historical pages
-    are read first and every statement they link is fetched, so a year the Fed adds is picked up
-    without touching this code. Files are named ``<YYYYMMDD>_<name>.html`` (retrieval date, then
-    the page) under ``<raw_dir>/<source>/``. An existing file is never re-fetched or rewritten:
-    the folder is the immutable source of truth and :func:`load_snapshots` refuses a byte that
-    changed under a manifest entry.
+    are read first and every statement and press-conference page they link is fetched, so a year
+    the Fed adds is picked up without touching this code. The minutes pages are *not* fetched: a
+    minutes row cites the meeting calendar (which states the release day) or the meeting's
+    press-conference page (which states the hour), and never the minutes page, which states no
+    release instant. Files are named ``<YYYYMMDD>_<name>.html`` (retrieval date, then the page)
+    under ``<raw_dir>/<source>/``. An existing file is never re-fetched or rewritten: the folder is
+    the immutable source of truth and :func:`load_snapshots` refuses a byte that changed under a
+    manifest entry.
 
     ``transport(url) -> bytes``, ``now() -> int`` (UTC ns) and ``pause_s`` are the seams a test
     drives without a network or a clock; the defaults walk the real web and read the real clock
@@ -1345,12 +1805,15 @@ def fetch_raw(
         name = f"{day}_{page.rsplit('/', 1)[-1].replace('.htm', '.html')}"
         fetch("federalreserve", name, page, page, None)
     statements: set[str] = set()
+    press_conferences: set[str] = set()
     for page in fed_pages:
         name = f"{day}_{page.rsplit('/', 1)[-1].replace('.htm', '.html')}"
         text = (root / "federalreserve" / name).read_text(encoding="utf-8", errors="replace")
         for href in re.findall(r'href="([^"]+)"', text):
             if _FED_STATEMENT_KEY.search(href) is not None:
                 statements.add(statement_url(href))
+            if _FED_PRESCONF_KEY.search(href) is not None:
+                press_conferences.add(press_conference_url(href))
     for target in sorted(statements):
         fetch(
             "federalreserve",
@@ -1359,6 +1822,9 @@ def fetch_raw(
             target,
             None,
         )
+    for press_conference in sorted(press_conferences):
+        name = press_conference.rsplit("/", 1)[-1].replace(".htm", ".html")
+        fetch("federalreserve", f"{day}_{name}", press_conference, press_conference, None)
     for year in BLS_SCHEDULE_YEARS:
         schedule_url = f"{_BLS}/schedule/{year}/home.htm"
         fetch("bls", f"{day}_schedule_{year}.html", schedule_url, schedule_url, None)

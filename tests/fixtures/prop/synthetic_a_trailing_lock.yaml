@@ -32,7 +32,8 @@ phases:
     lock:
       at_balance_usd: '51000'
       locked_threshold_usd: '49000'
-      'on': hwm
+      'on':
+      - hwm
     source:
       url: https://example.invalid/synthetic-rules
       quote: Synthetic rule value invented for a test, not a real firm's rule
@@ -54,6 +55,7 @@ reset:
   tz: America/Chicago
 commissions:
   status: known
+  includes_exchange_and_regulatory_fees: true
   per_side_usd:
     ES: '2.00'
   platform: null

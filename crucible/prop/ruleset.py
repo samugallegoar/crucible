@@ -34,7 +34,9 @@ from pydantic import BaseModel, Field, model_validator
 from crucible.core.canonical import canonical_json
 from crucible.core.errors import ConfigurationError, DataQualityError
 from crucible.prop.rules_schema import (
+    ABSENT,
     PASS_KINDS,
+    ActivityRequirementRule,
     AnyRule,
     Assumption,
     Attribution,
@@ -74,11 +76,14 @@ from crucible.prop.rules_schema import (
     TrailingLock,
     Verification,
     is_pass_condition,
+    threshold_level,
 )
 
 __all__ = [
+    "ABSENT",
     "PASS_KINDS",
     "RULE_SCHEMA_VERSION",
+    "ActivityRequirementRule",
     "AnyRule",
     "Assumption",
     "Attribution",
@@ -124,6 +129,7 @@ __all__ = [
     "load_ruleset",
     "read_verification_sidecar",
     "sidecar_path",
+    "threshold_level",
     "write_verification_sidecar",
 ]
 

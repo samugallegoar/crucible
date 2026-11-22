@@ -17,7 +17,7 @@ from typing import Literal
 from pydantic import ValidationError
 
 from crucible.core.errors import ConfigurationError
-from crucible.prop.ruleset import Conflict, PropRuleset
+from crucible.prop.ruleset import Conflict, ConflictAlternative, PropRuleset
 
 ScenarioLabel = Literal["official", "sensitivity"]
 PRIMARY_SCENARIO_ID = "primary"
@@ -44,9 +44,14 @@ def scenario_id(conflict: Conflict, alternative_index: int) -> str:
 
 
 def _apply_alternative(
-    raw: dict[str, object], conflict: Conflict, value: object
+    raw: dict[str, object], conflict: Conflict, alternative: ConflictAlternative
 ) -> dict[str, object]:
-    """Return a deep copy of the raw ruleset with ``conflict.field`` switched on ``rule_id``."""
+    """Deep copy of the raw ruleset with the conflict's alternative applied on ``rule_id``.
+
+    ``value: absent`` removes the rule from that scenario instead of switching a field: the
+    alternative reading is that the rule does not exist, so the scenario carries no such rule
+    (ADR-0107 section 7).
+    """
     import copy
 
     switched = copy.deepcopy(raw)
@@ -60,8 +65,13 @@ def _apply_alternative(
             continue
         for collection in ("rules", "pass_conditions", "fees"):
             rules = phase.get(collection) or []
+            kept: list[object] = []
             for rule in rules:
                 if not isinstance(rule, dict) or rule.get("rule_id") != conflict.rule_id:
+                    kept.append(rule)
+                    continue
+                if alternative.absent:
+                    found = True
                     continue
                 if conflict.field not in rule:
                     msg = (
@@ -69,14 +79,26 @@ def _apply_alternative(
                         f"{conflict.rule_id!r}, which the rule does not declare"
                     )
                     raise ConfigurationError(msg)
-                rule[conflict.field] = value
+                kept.append({**rule, conflict.field: alternative.value})
                 found = True
+            if phase.get(collection) is not None:
+                phase[collection] = kept
     if not found:
         msg = (
             f"conflict {conflict.conflict_id} names rule {conflict.rule_id!r}, which is not in "
             "the ruleset"
         )
         raise ConfigurationError(msg)
+    if alternative.absent:
+        # the conflict named a rule this reading does not have: keeping it would be a conflict
+        # about nothing, and the ruleset refuses a conflict whose rule it does not declare
+        remaining = switched.get("conflicts")
+        if isinstance(remaining, list):
+            switched["conflicts"] = [
+                item
+                for item in remaining
+                if not isinstance(item, dict) or item.get("conflict_id") != conflict.conflict_id
+            ]
     # a switched sensitivity is never the official record and carries no verification
     switched.pop("verification", None)
     return switched
@@ -95,7 +117,7 @@ def scenarios(ruleset: PropRuleset) -> list[RulesetScenario]:
     raw = ruleset.model_dump(mode="json")
     for conflict in ruleset.conflicts:
         for index, alternative in enumerate(conflict.alternatives):
-            switched = _apply_alternative(raw, conflict, alternative.value)
+            switched = _apply_alternative(raw, conflict, alternative)
             try:
                 candidate = PropRuleset.model_validate(switched)
             except ValidationError as exc:

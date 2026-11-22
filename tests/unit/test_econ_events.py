@@ -86,6 +86,24 @@ def bls_page(rows: list[tuple[str, str, str]]) -> str:
     return f'<table class="release-list"><tbody>{body}</tbody></table>'
 
 
+def press_conference_page(related: str) -> str:
+    """An FOMC press-conference page: the video page plus its *Related Information* block."""
+    return (
+        '<div id="article"><h3 class="title">FOMC: Press Conference</h3>'
+        '<div class="panel"><h4>Related Information</h4>'
+        f"{related}</div></div>"
+    )
+
+
+def minutes_stated(day_text: str, at: str = "") -> str:
+    """The minutes entry of a press conference page's Related Information block."""
+    when = f"{day_text} at {at}" if at else day_text
+    return (
+        '<p>Minutes:<br><a href="/x.pdf">PDF</a> | <a href="/x.htm">HTML</a>'
+        f"<br> (Released {when})</p>"
+    )
+
+
 class RawDir:
     """A raw folder built by hand: one page per (source, file name) plus its MANIFEST.json."""
 
@@ -208,8 +226,59 @@ def raw_dir(tmp_path: Path) -> RawDir:
     return raw
 
 
-def build(raw: RawDir, store: Path) -> ee.BuildReport:
-    return ee.build_econ_events(raw.root, store)
+def meeting_panel(
+    heading: str,
+    *,
+    statement: str = "",
+    press_conference: str = "",
+    minutes: str = "",
+    minutes_released: str = "",
+) -> str:
+    """One ``fomchistorical<YEAR>.htm`` meeting panel: the links it carries, in the Fed's markup."""
+    parts = [f'<div class="panel"><h5 class="panel-heading">{heading}</h5><div class="row">']
+    if statement:
+        parts.append(f'<p><a href="{statement}">Statement</a></p>')
+    if press_conference:
+        parts.append(f'<p><a href="{press_conference}">Press Conference</a></p>')
+    if minutes:
+        pdf = minutes.replace(".htm", ".pdf")
+        parts.append(
+            f"<p>Minutes (Released {minutes_released}):<br>"
+            f'<a href="{minutes}">HTML</a> | <a href="{pdf}">PDF</a></p>'
+        )
+    parts.append("</div></div>")
+    return "".join(parts)
+
+
+def calendar_row(
+    month: str,
+    dates: str,
+    *,
+    statement: str = "",
+    press_conference: str = "",
+    minutes: str = "",
+    minutes_released: str = "",
+) -> str:
+    """One ``fomccalendars.htm`` meeting row, in the Fed's markup."""
+    body = ""
+    if statement:
+        body += f'<strong>Statement:</strong><br><a href="{statement}">HTML</a>'
+    if press_conference:
+        body += f'<br><a href="{press_conference}">Press Conference</a>'
+    if minutes:
+        body += (
+            f'<div class="fomc-meeting__minutes"><strong>Minutes:</strong><br>'
+            f'<a href="{minutes}">HTML</a><br> (Released {minutes_released})</div>'
+        )
+    return (
+        f'<div class="row fomc-meeting">'
+        f'<div class="fomc-meeting__month"><strong>{month}</strong></div>'
+        f'<div class="fomc-meeting__date">{dates}</div><div class="col-xs-12">{body}</div></div>'
+    )
+
+
+def build(raw: RawDir, store: Path, *, version: int = 2) -> ee.BuildReport:
+    return ee.build_econ_events(raw.root, store, version=version)
 
 
 def by_id(frame: pl.DataFrame) -> dict[str, dict[str, object]]:
@@ -419,6 +488,19 @@ def test_bls_page_keeps_a_row_without_a_time_and_says_the_time_is_unknown() -> N
     assert event.scheduled_time_source == "not_stated"
 
 
+def test_bls_page_reads_the_producer_price_index_too() -> None:
+    text = bls_page(
+        [
+            ("Wednesday, January 20, 2010", "08:30 AM", "Producer Price Index for December 2009"),
+            ("Thursday, January 14, 2010", "08:30 AM", "U.S. Import and Export Price Indexes"),
+        ]
+    )
+    (event,) = ee.parse_bls_schedule(text, f"{BLS}/schedule/2010/home.htm")
+    assert (event.event_type, event.period) == ("PPI", "December 2009")
+    assert event.scheduled_day == dt.date(2010, 1, 20)
+    assert (event.scheduled_clock, event.scheduled_time_source) == (dt.time(8, 30), "bls_stated")
+
+
 def test_bls_page_refuses_a_row_outside_the_page_year() -> None:
     text = bls_page(
         [("Friday, January 15, 2011", "08:30 AM", "Consumer Price Index for December 2010")]
@@ -452,6 +534,196 @@ def test_new_york_midnight_is_the_start_of_the_local_day() -> None:
     assert ns == 1264568400 * ee._NS_PER_S
 
 
+# ---------------------------------------------------- press conference and minutes pages
+
+
+def test_press_conference_page_states_the_minutes_hour_where_the_fed_states_it() -> None:
+    stated = ee.parse_press_conference(
+        press_conference_page(minutes_stated("February 18, 2026", "2:00 p.m.")),
+        f"{FED}/monetarypolicy/fomcpressconf20260128.htm",
+    )
+    assert stated == ee.MinutesStamp(day=dt.date(2026, 2, 18), clock=dt.time(14, 0))
+
+
+def test_a_2011_press_conference_page_states_the_minutes_day_but_no_hour() -> None:
+    stated = ee.parse_press_conference(
+        press_conference_page(minutes_stated("May 18, 2011")),
+        f"{FED}/monetarypolicy/fomcpresconf20110427.htm",
+    )
+    assert stated == ee.MinutesStamp(day=dt.date(2011, 5, 18), clock=None)
+
+
+def test_a_press_conference_page_without_a_minutes_entry_states_nothing() -> None:
+    page = press_conference_page(
+        "<p>FOMC Meeting Statement:<br><a href='/x.htm'>HTML</a>"
+        " (Released November 07, 2024 at 2:00 p.m.)</p>"
+        "<p>Press Conference Transcript (PDF)</p>"
+    )
+    assert ee.parse_press_conference(page, f"{FED}/monetarypolicy/fomcpresconf20241107.htm") is None
+
+
+def test_the_press_conference_url_keeps_the_spelling_the_fed_published() -> None:
+    # rewriting the spelling invents a URL the Fed never published: 2022-03-16 is fomcpresconf,
+    # 2026-01-28 is fomcpressconf, and the other spelling of each is a 404
+    assert ee.press_conference_url("/monetarypolicy/fomcpresconf20110427.htm") == (
+        f"{FED}/monetarypolicy/fomcpresconf20110427.htm"
+    )
+    assert ee.press_conference_url("/monetarypolicy/fomcpressconf20260128.htm") == (
+        f"{FED}/monetarypolicy/fomcpressconf20260128.htm"
+    )
+    # the 2022 calendar links one meeting's page as an absolute URL
+    assert ee.press_conference_url(f"{FED}/monetarypolicy/fomcpresconf20220316.htm") == (
+        f"{FED}/monetarypolicy/fomcpresconf20220316.htm"
+    )
+    assert ee.press_conference_key(f"{FED}/monetarypolicy/fomcpresconf20250129.htm") == "20250129"
+
+
+def test_historical_page_emits_the_press_conference_and_the_minutes() -> None:
+    statements = {
+        f"{FED}/newsevents/pressreleases/monetary20110427a.htm": (
+            dt.date(2011, 4, 27),
+            dt.time(12, 30),
+            "fed_stated",
+        )
+    }
+    press_conferences = {
+        "20110427": ee.PressConference(
+            url=f"{FED}/monetarypolicy/fomcpresconf20110427.htm",
+            minutes=ee.MinutesStamp(day=dt.date(2011, 5, 18), clock=None),
+        )
+    }
+    text = meeting_panel(
+        "April 26-27 Meeting - 2011",
+        statement="/newsevents/pressreleases/monetary20110427a.htm",
+        press_conference="/monetarypolicy/fomcpresconf20110427.htm",
+        minutes="/monetarypolicy/fomcminutes20110427.htm",
+        minutes_released="May 18, 2011",
+    )
+    events = ee.parse_fomc_historical(
+        text,
+        f"{FED}/monetarypolicy/fomchistorical2011.htm",
+        statements,
+        press_conferences=press_conferences,
+    )
+    assert [(e.event_type, e.scheduled_day, e.scheduled_clock) for e in events] == [
+        ("FOMC_STATEMENT", dt.date(2011, 4, 27), dt.time(12, 30)),
+        ("FOMC_PRESS_CONFERENCE", dt.date(2011, 4, 27), None),
+        ("FOMC_MINUTES", dt.date(2011, 5, 18), None),
+    ]
+    press_conference, minutes = events[1], events[2]
+    # no page states the hour of a press conference: the row marks the day
+    assert press_conference.scheduled_time_source == "not_stated"
+    assert press_conference.source_url == f"{FED}/monetarypolicy/fomcpresconf20110427.htm"
+    # the minutes cite the page that stated their release, and state the day only (2011)
+    assert minutes.source_url == f"{FED}/monetarypolicy/fomcpresconf20110427.htm"
+    assert minutes.scheduled_time_source == "not_stated"
+
+
+def test_without_a_press_conference_the_minutes_cite_the_meeting_page() -> None:
+    text = meeting_panel(
+        "March 16 Meeting - 2010",
+        statement="/newsevents/press/monetary/20100316a.htm",
+        minutes="/monetarypolicy/fomcminutes20100316.htm",
+        minutes_released="April 06, 2010",
+    )
+    statements = {
+        f"{FED}/newsevents/pressreleases/monetary20100316a.htm": (
+            dt.date(2010, 3, 16),
+            None,
+            "not_stated",
+        )
+    }
+    events = ee.parse_fomc_historical(
+        text, f"{FED}/monetarypolicy/fomchistorical2010.htm", statements
+    )
+    minutes = [event for event in events if event.event_type == "FOMC_MINUTES"]
+    (row,) = minutes
+    assert row.scheduled_day == dt.date(2010, 4, 6)
+    assert row.source_url == f"{FED}/monetarypolicy/fomchistorical2010.htm"
+
+
+def test_calendar_page_takes_the_minutes_hour_from_the_press_conference_page() -> None:
+    statements = {
+        f"{FED}/newsevents/pressreleases/monetary20260128a.htm": (
+            dt.date(2026, 1, 28),
+            dt.time(14, 0),
+            "fed_stated",
+        )
+    }
+    press_conferences = {
+        "20260128": ee.PressConference(
+            url=f"{FED}/monetarypolicy/fomcpressconf20260128.htm",
+            minutes=ee.MinutesStamp(day=dt.date(2026, 2, 18), clock=dt.time(14, 0)),
+        )
+    }
+    text = '<h4><a id="1">2026 FOMC Meetings</a></h4>' + calendar_row(
+        "January",
+        "27-28",
+        statement="/newsevents/pressreleases/monetary20260128a.htm",
+        press_conference="/monetarypolicy/fomcpressconf20260128.htm",
+        minutes="/monetarypolicy/fomcminutes20260128.htm",
+        minutes_released="February 18, 2026",
+    )
+    events = ee.parse_fomc_calendar(
+        text,
+        f"{FED}/monetarypolicy/fomccalendars.htm",
+        statements,
+        press_conferences=press_conferences,
+    )
+    minutes = [event for event in events if event.event_type == "FOMC_MINUTES"]
+    (row,) = minutes
+    assert (row.scheduled_day, row.scheduled_clock) == (dt.date(2026, 2, 18), dt.time(14, 0))
+    assert row.scheduled_time_source == "fed_stated"
+    assert row.source_url == f"{FED}/monetarypolicy/fomcpressconf20260128.htm"
+
+
+def test_a_minutes_day_the_two_pages_disagree_on_is_refused() -> None:
+    text = '<h4><a id="1">2026 FOMC Meetings</a></h4>' + calendar_row(
+        "January",
+        "27-28",
+        statement="/newsevents/pressreleases/monetary20260128a.htm",
+        minutes="/monetarypolicy/fomcminutes20260128.htm",
+        minutes_released="February 19, 2026",
+    )
+    press_conferences = {
+        "20260128": ee.PressConference(
+            url=f"{FED}/monetarypolicy/fomcpressconf20260128.htm",
+            minutes=ee.MinutesStamp(day=dt.date(2026, 2, 18), clock=dt.time(14, 0)),
+        )
+    }
+    statements = {
+        f"{FED}/newsevents/pressreleases/monetary20260128a.htm": (
+            dt.date(2026, 1, 28),
+            dt.time(14, 0),
+            "fed_stated",
+        )
+    }
+    with pytest.raises(DataQualityError, match="the two pages disagree"):
+        ee.parse_fomc_calendar(
+            text,
+            f"{FED}/monetarypolicy/fomccalendars.htm",
+            statements,
+            press_conferences=press_conferences,
+        )
+
+
+def test_a_press_conference_page_filed_under_another_day_is_refused() -> None:
+    statements = {
+        f"{FED}/newsevents/pressreleases/monetary20110427a.htm": (
+            dt.date(2011, 4, 27),
+            dt.time(12, 30),
+            "fed_stated",
+        )
+    }
+    text = meeting_panel(
+        "April 26-27 Meeting - 2011",
+        statement="/newsevents/pressreleases/monetary20110427a.htm",
+        press_conference="/monetarypolicy/fomcpresconf20110428.htm",
+    )
+    with pytest.raises(DataQualityError, match="disagree about the day of the meeting"):
+        ee.parse_fomc_historical(text, f"{FED}/monetarypolicy/fomchistorical2011.htm", statements)
+
+
 # ----------------------------------------------------------------------------- the build
 
 
@@ -461,7 +733,14 @@ def test_build_writes_the_contract_and_the_expected_rows(raw_dir: RawDir, tmp_pa
     assert frame.schema == ee.ECON_EVENT_SCHEMA
     # FOMC: 2010-01-27 (day only), 2010-05-09, 2026-01-28, and three meetings still ahead
     assert report.rows == frame.height == 8
-    assert report.events_by_type == {"FOMC_STATEMENT": 6, "CPI": 1, "NFP": 1}
+    assert report.events_by_type == {
+        "FOMC_STATEMENT": 6,
+        "FOMC_PRESS_CONFERENCE": 0,
+        "FOMC_MINUTES": 0,
+        "CPI": 1,
+        "NFP": 1,
+        "PPI": 0,
+    }
     assert report.events_by_status == {
         "released": 5,
         "rescheduled": 0,
@@ -490,6 +769,162 @@ def test_build_refuses_to_overwrite_a_stored_dataset(raw_dir: RawDir, tmp_path: 
     build(raw_dir, tmp_path / "store")
     with pytest.raises(ConfigurationError, match="refuses to overwrite"):
         build(raw_dir, tmp_path / "store")
+
+
+def test_v2_reproduces_every_v1_row_and_only_bumps_the_version(
+    raw_dir: RawDir, tmp_path: Path
+) -> None:
+    v1 = build(raw_dir, tmp_path / "store", version=1)
+    v2 = build(raw_dir, tmp_path / "store")
+    assert (v1.dataset, v2.dataset) == ("econ_events_v1", "econ_events_v2")
+    v1_frame = pl.read_parquet(tmp_path / "store" / ee.DATASET_V1 / "data.parquet")
+    v2_frame = pl.read_parquet(tmp_path / "store" / ee.DATASET / "data.parquet")
+    assert set(v1_frame["event_type"].unique()) == set(ee.EVENT_TYPES_V1)
+    assert set(v1_frame["dataset_version"].unique()) == {ee.DATASET_VERSION_V1}
+    assert set(v2_frame["dataset_version"].unique()) == {ee.DATASET_VERSION}
+    v1_rows = by_id(v1_frame)
+    v2_rows = by_id(v2_frame)
+    assert set(v1_rows) <= set(v2_rows)
+    for event_id, row in v1_rows.items():
+        other = dict(v2_rows[event_id])
+        assert other.pop("dataset_version") == ee.DATASET_VERSION
+        assert other.pop("record_sha256") != row["record_sha256"]  # the version is hashed
+        stripped = {key: value for key, value in row.items() if key != "record_sha256"}
+        stripped.pop("dataset_version")
+        assert other == stripped
+
+
+def test_a_v1_build_reads_only_the_v1_types(tmp_path: Path) -> None:
+    """A press-conference or minutes page that became unreadable must not stop a v1 rebuild."""
+    raw = RawDir(tmp_path / "raw")
+    fed_statement(raw, "20100127a", "January 27, 2010", "For immediate release")
+    raw.add(
+        "federalreserve",
+        "20261122_fomchistorical2010.html",
+        f"{FED}/monetarypolicy/fomchistorical2010.htm",
+        historical_page(
+            [
+                (
+                    "January 26-27 Meeting - 2010",
+                    "/newsevents/press/monetary/20100127a.htm",
+                    "Statement",
+                ),
+                ("January 26-27 Meeting - 2010", "/monetarypolicy/fomcminutes20100127.htm", "HTML"),
+            ]
+        ),
+    )
+    raw.add(
+        "federalreserve",
+        "20261122_fomcpresconf20100127.html",
+        f"{FED}/monetarypolicy/fomcpressconf20100127.htm",
+        # a page whose stated minutes date this build cannot read: v1 never looks at it
+        press_conference_page(minutes_stated("Smarch 3, 2010", "2:00 p.m.")),
+    )
+    raw.add("bls", "20261122_schedule_2010.html", f"{BLS}/schedule/2010/home.htm", bls_page([]))
+    raw.write()
+    report = build(raw, tmp_path / "store", version=1)
+    assert report.rows == 1
+    assert set(report.events_by_type) == set(ee.EVENT_TYPES_V1)
+
+
+def _ppi_raw(tmp_path: Path) -> RawDir:
+    """A BLS pair whose release moved from one year's page onto the next year's page."""
+    raw = RawDir(tmp_path / "ppi")
+    fed_statement(raw, "20100127a", "January 27, 2010", "For immediate release")
+    raw.add(
+        "federalreserve",
+        "20261122_fomchistorical2010.html",
+        f"{FED}/monetarypolicy/fomchistorical2010.htm",
+        historical_page(
+            [
+                (
+                    "January 26-27 Meeting - 2010",
+                    "/newsevents/press/monetary/20100127a.htm",
+                    "Statement",
+                )
+            ]
+        ),
+    )
+    raw.add(
+        "bls",
+        "20261122_schedule_2025.html",
+        f"{BLS}/schedule/2025/home.htm",
+        bls_page(
+            [("Friday, November 14, 2025", "08:30 AM", "Producer Price Index for October 2025")]
+        ),
+    )
+    raw.add(
+        "bls",
+        "20261122_schedule_2025_20250912.html",
+        f"{BLS}/schedule/2025/home.htm",
+        bls_page(
+            [
+                (
+                    "Thursday, October 16, 2025",
+                    "08:30 AM",
+                    "Producer Price Index for October 2025",
+                ),
+                (
+                    "Thursday, December 11, 2025",
+                    "08:30 AM",
+                    "Producer Price Index for November 2025",
+                ),
+            ]
+        ),
+        capture_at="2025-09-12T15:08:17Z",
+        url="https://web.archive.org/web/20250912150817/https://www.bls.gov/schedule/2025/home.htm",
+    )
+    raw.add(
+        "bls",
+        "20261122_schedule_2026.html",
+        f"{BLS}/schedule/2026/home.htm",
+        bls_page(
+            [("Wednesday, January 14, 2026", "08:30 AM", "Producer Price Index for November 2025")]
+        ),
+    )
+    raw.write()
+    return raw
+
+
+def test_a_release_moved_onto_the_next_years_page_is_one_rescheduled_row(tmp_path: Path) -> None:
+    build(_ppi_raw(tmp_path), tmp_path / "store")
+    frame = pl.read_parquet(tmp_path / "store" / ee.DATASET / "data.parquet")
+    ppi = frame.filter(pl.col("event_type") == "PPI")
+    # matching inside one year would report a cancelled release *and* a released one for one report
+    assert ppi.height == 2
+    assert set(ppi["status"].to_list()) == {"rescheduled"}
+    rows = {str(row["event_id"]): row for row in ppi.iter_rows(named=True)}
+    assert rows["PPI-20251211"]["scheduled_local"] == "2025-12-11T08:30:00-05:00"
+    assert rows["PPI-20251211"]["actual_publication_date"] == "2026-01-14"
+    assert rows["PPI-20251211"]["source_url"] == f"{BLS}/schedule/2026/home.htm"
+
+
+def test_a_producer_price_row_reaches_the_build(raw_dir: RawDir, tmp_path: Path) -> None:
+    raw = RawDir(tmp_path / "ppi-build")
+    raw.add(
+        "federalreserve",
+        "20261122_fomchistorical2010.html",
+        f"{FED}/monetarypolicy/fomchistorical2010.htm",
+        historical_page([]),
+    )
+    fed_statement(raw, "20100127a", "January 27, 2010", "For immediate release")
+    raw.add(
+        "bls",
+        "20261122_schedule_2010.html",
+        f"{BLS}/schedule/2010/home.htm",
+        bls_page(
+            [("Wednesday, January 20, 2010", "08:30 AM", "Producer Price Index for December 2009")]
+        ),
+    )
+    raw.write()
+    report = build(raw, tmp_path / "store")
+    assert report.events_by_type["PPI"] == 1
+    frame = pl.read_parquet(tmp_path / "store" / ee.DATASET / "data.parquet")
+    (row,) = frame.filter(pl.col("event_type") == "PPI").iter_rows(named=True)
+    assert row["event_id"] == "PPI-20100120"
+    assert row["scheduled_local"] == "2010-01-20T08:30:00-05:00"
+    assert row["scheduled_time_source"] == "bls_stated"
+    assert row["dataset_version"] == ee.DATASET_VERSION
 
 
 def test_event_id_is_stable_and_the_record_hash_covers_every_other_field(
@@ -791,6 +1226,46 @@ def test_fetch_raw_discovers_the_linked_statements_and_never_refetches(tmp_path:
     assert {snapshot.sha256 for snapshot in snapshots} == {str(e["sha256"]) for e in entries}
 
 
+def test_fetch_raw_discovers_the_press_conference_pages(tmp_path: Path) -> None:
+    panel = meeting_panel(
+        "April 26-27 Meeting - 2011",
+        statement="/newsevents/pressreleases/monetary20110427a.htm",
+        press_conference="/monetarypolicy/fomcpresconf20110427.htm",
+    )
+    pages = {
+        f"{FED}/monetarypolicy/fomccalendars.htm": calendar_page({}),
+        **{
+            f"{FED}/monetarypolicy/fomchistorical{year}.htm": (
+                f'<div id="article">{panel}</div>' if year == 2011 else historical_page([])
+            )
+            for year in range(2010, 2021)
+        },
+        f"{FED}/newsevents/pressreleases/monetary20110427a.htm": statement_page(
+            "April 27, 2011", "For release at 12:30 p.m. EDT"
+        ),
+        f"{FED}/monetarypolicy/fomcpresconf20110427.htm": press_conference_page(
+            minutes_stated("May 18, 2011")
+        ),
+        **{f"{BLS}/schedule/{year}/home.htm": bls_page([]) for year in range(2010, 2028)},
+        "https://web.archive.org/web/20250912150817/https://www.bls.gov/schedule/2025/home.htm": (
+            bls_page([])
+        ),
+    }
+    calls: list[str] = []
+
+    def transport(url: str) -> bytes:
+        calls.append(url)
+        return pages[url].encode("utf-8")
+
+    now = int(dt.datetime(2026, 11, 22, 2, 40, tzinfo=dt.UTC).timestamp())
+    entries = ee.fetch_raw(tmp_path / "raw", transport=transport, now=lambda: now * ee._NS_PER_S)
+    names = {str(entry["path"]) for entry in entries}
+    # discovered from the Fed's own page, under the spelling this module writes
+    assert "federalreserve/20261122_fomcpresconf20110427.html" in names
+    # only the *pages* are fetched: the minutes page states no release instant, so nothing cites it
+    assert not any("fomcminutes" in name for name in names)
+
+
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """No test in this module may reach the network: a fetch here always uses a fake transport."""
@@ -801,4 +1276,5 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
     monkeypatch.setattr(ee, "_http_get", refuse)
     yield
-    assert DatasetId("econ_events_v1") == ee.DATASET
+    assert DatasetId("econ_events_v2") == ee.DATASET
+    assert DatasetId("econ_events_v1") == ee.DATASET_V1

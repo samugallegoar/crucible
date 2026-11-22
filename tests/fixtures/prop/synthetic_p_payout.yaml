@@ -53,6 +53,7 @@ reset:
   tz: America/Chicago
 commissions:
   status: known
+  includes_exchange_and_regulatory_fees: true
   per_side_usd:
     ES: '2.00'
   platform: null

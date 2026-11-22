@@ -501,6 +501,29 @@ applies to this ruleset and this `execution_mode`) or `unknown`. A mechanically 
 under a blocker is never a practically valid pass (ADR-0107 section 11).
 
 **`unlimited` vs `unknown`** — `unlimited` is an explicit source value (a payout cap the firm
-states is uncapped); `unknown` is a value the sources do not give, and it cannot appear in a
-modeled rule: the rule goes to `not_modeled`. A numeric sentinel (>= 1,000,000 USD for a cap) is
-refused (ADR-0107 section 7).
+states is uncapped); `unknown` is a value the sources do not give. In a rule it means the rule
+cannot be modeled and goes to `not_modeled`, with one bounded exception: a payout cap
+(`payout.max_usd`, `max_usd_by_payout`) accepts `unknown`, the simulation then pays what the other
+terms allow and the payouts and cash statistics are labelled `upper_bound`. `unknown` is never
+read as `unlimited` and never as zero. A numeric sentinel (>= 1,000,000 USD for a cap) is refused
+(ADR-0107 section 7).
+
+**`upper_bound`** — the label on a cash number computed against a value the sources do not state
+(`cash_estimate_status: upper_bound`, `PayoutRecord.bound: upper_bound`): the payout paid as much
+as every other term allowed, so the real amount can only be lower. The attempt's `estimate_status`
+is then at best `partial`, with the reason "payout cap unknown". Pass/fail outcomes are unaffected.
+
+**Session-calendar coverage gap** - an attempt whose trade dates reach a CME session the table
+could not source (`verified: False`, built from the regular-week regime: the 2023 holidays other
+than Labor Day, Christmas and New Year, and MLK 2024). The attempt lists it
+(`session_calendar_gaps`, `"<first>..<last>"` in the table's own Chicago days, which is why the
+2023-11-24 session lands in the Thanksgiving 2023 window that starts on 2023-11-22) and its
+estimate becomes `partial` with the reason `session calendar unsourced <first>..<last>`: a
+session-relative `flat_by`, a rule-day boundary and an EOD test computed over that day are not
+sourced numbers.
+
+**Activity requirement** — a rule kind that requires at least N qualifying rule-days in EVERY
+rolling window of M days (`calendar_days` or `trading_days`), where a qualifying day satisfies a
+`qualifies_if` predicate (minimum trades, minimum absolute or signed P&L). It is the mirror of
+`inactivity` (a maximum gap since the last traded day) and its violation action is explicit
+(`fail` or `close_account`). A window is judged only once it is full, at that rule-day's close.

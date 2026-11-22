@@ -154,7 +154,7 @@ def test_trailing_lock_freezes_the_threshold_once_the_hwm_reaches_it() -> None:
         comparison="<=",
         action="fail",
         lock=TrailingLock(
-            on="hwm",
+            on=("hwm",),
             at_balance_usd=Decimal("51000"),
             locked_threshold_usd=Decimal("49000"),
         ),

@@ -79,6 +79,11 @@ def ruleset_document(ruleset: PropRuleset) -> dict[str, object]:
         "reset": {"time": ruleset.reset.time.isoformat(), "tz": ruleset.reset.tz},
         "commissions": {
             "status": ruleset.commissions.status,
+            "includes_exchange_and_regulatory_fees": (
+                "unknown"
+                if not isinstance(ruleset.commissions.includes_exchange_and_regulatory_fees, bool)
+                else str(ruleset.commissions.includes_exchange_and_regulatory_fees).lower()
+            ),
             "per_side_usd": {
                 root: str(value) for root, value in ruleset.commissions.per_side_usd.items()
             },

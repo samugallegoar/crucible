@@ -16,6 +16,12 @@ A payout is a withdrawal recorded apart from trading P&L (ADR-0106 section 4): t
 takes it. ``payouts_usd`` is the trader's net share, ``net_cash_usd`` is that minus the fees, and
 ``payouts`` lists every payout with its gross and net. There is no pass probability and no verdict
 in this stage.
+
+Two cost facts decide whether the cash statistic is a number at all (ADR-0107 section 10):
+``commissions`` may be unknown, and a commission that EXCLUDES the exchange and regulatory fees
+needs an ``ExchangeFeeSource``. Either gap leaves ``cash_estimate_status`` ``unavailable`` unless a
+named ``cost_assumption`` covers it. A payout cap the source does not state (``unknown``) is a
+third case: the cash numbers are paid as the other terms allow and labelled ``upper_bound``.
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 
-from crucible.core.errors import ConfigurationError, DataQualityError
+from crucible.core.errors import ConfigurationError, CrucibleError, DataQualityError
 from crucible.data.cme_sessions import assign_bars, trade_date_of
 from crucible.execution.futures_sim import (
     CostSchedule,
@@ -38,6 +44,7 @@ from crucible.execution.futures_sim import (
 )
 from crucible.execution.interfaces import OverlayEvent
 from crucible.prop import rules as rl
+from crucible.prop.costs import ExchangeFeeRow, ExchangeFeeSource, ExchangeFeeTable
 from crucible.prop.coverage import (
     EvaluationStatus,
     RuleCoverageRow,
@@ -46,6 +53,7 @@ from crucible.prop.coverage import (
     evaluation_status,
     material_unmodeled,
     rule_coverage,
+    session_calendar_gaps,
 )
 from crucible.prop.news import (
     Coverage,
@@ -58,10 +66,12 @@ from crucible.prop.rules_schema import ExecutionMode
 from crucible.prop.ruleset import PropRuleset
 
 if TYPE_CHECKING:
-    from crucible.data.cme_sessions import SessionCalendar
+    from crucible.data.cme_sessions import SessionCalendar, TradeDateSession
     from crucible.data.futures_specs import FuturesContractSpec
 
 SEMANTICS = "high_before_low_conservative"
+PAYOUT_CAP_UNKNOWN = "payout cap unknown"
+"""The named reason a payout and cash statistic is an upper bound (ADR-0107 section 7)."""
 LIQUIDATION_ASSUMPTIONS = (
     "a breach liquidates the whole position as a market order at its breach price (floor for a "
     "long, ceiling for a short) or at the open when the bar gapped past it, paying the bar's open "
@@ -86,12 +96,18 @@ class PhaseOutcome:
 
 @dataclass(frozen=True, slots=True)
 class PayoutRecord:
-    """One payout: when it was paid, the gross withdrawn and the trader's net share."""
+    """One payout: when it was paid, the gross withdrawn and the trader's net share.
+
+    ``bound`` is ``exact`` or ``upper_bound``: a payout cap the sources do not state makes the
+    amount the most the other terms allow, and the record says so rather than presenting it as a
+    firm number.
+    """
 
     time_ns: int
     gross_usd: Decimal
     net_usd: Decimal
     rule_id: str
+    bound: str = "exact"
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,13 +123,23 @@ class FeeBreakdown:
 
 @dataclass(frozen=True, slots=True)
 class CommissionApplication:
-    """The commission table the attempt used, and whether it is known (ADR-0107 section 10)."""
+    """The commission table the attempt used, and whether it is known (ADR-0107 section 10).
+
+    ``exchange_fee_usd`` is the per-side amount added from the ``ExchangeFeeSource`` when the
+    commission EXCLUDES it (the schedule's ``exchange_fee``), and ``exchange_fee_source_sha256``
+    names the document it came from. ``fees_incomplete`` is the reason the cost statistics cannot
+    claim an exact number, or None.
+    """
 
     status: str
     per_side_usd: Decimal | None
     root: str
     source: str
     cost_assumption: str | None
+    includes_exchange_and_regulatory_fees: str
+    exchange_fee_usd: Decimal | None = None
+    exchange_fee_source_sha256: str | None = None
+    fees_incomplete: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +162,8 @@ class AttemptResult:
     payout_policy: str
     payout_modeled: bool
     net_cash_usd: Decimal
+    cash_estimate_status: str
+    cash_estimate_reasons: tuple[str, ...]
     overlay_events: tuple[OverlayEvent, ...]
     rule_coverage: tuple[RuleCoverageRow, ...]
     evaluation_status: EvaluationStatus
@@ -149,6 +177,7 @@ class AttemptResult:
     fees: FeeBreakdown
     news_covered: bool | None
     news_coverage_gaps: tuple[str, ...]
+    session_calendar_gaps: tuple[str, ...]
     warnings: tuple[str, ...]
     ruleset_id: str
     version: int
@@ -177,11 +206,13 @@ def _payout_modeled(ruleset: PropRuleset) -> bool:
 
 def _window(
     calendar: SessionCalendar, bars: pl.DataFrame, start_trade_date: dt.date, horizon: int
-) -> tuple[np.ndarray, list[dt.date | None], list[int]]:
-    """``(session_close_ns, trade_date_of_each_bar, eligible bar indices)`` for the bars.
+) -> tuple[np.ndarray, list[dt.date | None], list[int], list[TradeDateSession]]:
+    """``(session_close_ns, trade_date_of_each_bar, eligible indices, touched sessions)``.
 
     ``session_close_ns[i]`` is the scheduled close of the session bar ``i`` belongs to (0 when the
-    bar is off schedule): the causal fact an end-of-day rule needs, never the next bar.
+    bar is off schedule): the causal fact an end-of-day rule needs, never the next bar. ``touched``
+    holds the sessions the eligible bars trade in, in order, so the attempt can report an unsourced
+    session-calendar window it runs through (``session_calendar_gaps``).
     """
     ends = bars["event_time"].to_numpy().astype(np.int64)
     placed = assign_bars(calendar, ends)
@@ -194,7 +225,15 @@ def _window(
     eligible = [
         i for i, day in enumerate(dates) if day is not None and start_trade_date <= day <= limit
     ]
-    return close, dates, eligible
+    touched: list[TradeDateSession] = []
+    for index in eligible:
+        session_index = int(placed.session_index[index])
+        if session_index < 0:
+            continue
+        session = placed.sessions[session_index]
+        if not touched or touched[-1] is not session:
+            touched.append(session)
+    return close, dates, eligible, touched
 
 
 def _trade_date(dates: list[dt.date | None], i: int) -> dt.date:
@@ -233,20 +272,66 @@ def _slice(
 
 
 def _commissions_for(
-    ruleset: PropRuleset, costs: CostSchedule, root: str, cost_assumption: str | None
-) -> tuple[CostSchedule, CommissionApplication, bool]:
+    ruleset: PropRuleset,
+    costs: CostSchedule,
+    root: str,
+    cost_assumption: str | None,
+    *,
+    exchange_fees: ExchangeFeeSource | None = None,
+    when: dt.date,
+) -> tuple[CostSchedule, CommissionApplication, bool, str | None]:
     """The ruleset's commission table replaces the run's fee schedule (spread/slippage stay).
 
     An unknown commission is never treated as zero: without an explicit named assumption the
-    run's own schedule is kept as a labelled placeholder and ``cost_stats_available`` is false.
+    run's own schedule is kept as a labelled placeholder and the cost statistics are unavailable.
+    A commission that EXCLUDES the exchange and regulatory fees adds the ``ExchangeFeeSource``'s
+    per-side amount, charged as the schedule's exchange fee; without a source, when the source does
+    not cover the root and date, or when the source REFUSES to price it (the stored dataset raises
+    rather than guess), the fee is a named gap (``fees_incomplete``) and the cost statistics stay
+    conditional or unavailable. A commission that declares the fees ``unknown`` is the same gap: an
+    unknown cost is never a cost of zero.
+
+    The returned fourth value is the reason the cost statistics cannot claim an exact number, or
+    None when they can.
     """
     table = ruleset.commissions
+    declared = table.includes_exchange_and_regulatory_fees
     per_side = table.per_side(root) if table.status == "known" else None
     if per_side is not None:
+        exchange = Decimal(0)
+        source_sha256: str | None = None
+        gaps: list[str] = []
+        included = table.exchange_fees_included
+        if included is False:
+            row: ExchangeFeeRow | None = None
+            if exchange_fees is None:
+                gaps.append(
+                    "the commission excludes the exchange and regulatory fees and no exchange "
+                    "fee table was given"
+                )
+            else:
+                try:
+                    row = exchange_fees.per_side(root, when)
+                except CrucibleError as exc:
+                    # the table refuses to price this root and date: never a zero fee
+                    gaps.append(f"exchange fees unknown: {exc}")
+                if not gaps and row is None:
+                    gaps.append(
+                        f"the exchange fee table has no row for {root} on {when.isoformat()}, so "
+                        "the per-side fee the commission excludes is unknown"
+                    )
+                if row is not None:
+                    exchange = row.per_side_usd
+                    source_sha256 = getattr(exchange_fees, "source_sha256", None)
+        elif included is None:
+            gaps.append(
+                "the commission does not declare whether it includes the exchange and regulatory "
+                "fees (it is required to)"
+            )
         schedule = replace(
             costs,
             commission=per_side,
-            exchange_fee=Decimal(0),
+            exchange_fee=exchange,
             clearing_fee=Decimal(0),
             regulatory_fee=Decimal(0),
         )
@@ -258,8 +343,15 @@ def _commissions_for(
                 root=root,
                 source=table.source.quote,
                 cost_assumption=None,
+                includes_exchange_and_regulatory_fees=(
+                    "unknown" if included is None else str(included).lower()
+                ),
+                exchange_fee_usd=exchange,
+                exchange_fee_source_sha256=source_sha256,
+                fees_incomplete="; ".join(gaps) or None,
             ),
-            True,
+            not gaps or cost_assumption is not None,
+            "; ".join(gaps) or None,
         )
     available = cost_assumption is not None
     return (
@@ -270,8 +362,12 @@ def _commissions_for(
             root=root,
             source=table.source.quote,
             cost_assumption=cost_assumption,
+            includes_exchange_and_regulatory_fees=(
+                "unknown" if not isinstance(declared, bool) else str(declared).lower()
+            ),
         ),
         available,
+        None,
     )
 
 
@@ -314,12 +410,17 @@ def estimate_status(
     cost_assumption: str | None,
     news_covered: bool | None,
     news_coverage_gaps: tuple[str, ...] = (),
+    session_calendar_gaps: tuple[str, ...] = (),
+    fees_incomplete: str | None = None,
+    payout_cap_unknown: bool = False,
 ) -> tuple[str, tuple[str, ...]]:
     """``complete|conditional|partial|unavailable`` and its reasons (ADR-0107 section 11).
 
-    ``unavailable`` when a critical rule is unmodeled or the commissions are unknown without a
-    named assumption; ``partial`` when a material rule (including an uncovered news window) is
-    unmodeled; ``conditional`` when the ruleset is unverified or a cost assumption was used.
+    ``unavailable`` when a critical rule is unmodeled, the commissions are unknown without a named
+    assumption, or a cost the commission excludes has no fee table and no assumption; ``partial``
+    when a material rule (including an uncovered news window or a payout cap the sources do not
+    state) is unmodeled; ``conditional`` when the ruleset is unverified or a cost assumption was
+    used.
     """
     reasons: list[str] = []
     critical = [row.rule for row in coverage if not row.modeled and row.materiality == "critical"]
@@ -330,10 +431,14 @@ def estimate_status(
         reasons.append(f"unmodeled material rule {rule}")
     if not verified:
         reasons.append("the ruleset is unverified")
+    if fees_incomplete is not None:
+        reasons.append(fees_incomplete)
     if not commissions_known and cost_assumption is None:
         reasons.append("commissions are unknown and no cost assumption was given")
     elif cost_assumption is not None:
         reasons.append(f"cost assumption {cost_assumption!r} was used")
+    if payout_cap_unknown:
+        reasons.append(PAYOUT_CAP_UNKNOWN)
     if (
         coverage
         and news_covered is not True
@@ -346,13 +451,49 @@ def estimate_status(
             + ", ".join(news_coverage_gaps)
             + ": their whole trade date is outside news coverage"
         )
-    if critical or (not commissions_known and cost_assumption is None):
+    for gap in session_calendar_gaps:
+        reasons.append(f"session calendar unsourced {gap}")
+    costs_gapped = fees_incomplete is not None and cost_assumption is None
+    if critical or (not commissions_known and cost_assumption is None) or costs_gapped:
         return "unavailable", tuple(reasons)
-    if material or news_coverage_gaps:
+    if material or news_coverage_gaps or session_calendar_gaps or payout_cap_unknown:
         return "partial", tuple(reasons)
     if not verified or cost_assumption is not None:
         return "conditional", tuple(reasons)
     return "complete", tuple(reasons)
+
+
+def cash_estimate(
+    *,
+    payouts_modeled: bool,
+    payout_cap_unknown: bool,
+    costs_available: bool,
+    cost_assumption: str | None,
+    fees_incomplete: str | None = None,
+) -> tuple[str, tuple[str, ...]]:
+    """``exact | conditional | upper_bound | unavailable`` for the payout and net-cash numbers.
+
+    A cash number needs every cost the account pays: an unknown commission, or a commission that
+    excludes the exchange fees with no table to add them, makes it ``unavailable`` unless a named
+    ``cost_assumption`` covers the gap (then it is a number under that assumption, so
+    ``conditional``, and the attempt says which). A payout cap the sources do not state does not
+    stop the number: the payouts are paid as the other terms allow and the statistic is an
+    ``upper_bound``.
+    """
+    reasons: list[str] = []
+    if not payouts_modeled:
+        reasons.append("the ruleset declares no payout rule, so no withdrawal is modeled")
+    if fees_incomplete is not None:
+        reasons.append(fees_incomplete)
+    if not costs_available:
+        reasons.append("the attempt's cost is not exact, so the net cash is not a number")
+        return "unavailable", tuple(reasons)
+    if cost_assumption is not None:
+        reasons.append(f"cost assumption {cost_assumption!r} was used")
+    if payout_cap_unknown:
+        reasons.append(PAYOUT_CAP_UNKNOWN)
+        return "upper_bound", tuple(reasons)
+    return ("conditional" if cost_assumption is not None else "exact"), tuple(reasons)
 
 
 def practical_eligibility(ruleset: PropRuleset, execution_mode: ExecutionMode) -> str:
@@ -384,6 +525,7 @@ def simulate_attempt(
     execution_mode: ExecutionMode,
     news_events: Sequence[NewsEvent] | None = None,
     news_coverage: Coverage | None = None,
+    exchange_fees: ExchangeFeeSource | None = None,
     cost_assumption: str | None = None,
     resets_purchased: int = 0,
     scenario_id: str = "primary",
@@ -406,12 +548,20 @@ def simulate_attempt(
     ``execution_mode`` is required: a compliance rule that bans automated trading makes an
     automated strategy ``blocked_by_compliance`` even when the mechanical account passes.
     ``news_events``/``news_coverage`` are the economic calendar's rows and the covered periods;
-    a news rule without coverage is ``not_modeled`` for this attempt.
+    a news rule whose event types the calendar does not carry is ``not_modeled`` for this attempt
+    (reported), and every window the calendar does carry is still enforced.
+    ``exchange_fees`` is the ``ExchangeFeeSource`` a commission that EXCLUDES the exchange and
+    regulatory fees is added to; without it that cost is a named gap and the cash statistic is
+    ``unavailable`` (or ``conditional`` under a ``cost_assumption``). Its per-side amount is
+    resolved at ``start_trade_date``; a fee change inside the attempt's window is reported in
+    ``warnings``, never applied silently.
     """
     if max_horizon_days < 1:
         msg = f"max_horizon_days must be >= 1, got {max_horizon_days}"
         raise ConfigurationError(msg)
-    close_ns, dates, eligible = _window(calendar, bars, start_trade_date, max_horizon_days)
+    close_ns, dates, eligible, touched_sessions = _window(
+        calendar, bars, start_trade_date, max_horizon_days
+    )
     if not eligible:
         msg = (
             f"no bar of the series falls in the attempt window "
@@ -424,6 +574,7 @@ def simulate_attempt(
     news_events = tuple(news_events or ())
     news_covered: bool | None = None
     news_coverage_gaps: tuple[str, ...] = ()
+    news_unmodeled: dict[str, str] = {}
     if news_rules:
         start_ns = int(bars["event_time"][window_first])
         end_date = dates[window_last] or start_trade_date
@@ -440,9 +591,35 @@ def simulate_attempt(
         news_covered = coverage_covers(news_coverage, start_ns, end_ns)
         if not news_events:
             news_covered = False
-    coverage = rule_coverage(ruleset, news_covered=news_covered)
-    commission_schedule, commission, _cost_stats_available = _commissions_for(
-        ruleset, costs, spec.root, cost_assumption
+        # an event type the calendar does not carry is a declared gap, never "no news": the rule
+        # that names it stays not_modeled for this attempt and is reported by name
+        known_types = {event.event_type for event in news_events}
+        for rule in news_rules:
+            missing = [name for name in rule.event_types if name not in known_types]
+            if missing:
+                news_unmodeled[rule.rule_id] = (
+                    f"event type(s) {', '.join(sorted(missing))} are not in the economic calendar"
+                )
+    coverage = rule_coverage(
+        ruleset, news_covered=news_covered, news_unmodeled=news_unmodeled or None
+    )
+    (
+        commission_schedule,
+        commission,
+        cost_stats_available,
+        fees_incomplete,
+    ) = _commissions_for(
+        ruleset,
+        costs,
+        spec.root,
+        cost_assumption,
+        exchange_fees=exchange_fees,
+        when=start_trade_date,
+    )
+    payout_cap_unknown = any(
+        rule.kind == "payout" and rule.unknown_cap
+        for phase in ruleset.phases
+        for rule in (*phase.rules, *phase.pass_conditions)
     )
     phase_outcomes: list[PhaseOutcome] = []
     events: list[OverlayEvent] = []
@@ -492,8 +669,11 @@ def simulate_attempt(
                 gross_usd=Decimal(gross) / 1_000_000,
                 net_usd=Decimal(net) / 1_000_000,
                 rule_id=rule,
+                bound=(
+                    overlay.payout_bounds[index] if index < len(overlay.payout_bounds) else "exact"
+                ),
             )
-            for when, gross, net, rule in overlay.payouts
+            for index, (when, gross, net, rule) in enumerate(overlay.payouts)
         )
         trading_days = len({day for day in dates[first : last + 1] if day is not None})
         phase_outcomes.append(
@@ -543,6 +723,7 @@ def simulate_attempt(
         days_calendar = (passed_date - start_trade_date).days
     data_first = dates[window_first] or start_trade_date
     data_last = dates[window_last] or start_trade_date
+    schedule_gaps = session_calendar_gaps(calendar, touched_sessions)
     unverified = not ruleset.verified
     warnings = list(coverage_warnings(coverage, ruleset))
     if news_coverage_gaps:
@@ -555,6 +736,29 @@ def simulate_attempt(
         warnings.append(
             f"the data window starts {start_trade_date}, before the ruleset's effective_from "
             f"{ruleset.effective_from}: a counterfactual application"
+        )
+    for gap in schedule_gaps:
+        warnings.append(
+            f"session calendar unsourced {gap}: the CME schedule of the affected sessions was "
+            "never archived, so the session-relative flat_by, the rule-day boundary and the "
+            "end-of-day test are built from the regular-week regime, not from a sourced schedule"
+        )
+    if news_unmodeled:
+        warnings.append(
+            "news restrictions not modeled for this attempt: "
+            + "; ".join(
+                f"{rule_id} ({reason})" for rule_id, reason in sorted(news_unmodeled.items())
+            )
+        )
+    change = (
+        None
+        if not isinstance(exchange_fees, ExchangeFeeTable)
+        else exchange_fees.change_within(spec.root, start_trade_date, data_last)
+    )
+    if change is not None:
+        warnings.append(
+            f"the exchange fee for {spec.root} changes on {change} inside the attempt, and the "
+            f"schedule of {start_trade_date} is charged for the whole window"
         )
     payouts_usd = sum((record.net_usd for record in payouts), Decimal(0))
     passed = outcome == "pass"
@@ -572,6 +776,16 @@ def simulate_attempt(
         cost_assumption=cost_assumption,
         news_covered=news_covered,
         news_coverage_gaps=news_coverage_gaps,
+        session_calendar_gaps=schedule_gaps,
+        fees_incomplete=fees_incomplete,
+        payout_cap_unknown=payout_cap_unknown,
+    )
+    cash_status, cash_reasons = cash_estimate(
+        payouts_modeled=_payout_modeled(ruleset),
+        payout_cap_unknown=payout_cap_unknown,
+        costs_available=cost_stats_available,
+        cost_assumption=cost_assumption,
+        fees_incomplete=fees_incomplete,
     )
     return AttemptResult(
         outcome=outcome,
@@ -592,6 +806,8 @@ def simulate_attempt(
         payout_policy=payout_policy,
         payout_modeled=_payout_modeled(ruleset),
         net_cash_usd=payouts_usd - fee_breakdown.total_usd,
+        cash_estimate_status=cash_status,
+        cash_estimate_reasons=cash_reasons,
         overlay_events=tuple(events),
         rule_coverage=coverage,
         evaluation_status=evaluation_status(coverage),
@@ -603,6 +819,7 @@ def simulate_attempt(
         scenario_id=scenario_id,
         news_covered=news_covered,
         news_coverage_gaps=news_coverage_gaps,
+        session_calendar_gaps=schedule_gaps,
         warnings=tuple(warnings),
         ruleset_id=ruleset.ruleset_id,
         version=ruleset.version,

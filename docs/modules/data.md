@@ -64,20 +64,34 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
 - `providers/` — price providers behind one interface (`PriceProvider`, ADR-0063): the `tiingo` and `yfinance`
   adapters, and `fetch.py` behind `crucible data fetch`, the shared normalizer, settings (API keys),
   HTTP retry and the raw-response cache. See "Data providers" below.
-- `econ_events.py` — the economic-event calendar `econ_events_v1` (ADR-0107 section 12): the release
-  instants of every FOMC policy statement (scheduled meetings *and* intermeeting actions), of the
-  BLS Consumer Price Index release and of the BLS Employment Situation release, 2010-01-01 to the
-  last date the sources publish, built from raw snapshots of federalreserve.gov and bls.gov
-  (`docs/data/econ-events.md`). `ECON_EVENT_SCHEMA` / `ECON_EVENT_SORT_KEYS`, the parsers
-  `parse_fomc_statement` / `parse_fomc_calendar` / `parse_fomc_historical` / `parse_bls_schedule`,
+- `econ_events.py` — the economic-event calendar `econ_events_v2` (ADR-0107 section 12): the release
+  instants of every FOMC policy statement (scheduled meetings *and* intermeeting actions), of every
+  FOMC press conference the Fed held (dated to its meeting's day: **no page states its hour**), of
+  the release of each meeting's minutes, of the BLS Consumer Price Index, Producer Price Index and
+  Employment Situation releases, 2010-01-01 to the last date the sources publish, built from raw
+  snapshots of federalreserve.gov and bls.gov (`docs/data/econ-events.md`). `ECON_EVENT_SCHEMA` /
+  `ECON_EVENT_SORT_KEYS`, the parsers `parse_fomc_statement` / `parse_fomc_calendar` /
+  `parse_fomc_historical` / `parse_fomc_press_conference` / `parse_bls_schedule`,
   `events_from_snapshots` (the assembly, where an earlier snapshot of a schedule turns a release
-  `rescheduled` or `cancelled`), `build_econ_events` (it refuses to overwrite a stored dataset),
-  `load_econ_events(store, event_types, start_ns, end_ns, *, as_of=None)` (reads with the
-  open-ended sentinel: a calendar is a firm-rule constraint, not a strategy signal),
+  `rescheduled` or `cancelled`), `build_econ_events(raw_dir, store_root, *, version=2)` (it refuses
+  to overwrite a stored dataset; `version=1` still builds `econ_events_v1`, whose rows it
+  reproduces), `load_econ_events(store, event_types, start_ns, end_ns, *, as_of=None)` (reads with
+  the open-ended sentinel: a calendar is a firm-rule constraint, not a strategy signal),
   `coverage(store)` / `coverage_of(frame)` (the covered intervals and the gaps per event type),
   `day_only_events(frame)` (the rows whose hour no source states) and `fetch_raw` (the ingestion,
-  which discovers the statement pages from the Fed's own pages and writes `MANIFEST.json`). This is
-  **not** market data and the futures vault guard does not cover it.
+  which discovers the statement and press-conference pages from the Fed's own pages and writes
+  `MANIFEST.json`). This is **not** market data and the futures vault guard does not cover it.
+- `exchange_fees.py` — the per-side, per-contract fee table `exchange_fees_v1` a prop-firm run
+  charges on top of commission (`docs/data/cme-exchange-fees.md`): `EXCHANGE_FEE_SCHEMA` /
+  `EXCHANGE_FEE_SORT_KEYS`, `parse_nfa_assessment` (the NFA Bylaw 1301 assessment fee, halved from
+  the round-turn amount and split at the period the bylaw states), `load_owner_provided_csv` (the
+  only route an **exchange** fee has into the dataset: a supplied file, with its SHA-256, its
+  supplier and the exact cell text as evidence), `fetch_raw` (NFA only — it fetches no CME Group
+  bytes, on purpose), `build_exchange_fees` (refuses to overwrite; its `BuildReport` names the roots
+  no exchange fee priced) and `fee_table_as_of(store, date)` (exchange + NFA per side for every root,
+  which **refuses** while a root is unpriced rather than pricing an unknown fee at zero).
+  `coverage_of(frame)` states the covered intervals; `FEE_CLASS_EXCHANGE` is the assumed customer
+  rate class.
 - `interfaces.py` — `DatasetManifest` and the Protocols `PITAccessor`, `DataStore`,
   `UniverseProvider`, `TradingCalendar`, `QualityCheck`.
 
@@ -330,10 +344,23 @@ oversights): a Polymarket loser settles at `settlement_floor` (0.001), not 0, be
 battery needs positive prices; an order placed on a contract's last bar fills at the settlement print
 (1.0 or the floor, no spread), which gives a buyer no edge since the print is the payoff.
 `exchange_calendars` is an untyped boundary (mypy override in pyproject).
+- **No exchange fee is stored** (`exchange_fees.py`, `docs/data/cme-exchange-fees.md`): CME Group
+  refuses automated access under its website Data Terms of Use and its published fee schedule names
+  product *buckets* ("E-mini Equity Index", "Micro E-mini Index"), never a root ticker, so a per-root
+  exchange fee would be an inference. `exchange_fees_v1` therefore holds the NFA assessment fee only,
+  `BuildReport.exchange_roots_missing` lists all nine roots, and `fee_table_as_of` raises for every
+  date until the owner supplies a fee file (`load_owner_provided_csv`). The NFA rows start at
+  2026-07-01 (the bylaw states the current rate and its period, not earlier ones) and the assumed
+  exchange `fee_class` (`non_member_customer`) needs confirming against the firm's clearing
+  agreement.
 Economic events (`econ_events.py`): every row is `available_at = event_time` because no page states
 when its own schedule entries were first published, so a point-in-time read hides an event until it
-happens — the dataset serves firm rules, never signals (ADR-0107 section 12). 48 FOMC rows
-(2010-2015) and 10 announced-but-unreleased meetings state a date but no hour, and the October 2013
+happens — the dataset serves firm rules, never signals (ADR-0107 section 12). 58 FOMC statement rows
+(2010-2015 plus 10 announced-but-unreleased meetings) state a date but no hour; so do all 96 press
+conferences (the Fed never states a press conference's hour in HTML) and 44 of the 135 minutes
+releases (only a meeting's press-conference page states the 2:00 p.m. hour). The October 2013
 shutdown's original BLS dates are not recorded (no pre-shutdown capture of that page exists in the
 Internet Archive). Notation-vote statements are read only when labelled "Statement"; joint
-Treasury/Fed announcements are not FOMC statements and are absent.
+Treasury/Fed announcements are not FOMC statements and are absent. `econ_events_v1` is kept as
+built; `econ_events_v2` adds the press conference, the minutes and PPI, and reproduces every v1 row
+unchanged (`dataset_version` apart).

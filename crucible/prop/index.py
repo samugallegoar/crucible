@@ -2,8 +2,10 @@
 
 ``uv run python -m tools.docgen --write`` regenerates the index and ``--check`` fails when it is
 stale. Every v2 ruleset file contributes its firm, id, version, content hash and verification
-status; a file still on schema version 1 is listed as ``pending_migration`` so the committed index
-is stable while the later migration workers finish.
+status; a file still on schema version 1, or a v2 file that does not validate yet (a declaration
+this engine now REQUIRES is missing, which is the state a firm file is in until the migration
+reaches it), is listed as ``pending_migration`` so the committed index stays stable while the
+migration finishes. The index never invents a hash for such a file.
 
 Append-only means an entry that already exists may not change its hash and may not disappear. The
 test compares the index with the copy in git history; this module only builds the document.
@@ -16,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from crucible.core.errors import ConfigurationError
+from crucible.core.errors import ConfigurationError, DataQualityError
 from crucible.prop.ruleset import RULE_SCHEMA_VERSION, load_ruleset
 
 INDEX_SCHEMA_VERSION = 1
@@ -59,7 +61,13 @@ def build_index(root: str | Path) -> dict[str, object]:
         if version != RULE_SCHEMA_VERSION:
             entries.append(_pending_entry(path, prop_root))
             continue
-        ruleset = load_ruleset(path)
+        try:
+            ruleset = load_ruleset(path)
+        except (ConfigurationError, DataQualityError):
+            # a file that does not validate yet is migrating, not a broken index: list it without
+            # a hash so ``docgen --check`` keeps working while the firm files catch up
+            entries.append(_pending_entry(path, prop_root))
+            continue
         entries.append(
             {
                 "firm": path.parent.name,

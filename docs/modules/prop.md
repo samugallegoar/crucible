@@ -9,21 +9,36 @@
   - `Assumption {name, rationale}` and the per-rule `evidence` field:
     `official_quote | owner_provided | assumption | conflict_resolution`; a rule with
     `evidence: assumption` must carry its named assumption.
-  - `Commissions {status: known|unknown, per_side_usd: {ROOT: Decimal}, platform, source}`.
-    Unknown is never zero; a sentinel (>= 1,000,000 USD) is refused.
+  - `Commissions {status: known|unknown, includes_exchange_and_regulatory_fees: true|false|unknown,
+    per_side_usd: {ROOT: Decimal}, platform, source}`. Unknown is never zero; a sentinel
+    (>= 1,000,000 USD) is refused. The `includes_exchange_and_regulatory_fees` flag has **no
+    default**: whether the commission is all-in is a cost, and a file that does not say is refused
+    (ADR-0107 section 8). `unknown` is a declaration (the sources are silent), never an omission, and
+    it leaves the cost statistics conditional or unavailable.
   - `Conflict {conflict_id, rule_id, field, selected_value, alternatives [{value, source}],
     selected_source, rationale, applicability_checked: true}`.
   - `Verification` (a fact about a hash, never part of it) and `ResetClock {time, tz}` with **no
     default**: the rule-day boundary is a firm's declaration, not the engine's guess.
   - The typed rules as a discriminated union on `kind`:
     `ProfitTargetRule`, `StaticDrawdownRule`, `TrailingDrawdownRule` (with `TrailingLock`,
-    including `on: hwm|first_payout` and `hwm_basis`), `DailyLossRule` (amount, percentage,
-    balance tiers, or a ratchet on peak profit), `MaxContractsRule`, `ScalingPlanRule` (with
-    `on_excess`), `FlatByRule` (a fixed clock or `minutes_before_session_end`),
-    `MinTradingDaysRule` (with `unit` and a composable `DayCountsIf`), `ConsistencyRule` (with
-    `window`), `PayoutRule` (the C7b payout vocabulary), `TimeLimitRule`, `FeeRule` (evaluation,
-    activation, monthly, reset), `DailyProfitCapRule`, `InactivityRule`, `NewsRestrictionRule`
-    and `ComplianceRule`.
+    including `on: [hwm, first_payout]` as a list of triggers and `hwm_basis`), `DailyLossRule`
+    (amount, percentage, balance tiers, or a ratchet on peak profit), `MaxContractsRule`,
+    `ScalingPlanRule` (with `on_excess`), `FlatByRule` (a fixed clock or
+    `minutes_before_session_end`), `MinTradingDaysRule` (with `unit` and a composable
+    `DayCountsIf`), `ConsistencyRule` (with `window` and separate `numerator_window` /
+    `denominator_window`), `PayoutRule` (the C7b payout vocabulary), `TimeLimitRule`, `FeeRule`
+    (evaluation, activation, monthly, reset), `DailyProfitCapRule`, `InactivityRule`,
+    `ActivityRequirementRule`, `NewsRestrictionRule` and `ComplianceRule`.
+    - `ConsistencyRule.window` is the shared window; `numerator_window` (which day is the best:
+      `all_time` or `since_last_payout`) and `denominator_window` (which profit it is shared with:
+      `all_time`, `since_last_payout` or `current_cycle`, the profit of the payout cycle measured
+      from the balance the cycle opened at) override it separately when a firm measures the two
+      differently.
+    - `ActivityRequirementRule`: `days`, `window`, `unit: calendar_days|trading_days`,
+      `qualifies_if {min_trades, min_abs_pnl_usd, min_pnl_usd}`, `observed`, `comparison`,
+      `action: fail|close_account`. It is the mirror of `inactivity`: at least N qualifying days in
+      EVERY rolling window of M days, tested once the window is full, never a gap since the last
+      trade.
   - `Phase`: `phase_id`, `kind` (`evaluation` or `funded`), `starting_balance_usd`, `rules`,
     `pass_conditions`, `max_calendar_days`/`max_trading_days`, `fees`. A rule that gates the phase
     must sit in `pass_conditions` (`is_pass_condition`; a `consistency` rule whose `applies_to` is
@@ -61,13 +76,23 @@
   economic-calendar dataset doc under `docs/data/`).
 - **`scenarios.py`**: `scenarios(ruleset) -> list[RulesetScenario]` (the primary plus one per
   conflict alternative, deterministic order) and `scenario(ruleset, id)`.
+- **`costs.py`**: `ExchangeFeeRow {root, per_side_usd, effective_from, effective_to}` (one amount
+  per root per side: the exchange fee plus any regulatory assessment, NOT a split the engine would
+  invent), `ExchangeFeeTable {rows, source_sha256}` (rows for one root may not overlap; the hash of
+  the document they were read from is required) and the `ExchangeFeeSource` Protocol: one method,
+  `per_side(root, when) -> ExchangeFeeRow | None`, where `None` is a reported gap and never a zero
+  fee. `store_exchange_fees(store)` returns the `StoreExchangeFees` adapter over the stored
+  `exchange_fees_v1` dataset, whose every read goes through
+  `crucible.data.exchange_fees.fee_table_as_of`: when the store cannot price a root (no exchange
+  row, no covering row, two rows claiming one date) that refusal comes out as
+  ``exchange fees unknown: ...``, a named gap, never a zero charge.
 - **`attempt.py`**: `simulate_attempt(...) -> AttemptResult`, one attempt from one start trade
   date: phases in order, each a fresh `PropAccountOverlay` inside `simulate_futures`; outcome
   `pass`/`fail`/`timeout`/`censored`, `PhaseOutcome` per phase, `min_buffer_usd` with where it
-  happened, fees broken out, `payouts` (gross and net), `payout_policy`, overlay events, rule
-  coverage, evaluation status, `mechanical_outcome`, `estimate_status` + reasons,
-  `practical_eligibility`, `scenario_id`, the applied commissions, warnings, ruleset identity and
-  the counterfactual label.
+  happened, fees broken out, `payouts` (gross, net and the `exact`/`upper_bound` label),
+  `payout_policy`, overlay events, rule coverage, evaluation status, `mechanical_outcome`,
+  `estimate_status` + reasons, `practical_eligibility`, `scenario_id`, the applied commissions,
+  `cash_estimate_status` + reasons, warnings, ruleset identity and the counterfactual label.
 - **`coverage.py`**: `rule_coverage(ruleset, news_covered=...)`, `evaluation_status`
   (`complete`, `conditional_on_modeled_rules`, `blocked`), `material_unmodeled`,
   `coverage_warnings` and `counterfactual_application`.
@@ -103,10 +128,19 @@ and a result computed from one reports its `scenario_id`.
 
 ## Estimate status and practical eligibility (ADR-0107 section 11)
 
-- `estimate_status` is `unavailable` when a critical rule is unmodeled or the commissions are
-  unknown without a named `cost_assumption`; `partial` when a material rule (including an
-  uncovered news window) is unmodeled; `conditional` when the ruleset is unverified or a cost
-  assumption was used; otherwise `complete`. Every reason is reported.
+- `estimate_status` is `unavailable` when a critical rule is unmodeled, or the commissions (or a
+  fee the commission excludes) are unknown without a named `cost_assumption`; `partial` when a
+  material rule is unmodeled, a news window is uncovered, a payout cap is `unknown`, or the attempt
+  trades through an unsourced CME session-calendar window; `conditional` when the ruleset is
+  unverified or a cost assumption was used; otherwise `complete`. Every reason is reported.
+- **Session-calendar coverage.** A rule measured against the session schedule — a session-relative
+  `flat_by`, the rule-day boundary, the end-of-day test — is only as good as that schedule. The CME
+  table flags the sessions it could not source (`verified: False`: the 2023 holidays other than
+  Labor Day, Christmas and New Year, and MLK 2024, were never archived). An attempt that trades
+  through such a window reports it as `session_calendar_gaps` (`"<first>..<last>"`, the window's own
+  Chicago days, which is why the 2023-11-24 session is caught: it opens on 2023-11-23), the estimate
+  becomes `partial` with the reason `session calendar unsourced <first>..<last>`, and a warning says
+  which rules are affected.
 - `practical_eligibility` is `blocked_by_compliance` when a critical compliance rule that bans the
   exact `execution_mode` (`automated` or `manual`) applies, otherwise `eligible`. A mechanically
   successful attempt under a compliance blocker is never reported as a practically valid pass.
@@ -124,7 +158,7 @@ The simulator calls the overlay at fixed points of every bar:
 | 5 | `favorable` | the bar's favourable extreme in equity terms (high for a long, low for a short) updates the high-water marks **first** |
 | 6 | `breach_prices` | each active threshold's breach price, merged with the touched lot stops, recomputed after every stop |
 | 7 | `breach_filled`, `fill` | the breach consequence (hard closes, soft locks), every fill for the day statistics and inactivity |
-| 8 | `end_bar` | the close mark; on the rule-day's last scheduled bar the EOD rules, the daily profit cap, the payouts and the pass conditions. An EOD breach liquidates **at that close**; a pass with a position open flattens it **at that close** as `phase_flatten` |
+| 8 | `end_bar` | the close mark; on the rule-day's last scheduled bar the EOD rules, an `activity_requirement` short of its qualifying days in a full rolling window (it closes the account **before** the pass conditions), the time limit, the daily profit cap, the payouts and the pass conditions. An EOD breach liquidates **at that close**; a pass with a position open flattens it **at that close** as `phase_flatten` |
 | 9 | `finish` | the end of the data: an unresolved attempt whose data ends inside a rule-day is `censored` |
 
 **Joint pessimism** (`high_before_low_conservative`): the favourable extreme and the adverse touch
@@ -143,19 +177,20 @@ threshold: the fill pays the bar's open (or close) spread and slippage plus
 |---|---|---|
 | `profit_target` | `amount_usd`, `basis: balance\|equity`, `evaluated`, `require_flat` | pass: the basis reaches `starting_balance + amount` |
 | `static_drawdown` | `amount_usd`, `basis`, `evaluated` (**required**) | threshold `starting_balance - amount`, never trails |
-| `trailing_drawdown` | `amount_usd`, `mode`, `evaluated`, `basis`, `hwm_basis`, `lock {on: hwm\|first_payout, ...}` | threshold `hwm - amount`; the lock freezes it |
+| `trailing_drawdown` | `amount_usd`, `mode`, `evaluated`, `basis`, `hwm_basis`, `lock {on: [hwm, first_payout], ...}` | threshold `hwm - amount`; the lock freezes it at the FIRST trigger that fires. `on` is a LIST: a bare `on: hwm` is refused |
 | `daily_loss` | `amount_usd` / `pct_of_reference` / `amount_by_balance_tier` / `pct_of_peak_profit` (`non_decreasing`), `reference`, `basis`, `evaluated`, `reset {time, tz}`, `severity` | threshold `reference - amount`; soft locks, hard fails |
 | `max_contracts` | `limit` (weighted) or `per_instrument`, `on_excess` | admission |
 | `scaling_plan` | `steps`, `evaluated`, `basis`, `on_excess: clip\|reject` | the limit for the next rule-day |
 | `flat_by` | `time`+`tz` **or** `minutes_before_session_end`, `reopen`, `consequence` | a forced-flat clock; the session-relative form follows the CME early close |
 | `min_trading_days` | `days`, `unit: trading_days\|winning_days\|calendar_days\|trade_dates`, `day_counts_if` | pass condition |
-| `consistency` | `max_day_share`, `measure`, `applies_to`, `window: all_time\|since_last_payout` | the best day's share of total profit |
-| `payout` | `min_days_since_last`, `min_profitable_days`, `min_traded_days`, `min_day_profit_usd`, `window`, `buffer_usd`, `split`, `min_usd`, `max_usd: number\|unlimited`, `max_usd_by_payout`, `max_pct_of_balance`, `max_share_of_withdrawable`, `min_profit_since_last_usd`, `cycle_goal_usd`, `first_payout_after_calendar_days`, `payout_group`, `max_payouts`, `threshold_after_payout` | a withdrawal from a funded phase at the close |
+| `consistency` | `max_day_share`, `measure`, `applies_to`, `window`, `numerator_window`, `denominator_window` | the best day's share of total profit, with the two windows declared separately |
+| `payout` | `min_days_since_last`, `min_profitable_days`, `min_traded_days`, `min_day_profit_usd`, `window`, `buffer_usd`, `split`, `min_usd`, `max_usd: number\|unlimited\|unknown`, `max_usd_by_payout`, `max_pct_of_balance`, `max_share_of_withdrawable`, `min_new_profit_share_of_request`, `min_profit_since_last_usd`, `cycle_goal_usd`, `first_payout_after_calendar_days`, `payout_group`, `max_payouts`, `threshold_after_payout`, `set_threshold_to` | a withdrawal from a funded phase at the close |
 | `time_limit` | `max_calendar_days` or `max_trading_days` | a phase without a pass times out |
 | `fee` | `fee_kind: evaluation\|activation\|reset\|monthly`, `amount_usd`, `when` | attempt cost accounting only |
 | `daily_profit_cap` | `amount_usd`, `action: forfeit_excess\|promote_phase`, `basis`, `evaluated` | the per-day profit ceiling |
 | `inactivity` | `max_gap`, `unit`, `rolling_window`, `action: fail` | a maximum gap between trading days |
-| `news_restriction` | `event_types`, `instruments`, `pre_minutes`, `post_minutes`, `scope: new_entries\|holding\|all_trading`, `flatten: before_window\|none`, `action` | a scheduled-event trading window |
+| `activity_requirement` | `days`, `window`, `unit: calendar_days\|trading_days`, `qualifies_if`, `observed`, `action: fail\|close_account` | at least N qualifying days in every rolling window of M days |
+| `news_restriction` | `event_types`, `instruments`, `pre_minutes`, `post_minutes`, `scope: new_entries\|holding\|all_trading`, `flatten: before_window\|none`, `effect: block\|contract_cap` (**required**, no default), `cap_contracts` (a contract WEIGHT, like `max_contracts.limit`, required when the effect is `contract_cap`), `action` | a scheduled-event trading window: block the entry or clip the size inside it |
 | `compliance` | `restriction`, `applies_to_execution: [automated\|manual]`, `materiality`, `action: block\|none` | practical eligibility, never the mechanical account |
 
 Every rule kind requires `comparison` and `action` (its state transition) explicitly, and none of
@@ -171,18 +206,33 @@ refused: an expired rule cannot sit in a current ruleset.
 ## Attempts and payouts
 
 `simulate_attempt(..., payout_policy="max_eligible"|"none", execution_mode="automated"|"manual",
-news_events=..., news_coverage=..., cost_assumption=..., resets_purchased=..., scenario_id=...)`
-runs the phases in order and records the trader's choice. A payout is a withdrawal recorded apart
-from trading P&L: `withdrawable = balance - (base + buffer_usd)`; the gross is the smallest of the
-declared caps and `withdrawable`, and a payout happens when it is at least `min_usd` and every gate
-holds. A `payout_group` pays at most one path per close (`max_eligible` takes the largest net).
-`payouts_usd` is the trader's net, `fees` breaks the costs into evaluation, activation, monthly
-(per started calendar month of the attempt) and reset, `net_cash_usd` is the payouts minus the
-total, and `payouts` lists every payout with its gross and net.
+news_events=..., news_coverage=..., exchange_fees=..., cost_assumption=..., resets_purchased=...,
+scenario_id=...)` runs the phases in order and records the trader's choice. A payout is a
+withdrawal recorded apart from trading P&L: `withdrawable = balance - (base + buffer_usd)`; the
+gross is the smallest of the declared caps and `withdrawable`, and a payout happens when it is at
+least `min_usd` and every gate holds. `min_new_profit_share_of_request` is one of those caps: a
+request of X needs new profit since the last payout of at least `share * X`, so the policy asks
+for the largest X that satisfies every term. A `payout_group` pays at most one path per close
+(`max_eligible` takes the largest net). `payouts_usd` is the trader's net, `fees` breaks the costs
+into evaluation, activation, monthly (per started calendar month of the attempt) and reset,
+`net_cash_usd` is the payouts minus the total, and `payouts` lists every payout with its gross,
+net and `exact`/`upper_bound` label.
 
 The ruleset's commissions replace the run's fee schedule (spread and slippage still come from the
 run's cost schedule). Unknown commissions are never treated as zero: the cost-dependent statistics
 are `unavailable` unless an explicit named `cost_assumption` is given, and the result says which.
+`commissions.includes_exchange_and_regulatory_fees` decides the fee shape: `true` means the
+commission is all-in; `false` means the per-side amount of the `exchange_fees` `ExchangeFeeSource`
+is added (charged as the schedule's exchange fee); `unknown` is the same gap as an unknown
+commission. The flag is REQUIRED, so a file cannot omit it. The per-side amount is resolved at the
+attempt's `start_trade_date`, and a fee change an `ExchangeFeeTable` states inside the attempt's
+window is reported in `warnings` (one schedule per attempt, never a silent mid-window change).
+
+`cash_estimate_status` is the label on the money: `exact`, `conditional` (a named cost assumption
+was used), `upper_bound` (a payout cap the sources do not state: the simulation pays what the
+other terms allow, so every payout amount and cash statistic is the MOST it can be) or
+`unavailable`; `cash_estimate_reasons` names the gap, and `estimate_status` is at best `partial`
+when a cap is unknown. An `unknown` cap is never read as `unlimited`.
 
 ## Interfaces
 
@@ -192,7 +242,14 @@ are `unavailable` unless an explicit named `cost_assumption` is given, and the r
   initial_blocked_target=...)` in `crucible/execution/futures_sim.py` is the only execution-layer
   coupling. With `account=None` the simulation is byte-for-byte what it always was.
 - `simulate_attempt` takes a `Sequence[NewsEvent]` and a `Sequence[(start_ns, end_ns)]` coverage
-  record; it imports the calendar dataset only through those values.
+  record; it imports the calendar dataset only through those values. A news rule whose declared
+  event types the calendar does not carry is `not_modeled` for that attempt (material, reported by
+  rule and by type in `warnings`), while every window the calendar does carry stays enforced.
+- `crucible.prop.costs.ExchangeFeeSource` (Protocol) with `ExchangeFeeTable`/`ExchangeFeeRow`: the
+  per-root, per-side exchange and regulatory fees a commission that excludes them is added to.
+  `simulate_attempt(exchange_fees=...)` takes one; `store_exchange_fees(store)` is the adapter over
+  the stored `exchange_fees_v1` dataset (imported lazily inside `costs.py`, so `crucible.prop`
+  itself never needs the data layer to import).
 - Entry points: `crucible prop validate|list|confirm`, `crucible schema --kind
   prop-ruleset|prop-attempt`; the MCP tools `crucible_prop_validate`, `crucible_prop_list` and
   `crucible_prop_schema` (never `confirm`).
@@ -211,6 +268,20 @@ are `unavailable` unless an explicit named `cost_assumption` is given, and the r
 
 - The contract limit is enforced at admission and on every candidate target; it is not re-checked
   as an invariant after a fill that must reduce exposure (a stop or a liquidation only reduces).
+- The exchange-fee schedule is resolved once, at the attempt's `start_trade_date`: a fee change
+  inside a long attempt is reported in `warnings` but the start date's row is charged throughout
+  (a per-date schedule would need the simulator to price each fill on its own date).
+- A `flat_by` relative to a session end trusts the CME session table, and that table's unsourced
+  windows are reported as a coverage gap rather than repaired: 2023-11-24 still closes at the 16:00
+  Chicago regime close because the 2023 Thanksgiving schedule was never archived (see the
+  session-calendar paragraph above). The sourced 2024 instance (2024-11-29, 12:15 Chicago) is the
+  hand test, and a firm rule that assumes the 2023 early close stays `not_modeled` for that date.
+- An `activity_requirement` window is judged on the overlay's COMPLETE rule-days: a window is never
+  judged on the rule-day in progress, it is judged at that day's close.
+- `crucible prop list` and the generated `rulesets/prop/INDEX.json` report a v2 file that does not
+  validate yet (a declaration this engine now requires is missing) as `pending_migration`, without
+  a hash, so both keep working while the firm files catch up. `crucible prop validate <file>` is the
+  command that refuses, and its message names the missing field.
 - With several contract limits (`max_contracts` and `scaling_plan`), the smallest limit applies and
   a rejection in any of them wins over a clip.
 - A payout is a withdrawal in the overlay's accounting: the simulator's own balance column is the

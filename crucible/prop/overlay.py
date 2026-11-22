@@ -45,6 +45,7 @@ from crucible.prop.lifecycle import Lifecycle
 from crucible.prop.news import NewsEvent, minute_ns
 from crucible.prop.ruleset import (
     DailyLossRule,
+    NewsRestrictionRule,
     Phase,
     PropRuleset,
     is_pass_condition,
@@ -103,6 +104,9 @@ class PropAccountOverlay:
         trading loss, so the balance the rules see is the trading balance minus this."""
         self.payouts: list[tuple[int, int, int, str]] = []
         """``(time_ns, gross_micro, net_micro, rule_id)`` for every payout taken."""
+        self.payout_bounds: list[str] = []
+        """``exact`` or ``upper_bound`` for each payout, in the same order as ``payouts``: a cap
+        the sources do not state makes the amount the most the other terms allow."""
         self.trading_days: int = 0
         """Rule-days the account has opened, for ``min_days_since_last``."""
         self.forfeited: int = 0
@@ -129,6 +133,7 @@ class PropAccountOverlay:
         self.payout_consistency: list[rl.Consistency] = []
         self.caps: list[rl.DailyProfitCap] = []
         self.inactivity: list[rl.Inactivity] = []
+        self.activity: list[rl.ActivityRequirement] = []
         self.news: list[rl.News] = []
         for rule in (*phase.rules, *phase.pass_conditions):
             evaluator = rl.build(
@@ -154,8 +159,18 @@ class PropAccountOverlay:
                 self.caps.append(evaluator)
             elif isinstance(evaluator, rl.Inactivity):
                 self.inactivity.append(evaluator)
+            elif isinstance(evaluator, rl.ActivityRequirement):
+                self.activity.append(evaluator)
             elif isinstance(evaluator, rl.News):
                 self.news.append(evaluator)
+                capped = (
+                    isinstance(rule, NewsRestrictionRule)
+                    and rule.effective_effect == "contract_cap"
+                )
+                if capped:
+                    # a contract cap inside the window is a limit like max_contracts, so the
+                    # smallest limit and a rejection in any limiter keep working
+                    self.limiters.append(evaluator)
             elif isinstance(evaluator, rl.Payout):
                 self.payouts_rules.append(evaluator)
             elif isinstance(evaluator, rl.Consistency) and evaluator.rule.applies_to == "payout":
@@ -255,6 +270,7 @@ class PropAccountOverlay:
             allowed = marks.position
         elif self.locked_by is not None or self._flat_window(marks) or self._news_blocks(marks):
             allowed = self._reduction(marks, requested)
+        self._update_news_caps(marks)
         limit = self._contract_limit()
         if limit is not None:
             weighted = Decimal(allowed) * self.weight
@@ -346,6 +362,9 @@ class PropAccountOverlay:
                 "close_account" if breach.hard else "lock"
             )
             return OverlayAction(kind, breach.rule_id, breach.hard, marks.close_ticks)
+        activity = self._activity_violation(marks)
+        if activity is not None:
+            return activity
         if self._check_time_limit(marks):
             return None
         cap_action = self._apply_profit_cap(i, marks)
@@ -355,6 +374,32 @@ class PropAccountOverlay:
         if action is not None or self.closed:
             return action
         self._maybe_pay(marks)
+        return None
+
+    def _activity_violation(self, marks: AccountMarks) -> OverlayAction | None:
+        """Step 2b: an activity requirement short of its qualifying days in a full rolling window.
+
+        It ends the account at this close, like a hard EOD breach and before the pass conditions:
+        a window that is short on the day a pass would happen beats the pass (the same pessimism
+        as a breach in the bar of a pass).
+        """
+        if not self.activity:
+            return None
+        today = self._trade_date(marks)
+        for evaluator in self.activity:
+            if not evaluator.violated(today):
+                continue
+            rule_id = evaluator.rule_id
+            if evaluator.rule.action == "close_account":
+                self._record(
+                    "close_account",
+                    rule_id,
+                    marks,
+                    note=f"fewer than {evaluator.rule.days} qualifying days in the last "
+                    f"{evaluator.rule.window} {evaluator.rule.unit}",
+                )
+            self._consequence(rule_id, True, marks, marks.close_ticks)
+            return OverlayAction("close_account", rule_id, True, marks.close_ticks)
         return None
 
     def _apply_profit_cap(self, i: int, marks: AccountMarks) -> OverlayAction | None:
@@ -400,7 +445,9 @@ class PropAccountOverlay:
         """A payout at this close, when the trader takes every eligible one (P1).
 
         A ``payout_group`` pays at most once per close: ``max_eligible`` takes the path with the
-        largest net, ``none`` takes none.
+        largest net, ``none`` takes none. The post-payout transitions of ADR-0107 section 9 step 6
+        follow the withdrawal: the payout's own base, a payout-triggered trailing lock, a threshold
+        ``set_threshold_to`` names, and the consistency windows' anchor.
         """
         if not self.payouts_rules or self.payout_policy != "max_eligible":
             return
@@ -408,7 +455,10 @@ class PropAccountOverlay:
         best: dict[str, tuple[rl.Payout, rl.PayoutDecision]] = {}
         for evaluator in self.payouts_rules:
             since_day = evaluator.last_payout_day
-            consistency = all(item.passes(since_day) for item in self.payout_consistency)
+            consistency = all(
+                item.passes(since_day, balance=marks.balance_micro)
+                for item in self.payout_consistency
+            )
             decision = evaluator.decision(
                 marks,
                 self.closed_days,
@@ -442,16 +492,24 @@ class PropAccountOverlay:
             self.payouts.append(
                 (int(marks.close_time_ns), decision.gross, decision.net, decision.rule_id)
             )
+            self.payout_bounds.append(decision.bound)
             for trailing in self.rules:
-                if isinstance(trailing, rl.TrailingDrawdown) and first:
+                if not isinstance(trailing, rl.TrailingDrawdown):
+                    continue
+                if first:
                     trailing.on_first_payout()
+                if evaluator.rule.threshold_after_payout == "set_threshold":
+                    trailing.lock_at(evaluator.threshold_level())
             for item in self.payout_consistency:
                 item.last_payout_day = payout_day
+                item.cycle_open_balance = marks.balance_micro - decision.gross
             self._record(
                 "payout",
                 decision.rule_id,
                 marks,
-                note=f"gross {decision.gross} net {decision.net} micro-dollars",
+                note=(
+                    f"gross {decision.gross} net {decision.net} micro-dollars ({decision.bound})"
+                ),
             )
             self.lifecycle.transition(
                 "funded_active" if self.phase.kind == "funded" else "evaluation",
@@ -690,7 +748,9 @@ class PropAccountOverlay:
         """The restricted windows of one news rule, from the events the caller supplied.
 
         An attempt whose calendar coverage does not include its period passes
-        ``news_covered=False`` and the rule stays ``not_modeled`` (reported), never enforced.
+        ``news_covered=False`` and the rule stays ``not_modeled`` (reported), never enforced. An
+        event type the calendar does not carry contributes no window: the attempt reports the rule
+        as ``not_modeled`` (``crucible.prop.attempt``), never as no news.
         """
         if not self.news_covered:
             return []
@@ -716,14 +776,21 @@ class PropAccountOverlay:
             if int(marks.open_time_ns) <= end and int(marks.close_time_ns) >= start
         ]
 
-    def _news_blocks(self, marks: AccountMarks) -> bool:
-        """Whether an active window forbids opening or increasing a position."""
+    def _update_news_caps(self, marks: AccountMarks) -> None:
+        """Tell every ``contract_cap`` news rule whether its window is active at this bar."""
         for evaluator in self.news:
-            if not self._news_active(evaluator, marks):
+            evaluator.cap_active = bool(self._news_active(evaluator, marks))
+
+    def _news_blocks(self, marks: AccountMarks) -> bool:
+        """Whether an active window forbids opening or increasing a position.
+
+        Only a ``block`` window does: a ``contract_cap`` window instead clips the size through the
+        limiters, so it never refuses an entry the cap allows.
+        """
+        for evaluator in self.news:
+            if evaluator.rule.effective_effect != "block":
                 continue
-            if evaluator.rule.scope in ("new_entries", "all_trading"):
-                return True
-            if evaluator.rule.scope == "holding":
+            if self._news_active(evaluator, marks):
                 return True
         return False
 
@@ -770,6 +837,7 @@ class PropAccountOverlay:
             "withdrawn": self.withdrawn,
             "forfeited": self.forfeited,
             "payouts": list(self.payouts),
+            "payout_bounds": list(self.payout_bounds),
             "trading_days": self.trading_days,
             "lifecycle": self.lifecycle.snapshot(),
             "news_flattened": sorted(self.news_flattened),
@@ -822,6 +890,16 @@ class PropAccountOverlay:
                 (int(when), int(gross), int(net), str(rule))
                 for when, gross, net, rule in data["payouts"]
             ]
+            raw_bounds = data.get("payout_bounds")
+            self.payout_bounds = (
+                [str(bound) for bound in raw_bounds] if raw_bounds is not None else []
+            )
+            if self.payout_bounds and len(self.payout_bounds) != len(self.payouts):
+                msg = (
+                    f"prop overlay state holds {len(self.payout_bounds)} payout bounds for "
+                    f"{len(self.payouts)} payouts"
+                )
+                raise CheckpointError(msg)
             self.trading_days = int(data["trading_days"])
             raw_buffer = data["min_buffer"]
             self.min_buffer = (
@@ -895,6 +973,7 @@ class PropAccountOverlay:
             "days_since_trade",
             "last_trade_day",
             "first_payout",
+            "cycle_open_balance",
         ):
             if hasattr(evaluator, name):
                 value = getattr(evaluator, name)
@@ -925,6 +1004,7 @@ class PropAccountOverlay:
                 "days_since_trade",
                 "last_trade_day",
                 "first_payout",
+                "cycle_open_balance",
             ):
                 setattr(evaluator, name, int(value))
             else:

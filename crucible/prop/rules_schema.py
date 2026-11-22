@@ -17,6 +17,25 @@ Schema version 2 adds (ADR-0107 sections 7-12):
 
 A value is a number, ``unlimited`` (only where the source states it) or absent. A numeric sentinel
 is refused: an unknown value belongs in ``not_modeled``, never in a rule.
+
+The C7b vocabulary round 2 adds, additively and without changing the meaning of an existing
+declaration (ADR-0107 sections 7-13):
+
+- ``payout.max_usd`` and every ``max_usd_by_payout`` rung also accept ``unknown``: the engine pays
+  what the other terms allow and labels the payout and cash statistics ``upper_bound``. ``unknown``
+  is never ``unlimited`` (a source that states no cap says ``unlimited``).
+- ``trailing_drawdown.lock.on`` is a LIST of triggers (``[hwm, first_payout]``); the lock happens at
+  the first trigger that fires. A bare string is refused.
+- ``payout.threshold_after_payout: set_threshold`` with ``set_threshold_to: start |
+  start_plus_usd:<x> | zero_balance_offset:<x>`` sets the threshold to an explicit level instead
+  of trailing it.
+- ``news_restriction.effect: block | contract_cap`` (REQUIRED, with a weighted
+  ``cap_contracts`` when the effect is ``contract_cap``).
+- ``activity_requirement``: at least N qualifying rule-days in EVERY rolling window of M days.
+- ``payout.min_new_profit_share_of_request``.
+- ``consistency``'s numerator (best day) and denominator (profit) windows declared separately.
+- ``commissions.includes_exchange_and_regulatory_fees``: REQUIRED, and never defaulted: a table
+  that does not say it is refused, not read as all-in.
 """
 
 from __future__ import annotations
@@ -34,6 +53,10 @@ SENTINEL_FLOOR_USD = Decimal(1_000_000)
 """A capability above this is a sentinel, not a firm rule; ``unlimited`` says it instead."""
 
 Evidence = Literal["official_quote", "owner_provided", "assumption", "conflict_resolution"]
+ThresholdLevel = Literal["start", "start_plus_usd", "zero_balance_offset"]
+"""The explicit level a payout may set a trailing threshold to (``set_threshold_to``)."""
+LockTrigger = Literal["hwm", "first_payout"]
+"""What fires a trailing lock. At least one; the lock happens at the first one that fires."""
 DayUnit = Literal["calendar_days", "trade_dates", "trading_days", "winning_days"]
 Observation = Literal["intraday", "eod", "on_request"]
 Comparison = Literal["<=", "<", ">=", ">"]
@@ -158,9 +181,17 @@ class NotModeled(_Frozen):
 
 
 class Commissions(_Frozen):
-    """Per-side commissions by root (ADR-0107 section 10). Unknown is never zero."""
+    """Per-side commissions by root (ADR-0107 section 10). Unknown is never zero.
+
+    ``includes_exchange_and_regulatory_fees`` says whether ``per_side_usd`` is an all-in number
+    (``true``), a commission that must be added to the exchange and regulatory fees of an
+    ``ExchangeFeeSource`` (``false``), or a fact the sources do not state (``unknown``). It is
+    REQUIRED: there is no default, because the difference between an all-in and an ex-fees
+    commission is a cost, and a default would be the engine inventing one (ADR-0107 section 8).
+    """
 
     status: Literal["known", "unknown"]
+    includes_exchange_and_regulatory_fees: bool | Literal["unknown"]
     per_side_usd: dict[str, _MONEY_GE0] = Field(default_factory=dict)
     platform: str | None = None
     source: Attribution
@@ -194,12 +225,37 @@ class Commissions(_Frozen):
     def per_side(self, root: str) -> Decimal | None:
         return self.per_side_usd.get(root)
 
+    @property
+    def exchange_fees_included(self) -> bool | None:
+        """``True`` all-in, ``False`` excludes the exchange fees, ``None`` the source is silent."""
+        if isinstance(self.includes_exchange_and_regulatory_fees, bool):
+            return self.includes_exchange_and_regulatory_fees
+        return None
+
+
+ABSENT = "absent"
+"""A conflict alternative's value meaning the rule does not exist under that reading.
+
+``value: absent`` is the only string a conflict may use as a marker: no rule field accepts the
+string ``"absent"``, and ``scenarios()`` drops the rule from that scenario instead of switching a
+field (ADR-0107 section 7).
+"""
+
 
 class ConflictAlternative(_Frozen):
-    """One value the source conflict also states, with its own attribution."""
+    """One value the source conflict also states, with its own attribution.
+
+    ``value: absent`` says the rule does not exist under the alternative reading: the scenario
+    built from it carries no such rule, rather than the rule with another value.
+    """
 
     value: object
     source: Attribution
+
+    @property
+    def absent(self) -> bool:
+        """Whether this alternative removes the rule instead of switching a value."""
+        return self.value == ABSENT
 
 
 class Conflict(_Frozen):
@@ -286,12 +342,14 @@ class StaticDrawdownRule(_Rule):
 class TrailingLock(_Frozen):
     """Where a trailing threshold stops following the high-water mark.
 
-    ``on: hwm`` triggers on a high-water mark level; ``on: first_payout`` triggers on the first
-    withdrawal, whose trigger level the payout terms decide. The trigger is REQUIRED: a lock that
-    does not say what engages it is the engine guessing.
+    ``on`` lists the triggers: ``hwm`` fires on a high-water mark level, ``first_payout`` on the
+    first withdrawal, whose trigger level the payout terms decide. The lock happens at the FIRST
+    trigger that fires, so ``on: [hwm, first_payout]`` freezes the threshold at whichever comes
+    first. The trigger list is REQUIRED and non-empty, and it is a LIST: a lock that does not say
+    what engages it is the engine guessing, and ``on: hwm`` is not a declaration a firm makes.
     """
 
-    on: Literal["hwm", "first_payout"]
+    on: tuple[LockTrigger, ...]
     at_balance_usd: _MONEY | None = None
     at_offset_usd: _MONEY | None = None
     locked_threshold_usd: _MONEY | None = None
@@ -301,16 +359,27 @@ class TrailingLock(_Frozen):
     def _one_of_each(self) -> TrailingLock:
         triggers = [v for v in (self.at_balance_usd, self.at_offset_usd) if v is not None]
         locked = [v for v in (self.locked_threshold_usd, self.locked_offset_usd) if v is not None]
-        if self.on == "hwm" and len(triggers) != 1:
+        if not self.on:
+            msg = (
+                "trailing lock needs at least one trigger in on: a list of hwm and/or "
+                "first_payout, because a lock that does not say what engages it is the engine "
+                "guessing"
+            )
+            raise ValueError(msg)
+        duplicated = sorted({str(trigger) for trigger in self.on if self.on.count(trigger) > 1})
+        if duplicated:
+            msg = f"trailing lock.on repeats {duplicated}: list each trigger once"
+            raise ValueError(msg)
+        if "hwm" in self.on and len(triggers) != 1:
             msg = (
                 "trailing lock on the high-water mark needs exactly one of at_balance_usd and "
                 f"at_offset_usd, got {len(triggers)}"
             )
             raise ValueError(msg)
-        if self.on == "first_payout" and triggers:
+        if "hwm" not in self.on and triggers:
             msg = (
-                "trailing lock on first_payout is triggered by the payout, so it must not declare "
-                "at_balance_usd or at_offset_usd"
+                "trailing lock without the hwm trigger is fired by the payout, so it must not "
+                "declare at_balance_usd or at_offset_usd"
             )
             raise ValueError(msg)
         if len(locked) != 1:
@@ -498,15 +567,33 @@ class MinTradingDaysRule(_Rule):
 
 
 class ConsistencyRule(_Rule):
-    """The best day's share of total profit is at most ``max_day_share``."""
+    """The best day's share of total profit is at most ``max_day_share``.
+
+    The numerator (which day is the best) and the denominator (which profit it is shared with) are
+    separate windows, because a firm can measure the best day since the last payout against the
+    whole account's profit. Declared separately they can differ; ``numerator_window`` and
+    ``denominator_window`` are absent when the rule uses ``window`` for both.
+    """
 
     kind: Literal["consistency"] = "consistency"
     max_day_share: Annotated[Decimal, Field(gt=0, le=1, decimal_places=6)]
     measure: Literal["best_day_profit/total_profit"]
     applies_to: Literal["pass", "payout"]
     window: Literal["all_time", "since_last_payout"]
+    numerator_window: Literal["since_last_payout", "all_time"] | None = None
+    denominator_window: Literal["since_last_payout", "all_time", "current_cycle"] | None = None
     comparison: Comparison
     action: Literal["promote_phase", "block_payout"]
+
+    @property
+    def best_day_window(self) -> Literal["all_time", "since_last_payout"]:
+        """The window the best day is taken from: its own, or the shared ``window``."""
+        return self.numerator_window or self.window
+
+    @property
+    def profit_window(self) -> Literal["all_time", "since_last_payout", "current_cycle"]:
+        """The window the total profit is taken from: its own, or the shared ``window``."""
+        return self.denominator_window or self.window
 
 
 class PayoutRule(_Rule):
@@ -521,10 +608,13 @@ class PayoutRule(_Rule):
     buffer_usd: _MONEY_GE0
     split: Annotated[Decimal, Field(gt=0, le=1, decimal_places=6)]
     min_usd: _MONEY_GE0
-    max_usd: _MONEY_GE0 | Literal["unlimited"]
-    max_usd_by_payout: tuple[_MONEY_GE0, ...] | None = None
+    max_usd: _MONEY_GE0 | Literal["unlimited", "unknown"]
+    max_usd_by_payout: tuple[_MONEY_GE0 | Literal["unlimited", "unknown"], ...] | None = None
     max_pct_of_balance: Annotated[Decimal, Field(gt=0, le=100, decimal_places=6)] | None = None
     max_share_of_withdrawable: Annotated[Decimal, Field(gt=0, le=1, decimal_places=6)] | None = None
+    min_new_profit_share_of_request: (
+        Annotated[Decimal, Field(gt=0, le=1, decimal_places=6)] | None
+    ) = None
     min_profit_since_last_usd: _MONEY_GE0 = Decimal(0)
     cycle_goal_usd: _MONEY_GE0 | None = None
     first_payout_after_calendar_days: int | None = Field(default=None, ge=0)
@@ -533,28 +623,54 @@ class PayoutRule(_Rule):
     comparison: Comparison
     action: Literal["withdraw"]
     threshold_after_payout: Literal[
-        "unchanged", "reset_to_start", "trail_from_new_balance", "lock_on_first_payout"
+        "unchanged",
+        "reset_to_start",
+        "trail_from_new_balance",
+        "lock_on_first_payout",
+        "set_threshold",
     ]
+    set_threshold_to: str | None = None
+    """The explicit level ``threshold_after_payout: set_threshold`` sets: ``start``,
+    ``start_plus_usd:<x>`` or ``zero_balance_offset:<x>`` (parsed by ``threshold_level``)."""
 
     @model_validator(mode="after")
     def _amounts(self) -> PayoutRule:
-        if self.max_usd != "unlimited" and self.min_usd > self.max_usd:
+        if isinstance(self.max_usd, Decimal) and self.min_usd > self.max_usd:
             msg = (
                 f"payout {self.rule_id}: min_usd {self.min_usd} is above max_usd {self.max_usd}, "
                 "so no payout could ever be paid"
             )
             raise ValueError(msg)
         caps = self.max_usd_by_payout or ()
-        if any(cap < self.min_usd for cap in caps):
+        if any(isinstance(cap, Decimal) and cap < self.min_usd for cap in caps):
             msg = (
                 f"payout {self.rule_id}: a max_usd_by_payout cap is below min_usd "
                 f"{self.min_usd}, so that payout could never be paid"
             )
             raise ValueError(msg)
+        if (self.threshold_after_payout == "set_threshold") != (self.set_threshold_to is not None):
+            msg = (
+                f"payout {self.rule_id}: threshold_after_payout {self.threshold_after_payout!r} "
+                "and set_threshold_to go together: set_threshold needs the explicit level, and a "
+                "level is meaningless without it"
+            )
+            raise ValueError(msg)
+        if self.set_threshold_to is not None:
+            try:
+                threshold_level(self.set_threshold_to)
+            except ValueError as exc:
+                msg = f"payout {self.rule_id}: set_threshold_to {self.set_threshold_to!r}: {exc}"
+                raise ValueError(msg) from exc
         _refuse_sentinel(self.rule_id, "max_usd", self.max_usd)
         for index, cap in enumerate(caps):
             _refuse_sentinel(self.rule_id, f"max_usd_by_payout[{index}]", cap)
         return self
+
+    @property
+    def unknown_cap(self) -> bool:
+        """Whether any of this rule's caps is ``unknown`` (the payouts are then upper bounds)."""
+        caps: tuple[object, ...] = (self.max_usd, *(self.max_usd_by_payout or ()))
+        return any(cap == "unknown" for cap in caps)
 
 
 class TimeLimitRule(_Rule):
@@ -639,6 +755,8 @@ class NewsRestrictionRule(_Rule):
     post_minutes: int = Field(ge=0)
     scope: Literal["new_entries", "holding", "all_trading"]
     flatten: Literal["before_window", "none"]
+    effect: Literal["block", "contract_cap"]
+    cap_contracts: Decimal | None = Field(default=None, gt=0, decimal_places=6)
     comparison: Comparison
     action: Literal["block_entries", "flatten_and_block", "fail"]
 
@@ -651,6 +769,48 @@ class NewsRestrictionRule(_Rule):
             msg = (
                 f"news_restriction {self.rule_id}: a holding restriction must declare flatten, "
                 "otherwise it restricts nothing"
+            )
+            raise ValueError(msg)
+        if (self.effect == "contract_cap") != (self.cap_contracts is not None):
+            msg = (
+                f"news_restriction {self.rule_id}: effect contract_cap needs cap_contracts (a "
+                "contract WEIGHT, like max_contracts.limit) and a cap_contracts is meaningless "
+                "without it"
+            )
+            raise ValueError(msg)
+        return self
+
+    @property
+    def effective_effect(self) -> Literal["block", "contract_cap"]:
+        """The declared effect (required: there is no engine-chosen default)."""
+        return self.effect
+
+
+class ActivityRequirementRule(_Rule):
+    """At least ``days`` qualifying rule-days in EVERY rolling window of ``window`` days.
+
+    The mirror image of ``inactivity`` (a maximum gap since the last traded day): a firm that
+    requires a minimum number of qualifying days in a rolling window fails an account that trades
+    rarely but never idles long enough to breach a gap. ``qualifies_if`` is the day predicate
+    (trades and/or absolute or signed P&L); ``unit`` is ``calendar_days`` or ``trading_days``. A
+    window is tested only once it is FULL, and the action says what a short window does.
+    """
+
+    kind: Literal["activity_requirement"] = "activity_requirement"
+    days: int = Field(ge=1)
+    window: int = Field(ge=1)
+    unit: Literal["calendar_days", "trading_days"]
+    qualifies_if: DayCountsIf
+    observed: Observation
+    comparison: Comparison
+    action: Literal["fail", "close_account"]
+
+    @model_validator(mode="after")
+    def _reachable(self) -> ActivityRequirementRule:
+        if self.days > self.window:
+            msg = (
+                f"activity_requirement {self.rule_id}: days {self.days} exceeds its window "
+                f"{self.window}, so no window could ever satisfy it"
             )
             raise ValueError(msg)
         return self
@@ -693,6 +853,7 @@ AnyRule = Annotated[
     | DailyProfitCapRule
     | InactivityRule
     | NewsRestrictionRule
+    | ActivityRequirementRule
     | ComplianceRule,
     Field(discriminator="kind"),
 ]
@@ -755,6 +916,39 @@ def _refuse_sentinel(rule_id: str, field: str, value: object) -> None:
             '"unlimited" where the source says so, or put the unknown in not_modeled'
         )
         raise ValueError(msg)
+
+
+def threshold_level(text: str) -> tuple[ThresholdLevel, Decimal]:
+    """Parse ``set_threshold_to``: ``start``, ``start_plus_usd:<x>`` or ``zero_balance_offset:<x>``.
+
+    ``start`` is the phase's starting balance, ``start_plus_usd`` that balance plus a fixed amount
+    and ``zero_balance_offset`` an absolute level (an amount above a zero balance, the small floor
+    some firms leave on the account). Nothing is defaulted: a malformed value is refused.
+    """
+    head, _, tail = text.partition(":")
+    if head == "start":
+        if tail:
+            msg = f"start takes no amount, got {tail!r}"
+            raise ValueError(msg)
+        return "start", Decimal(0)
+    if head not in ("start_plus_usd", "zero_balance_offset"):
+        msg = (
+            f"{text!r} is not a threshold level; use start, start_plus_usd:<usd> or "
+            "zero_balance_offset:<usd>"
+        )
+        raise ValueError(msg)
+    if not tail:
+        msg = f"{head} needs an amount, as in {head}:1000"
+        raise ValueError(msg)
+    try:
+        amount = Decimal(tail)
+    except ArithmeticError as exc:
+        msg = f"{text!r} carries {tail!r}, which is not a decimal amount"
+        raise ValueError(msg) from exc
+    if amount != amount.quantize(Decimal("0.000001")):
+        msg = f"{text!r} carries more than 6 decimals; money is kept in exact micro-dollars"
+        raise ValueError(msg)
+    return ("start_plus_usd" if head == "start_plus_usd" else "zero_balance_offset"), amount
 
 
 def _zone(name: str, what: str) -> None:

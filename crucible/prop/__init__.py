@@ -5,21 +5,32 @@ models, ``ruleset`` the ruleset, the content hash and the verification sidecar, 
 sensitivity scenarios of a conflict, ``rules`` one evaluator per kind, ``overlay`` the
 ``AccountOverlay`` the futures simulation calls inside each bar, ``lifecycle`` the account state
 machine, ``news`` the scheduled-event rows, ``attempt`` one attempt from one start trade date,
-``coverage`` the rule coverage and the evaluation status, ``confirm`` the owner's TTY-only
-verification and ``index`` the generated append-only hash lock.
+``coverage`` the rule coverage and the evaluation status, ``costs`` the exchange and regulatory
+fees a commission may exclude, ``confirm`` the owner's TTY-only verification and ``index`` the
+generated append-only hash lock.
 """
 
 from __future__ import annotations
 
 from crucible.prop.attempt import (
+    PAYOUT_CAP_UNKNOWN,
     AttemptResult,
     CommissionApplication,
     FeeBreakdown,
     PayoutRecord,
     PhaseOutcome,
+    cash_estimate,
     estimate_status,
     practical_eligibility,
     simulate_attempt,
+)
+from crucible.prop.costs import (
+    ExchangeFeeRow,
+    ExchangeFeeSource,
+    ExchangeFeeTable,
+    StoreExchangeFees,
+    store_exchange_fees,
+    stored_fee_row,
 )
 from crucible.prop.coverage import (
     RuleCoverageRow,
@@ -63,6 +74,7 @@ from crucible.prop.validate import (
 
 __all__ = [
     "EOD_ORDER",
+    "PAYOUT_CAP_UNKNOWN",
     "AccountState",
     "AttemptResult",
     "Attribution",
@@ -71,6 +83,9 @@ __all__ = [
     "Conflict",
     "ConflictAlternative",
     "Coverage",
+    "ExchangeFeeRow",
+    "ExchangeFeeSource",
+    "ExchangeFeeTable",
     "FeeBreakdown",
     "Lifecycle",
     "NewsEvent",
@@ -83,11 +98,13 @@ __all__ = [
     "PropRuleset",
     "RuleCoverageRow",
     "RulesetScenario",
+    "StoreExchangeFees",
     "Transition",
     "Verification",
     "VerificationRecord",
     "attempt_json_schema",
     "build_index",
+    "cash_estimate",
     "counterfactual_application",
     "coverage_covers",
     "coverage_warnings",
@@ -109,6 +126,8 @@ __all__ = [
     "schema_document",
     "sidecar_path",
     "simulate_attempt",
+    "store_exchange_fees",
+    "stored_fee_row",
     "validate_ruleset_document",
     "write_verification_sidecar",
 ]

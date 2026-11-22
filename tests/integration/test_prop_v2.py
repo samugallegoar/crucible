@@ -79,7 +79,7 @@ def _declare(rule: dict[str, object]) -> None:
         rule.setdefault("action", "fail")
         lock = rule.get("lock")
         if isinstance(lock, dict):
-            lock.setdefault("on", "hwm")
+            lock.setdefault("on", ["hwm"])
     elif kind == "daily_loss":
         rule.setdefault("basis", "equity")
         rule.setdefault("comparison", "<=")
@@ -130,6 +130,7 @@ def _declare(rule: dict[str, object]) -> None:
         rule.setdefault("comparison", ">")
         rule.setdefault("action", "fail")
     elif kind == "news_restriction":
+        rule.setdefault("effect", "block")
         rule.setdefault("comparison", ">=")
     elif kind == "compliance":
         rule.setdefault("comparison", ">=")
@@ -163,6 +164,7 @@ def _ruleset(
         "commissions": commissions
         or {
             "status": "known",
+            "includes_exchange_and_regulatory_fees": True,
             "per_side_usd": {"ES": "2.00"},
             "platform": None,
             "source": source,
@@ -423,7 +425,7 @@ def test_trailing_lock_on_the_first_payout_freezes_the_threshold() -> None:
                 "amount_usd": "2000",
                 "mode": "eod",
                 "evaluated": "intraday",
-                "lock": {"on": "first_payout", "locked_threshold_usd": "49000"},
+                "lock": {"on": ["first_payout"], "locked_threshold_usd": "49000"},
             }
         ]
     )
@@ -757,6 +759,7 @@ def test_estimate_status_unknown_commissions_unless_a_cost_assumption_is_named()
         [],
         commissions={
             "status": "unknown",
+            "includes_exchange_and_regulatory_fees": "unknown",
             "platform": None,
             "source": _source().model_dump(mode="json"),
         },
@@ -998,6 +1001,7 @@ def test_a_payout_group_pays_at_most_once_per_close_and_takes_the_largest_net() 
         [],
         commissions={
             "status": "known",
+            "includes_exchange_and_regulatory_fees": True,
             "per_side_usd": {"ES": "2.00"},
             "platform": None,
             "source": _source().model_dump(mode="json"),
