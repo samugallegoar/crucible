@@ -556,17 +556,26 @@ Each row names the time, caller, purpose, dataset, `as_of`, outcome and registra
 `vault status` and `vault log` never report a metric: the numbers of the protected period live in the
 sealed artifact of an evaluation that has run.
 
-## 13. A prop-firm attempt (C7a, ADR-0106)
+## 13. A prop-firm attempt (C7a/C7b, ADR-0106/0107)
 
 A prop-firm ruleset is sourced, versioned data (`docs/modules/prop.md`); the engine knows rule
 kinds, never a firm. Check one before using it:
 
 ```bash
-uv run crucible prop validate path/to/ruleset.yaml          # identity, hash, coverage, warnings
+uv run crucible prop validate path/to/ruleset.yaml          # identity, hash, evidence, scenarios
 uv run crucible prop validate path/to/ruleset.yaml --json   # the same document
+uv run crucible prop list --firm <firm> --json              # every ruleset, hash and evidence
+uv run crucible prop confirm path/to/ruleset.yaml           # OWNER ONLY: interactive TTY
 uv run crucible schema --kind prop-ruleset                  # the file's JSON Schema
 uv run crucible schema --kind prop-attempt                  # the result's JSON Schema
 ```
+
+`prop list` lists `rulesets/prop/**` with each file's id, version, content hash, evidence counts,
+conflicts, unmodeled rules by materiality and verification status; a v1 file is shown as
+`pending_migration`. `prop confirm` is the owner's step only: it refuses without a TTY, prints
+every rule with its quotation and URL, asks for the first 12 hex of the content hash and writes
+`<file>.verification.yaml`. It is never exposed over MCP. `rulesets/prop/INDEX.json` is generated
+by `uv run python -m tools.docgen --write` and is append-only.
 
 `prop validate` changes no file. It reports the ruleset's `ruleset_sha256`, its verification status
 (only the owner can confirm a ruleset, and a synthetic one can never be `verified`), one
@@ -575,30 +584,122 @@ or `blocked`) and the warnings those gaps imply. A ruleset marked `unverified` m
 `unverified_ruleset: true`, and a data window that starts before the ruleset's `effective_from` is
 labelled a counterfactual application.
 
-Running an attempt is a library call until C7b gives it a run config:
+Running an attempt is a library call until C7c gives it a run config:
 
 ```python
-from crucible.prop import load_ruleset, simulate_attempt
+from crucible.prop import load_ruleset, scenarios, simulate_attempt
 
 ruleset = load_ruleset("path/to/ruleset.yaml")
-result = simulate_attempt(
-    bars=bars, targets=targets, rolls=rolls, spec=spec, costs=costs,
-    ruleset=ruleset, start_trade_date=date(2024, 1, 8), max_horizon_days=20,
-    calendar=calendar,            # the CME session calendar: it decides when a rule-day ends
-    payout_policy="max_eligible", # the trader's choice, not a firm rule; "none" takes none
-)
-result.outcome          # pass | fail | timeout | censored
-result.breached_rule    # which rule ended it, and when
-result.min_buffer_usd   # the smallest distance to a failure threshold, and where
-result.payouts          # gross and net of every withdrawal
-result.evaluation_status, result.warnings
+for item in scenarios(ruleset):   # primary, then one sensitivity per conflict alternative
+    result = simulate_attempt(
+        bars=bars, targets=targets, rolls=rolls, spec=spec, costs=costs,
+        ruleset=item.ruleset, start_trade_date=date(2024, 1, 8), max_horizon_days=20,
+        calendar=calendar,            # the CME session calendar: it decides when a rule-day ends
+        payout_policy="max_eligible", # the trader's choice, not a firm rule; "none" takes none
+        execution_mode="manual",      # REQUIRED: automated|manual, for compliance eligibility
+        news_events=events,           # Sequence[NewsEvent] or None
+        news_coverage=coverage,       # Sequence[(start_ns, end_ns)] or None
+        scenario_id=item.scenario_id,
+    )
+    result.outcome          # pass | fail | timeout | censored (the mechanical account)
+    result.mechanical_outcome, result.estimate_status   # what may be claimed, and why
+    result.practical_eligibility  # eligible | blocked_by_compliance | unknown
+    result.breached_rule    # which rule ended it, and when
+    result.min_buffer_usd   # the smallest distance to a failure threshold, and where
+    result.fees             # evaluation, activation, monthly (per started month) and reset
+    result.payouts          # gross and net of every withdrawal
+    result.evaluation_status, result.estimate_reasons, result.warnings
 ```
+
+The ruleset's `commissions` replace the run's fee schedule; spread and slippage still come from
+the run's `CostSchedule`. Unknown costs are never zero: `commissions.components` declares, per cost
+component (exchange, clearing, NFA, other), whether the firm's per-side commission contains it
+(`included`), charges it on top (`excluded`) or does not say (`unknown`), and every gap keeps the
+cost-dependent statistics `unavailable`. A news rule with no calendar coverage is `not_modeled`
+(material), so the estimate becomes `partial` rather than "no news".
 
 A `censored` attempt is the data ending before the attempt resolved: it is its own class, never a
 failure. `min_buffer_usd` and every money field are `Decimal`; the breach, lock, resize and payout
 decisions are in `overlay_events`. The semantics are the conservative OHLC approximation
 (`high_before_low_conservative`): a breach liquidates as a market order at its trigger price, not
 at the threshold, so a fast market can fill worse.
+
+## 14. A prop evaluation over a futures run (C7b, ADR-0107)
+
+One attempt answers what one account did. A prop evaluation answers what MANY streaks of the same
+strategy would have done: an attempt starts on every Globex trade date of a futures run's window,
+over the run's own causal signal, and the result is the attempt sequence with its statistics.
+
+```bash
+uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml     --ruleset rulesets/prop/topstep/topstep-trading-combine-50k.v1.yaml     --horizon 20 --execution-mode automated     --store data/processed --artifacts experiments
+```
+
+- `--horizon H` is the ANALYST's horizon, in TRADING days: an attempt still unresolved after H trade
+  dates is a `horizon` outcome (or `censored` when the data itself ends first). It is refused when it
+  is shorter than the ruleset's own time limit, because the firm's limit could then never fire.
+- `--execution-mode automated|manual` is required and decides `practical_eligibility`: a firm that
+  bans automated trading makes an automated strategy `blocked_by_compliance` even when the
+  mechanical account passes.
+- `--payout-policy max_eligible|none` is the trader's choice, and `--scenarios primary|all` adds one
+  sensitivity scenario per ruleset conflict.
+- `--fee-participant-type NAME` is the rate class (`non_member_customer`, `member`, …) the components
+  a commission EXCLUDES are priced for. It is required as soon as a component is `excluded`, because
+  the ruleset never states one and a member rate is not a customer rate; using it makes the cost
+  estimate `conditional`.
+- `--cost-assumption FILE` is a YAML file (not a bare name) that prices the cost gaps the sources
+  leave. It is the user's own unverified statement, it prices only the root and components it lists,
+  and it is recorded by SHA-256; the estimate becomes `conditional`, never complete:
+
+  ```yaml
+  name: owner-estimate-2026-11-22
+  description: the owner's working per-side figure, composition unknown
+  provided_by: owner
+  status: unverified            # the only accepted value
+  evidence: the owner's note of 2026-11-22; no document states the split
+  amounts:
+    ES:
+      - covers: [exchange, clearing]
+        per_side_usd: '0.77'    # SYNTHETIC value, this file is an example
+      - covers: [nfa]
+        per_side_usd: '0.02'
+  ```
+
+  A component the file does not price stays a gap and the cash number stays `unavailable`. An
+  `unknown` component it prices is ADDED (worse for the strategy), and it may not override a
+  component the ruleset declares `included` or the fee dataset already priced.
+- `--json` prints `summary.json` itself (the text rendering says the same numbers).
+
+Reading it, in order:
+
+1. **The counts.** `pass`, `fail`, `timeout`, `horizon`, `censored` per scenario. `censored` is
+   never a failure and never a pass; `horizon` is the analyst's horizon, not a firm rule.
+2. **The probability and its name.** `p` is passes over COMPLETE starts (those whose H trade dates
+   fit in the data). The field is `pass_probability` only when nothing qualifies it; otherwise it is
+   `conditional_pass_probability` with `definitive: false` and every reason: unmodeled rules, an
+   unverified ruleset, a cost assumption, an unknown cost component, an assumed participant type, a
+   news-calendar gap, an unsourced session-calendar window, the counterfactual application of a
+   current ruleset to pre-2025 data, or a compliance blocker. Read the reasons before the number.
+   `summary.json`'s `cost_components` lists, per root, the status each component ended with and the
+   gaps that remained, so a cost that is not complete says exactly which component is missing.
+3. **The bounds.** `p_low` counts censored attempts as failures and `p_high` counts them as passes.
+   A wide `[p_low, p_high]` says the window is too short for the horizon, not that the strategy is
+   uncertain in the same way.
+4. **The interval.** A seeded circular block bootstrap over the complete starts in date order, with
+   blocks at least H trade dates long, because attempt sequences overlap and are NOT independent.
+   With fewer than two blocks it is `unavailable` with its reason. `effective_independent_attempts
+   ≈ n / H` says how much independent information there is; on a one-year window with H = 20 it is
+   about twelve.
+5. **The cash.** Mean net cash per attempt (payouts minus the ruleset's fees), labelled `exact`,
+   `conditional`, `upper_bound` or `unavailable`. The commissions are inside the simulated equity;
+   the fee columns are the ruleset's own fees.
+6. **The eligibility.** `eligible`, or `blocked_by_compliance` with `practically_valid_passes: 0`:
+   a mechanically successful attempt under a compliance blocker is never a practically valid pass.
+
+The artifact is `<artifacts>/PRP-<16 hex>/` with `attempts.parquet` (one row per scenario and start),
+`summary.json`, the `ruleset.yaml` that was read and `manifest.json` with the seal. It is NOT a
+submission: no trial is recorded and `submission_count`/`total_trials` do not move. There is no
+threshold and no verdict — a pass probability is not evidence of an edge, and the same data under a
+different ruleset is a different question.
 
 ## Known gaps
 

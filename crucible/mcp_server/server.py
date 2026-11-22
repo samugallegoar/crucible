@@ -396,6 +396,17 @@ def build_server() -> MCPServer:
         )
 
     @server.tool()
+    async def crucible_prop_list(
+        firm: str | None = None, root: str | None = None
+    ) -> dict[str, object]:
+        """List every prop-firm ruleset (`crucible prop list --json`): its id, version, content
+        hash, evidence counts, conflicts, unmodeled rules by materiality and verification status.
+        Read-only; `crucible prop confirm` is the owner's TTY-only step and is never exposed here
+        (ADR-0107 section 2)."""
+        options: dict[str, Option] = {"json": True, "firm": firm, "root": absolute(root)}
+        return await run_cli(build_argv(["prop", "list"], [], options))
+
+    @server.tool()
     async def crucible_prop_schema(kind: str = "prop-ruleset") -> dict[str, object]:
         """A prop-firm JSON Schema: `prop-ruleset` (a ruleset file: identity, instruments,
         verification, phases and every rule kind) or `prop-attempt` (the attempt result: outcome,
@@ -628,6 +639,67 @@ def build_server() -> MCPServer:
         if home is None and artifacts is None:
             options["artifacts"] = _home_paths()[0]
         return await run_cli(build_argv(["futures", "trials"], [], options))
+
+    @server.tool()
+    async def crucible_futures_prop(
+        config: str,
+        ruleset: str,
+        horizon: int,
+        execution_mode: Literal["automated", "manual"],
+        payout_policy: Literal["max_eligible", "none"] = "max_eligible",
+        cost_assumption: str | None = None,
+        fee_participant_type: str | None = None,
+        scenarios: Literal["primary", "all"] = "primary",
+        news_dataset: str = "econ_events_v2",
+        exchange_fees_dataset: str = "exchange_fees_v1",
+        store: str | None = None,
+        home: str | None = None,
+        artifacts: str | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, object]:
+        """Evaluate one prop-firm ruleset over a futures run's attempt sequence (C7b, ADR-0107)
+        and write the sealed artifact `<PRP-...>/` (attempts.parquet, summary.json,
+        ruleset.yaml). The strategy signal is prepared once and every start date of the window
+        replays it as an attempt of `horizon` TRADING days under the ruleset's rules. Each start
+        is classified pass / fail / timeout / horizon / censored, and the summary reports the
+        pass probability (passes over the starts whose horizon fits in the data), its all-start
+        bounds and a seeded circular block bootstrap interval whose blocks are at least `horizon`
+        trade dates long - with fewer than two blocks the interval is `unavailable` with its
+        reason. It is named `conditional_pass_probability` with `definitive: false` and every
+        reason (unmodeled rules, an unverified ruleset, a cost assumption, a news or
+        session-calendar coverage gap, the counterfactual application to pre-2025 data) whenever
+        anything qualifies it, and `practical_eligibility` is judged for `execution_mode`, so a
+        mechanically successful attempt under a compliance blocker is never a practically valid
+        pass. `cost_assumption` is the path of a cost-assumption YAML file: it prices exactly the
+        per-component cost gaps it names, keeps the estimate conditional and is never a firm value.
+        `fee_participant_type` is the rate class the fees a commission EXCLUDES are priced for, and
+        is required as soon as a component is declared excluded. `scenarios="all"` adds one
+        sensitivity scenario per conflict alternative beside the primary. Not a submission: no
+        trial is recorded. No threshold, no verdict."""
+        options: dict[str, Option] = {
+            "config": absolute(config),
+            "ruleset": absolute(ruleset) or ruleset,
+            "horizon": str(horizon),
+            "execution_mode": execution_mode,
+            "payout_policy": payout_policy,
+            "scenarios": scenarios,
+            "news_dataset": news_dataset,
+            "exchange_fees_dataset": exchange_fees_dataset,
+            "store": absolute(store),
+            "overwrite": overwrite,
+            "json": True,
+        }
+        if cost_assumption is not None:
+            options["cost_assumption"] = absolute(cost_assumption) or cost_assumption
+        if fee_participant_type is not None:
+            options["fee_participant_type"] = fee_participant_type
+        if home is not None:
+            options["home"] = absolute(home)
+        if artifacts is not None:
+            options["artifacts"] = absolute(artifacts)
+        if home is None and artifacts is None:
+            options["artifacts"] = _home_paths()[0]
+        return await run_cli(build_argv(["futures", "prop"], [], options))
 
     # ---------------------------------------------------------------- the holdout vault tools
     #

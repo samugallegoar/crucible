@@ -16,11 +16,21 @@ A payout is a withdrawal recorded apart from trading P&L (ADR-0106 section 4): t
 takes it. ``payouts_usd`` is the trader's net share, ``net_cash_usd`` is that minus the fees, and
 ``payouts`` lists every payout with its gross and net. There is no pass probability and no verdict
 in this stage.
+
+Two cost facts decide whether the cash statistic is a number at all (ADR-0107 section 10):
+the commission may be unknown, and every cost component the firm charges ON TOP of it
+(``exchange``, ``clearing``, ``nfa``, ``other``) must be priced by a ``ComponentFeeSource`` for the
+run's participant type. A component the sources do not state is a gap. Any gap leaves
+``cash_estimate_status`` ``unavailable`` unless a ``CostAssumption`` FILE covers every one of
+them, which makes it ``conditional`` and never ``complete``. A payout cap the source does not
+state (``unknown``) is a third case: the cash numbers are paid as the other terms allow and
+labelled ``upper_bound``.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -37,6 +47,13 @@ from crucible.execution.futures_sim import (
 )
 from crucible.execution.interfaces import OverlayEvent
 from crucible.prop import rules as rl
+from crucible.prop.costs import (
+    ComponentCharge,
+    ComponentFeeSource,
+    ComponentFeeTable,
+    CostAssumption,
+    price_components,
+)
 from crucible.prop.coverage import (
     EvaluationStatus,
     RuleCoverageRow,
@@ -45,15 +62,25 @@ from crucible.prop.coverage import (
     evaluation_status,
     material_unmodeled,
     rule_coverage,
+    session_calendar_gaps,
+)
+from crucible.prop.news import (
+    Coverage,
+    NewsEvent,
+    coverage_covers,
+    unknown_time_gaps,
 )
 from crucible.prop.overlay import Outcome, PropAccountOverlay
+from crucible.prop.rules_schema import ExecutionMode
 from crucible.prop.ruleset import PropRuleset
 
 if TYPE_CHECKING:
-    from crucible.data.cme_sessions import SessionCalendar
+    from crucible.data.cme_sessions import SessionCalendar, TradeDateSession
     from crucible.data.futures_specs import FuturesContractSpec
 
 SEMANTICS = "high_before_low_conservative"
+PAYOUT_CAP_UNKNOWN = "payout cap unknown"
+"""The named reason a payout and cash statistic is an upper bound (ADR-0107 section 7)."""
 LIQUIDATION_ASSUMPTIONS = (
     "a breach liquidates the whole position as a market order at its breach price (floor for a "
     "long, ceiling for a short) or at the open when the bar gapped past it, paying the bar's open "
@@ -78,12 +105,71 @@ class PhaseOutcome:
 
 @dataclass(frozen=True, slots=True)
 class PayoutRecord:
-    """One payout: when it was paid, the gross withdrawn and the trader's net share."""
+    """One payout: when it was paid, the gross withdrawn and the trader's net share.
+
+    ``bound`` is ``exact`` or ``upper_bound``: a payout cap the sources do not state makes the
+    amount the most the other terms allow, and the record says so rather than presenting it as a
+    firm number.
+    """
 
     time_ns: int
     gross_usd: Decimal
     net_usd: Decimal
     rule_id: str
+    bound: str = "exact"
+
+
+@dataclass(frozen=True, slots=True)
+class FeeBreakdown:
+    """Attempt costs, broken out so a monthly or reset fee is never hidden in a total."""
+
+    evaluation_usd: Decimal
+    activation_usd: Decimal
+    monthly_usd: Decimal
+    reset_usd: Decimal
+    total_usd: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class CommissionApplication:
+    """The commission table the attempt used and what every cost component cost (ADR-0107 s10).
+
+    ``components`` holds one :class:`ComponentCharge` per cost component (the commission and the
+    four the firm may charge on top), ``cost_gaps`` names the components no source could price and
+    ``cost_status`` is ``complete``, ``conditional`` (a cost assumption or an assumed participant
+    type supplied a value) or ``unavailable``.
+
+    ``participant_type`` is the rate class the ``excluded`` components were priced for: it is a RUN
+    parameter, because the ruleset never states one, and using it keeps the cost ``conditional``.
+    ``cost_assumption``/``cost_assumption_sha256`` name the file that priced a gap, and
+    ``priced_by_assumption`` lists which components it priced.
+    """
+
+    status: str
+    per_side_usd: Decimal | None
+    root: str
+    source: str
+    components: tuple[ComponentCharge, ...]
+    cost_gaps: tuple[str, ...]
+    fees_incomplete: str | None
+    cost_status: str = "unavailable"
+    participant_type: str | None = None
+    cost_assumption: str | None = None
+    cost_assumption_sha256: str | None = None
+    priced_by_assumption: tuple[str, ...] = ()
+
+    @property
+    def priced_from_dataset(self) -> bool:
+        """Whether any component was priced from the fee dataset for the run's participant type."""
+        return any(item.status == "excluded_priced" for item in self.components)
+
+    def component(self, name: str) -> ComponentCharge:
+        """One component's charge: the commission, exchange, clearing, nfa or other."""
+        for item in self.components:
+            if item.component == name:
+                return item
+        msg = f"no charge recorded for component {name!r}"
+        raise ConfigurationError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,10 +192,22 @@ class AttemptResult:
     payout_policy: str
     payout_modeled: bool
     net_cash_usd: Decimal
+    cash_estimate_status: str
+    cash_estimate_reasons: tuple[str, ...]
     overlay_events: tuple[OverlayEvent, ...]
     rule_coverage: tuple[RuleCoverageRow, ...]
     evaluation_status: EvaluationStatus
     material_unmodeled: tuple[str, ...]
+    mechanical_outcome: Outcome
+    estimate_status: str
+    estimate_reasons: tuple[str, ...]
+    practical_eligibility: str
+    scenario_id: str
+    commissions: CommissionApplication
+    fees: FeeBreakdown
+    news_covered: bool | None
+    news_coverage_gaps: tuple[str, ...]
+    session_calendar_gaps: tuple[str, ...]
     warnings: tuple[str, ...]
     ruleset_id: str
     version: int
@@ -138,11 +236,13 @@ def _payout_modeled(ruleset: PropRuleset) -> bool:
 
 def _window(
     calendar: SessionCalendar, bars: pl.DataFrame, start_trade_date: dt.date, horizon: int
-) -> tuple[np.ndarray, list[dt.date | None], list[int]]:
-    """``(session_close_ns, trade_date_of_each_bar, eligible bar indices)`` for the bars.
+) -> tuple[np.ndarray, list[dt.date | None], list[int], list[TradeDateSession]]:
+    """``(session_close_ns, trade_date_of_each_bar, eligible indices, touched sessions)``.
 
     ``session_close_ns[i]`` is the scheduled close of the session bar ``i`` belongs to (0 when the
-    bar is off schedule): the causal fact an end-of-day rule needs, never the next bar.
+    bar is off schedule): the causal fact an end-of-day rule needs, never the next bar. ``touched``
+    holds the sessions the eligible bars trade in, in order, so the attempt can report an unsourced
+    session-calendar window it runs through (``session_calendar_gaps``).
     """
     ends = bars["event_time"].to_numpy().astype(np.int64)
     placed = assign_bars(calendar, ends)
@@ -155,7 +255,15 @@ def _window(
     eligible = [
         i for i, day in enumerate(dates) if day is not None and start_trade_date <= day <= limit
     ]
-    return close, dates, eligible
+    touched: list[TradeDateSession] = []
+    for index in eligible:
+        session_index = int(placed.session_index[index])
+        if session_index < 0:
+            continue
+        session = placed.sessions[session_index]
+        if not touched or touched[-1] is not session:
+            touched.append(session)
+    return close, dates, eligible, touched
 
 
 def _trade_date(dates: list[dt.date | None], i: int) -> dt.date:
@@ -193,6 +301,213 @@ def _slice(
     return window, kept, kept_rolls
 
 
+def _commissions_for(
+    ruleset: PropRuleset,
+    costs: CostSchedule,
+    root: str,
+    cost_assumption: CostAssumption | None,
+    *,
+    fee_source: ComponentFeeSource | None = None,
+    participant_type: str | None = None,
+    when: dt.date,
+) -> tuple[CostSchedule, CommissionApplication]:
+    """The ruleset's commission replaces the run's fee schedule; every component is priced.
+
+    An unknown commission is never treated as zero: the run's own schedule is kept as a labelled
+    placeholder and the cost statistics stay unavailable. Each component the firm charges ON TOP of
+    the commission is added from ``fee_source`` for the run's ``participant_type``; a component the
+    sources do not state, or one the source cannot price for this root and date, is a named gap. A
+    ``cost_assumption`` FILE prices exactly the gaps it names for exactly this root — it may not
+    override a component the ruleset includes or the dataset already priced.
+
+    The returned ``CommissionApplication.cost_status`` is ``complete`` (nothing is missing, no
+    assumption and no assumed participant type was needed), ``conditional`` (an assumption or the
+    participant type supplied a value) or ``unavailable`` (a gap remains). The schedule carries the
+    priced amounts; a gap contributes nothing, and the caller must not present the total as
+    complete.
+    """
+    table = ruleset.commissions
+    per_side = table.per_side(root) if table.status == "known" else None
+    pricing = price_components(
+        components=table.components,
+        commission_status=table.status,
+        commission_per_side=per_side,
+        root=root,
+        when=when,
+        costs=costs,
+        fee_source=fee_source,
+        participant_type=participant_type,
+        assumption=cost_assumption,
+    )
+    gaps = pricing.gaps
+    return (
+        pricing.schedule,
+        CommissionApplication(
+            status="known" if per_side is not None else "unknown",
+            per_side_usd=per_side,
+            root=root,
+            source=table.source.quote,
+            components=pricing.charges,
+            cost_gaps=gaps,
+            fees_incomplete=pricing.gap_text,
+            cost_status=pricing.status,
+            participant_type=participant_type,
+            cost_assumption=None if cost_assumption is None else cost_assumption.name,
+            cost_assumption_sha256=None if cost_assumption is None else cost_assumption.sha256,
+            priced_by_assumption=pricing.priced_by_assumption,
+        ),
+    )
+
+
+def _fees(
+    ruleset: PropRuleset,
+    start: dt.date,
+    end: dt.date,
+    *,
+    passed: bool,
+    resets_purchased: int,
+) -> FeeBreakdown:
+    """Attempt costs by kind. A monthly fee is charged per STARTED calendar month of the attempt."""
+    months = max(1, (end.year - start.year) * 12 + (end.month - start.month) + 1)
+    evaluation = activation = monthly = reset = Decimal(0)
+    for phase in ruleset.phases:
+        for fee in phase.fees:
+            if fee.fee_kind == "monthly":
+                monthly += fee.amount_usd * months
+            elif fee.fee_kind == "reset":
+                reset += fee.amount_usd * resets_purchased
+            elif fee.fee_kind == "activation":
+                if passed:
+                    activation += fee.amount_usd
+            else:
+                evaluation += fee.amount_usd
+    return FeeBreakdown(
+        evaluation_usd=evaluation,
+        activation_usd=activation,
+        monthly_usd=monthly,
+        reset_usd=reset,
+        total_usd=evaluation + activation + monthly + reset,
+    )
+
+
+def estimate_status(
+    *,
+    coverage: tuple[RuleCoverageRow, ...],
+    verified: bool,
+    commissions_known: bool,
+    cost_assumption: str | None,
+    news_covered: bool | None,
+    news_coverage_gaps: tuple[str, ...] = (),
+    session_calendar_gaps: tuple[str, ...] = (),
+    fees_incomplete: str | None = None,
+    payout_cap_unknown: bool = False,
+    participant_type: str | None = None,
+) -> tuple[str, tuple[str, ...]]:
+    """``complete|conditional|partial|unavailable`` and its reasons (ADR-0107 section 11).
+
+    ``unavailable`` when a critical rule is unmodeled, the commission is unknown without a cost
+    assumption, or a cost component has no source and no assumption; ``partial`` when a material
+    rule (including an uncovered news window or a payout cap the sources do not state) is
+    unmodeled; ``conditional`` when the ruleset is unverified, a cost assumption was used, or the
+    participant type that priced the excluded components had to be assumed.
+    """
+    reasons: list[str] = []
+    critical = [row.rule for row in coverage if not row.modeled and row.materiality == "critical"]
+    material = [row.rule for row in coverage if not row.modeled and row.materiality == "material"]
+    for rule in critical:
+        reasons.append(f"unmodeled critical rule {rule}")
+    for rule in material:
+        reasons.append(f"unmodeled material rule {rule}")
+    if not verified:
+        reasons.append("the ruleset is unverified")
+    if fees_incomplete is not None:
+        reasons.append(fees_incomplete)
+    if not commissions_known and cost_assumption is None:
+        reasons.append("commissions are unknown and no cost assumption was given")
+    elif cost_assumption is not None:
+        reasons.append(f"cost assumption {cost_assumption!r} was used")
+    if participant_type is not None:
+        reasons.append(f"participant type assumed: {participant_type}")
+    if payout_cap_unknown:
+        reasons.append(PAYOUT_CAP_UNKNOWN)
+    if (
+        coverage
+        and news_covered is not True
+        and any("news" in row.rule for row in coverage if not row.modeled)
+    ):
+        reasons.append("the economic calendar does not cover the attempt period")
+    if news_coverage_gaps:
+        reasons.append(
+            "the release time is unknown for events "
+            + ", ".join(news_coverage_gaps)
+            + ": their whole trade date is outside news coverage"
+        )
+    for gap in session_calendar_gaps:
+        reasons.append(f"session calendar unsourced {gap}")
+    costs_gapped = fees_incomplete is not None and cost_assumption is None
+    if critical or (not commissions_known and cost_assumption is None) or costs_gapped:
+        return "unavailable", tuple(reasons)
+    if material or news_coverage_gaps or session_calendar_gaps or payout_cap_unknown:
+        return "partial", tuple(reasons)
+    if not verified or cost_assumption is not None or participant_type is not None:
+        return "conditional", tuple(reasons)
+    return "complete", tuple(reasons)
+
+
+def cash_estimate(
+    *,
+    payouts_modeled: bool,
+    payout_cap_unknown: bool,
+    cost_status: str,
+    cost_assumption: str | None,
+    participant_type: str | None = None,
+    fees_incomplete: str | None = None,
+) -> tuple[str, tuple[str, ...]]:
+    """``exact | conditional | upper_bound | unavailable`` for the payout and net-cash numbers.
+
+    A cash number needs every cost the account pays, so ``cost_status`` decides first:
+    ``unavailable`` (any component is a gap) makes the cash ``unavailable`` unless a
+    ``cost_assumption`` file covered EVERY gap — then it is ``conditional`` and the attempt says
+    which file, and which gaps it priced. ``complete`` costs are ``exact`` only when no assumption
+    and no assumed participant type was needed; either one keeps the number ``conditional``, never
+    ``complete``. A payout cap the sources do not state does not stop the number: the payouts are
+    paid as the other terms allow and the statistic is an ``upper_bound``.
+    """
+    reasons: list[str] = []
+    if not payouts_modeled:
+        reasons.append("the ruleset declares no payout rule, so no withdrawal is modeled")
+    if cost_status == "unavailable":
+        if fees_incomplete is not None:
+            reasons.append(fees_incomplete)
+        if cost_assumption is None:
+            reasons.append("the attempt's cost is not known, so the net cash is not a number")
+            return "unavailable", tuple(reasons)
+        reasons.append(
+            f"cost assumption {cost_assumption!r} covered every cost gap, so the net cash is that "
+            "assumption's number"
+        )
+    elif cost_assumption is not None:
+        reasons.append(f"cost assumption {cost_assumption!r} was used")
+    if cost_status != "unavailable" and participant_type is not None:
+        reasons.append(f"participant type assumed: {participant_type}")
+    if payout_cap_unknown:
+        reasons.append(PAYOUT_CAP_UNKNOWN)
+        return "upper_bound", tuple(reasons)
+    conditional = cost_status == "conditional" or cost_assumption is not None
+    return ("conditional" if conditional else "exact"), tuple(reasons)
+
+
+def practical_eligibility(ruleset: PropRuleset, execution_mode: ExecutionMode) -> str:
+    """``eligible|blocked_by_compliance|unknown`` for the exact execution mode (ADR-0107 s11)."""
+    rules = ruleset.compliance_rules()
+    if not rules:
+        return "eligible"
+    relevant = [rule for rule in rules if execution_mode in rule.applies_to_execution]
+    if any(rule.materiality == "critical" and rule.action == "block" for rule in relevant):
+        return "blocked_by_compliance"
+    return "eligible"
+
+
 def simulate_attempt(
     *,
     bars: pl.DataFrame,
@@ -208,6 +523,14 @@ def simulate_attempt(
     policy: ExecutionPolicy | None = None,
     liquidation_extra_slippage_ticks: int = 0,
     payout_policy: str = "none",
+    execution_mode: ExecutionMode,
+    news_events: Sequence[NewsEvent] | None = None,
+    news_coverage: Coverage | None = None,
+    fee_source: ComponentFeeSource | None = None,
+    cost_assumption: CostAssumption | None = None,
+    participant_type: str | None = None,
+    resets_purchased: int = 0,
+    scenario_id: str = "primary",
 ) -> AttemptResult:
     """Run ``ruleset``'s phases from ``start_trade_date`` over ``max_horizon_days`` calendar days.
 
@@ -223,11 +546,26 @@ def simulate_attempt(
     ``phase_flatten`` fill in the passing phase). The next phase starts a fresh, flat account at the
     next bar with the require-signal-reset re-entry block in force at the decided target in force,
     so the strategy re-enters only after its decided target changes.
+
+    ``execution_mode`` is required: a compliance rule that bans automated trading makes an
+    automated strategy ``blocked_by_compliance`` even when the mechanical account passes.
+    ``news_events``/``news_coverage`` are the economic calendar's rows and the covered periods;
+    a news rule whose event types the calendar does not carry is ``not_modeled`` for this attempt
+    (reported), and every window the calendar does carry is still enforced.
+    ``fee_source`` is the ``ComponentFeeSource`` the components the firm charges ON TOP of the
+    commission are priced from, for ``participant_type`` (a run parameter, because the ruleset never
+    states one; it is refused when a component is excluded and it is missing). Without a source, an
+    uncovered row or an ``unknown`` component, that cost is a named gap and the cash statistic is
+    ``unavailable`` — or ``conditional`` when ``cost_assumption`` prices every remaining gap. The
+    amounts are resolved at ``start_trade_date``; a fee change inside the attempt's window is
+    reported in ``warnings``, never applied silently.
     """
     if max_horizon_days < 1:
         msg = f"max_horizon_days must be >= 1, got {max_horizon_days}"
         raise ConfigurationError(msg)
-    close_ns, dates, eligible = _window(calendar, bars, start_trade_date, max_horizon_days)
+    close_ns, dates, eligible, touched_sessions = _window(
+        calendar, bars, start_trade_date, max_horizon_days
+    )
     if not eligible:
         msg = (
             f"no bar of the series falls in the attempt window "
@@ -236,8 +574,54 @@ def simulate_attempt(
         raise DataQualityError(msg)
     window_first, window_last = eligible[0], eligible[-1]
     tick_micro = rl.micro(spec.tick_value, "tick_value")
-    coverage = rule_coverage(ruleset)
-    fees = Decimal(0)
+    news_rules = ruleset.news_rules()
+    news_events = tuple(news_events or ())
+    news_covered: bool | None = None
+    news_coverage_gaps: tuple[str, ...] = ()
+    news_unmodeled: dict[str, str] = {}
+    if news_rules:
+        start_ns = int(bars["event_time"][window_first])
+        end_date = dates[window_last] or start_trade_date
+        end_ns = (
+            int(
+                dt.datetime.combine(
+                    end_date + dt.timedelta(days=1), dt.time(0, 0), tzinfo=dt.UTC
+                ).timestamp()
+            )
+            * 1_000_000_000
+        )
+        news_coverage_gaps = unknown_time_gaps(news_events, start_ns, end_ns)
+        # an unknown-time event is a gap for ITS date only: the known windows stay enforced
+        news_covered = coverage_covers(news_coverage, start_ns, end_ns)
+        if not news_events:
+            news_covered = False
+        # an event type the calendar does not carry is a declared gap, never "no news": the rule
+        # that names it stays not_modeled for this attempt and is reported by name
+        known_types = {event.event_type for event in news_events}
+        for rule in news_rules:
+            missing = [name for name in rule.event_types if name not in known_types]
+            if missing:
+                news_unmodeled[rule.rule_id] = (
+                    f"event type(s) {', '.join(sorted(missing))} are not in the economic calendar"
+                )
+    coverage = rule_coverage(
+        ruleset, news_covered=news_covered, news_unmodeled=news_unmodeled or None
+    )
+    commission_schedule, commission = _commissions_for(
+        ruleset,
+        costs,
+        spec.root,
+        cost_assumption,
+        fee_source=fee_source,
+        participant_type=participant_type,
+        when=start_trade_date,
+    )
+    cost_status = commission.cost_status
+    payout_cap_unknown = any(
+        rule.kind == "payout" and rule.unknown_cap
+        for phase in ruleset.phases
+        for rule in (*phase.rules, *phase.pass_conditions)
+    )
     phase_outcomes: list[PhaseOutcome] = []
     events: list[OverlayEvent] = []
     outcome: Outcome = "censored"
@@ -246,6 +630,7 @@ def simulate_attempt(
     buffer: tuple[int, int, int, str] | None = None
     payouts: list[PayoutRecord] = []
     passed_bar: int | None = None
+    passed_absolute: int | None = None
     blocked_target: int | None = None
     first = window_first
     last = window_last
@@ -263,13 +648,15 @@ def simulate_attempt(
             session_close_ns=sliced_close,
             start_day=_trade_date(dates, first),
             payout_policy=payout_policy,
+            news_events=news_events,
+            news_covered=news_covered is not False,
         )
         phase_result = simulate_futures(
             bars=window,
             targets=window_targets,
             rolls=window_rolls,
             spec=spec,
-            costs=costs,
+            costs=commission_schedule,
             initial_capital=phase.starting_balance_usd,
             policy=policy,
             raw=raw,
@@ -284,12 +671,11 @@ def simulate_attempt(
                 gross_usd=Decimal(gross) / 1_000_000,
                 net_usd=Decimal(net) / 1_000_000,
                 rule_id=rule,
+                bound=(
+                    overlay.payout_bounds[index] if index < len(overlay.payout_bounds) else "exact"
+                ),
             )
-            for when, gross, net, rule in overlay.payouts
-        )
-        fees += sum(
-            (rule.amount_usd for rule in phase.fees if rule.when != "per_month"),
-            Decimal(0),
+            for index, (when, gross, net, rule) in enumerate(overlay.payouts)
         )
         trading_days = len({day for day in dates[first : last + 1] if day is not None})
         phase_outcomes.append(
@@ -300,7 +686,9 @@ def simulate_attempt(
                 breached_rule=overlay.breached_rule,
                 breach_time_ns=overlay.breach_time_ns,
                 first_bar=first,
-                last_bar=overlay.passed_at if overlay.passed_at is not None else last,
+                # the overlay numbers bars from the phase's first bar; the artifact reports the
+                # attempt's own coordinates, so the pass offset is added to the phase's first bar
+                last_bar=(first + overlay.passed_at if overlay.passed_at is not None else last),
                 trading_days=trading_days,
             )
         )
@@ -319,34 +707,107 @@ def simulate_attempt(
             raise DataQualityError(msg)
         # the passing phase flattened at its close: the next account starts flat and re-enters
         # only after the strategy's decided target changes (signal reset, ADR-0090)
+        passed_absolute = first + passed_bar
         if "phase_flatten" in set(phase_result.fills["kind"].to_list()):
+            # ``window_targets`` covers exactly this phase's bars, so the pass offset into the
+            # overlay's slice is the index of the target that was in force at the pass
             decided = window_targets["target"].to_list()
-            blocked_target = int(decided[passed_bar - first])
+            blocked_target = int(decided[passed_bar])
         else:
             blocked_target = None
-        first = passed_bar + 1
+        first = passed_absolute + 1
     if outcome == "running" and phase_outcomes:
         # the data ended before the phase resolved: right-censored at the data horizon, its own
         # class (never folded into a failure)
         outcome = "censored"
         phase_outcomes[-1] = replace(phase_outcomes[-1], outcome="censored")
-    if passed_bar is None:
+    if passed_absolute is None:
         days_trading, days_calendar = None, None
     else:
-        passed_date = dates[passed_bar]
+        # ``dates`` spans the attempt window from its FIRST bar, and ``passed_absolute`` is an
+        # index into it: a start later in the series must not measure its days from the data's
+        # first bar (nor read the wrong date back)
+        passed_date = dates[passed_absolute]
         assert passed_date is not None
-        days_trading = len({day for day in dates[window_first : passed_bar + 1] if day is not None})
+        days_trading = len(
+            {day for day in dates[window_first : passed_absolute + 1] if day is not None}
+        )
         days_calendar = (passed_date - start_trade_date).days
     data_first = dates[window_first] or start_trade_date
     data_last = dates[window_last] or start_trade_date
+    schedule_gaps = session_calendar_gaps(calendar, touched_sessions)
     unverified = not ruleset.verified
     warnings = list(coverage_warnings(coverage, ruleset))
+    if news_coverage_gaps:
+        warnings.append(
+            "news coverage gap: the release time is unknown for "
+            + ", ".join(news_coverage_gaps)
+            + "; their whole trade date is not modeled, while every timed event is still enforced"
+        )
     if counterfactual_application(start_trade_date, ruleset):
         warnings.append(
             f"the data window starts {start_trade_date}, before the ruleset's effective_from "
             f"{ruleset.effective_from}: a counterfactual application"
         )
+    for gap in schedule_gaps:
+        warnings.append(
+            f"session calendar unsourced {gap}: the CME schedule of the affected sessions was "
+            "never archived, so the session-relative flat_by, the rule-day boundary and the "
+            "end-of-day test are built from the regular-week regime, not from a sourced schedule"
+        )
+    if news_unmodeled:
+        warnings.append(
+            "news restrictions not modeled for this attempt: "
+            + "; ".join(
+                f"{rule_id} ({reason})" for rule_id, reason in sorted(news_unmodeled.items())
+            )
+        )
+    change = (
+        None
+        if not isinstance(fee_source, ComponentFeeTable)
+        else next(
+            (
+                row.effective_from
+                for row in sorted(fee_source.rows, key=lambda row: row.effective_from)
+                if row.root == spec.root and start_trade_date < row.effective_from <= data_last
+            ),
+            None,
+        )
+    )
+    if change is not None:
+        warnings.append(
+            f"a per-side fee for {spec.root} changes on {change} inside the attempt, and the "
+            f"schedule of {start_trade_date} is charged for the whole window"
+        )
     payouts_usd = sum((record.net_usd for record in payouts), Decimal(0))
+    passed = outcome == "pass"
+    fee_breakdown = _fees(
+        ruleset,
+        start_trade_date,
+        data_last,
+        passed=passed,
+        resets_purchased=resets_purchased,
+    )
+    estimate, estimate_reasons = estimate_status(
+        coverage=coverage,
+        verified=ruleset.verified,
+        commissions_known=commission.status == "known",
+        cost_assumption=None if cost_assumption is None else cost_assumption.name,
+        news_covered=news_covered,
+        news_coverage_gaps=news_coverage_gaps,
+        session_calendar_gaps=schedule_gaps,
+        fees_incomplete=commission.fees_incomplete,
+        payout_cap_unknown=payout_cap_unknown,
+        participant_type=participant_type if commission.priced_from_dataset else None,
+    )
+    cash_status, cash_reasons = cash_estimate(
+        payouts_modeled=_payout_modeled(ruleset),
+        payout_cap_unknown=payout_cap_unknown,
+        cost_status=cost_status,
+        cost_assumption=None if cost_assumption is None else cost_assumption.name,
+        participant_type=participant_type if commission.priced_from_dataset else None,
+        fees_incomplete=commission.fees_incomplete,
+    )
     return AttemptResult(
         outcome=outcome,
         phase_outcomes=tuple(phase_outcomes),
@@ -358,16 +819,28 @@ def simulate_attempt(
         min_buffer_bar=None if buffer is None else buffer[1],
         min_buffer_time_ns=None if buffer is None else buffer[2],
         min_buffer_rule=None if buffer is None else buffer[3],
-        fees_usd=fees,
+        fees_usd=fee_breakdown.total_usd,
+        fees=fee_breakdown,
+        commissions=commission,
         payouts_usd=payouts_usd,
         payouts=tuple(payouts),
         payout_policy=payout_policy,
         payout_modeled=_payout_modeled(ruleset),
-        net_cash_usd=payouts_usd - fees,
+        net_cash_usd=payouts_usd - fee_breakdown.total_usd,
+        cash_estimate_status=cash_status,
+        cash_estimate_reasons=cash_reasons,
         overlay_events=tuple(events),
         rule_coverage=coverage,
         evaluation_status=evaluation_status(coverage),
         material_unmodeled=material_unmodeled(coverage),
+        mechanical_outcome=outcome,
+        estimate_status=estimate,
+        estimate_reasons=estimate_reasons,
+        practical_eligibility=practical_eligibility(ruleset, execution_mode),
+        scenario_id=scenario_id,
+        news_covered=news_covered,
+        news_coverage_gaps=news_coverage_gaps,
+        session_calendar_gaps=schedule_gaps,
         warnings=tuple(warnings),
         ruleset_id=ruleset.ruleset_id,
         version=ruleset.version,

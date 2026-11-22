@@ -1,0 +1,649 @@
+schema_version: 2
+ruleset_id: ftmo-futures-pro-100k
+version: 1
+firm: FTMO
+program: Futures Pro
+account_size_usd: '100000'
+platform: NinjaTrader / Tradovate / TradingView
+addons: []
+jurisdiction: null
+as_of: 2026-11-22
+effective_from: 2026-11-22
+effective_to: null
+instruments:
+- root: ES
+  contract_weight: '1'
+- root: NQ
+  contract_weight: '1'
+- root: YM
+  contract_weight: '1'
+- root: RTY
+  contract_weight: '1'
+- root: NKD
+  contract_weight: '1'
+- root: MES
+  contract_weight: '0.1'
+- root: MNQ
+  contract_weight: '0.1'
+- root: MYM
+  contract_weight: '0.1'
+- root: M2K
+  contract_weight: '0.1'
+verification:
+  status: unverified
+reset:
+  time: '18:00:00'
+  tz: America/New_York
+commissions:
+  status: known
+  components:
+    exchange:
+      status: excluded
+      evidence: official_quote
+      text: 'Exchange and NFA fees are set by the exchanges and regulators, not by FTMO.'
+    clearing:
+      status: unknown
+      evidence: not_stated
+      text: 'the page names exchange fees, NFA fees and its own commission as the three parts of the trading cost, and no clearing fee'
+    nfa:
+      status: excluded
+      evidence: official_quote
+      text: 'Exchange and NFA fees are set by the exchanges and regulators, not by FTMO.'
+    other:
+      status: unknown
+      evidence: not_stated
+      text: 'the page names three parts of the trading cost and no other per-side charge'
+  per_side_usd:
+    ES: '0.50'
+    NQ: '0.50'
+    YM: '0.50'
+    RTY: '0.50'
+    NKD: '0.50'
+    MES: '0.20'
+    MNQ: '0.20'
+    MYM: '0.20'
+    M2K: '0.20'
+  platform: null
+  source:
+    url: https://ftmo.com/en/futures/faq/which-instruments-can-i-trade-with-ftmo-futures
+    quote: $0.50 per side for minis and $0.20 per side for micros Exchange and NFA fees are set by
+      the exchanges and regulators, not by FTMO.
+    snapshot_sha256: e96ed87290cc5aff5cbc2bf2bb4af0c5bd5ec3028b4b09d02f8c5346c6d716a8
+    retrieved_at: '2026-11-22T01:37:40Z'
+    section: How much does it cost to trade? What are the commissions and fees?
+    synthetic: false
+conflicts: []
+phases:
+- phase_id: evaluation
+  kind: evaluation
+  starting_balance_usd: '100000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: eval_max_drawdown
+    description: 'End-of-day trailing $4,500: the high-water mark is the highest closing balance of any
+      preceding trading day (or the initial capital if higher), the limit is tested against equity at
+      any point in the day, and it locks at the initial capital for the evaluation.'
+    amount_usd: '4500'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on': [hwm]
+      at_offset_usd: '4500'
+      locked_offset_usd: '0'
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: Once the Maximum Drawdown Limit reaches the Initial Simulated Capital , it locks permanently
+        at that figure for the remaining duration of the Evaluation, unless (i) you pay a Reset Fee, or
+        (ii) you breach the Maximum Drawdown Limit or Daily Loss Limit and wait for the next monthly subscription.
+        The Maximum Drawdown Amount is $4,500 .
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: evaluation-max-drawdown
+      synthetic: false
+    evidence: official_quote
+  - kind: daily_loss
+    rule_id: eval_daily_loss
+    description: '$1,500 hard limit: a breach ends the evaluation. The threshold is recomputed at the
+      start of every trading day (18:00 ET) from the balance at that instant; equity is tested against
+      it intrabar.'
+    amount_usd: '1500'
+    reference: day_start_balance
+    basis: equity
+    evaluated: intraday
+    comparison: <=
+    action: fail
+    reset:
+      time: '18:00:00'
+      tz: America/New_York
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: The Daily Loss Limit is calculated at the start of each trading day as the difference between
+        the account balance at the start of that trading day and the applicable Daily Loss Limit Amount
+        . The Daily Loss Limit Amount is $1,500 . On the first day, the account balance used for the limit
+        calculation is the Initial Simulated Capital. The Pro Account applies a Hard Daily Loss Limit
+        in the Evaluation. If the limit is breached, the Evaluation is unsuccessful.
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: evaluation-daily-loss-limit
+      synthetic: false
+    evidence: official_quote
+  - kind: max_contracts
+    rule_id: eval_max_contracts
+    description: 10 contracts held simultaneously across all instruments, weighted (one mini or standard
+      = 1, ten micros = 1); the engine clips an oversized target.
+    limit: '10'
+    comparison: <=
+    action: clip
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: 'The Max Contracts rule limits the maximum number of contracts you may hold simultaneously
+        at any given time, across all instruments. The Max Contracts limit on your Evaluation Account
+        is 10 contracts :'
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: evaluation-max-contracts
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: eval_flat_by
+    description: 'Flat, with no pending orders, at the 4:10 pm ET close of the trading day: anything still
+      open is liquidated at the close and the trading day reopens at 6:00 pm ET. The deadline is declared
+      relative to the CME session''s scheduled close (minutes_before_session_end: 50, because 4:10 pm ET
+      is fifty minutes before the 5:00 pm ET / 4:00 pm CT close of a regular equity-index session), so a
+      holiday early close moves it with the calendar instead of a fixed clock. On an early-close day the
+      flat instant lands fifty minutes before that early close, earlier than the firm''s own deadline for
+      the day, which is the conservative side. A session-relative close carries no clock time zone, so no
+      reopen clock is declared: the trading day''s 6:00 pm ET start is the reset clock above, and entries
+      stay blocked until the session closes. A session the CME table cannot source is reported by the
+      engine as a coverage gap, never treated as a regular day.'
+    minutes_before_session_end: 50
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://ftmo.com/en/futures/faq/which-instruments-can-i-trade-with-ftmo-futures
+      quote: FTMO Futures does not allow positions to be held over the market closure. The trading day
+        closes at 4:10 pm US Eastern Time (ET) and reopens at 6:00 pm ET . Any open positions, including
+        pending orders, are automatically liquidated/flattened at the 4:10 pm ET close, so you must close
+        your trades before then.
+      snapshot_sha256: e96ed87290cc5aff5cbc2bf2bb4af0c5bd5ec3028b4b09d02f8c5346c6d716a8
+      retrieved_at: '2026-11-22T01:37:40Z'
+      section: What are the trading hours?
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_automated_trading_permitted
+    description: Automated trading is permitted; only automation that manipulates, abuses or gives an
+      unfair advantage over the programme (high-frequency strategies, latency arbitrage) is prohibited.
+      The page says these practices are prohibited across all FTMO Futures accounts, regardless of phase
+      or account type.
+    restriction: automated systems that manipulate, abuse or provide an unfair advantage over the programme,
+      including high-frequency strategies and latency arbitrage
+    applies_to_execution:
+    - automated
+    materiality: immaterial
+    comparison: '>='
+    action: none
+    source:
+      url: https://ftmo.com/en/futures/forbidden-trading-practices/
+      quote: Automated trading is permitted. You must not, however, use software, artificial intelligence,
+        or automated systems that manipulate, abuse, or provide an unfair advantage over the programme,
+        including high-frequency strategies and latency arbitrage.
+      snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+      retrieved_at: '2026-11-22T01:35:38Z'
+      section: Prohibited Trading Practices 5
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_copy_or_third_party_trading
+    description: A strategy whose decisions originate with another person - signal services, master accounts,
+      trade copiers, or any manual or automated arrangement - is prohibited. A self-contained strategy
+      is unaffected, so this does not block the simulated account; it would block a copy-trading one.
+      The page says these practices are prohibited across all FTMO Futures accounts, regardless of phase
+      or account type.
+    restriction: replicating, following or otherwise incorporating a third party's trading decisions,
+      and third-party account access or trade copying
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://ftmo.com/en/futures/forbidden-trading-practices/
+      quote: You must not replicate, follow, or otherwise incorporate the trading decisions of any third
+        party into your FTMO Futures account. Whether via signal services, master accounts, trade copiers,
+        or any manual or automated arrangement where decisions originate from someone other than the registered
+        account holder, regardless of whether the service is paid or free, or whether the third party
+        is also an FTMO client.
+      snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+      retrieved_at: '2026-11-22T01:35:38Z'
+      section: Prohibited Trading Practices 4
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_exchange_conduct
+    description: All trading must comply with CME and exchange rules; spoofing, layering, wash trading
+      and other manipulation are prohibited whether or not specifically named. A bar-based simulation
+      of a rule-following strategy cannot express them. The page says these practices are prohibited across
+      all FTMO Futures accounts, regardless of phase or account type.
+    restriction: 'exchange-prohibited conduct: spoofing, layering, wash trading and other forms of market
+      manipulation'
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: immaterial
+    comparison: '>='
+    action: none
+    source:
+      url: https://ftmo.com/en/futures/forbidden-trading-practices/
+      quote: Practices prohibited by CME rules, including spoofing, layering, wash trading, and all other
+        forms of market manipulation, are strictly prohibited under these terms, whether or not specifically
+        named here.
+      snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+      retrieved_at: '2026-11-22T01:35:38Z'
+      section: Exchange Compliance
+      synthetic: false
+    evidence: official_quote
+  pass_conditions:
+  - kind: profit_target
+    rule_id: eval_profit_target
+    description: Balance reaches $106,000 with every position closed. The page assesses eligibility to
+      pass after the end of the trading day, so the target is tested on the closed balance at the rule-day
+      close.
+    amount_usd: '6000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: promote_phase
+    require_flat: true
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: To complete the Profit Target , you must achieve a defined minimum profit above the Initial
+        Simulated Capital on the account. You will meet this objective once your account balance exceeds
+        the Initial Simulated Capital by the required Profit Target, with all positions closed. The Profit
+        Target is $6,000 .
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: evaluation-profit-target
+      synthetic: false
+    evidence: official_quote
+  - kind: consistency
+    rule_id: eval_consistency
+    description: 'The best day may not exceed 50% of total profit, measured at the end of the trading
+      day on closed P&L. Exceeding it is not a breach: the account keeps trading until the share falls
+      to the limit, so it gates the pass and nothing else.'
+    max_day_share: '0.5'
+    measure: best_day_profit/total_profit
+    applies_to: pass
+    window: all_time
+    comparison: <=
+    action: promote_phase
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: To pass the Evaluation, the Consistency Rule requires that your single most profitable trading
+        day (the Best Day ) does not represent more than 50% of your total profit .
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: evaluation-consistency-rule
+      synthetic: false
+    evidence: official_quote
+  max_calendar_days: null
+  max_trading_days: null
+  fees:
+  - kind: fee
+    rule_id: eval_monthly_subscription
+    description: 'The monthly fee, $199, charged per month: attempt cost accounting only, never written
+      into the trading ledger.'
+    fee_kind: monthly
+    amount_usd: '199'
+    when: per_month
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: The monthly fee is $199/month .
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: subscription-fees-monthly-fee
+      synthetic: false
+    evidence: official_quote
+    comparison: '>='
+    action: charge
+  - kind: fee
+    rule_id: eval_reset_fee
+    description: 'The reset fee, $189, charged on reset: attempt cost accounting only, never written into
+      the trading ledger.'
+    fee_kind: reset
+    amount_usd: '189'
+    when: on_reset
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: The Reset Fee returns your account to its original starting conditions. The Reset Fee is
+        $189 .
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: subscription-fees-reset-fee
+      synthetic: false
+    evidence: official_quote
+    comparison: '>='
+    action: charge
+- phase_id: sim_funded
+  kind: funded
+  starting_balance_usd: '100000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: funded_max_drawdown
+    description: 'End-of-day trailing $4,500: the high-water mark is the highest closing balance of any
+      preceding trading day (or the initial capital if higher), the limit is tested against equity at
+      any point in the day, and it locks at the initial capital for the remaining life of the account.'
+    amount_usd: '4500'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on': [hwm]
+      at_offset_usd: '4500'
+      locked_offset_usd: '0'
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: Once the Maximum Drawdown Limit reaches the Initial Simulated Capital , it locks permanently
+        at that figure for the remaining life of the account. The Maximum Drawdown Amount is $4,500 .
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: sim-funded-max-drawdown
+      synthetic: false
+    evidence: official_quote
+  - kind: daily_loss
+    rule_id: funded_daily_loss
+    description: '$1,500 hard limit: a breach terminates the account immediately and permanently. The
+      threshold is recomputed at the start of every trading day (18:00 ET) from the balance at that instant;
+      equity is tested against it intrabar.'
+    amount_usd: '1500'
+    reference: day_start_balance
+    basis: equity
+    evaluated: intraday
+    comparison: <=
+    action: fail
+    reset:
+      time: '18:00:00'
+      tz: America/New_York
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: The Daily Loss Limit is calculated at the start of each trading day as the difference between
+        the account balance at the start of that trading day and the applicable Daily Loss Limit Amount
+        . The Daily Loss Limit Amount is $1,500 . On the first day, the account balance used for the limit
+        calculation is the Initial Simulated Capital. The Pro Account applies a Hard Daily Loss Limit
+        on the Sim-Funded Account. If the limit is breached, the account is immediately and permanently
+        terminated.
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: sim-funded-daily-loss-limit
+      synthetic: false
+    evidence: official_quote
+  - kind: scaling_plan
+    rule_id: funded_scaling_plan
+    description: 'Contracts scale with the end-of-day balance: the limit is 4 at the start of the Sim-Funded
+      account and rises through the milestone bands below, and it falls back on the next trading day if
+      the end-of-day balance falls. The engine clips an oversized target.'
+    steps:
+    - min_profit_usd: '0'
+      max_contracts: '4'
+    - min_profit_usd: '1000'
+      max_contracts: '5'
+    - min_profit_usd: '2000'
+      max_contracts: '8'
+    - min_profit_usd: '3000'
+      max_contracts: '10'
+    - min_profit_usd: '4500'
+      max_contracts: '10'
+    evaluated: eod
+    basis: balance
+    comparison: <=
+    action: clip
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: 'The following list describes the range of the Profit above the Initial Simulated Capital,
+        together with the number of contracts allowed to be opened: $0–$999 → 4 minis or standard / 40
+        micros contracts $1,000–$1,999 → 5 minis or standard / 50 micros contracts $2,000–$2,999 → 8 minis
+        or standard / 80 micros contracts $3,000–$4,499 → 10 minis or standard / 100 micros contracts
+        $4,500+ → 10 minis or standard / 100 micros contracts'
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: sim-funded-max-contracts
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: funded_flat_by
+    description: 'Flat, with no resting orders, before 4:10 p.m. ET or the relevant market close, whichever
+      is sooner: the platform liquidates anything left open at the close and entries resume when the
+      trading day reopens at 6:00 p.m. ET. The deadline is declared relative to the CME session''s scheduled
+      close (minutes_before_session_end: 50, the distance from 4:10 p.m. ET to the 5:00 p.m. ET / 4:00 p.m.
+      CT close of a regular equity-index session), so the "relevant market close, whichever is sooner" comes
+      from the calendar instead of a holiday table. On an early-close day the model flattens fifty minutes
+      before that early close, earlier than the firm''s own "whichever is sooner" deadline for the day,
+      which is the conservative side. A session-relative close carries no clock time zone, so no reopen
+      clock is declared: the trading day''s 6:00 p.m. ET start is the reset clock above, and entries stay
+      blocked until the session closes. A session the CME table cannot source is reported by the engine as
+      a coverage gap, never treated as a regular day.'
+    minutes_before_session_end: 50
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://ftmo.com/en/futures/faq/ftr-can-i-hold-positions-overnight-or-over-the-weekend
+      quote: FTMO Futures does not allow positions to be held over the market close . All positions must
+        be closed, and all resting orders (including stop-loss orders, limit orders, and bracket orders)
+        must be cancelled before 4:10 p.m. ET or the relevant market close, whichever is sooner, on each
+        trading day.
+      snapshot_sha256: 965825eb9b123a6de03877be02464dc148349d0955b389b2a07dea7cac34b606
+      retrieved_at: '2026-11-22T01:37:43Z'
+      section: Can I hold positions overnight or over the weekend?
+      synthetic: false
+    evidence: official_quote
+  - kind: payout
+    rule_id: funded_payout
+    description: A payout needs 5 qualifying days of at least $300 closed profit in the current payout
+      cycle, counted since the previous payout, and no more than one request per 5 trading days. The request
+      is capped at $6,000 and at 100% of the profit above the initial capital, paid 90/10, minimum $20.
+      At least 50% of the request must be new profit generated in the current payout cycle, not carried
+      over from earlier cycles, so the request is also bounded by the new profit. The drawdown limit is
+      unchanged by a payout.
+    min_days_since_last: 5
+    min_profitable_days: 5
+    min_traded_days: 0
+    min_day_profit_usd: '300'
+    window: since_last_payout
+    buffer_usd: '0'
+    split: '0.9'
+    min_usd: '20'
+    max_usd: '6000'
+    max_usd_by_payout: null
+    max_pct_of_balance: null
+    max_share_of_withdrawable: '1'
+    min_new_profit_share_of_request: '0.5'
+    min_profit_since_last_usd: '0'
+    cycle_goal_usd: null
+    first_payout_after_calendar_days: null
+    payout_group: null
+    max_payouts: null
+    comparison: '>='
+    action: withdraw
+    threshold_after_payout: unchanged
+    source:
+      url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: 'To become eligible to request a payout, you must trade on a minimum number of trading days
+        within the payout cycle, each meeting a minimum daily profit threshold. Minimum number of Qualifying
+        Days: 5 trading days Minimum daily P&L required: $300 per Qualifying Day'
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: sim-funded-payout-eligibility
+      synthetic: false
+    evidence: official_quote
+  - kind: inactivity
+    rule_id: funded_inactivity
+    description: 'Sixty consecutive calendar days without trading activity close the account: the page
+      warns after the first thirty and closes after a further thirty. Checked at the rule-day close, where
+      a gap in trading days can be measured.'
+    max_gap: 60
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>='
+    action: fail
+    source:
+      url: https://ftmo.com/en/futures/forbidden-trading-practices/
+      quote: Sim funded accounts require ongoing trading activity. Accounts on which no trading activity
+        has been recorded for 30 consecutive calendar days will receive an automated inactivity warning.
+        Accounts remaining inactive for a further 30 days will be closed.
+      snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+      retrieved_at: '2026-11-22T01:35:38Z'
+      section: Account Access and Personal Use
+      synthetic: false
+    evidence: official_quote
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
+not_modeled:
+- rule: live_funded_account
+  description: The Live Funded Account is a separate, invitation-only account with its own capital (initial
+    capital equal to the Maximum Drawdown Amount), a one-time buffer/Safety Net, uncapped daily payouts
+    at 90/10, no daily loss limit and no consistency rule, plus a market data fee for live data that the
+    page states without an amount. It is not a pass transition the phase chain can enter, and its capital
+    is not published per size, so nothing simulated changes.
+  materiality: immaterial
+  source:
+    url: https://ftmo.com/en/futures/how-it-works/
+    quote: 'Not automatic: the Live Funded Account is offered by invitation only, after FTMO validates
+      your Sim-Funded trading.'
+    snapshot_sha256: 8e3659d8587843006b15d0eda1599339fa8e3e97fbb65dea7fc3c6cdcf9521e8
+    retrieved_at: '2026-11-22T01:35:37Z'
+    section: Live Funded Account
+    synthetic: false
+- rule: cme_price_limit_2pct_entry_ban
+  description: No new position may be opened while price is within 2% of the CME daily price limit for
+    the contract and session. There is no entry-distance kind and the ruleset carries no price-limit series,
+    so a strategy trading near a limit is admitted when FTMO would refuse it.
+  materiality: material
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: You must not open new positions in any contract when price is within 2% of the CME-defined
+      daily price limit for that contract and session.
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Prohibited Trading Practices 6
+    synthetic: false
+- rule: hedging_and_netting_across_accounts
+  description: Simultaneously holding opposing positions across FTMO accounts, products or other operators
+    is prohibited (this is the cross-account hedging rule). One simulated account cannot express netting
+    across accounts, and inside one account an opposite position is not netting.
+  materiality: immaterial
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: You must not perform, alone or in concert with other persons, trades or combinations of trades
+      designed to eliminate or reduce directional market risk. This includes simultaneously holding opposing
+      positions across accounts held with FTMO Futures, other FTMO products, or any other operator or
+      platform.
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Prohibited Trading Practices 3
+    synthetic: false
+- rule: discretionary_risk_management_clause
+  description: A strategy that relies on the drawdown as its only exit, overleverages, makes one-sided
+    bets or rolls accounts can lose the account at FTMO's discretion. A discretionary clause cannot be
+    simulated, so a strategy the firm would refuse still passes here.
+  materiality: material
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: or engage in trading that would not reflect the risk management discipline expected of a professional
+      trader operating with real capital in live market conditions.
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Prohibited Trading Practices 2 and 8
+    synthetic: false
+- rule: inconsistent_position_sizing
+  description: Position sizes or trade counts that differ substantially from the trader's wider activity
+    across accounts are prohibited. The ruleset has no cross-account sizing rule and a single-account
+    attempt has no wider activity to compare with.
+  materiality: material
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: Opening substantially larger or smaller position sizes, or a substantially different number
+      of positions, relative to your broader trading activity across your accounts
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Risk Management Standards
+    synthetic: false
+- rule: news_event_concentration
+  description: 'Clustering trading activity around scheduled economic events in a pattern inconsistent
+    with the trader''s overall approach is prohibited. FTMO states there is no special news restriction,
+    so this is a discretionary, unspecified news rule rather than a window: no event types, minutes or
+    instruments are published, and there is nothing to model as a news_restriction.'
+  materiality: material
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: Concentrating trading activity around scheduled economic events in a pattern that is inconsistent
+      with your overall approach and would not reflect a sustainable strategy in live market conditions
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Risk Management Standards
+    synthetic: false
+- rule: evaluation_vs_funded_mismatch
+  description: Trading in a materially different manner in the evaluation than intended on a funded account,
+    or using risk parameters in the evaluation that would not be used with real capital, is prohibited.
+    The simulation applies one strategy to both phases, so the modelled attempt cannot express the mismatch.
+  materiality: immaterial
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: Trading in a materially different manner during the evaluation than you intend to trade on
+      a funded account, or employing risk parameters during evaluation that you would not reasonably apply
+      when trading with real capital.
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Risk Management Standards
+    synthetic: false
+- rule: exploit_simulation_artifacts
+  description: Strategies that exploit errors in FTMO's services, price-update delays or any characteristic
+    specific to a simulated environment are prohibited. The engine simulates no platform errors or quote
+    delays, so there is nothing to exploit.
+  materiality: immaterial
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: You must not use any trading strategy intended to exploit, game, or undermine the purpose or
+      spirit of the programme; including strategies that take advantage of errors in our Services, delays
+      in price updates, or any characteristic specific to a simulated environment that would not be present
+      in a live futures market, whether or not you were aware of the exploitation.
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Prohibited Trading Practices 1
+    synthetic: false
+- rule: hft_and_latency_arbitrage_ban
+  description: High-frequency strategies and latency arbitrage are prohibited on top of the permitted
+    use of automation. A bar-based simulation has no order latency to arbitrage, and a strategy that the
+    firm would treat as HFT is not detectable from its simulated trades.
+  materiality: immaterial
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: Automated trading is permitted. You must not, however, use software, artificial intelligence,
+      or automated systems that manipulate, abuse, or provide an unfair advantage over the programme,
+      including high-frequency strategies and latency arbitrage.
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Prohibited Trading Practices 5
+    synthetic: false
+- rule: max_concurrent_accounts_3
+  description: At most 3 concurrent Sim-Funded accounts across sizes and products; a per-account attempt
+    cannot model a portfolio of accounts.
+  materiality: immaterial
+  source:
+    url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+    quote: You may hold a maximum of 3 concurrent Sim-Funded Accounts at any one time, across all account
+      sizes and product types
+    snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+    retrieved_at: '2026-11-22T01:35:35Z'
+    section: sim-funded-max-concurrent-accounts
+    synthetic: false

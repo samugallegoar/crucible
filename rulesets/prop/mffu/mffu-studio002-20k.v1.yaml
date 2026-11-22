@@ -1,0 +1,614 @@
+# MyFundedFutures / Studio #002 / $20,000 - schema version 2,
+# migrated from the v1 drafts against the saved official pages (ADR-0107 sections 7-13).
+# verification.status is unverified: only the owner confirms a ruleset (ADR-0106).
+# Every value carries its official URL, the verbatim quotation and the snapshot hash, or is
+# a named assumption / a not_modeled entry; the sourcing notes live in RESEARCH.md.
+schema_version: 2
+ruleset_id: mffu-studio002-20k
+version: 1
+firm: MyFundedFutures
+program: 'Studio #002'
+account_size_usd: '20000'
+platform: Hyperprop
+addons: []
+jurisdiction: null
+as_of: '2026-11-22'
+effective_from: '2026-11-22'
+effective_to: null
+instruments:
+- root: MES
+  contract_weight: '0.1'
+- root: MNQ
+  contract_weight: '0.1'
+- root: MYM
+  contract_weight: '0.1'
+- root: M2K
+  contract_weight: '0.1'
+reset:
+  time: '18:00:00'
+  tz: America/New_York
+commissions:
+  status: known
+  # The firm names "Commissions, and Trading Fees" in the list's subtitle and publishes a Total Cost Round Trip column, neither of which splits exchange, clearing, NFA or other fees out: every component is unknown, never zero.
+  components:
+    exchange:
+      status: unknown
+      evidence: not_stated
+      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+    clearing:
+      status: unknown
+      evidence: not_stated
+      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+    nfa:
+      status: unknown
+      evidence: not_stated
+      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+    other:
+      status: unknown
+      evidence: not_stated
+      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+  per_side_usd:
+    ES: '2.34'
+    NQ: '2.34'
+    YM: '2.88'
+    RTY: '2.34'
+    NKD: '3.11'
+    MES: '0.95'
+    MNQ: '0.95'
+    MYM: '0.95'
+    M2K: '0.95'
+  platform: null
+  source:
+    url: https://help.myfundedfutures.com/en/articles/9735811-futures-instrument-list
+    quote: 'E-mini NASDAQ 100 NQ Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.25 $5
+      $4.68 E-mini Russell 2000 RTY Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.10
+      $5.00 $4.68 E-mini S&P 500 ES Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.25
+      $12.50 $4.68 Euro FX 6E Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.00005 $6.25
+      $5.12 Japanese Yen 6J Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.0000005 $6.25
+      $5.12 Lean Hog HE Monday - Friday 08:30 - 13:05 CT 0.00025 $10.00 $6.12 Live Cattle LE Monday -
+      Friday 08:30 - 13:05 CT 0.00025 $10.00 $6.12 Micro AUD/USD M6A Sunday - Friday 17:00 - 16:00 CT
+      Daily Break: 16:00 - 17:00 CT 0.0001 $1.00 $1.44 Micro Bitcoin MBT Sunday - Friday 17:00 - 16:00
+      CT Daily Break: 16:00 - 17:00 CT 5.00 $0.50 $3.50 Micro E-mini Nasdaq-100 MNQ Sunday - Friday 17:00
+      - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.25 $0.50 $1.90 Micro E-mini Russell 2000 M2K Sunday -
+      Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.10 $0.50 $1.90 Micro E-mini S&P 500 MES
+      Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.25 $1.25 $1.90 Micro EUR/USD M6E
+      Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.0001 $1.25 $1.44 Micro Ethereum
+      MET Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.50 $0.05 $1.16 New Zealand
+      Dollar 6N Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.00005 $5.00 $5.12 Nikkei/USD
+      NKD Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 5.00 $25.00 $6.22 Swiss Franc
+      6S Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.00005 $6.25 $5.12 COMEX Instrument
+      Name Code Trading Hours Tick Size Tick Value Total Cost Round Trip Copper HG Sunday - Friday 17:00
+      - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.0005 $12.50 $5.12 Gold GC Sunday - Friday 17:00 - 16:00
+      CT Daily Break: 16:00 - 17:00 CT 0.10 $10.00 $5.12 Micro Gold MGC Sunday - Friday 17:00 - 16:00
+      CT Daily Break: 16:00 - 17:00 CT 0.10 $1.00 $2.20 Platinum PL Sunday - Friday 17:00 - 16:00 CT Daily
+      Break: 16:00 - 17:00 CT 0.10 $10.00 $4.12 Silver SI Sunday - Friday 17:00 - 16:00 CT Daily Break:
+      16:00 - 17:00 CT 0.005 $25.00 $5.12 Micro Silver SIL Sunday - Friday 17:00 - 16:00 CT Daily Break:
+      16:00 - 17:00 CT 0.005 $5.00 $2.84 CBOT Instrument Name Code Trading Hours Tick Size Tick Value
+      Total Cost Round Trip Corn ZC Sunday - Friday 19:00 - 07:45 CT Monday - Friday 08:30 - 13:20 CT
+      0.0025 $12.50 $6.12 E-mini Dow Jones YM Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00
+      CT 1.00 $5.00 $5.76 Micro E-mini dow Jones MYM Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00
+      - 17:00 CT 1.00 $0.50 $1.90'
+    snapshot_sha256: 61a15116c3e36c1daead0587c59d2a558f34a74f42172f40728eac85aae60901
+    retrieved_at: '2026-11-22T01:59:33Z'
+    section: 'Futures Instrument List, Total Cost Round Trip column: ES/NQ/RTY $4.68, YM $5.76, NKD $6.22,
+      MES/MNQ/MYM/M2K $1.90 per contract for one round trip. Per side = that figure / 2. The column is
+      the firm''s all-in cost (commission plus exchange and NFA fees), and the subtitle names only Commissions and Trading Fees as a group: the list''s subtitle reads "Includes
+      Contract Specifications, Commissions, and Trading Fees" and no MFFU page publishes a
+      commission-only number; MFFU publishes no platform-specific schedule either, so the all-in cost
+      is what a round trip costs and it is the same on every platform.'
+    synthetic: false
+conflicts: []
+verification:
+  status: unverified
+phases:
+- phase_id: evaluation
+  kind: evaluation
+  starting_balance_usd: '20000'
+  rules:
+  - kind: static_drawdown
+    rule_id: static_max_loss_limit
+    description: '$1,000 STATIC maximum loss limit: "Your MLL is set when the account starts and never
+      moves. There is no trailing drawdown and no end-of-day reset of the floor". The pages never state
+      when it is tested or on which basis, so it is tested intraday on equity (assumption unspecified_failure_frequency_is_intraday),
+      the stricter reading.'
+    amount_usd: '1000'
+    basis: equity
+    evaluated: intraday
+    comparison: <=
+    action: fail
+    source:
+      url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+      quote: 'Parameter Studio #001 Studio #002 Studio #003 Starting balance $10,000 $20,000 $5,000 Profit
+        target $1,000 $2,000 $500 Max Loss Limit $500 (static) $1,000 (static) $250 (static) Daily Loss
+        Limit None None None Consistency None None None Minimum trading days None None None Max contracts
+        10 micros · no minis 20 micros · no minis 5 micros · no minis News trading Allowed Allowed Allowed
+        Inactivity 7 calendar days 7 calendar days 7 calendar days'
+      snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+      retrieved_at: '2026-11-22T01:55:25Z'
+      section: Evaluation stage parameters
+      synthetic: false
+    evidence: assumption
+    assumption:
+      name: unspecified_failure_frequency_is_intraday
+      rationale: 'The Studio pages state the maximum loss as static and never state when it is tested.
+        ADR-0107 section 7 default for a failure threshold: intraday, on equity, so an open position deep
+        underwater breaches even if the account recovers by the close.'
+  - kind: max_contracts
+    rule_id: eval_max_contracts
+    description: '20 micros and no minis: a weighted limit of 2 at 1 per mini and 0.1 per micro, so a
+      mini target is clipped and only micros fill.'
+    limit: '2'
+    comparison: <=
+    action: clip
+    source:
+      url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+      quote: 'Parameter Studio #001 Studio #002 Studio #003 Starting balance $10,000 $20,000 $5,000 Profit
+        target $1,000 $2,000 $500 Max Loss Limit $500 (static) $1,000 (static) $250 (static) Daily Loss
+        Limit None None None Consistency None None None Minimum trading days None None None Max contracts
+        10 micros · no minis 20 micros · no minis 5 micros · no minis News trading Allowed Allowed Allowed
+        Inactivity 7 calendar days 7 calendar days 7 calendar days'
+      snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+      retrieved_at: '2026-11-22T01:55:25Z'
+      section: Evaluation stage parameters
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: eval_flat_by_ny_close
+    description: Every position is closed 50 minutes before the scheduled session close. The firm states
+      its trading day as the 6:00 PM EST Globex open to "the New York session closes at 4:10 PM EST" and
+      the CME session this engine reads closes at 5:00 PM ET, so 4:10 PM ET is 50 minutes before the
+      session end. Declared session-relative so the clock moves with the calendar, so on a half day whose
+      close is 13:15 ET the flat is 12:25 ET instead of a 4:10 PM clock that the session has already
+      passed. The page writes EST; modeled as US Eastern time (DST included).
+    minutes_before_session_end: 50
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
+      quote: Trades may be placed beginning at 6:00 PM EST when the Globex session opens and can remain
+        open until the New York session closes at 4:10 PM EST.
+      snapshot_sha256: 7a945cf52a94820af413c95e6fcdb381fe51b4e8039bae4f7d46e63bc13e2b98
+      retrieved_at: '2026-11-22T01:38:12Z'
+      section: Permitted Times to Trade
+      synthetic: false
+    evidence: official_quote
+  - kind: inactivity
+    rule_id: eval_inactivity_7_calendar_days
+    description: An account with no trade for 7 consecutive calendar days may be closed, and on a Sim
+      Funded account the breach forfeits all profits. Counted in calendar days in a rolling window from
+      the last trading day.
+    max_gap: 7
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>='
+    action: fail
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16596524-inactivity-rule-one-time-payment-model
+      quote: If a trader does not place a trade for 7 consecutive calendar days , the account could be
+        closed. This includes simulated funded accounts.
+      snapshot_sha256: c6d23e74eb62033bfdd8cd6508458aac8b5c9a8ae771e27318fdb6e881f91598
+      retrieved_at: '2026-11-22T01:38:13Z'
+      section: Inactivity Rule Changes (Effective August 25th)
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_high_frequency_trading
+    description: 'Material. High-frequency trading is prohibited outright. It is not decidable from OHLC
+      bars, so it never touches the mechanical account: it is recorded as a conduct restriction that a
+      real submission of this strategy would have to survive.'
+    restriction: High-frequency trading is not allowed
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+      quote: High-frequency Trading is not allowed on our plans.
+      snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+      retrieved_at: '2026-11-22T01:36:50Z'
+      section: 'Section 1: Automated Trading Protocols'
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_automation_must_not_exploit_simulated_fills
+    description: Material. Automated trading is PERMITTED at MFFU (unlike Apex), but only for the trader's
+      own settings and never to exploit the favourable fills of the simulated environment. Because automation
+      is allowed and this restriction is not critical, an automated attempt stays practically eligible;
+      the rule records what a real submission must not do.
+    restriction: Automated strategies are allowed only where they do not aim to exploit the favourable
+      fills offered in the simulated environment
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+      quote: Traders may make use of automated trading strategies tailored to their own specific settings
+        so long as these automated tools do not aim to exploit the favorable fills offered in the Simulated
+        Environment.
+      snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+      retrieved_at: '2026-11-22T01:36:50Z'
+      section: 'Section 1: Automated Trading Protocols'
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_fill_or_quote_exploitation
+    description: Material. Order stacking at one price to manipulate fills, harvesting isolated stale
+      or unrealistic fills in illiquid or back-month contracts, and exploiting the absence of slippage
+      with tight brackets are prohibited. None of them is decidable from bar data; the simulator's own
+      pessimistic fills are the engine's answer to the fill-exploitation items.
+    restriction: Manipulating fills (stacked limit orders, stale or illiquid fills, slippage and bracket
+      exploitation) is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+      quote: Profiting from isolated, stale or unrealistic fills in low-liquidity contracts (including
+        back-month contracts) or during low-volume hours is not allowed, regardless of how long the position
+        is held.
+      snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+      retrieved_at: '2026-11-22T01:36:50Z'
+      section: 'Section 2: Order Management and Market Conduct'
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_copy_trading_or_account_sharing
+    description: Material. Copy trading between traders, using another trader's device and collaborating
+      across unconnected accounts to run identical or opposite strategies are prohibited. A single simulated
+      attempt is one trader on one account, so this cannot change its mechanics; it decides practical
+      eligibility for a submission that is a copy of someone else's trades.
+    restriction: Copy trading another trader, sharing a device or collaborating across unconnected accounts
+      is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+      quote: Traders are not permitted to copy trade one another by entering, exiting or cancelling trade
+        positions.
+      snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+      retrieved_at: '2026-11-22T01:36:50Z'
+      section: 'Section 4: Device Sharing & Copy-Trading other Traders'
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_hedging
+    description: 'Material. Hedging is prohibited: holding buy and sell exposure on the same underlying
+      at the same time (a mini against its own micro counts). The simulator keeps one net position per
+      root, so a same-root hedge cannot be represented and the ban does not change a simulated outcome;
+      the cross-account half of the CME Rule 534 ban is declared in not_modeled.'
+    restriction: Hedging of any kind is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/12011241-hedging-what-you-should-know
+      quote: MyFunded Futures prohibits hedging of any kind.
+      snapshot_sha256: 671a46f7f3849afe15ae3a98179acb2234a804da88b0838a1225c6fb6d851139
+      retrieved_at: '2026-11-22T01:38:58Z'
+      section: Hedging - What You Should Know
+      synthetic: false
+    evidence: official_quote
+  pass_conditions:
+  - kind: profit_target
+    rule_id: profit_target
+    description: Profit target of $2000 on the phase's starting balance. No MFFU page states when the
+      target is judged, so it is tested at the rule-day close on the closed balance (the assumption unspecified_target_frequency_is_eod,
+      the stricter reading).
+    amount_usd: '2000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: promote_phase
+    require_flat: false
+    source:
+      url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+      quote: 'Parameter Studio #001 Studio #002 Studio #003 Starting balance $10,000 $20,000 $5,000 Profit
+        target $1,000 $2,000 $500 Max Loss Limit $500 (static) $1,000 (static) $250 (static) Daily Loss
+        Limit None None None Consistency None None None Minimum trading days None None None Max contracts
+        10 micros · no minis 20 micros · no minis 5 micros · no minis News trading Allowed Allowed Allowed
+        Inactivity 7 calendar days 7 calendar days 7 calendar days'
+      snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+      retrieved_at: '2026-11-22T01:55:25Z'
+      section: Evaluation stage parameters
+      synthetic: false
+    evidence: assumption
+    assumption:
+      name: unspecified_target_frequency_is_eod
+      rationale: 'No MFFU page states when the profit target is judged. Recorded default for a pass condition
+        whose frequency the firm does not state: tested at the rule-day close on the closed balance, so
+        the trader passes no earlier than the end of the trade date and a same-day breach after the target
+        was touched still counts. The intraday alternative would pass the phase the moment equity touched
+        the target and would hide that later breach.'
+  max_calendar_days: null
+  max_trading_days: null
+  fees:
+  - kind: fee
+    rule_id: evaluation_fee
+    description: One-time evaluation fee of $280.00, not a subscription. The amount is the list price
+      in the site's product configuration or the plan page; a coupon code is a campaign and never a product
+      value.
+    fee_kind: evaluation
+    amount_usd: '280.00'
+    when: at_start
+    comparison: '>='
+    action: charge
+    source:
+      url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+      quote: Account size $10,000 $20,000 $5,000 Price (one-time) $140 $280 $75
+      snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+      retrieved_at: '2026-11-22T01:55:25Z'
+      section: At a glance, Price (one-time)
+      synthetic: false
+    evidence: official_quote
+  - kind: fee
+    rule_id: activation_fee
+    description: 'Zero activation fee: the firm states every plan carries none, so the funded stage starts
+      at no cost.'
+    fee_kind: activation
+    amount_usd: '0'
+    when: at_start
+    comparison: '>='
+    action: charge
+    source:
+      url: https://help.myfundedfutures.com/en/articles/12398151-does-myfundedfutures-charge-activation-fees
+      quote: all MFFU plans, regardless of account size, come with $0 activation fee.
+      snapshot_sha256: 7fa012bd73c93736c5440c3fe57720d168dc8efb8a07c7c698f9e03e82ca1263
+      retrieved_at: '2026-11-22T01:36:54Z'
+      section: Does MyFundedFutures charge activation fees
+      synthetic: false
+    evidence: official_quote
+- phase_id: funded
+  kind: funded
+  starting_balance_usd: '0'
+  rules:
+  - kind: static_drawdown
+    rule_id: static_max_loss_limit
+    description: '$1,000 static maximum loss limit, carried unchanged into the Sim Funded stage ("The
+      same static MLL and contract limits from Evaluation carry through"). The Sim Funded account "begins
+      at a $0 balance", so the floor sits at $0 - $1,000 = -$1,000: the stage starting balance is 0 and
+      the limit is a $1,000 cushion, the only reading a $0 start admits. Tested intraday on equity (assumption
+      unspecified_failure_frequency_is_intraday).'
+    amount_usd: '1000'
+    basis: equity
+    evaluated: intraday
+    comparison: <=
+    action: fail
+    source:
+      url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+      quote: 'Parameter Studio #001 Studio #002 Studio #003 Starting balance $0 $0 $0 Max Loss Limit $500
+        (static) $1,000 (static) $250 (static) Daily Loss Limit None None None Consistency None None None
+        Daily profit cap $5,000 $10,000 $2,500 Max contracts 10 micros · no minis 20 micros · no minis
+        5 micros · no minis News trading Allowed Allowed Allowed Inactivity 7 calendar days 7 calendar
+        days 7 calendar days'
+      snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+      retrieved_at: '2026-11-22T01:55:25Z'
+      section: Sim Funded stage parameters
+      synthetic: false
+    evidence: assumption
+    assumption:
+      name: unspecified_failure_frequency_is_intraday
+      rationale: 'The Studio pages state the maximum loss as static and never state when it is tested.
+        ADR-0107 section 7 default for a failure threshold: intraday, on equity, so an open position deep
+        underwater breaches even if the account recovers by the close.'
+  - kind: max_contracts
+    rule_id: funded_max_contracts
+    description: 20 micros and no minis (the same weighted limit as the evaluation), so a mini target
+      is clipped.
+    limit: '2'
+    comparison: <=
+    action: clip
+    source:
+      url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+      quote: 'Parameter Studio #001 Studio #002 Studio #003 Starting balance $0 $0 $0 Max Loss Limit $500
+        (static) $1,000 (static) $250 (static) Daily Loss Limit None None None Consistency None None None
+        Daily profit cap $5,000 $10,000 $2,500 Max contracts 10 micros · no minis 20 micros · no minis
+        5 micros · no minis News trading Allowed Allowed Allowed Inactivity 7 calendar days 7 calendar
+        days 7 calendar days'
+      snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+      retrieved_at: '2026-11-22T01:55:25Z'
+      section: Sim Funded stage parameters
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: funded_flat_by_ny_close
+    description: Every position is closed 50 minutes before the scheduled session close. The firm states
+      its trading day as the 6:00 PM EST Globex open to "the New York session closes at 4:10 PM EST" and
+      the CME session this engine reads closes at 5:00 PM ET, so 4:10 PM ET is 50 minutes before the
+      session end. Declared session-relative so the clock moves with the calendar, so on a half day whose
+      close is 13:15 ET the flat is 12:25 ET instead of a 4:10 PM clock that the session has already
+      passed. The page writes EST; modeled as US Eastern time (DST included).
+    minutes_before_session_end: 50
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
+      quote: Trades may be placed beginning at 6:00 PM EST when the Globex session opens and can remain
+        open until the New York session closes at 4:10 PM EST.
+      snapshot_sha256: 7a945cf52a94820af413c95e6fcdb381fe51b4e8039bae4f7d46e63bc13e2b98
+      retrieved_at: '2026-11-22T01:38:12Z'
+      section: Permitted Times to Trade
+      synthetic: false
+    evidence: official_quote
+  - kind: inactivity
+    rule_id: funded_inactivity_7_calendar_days
+    description: An account with no trade for 7 consecutive calendar days may be closed, and on a Sim
+      Funded account the breach forfeits all profits. Counted in calendar days in a rolling window from
+      the last trading day.
+    max_gap: 7
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>='
+    action: fail
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16596524-inactivity-rule-one-time-payment-model
+      quote: If a trader does not place a trade for 7 consecutive calendar days , the account could be
+        closed. This includes simulated funded accounts.
+      snapshot_sha256: c6d23e74eb62033bfdd8cd6508458aac8b5c9a8ae771e27318fdb6e881f91598
+      retrieved_at: '2026-11-22T01:38:13Z'
+      section: Inactivity Rule Changes (Effective August 25th)
+      synthetic: false
+    evidence: official_quote
+  - kind: daily_profit_cap
+    rule_id: funded_daily_profit_cap
+    description: Net realized profit above the daily cap in a single trading day is forfeited and cannot
+      be withdrawn; anything at or under the cap stays available under the normal payout rules. Modeled
+      as a per-rule-day cap on credited profit whose excess is forfeited.
+    amount_usd: '10000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: forfeit_excess
+    source:
+      url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+      quote: 'Daily profit cap On a Sim Funded account, net realized profit above the daily cap in a single
+        trading day is forfeited and cannot be withdrawn: Studio #001: $5,000 Studio #002: $10,000'
+      snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+      retrieved_at: '2026-11-22T01:55:25Z'
+      section: Daily profit cap
+      synthetic: false
+    evidence: official_quote
+  - kind: payout
+    rule_id: payout
+    description: 'Payouts anytime with no waiting period, buffer or qualifying days: withdrawable is the
+      whole net profit above $0 and the trader may request all or part of it. Minimum request $250, 80/20
+      split, and requests are gross profits before the split. No per-request ceiling is stated aside from
+      "all or part", so max_usd is unlimited.'
+    min_days_since_last: 0
+    min_profitable_days: 0
+    min_traded_days: 0
+    min_day_profit_usd: '0'
+    window: all_time
+    buffer_usd: '0'
+    split: '0.8'
+    min_usd: '250'
+    max_usd: unlimited
+    max_payouts: null
+    min_profit_since_last_usd: '0'
+    first_payout_after_calendar_days: null
+    threshold_after_payout: unchanged
+    source:
+      url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+      quote: 'Payout policy (Sim Funded) Parameter Studio #001 & #002 Profit split 80/20 - 80% to the
+        trader When you can request Anytime What you can request Net profits above $0 — all or part Minimum
+        request Studios #001 and #002 - $250 Studio #003 - $100 All requests are gross profits before
+        profit split. Waiting period / buffer / qualifying days None'
+      snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+      retrieved_at: '2026-11-22T01:55:25Z'
+      section: Payout policy (Sim Funded)
+      synthetic: false
+    evidence: official_quote
+    comparison: '>='
+    action: withdraw
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
+not_modeled:
+- rule: sub_minute_holding_and_micro_scalping
+  description: 'Material. MFFU prohibits high-frequency trading and any exploitation of the simulated
+    fill engine, which targets holdings shorter than a bar. The simulator reads OHLC bars, so a holding
+    time below the bar cannot be measured and a micro-scalping pattern is invisible: the model can keep
+    an account whose real holding-time would be refused, and it cannot fail a sub-minute rule the firm
+    would enforce.'
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+    quote: High-frequency Trading is not allowed on our plans.
+    snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+    retrieved_at: '2026-11-22T01:36:50Z'
+    section: 'Section 1: Automated Trading Protocols'
+    synthetic: false
+- rule: price_limit_2pct_prohibition
+  description: Material. Trading is prohibited while a product trades within 2% of its CME price limit,
+    on Sim Funded and Live accounts (the firm says equity index price limits are suspended for it in that
+    band). The ruleset holds no price-limit bands, so a bar in a limit move stays tradable here and a
+    strategy that trades a limit day would differ.
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/9698984-2-price-limit-rule
+    quote: we enforce strict guidelines to prevent trading when a product is within 2% of a CME price
+      limit .
+    snapshot_sha256: 57a9706131ad161e9d151fbf10dd2012292d1c64960349dbb742e60593363370
+    retrieved_at: '2026-11-22T01:40:10Z'
+    section: 2% Price Limit Rule
+    synthetic: false
+- rule: cross_account_hedging
+  description: Immaterial. The firm's hedging ban extends to the CME Rule 534 guideline against hedging
+    across accounts. One simulated attempt is one account, so a cross-account hedge cannot exist inside
+    it and the ban cannot change a simulated outcome.
+  materiality: immaterial
+  source:
+    url: https://help.myfundedfutures.com/en/articles/12011241-hedging-what-you-should-know
+    quote: 'Note: All traders must abide by the CME guidelines on hedging.'
+    snapshot_sha256: 671a46f7f3849afe15ae3a98179acb2234a804da88b0838a1225c6fb6d851139
+    retrieved_at: '2026-11-22T01:38:58Z'
+    section: Hedging - What You Should Know
+    synthetic: false
+- rule: holiday_early_close_is_the_traders_job
+  description: Material. The flat clock now follows the CME calendar's own early close, but the firm does
+    not liquidate anyone at the half-day close - the trader is responsible for being flat and holding past
+    it breaches the account - while flat_by liquidates for the trader. So where a real account that held
+    into a half-day close would be breached, this model closes the position 50 minutes before it and the
+    attempt can survive.
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
+    quote: During holiday trading hours, auto-liquidation will not occur at the half-time market close,
+      and the trader is responsible for closing the positions.
+    snapshot_sha256: 7a945cf52a94820af413c95e6fcdb381fe51b4e8039bae4f7d46e63bc13e2b98
+    retrieved_at: '2026-11-22T01:38:12Z'
+    section: Permitted Times to Trade
+    synthetic: false
+- rule: discretionary_news_trading_practices
+  description: 'Material. Beyond the Tier 1 windows, the firm prohibits news strategies as such: straddles
+    or strangles around an immediate news burst, and masking a news trade as a standard strategy, "for
+    all news releases" on every account. That is a judgement about intent and cannot be decided from OHLC
+    bars or from a calendar window, so it is declared here and never enforced mechanically.'
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/8230009-news-trading-policy
+    quote: Utilizing strategies that exploit immediate news bursts, such as straddles or strangles. Masking
+      news trades as standard strategies. These prohibitions are in effect for all news releases.
+    snapshot_sha256: 661236c1900074748970098a9bf681db14d0e5dc4e31119a6e54ca32f091ee4c
+    retrieved_at: '2026-11-22T01:36:49Z'
+    section: Prohibited News Trading Activities
+    synthetic: false
+- rule: active_account_count_limit
+  description: Immaterial. One active Studio account at a time, evaluation or Sim Funded. A single simulated
+    attempt is one account, so the cap cannot change its outcome.
+  materiality: immaterial
+  source:
+    url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+    quote: Active accounts 1 Studio Account (Evaluation or Sim Funded)
+    snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+    retrieved_at: '2026-11-22T01:55:25Z'
+    section: Sim Funded stage parameters, Active accounts
+    synthetic: false
+- rule: live_eligibility_after_five_payouts
+  description: Immaterial. A live account becomes available after 5 approved payouts or $5,000 requested,
+    at 40% of the requested total capped at $2,000. That transition ends the simulated stage and is not
+    a pass condition, so no rule kind expresses it.
+  materiality: immaterial
+  source:
+    url: https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide
+    quote: You become eligible for a Live account after 5 approved payouts or $5,000 total requested
+    snapshot_sha256: 2269cede593644d2af3d513aeb16c6a88bec3cf05410d0015fcb7bb41ef42b2f
+    retrieved_at: '2026-11-22T01:55:25Z'
+    section: Transition to Live
+    synthetic: false

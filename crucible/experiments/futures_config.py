@@ -309,6 +309,9 @@ class FuturesCostsConfig(_FrozenModel):
     regulatory_fee: Decimal = Field(
         default=Decimal(0), ge=0, description="Regulatory fee per contract per side, USD."
     )
+    other_fee: Decimal = Field(
+        default=Decimal(0), ge=0, description="Any other per-side charge, USD."
+    )
     spread_ticks: Decimal = Field(
         default=Decimal(1),
         ge=0,
@@ -724,6 +727,7 @@ class FuturesRunConfig(_FrozenModel):
             exchange_fee=costs.exchange_fee,
             clearing_fee=costs.clearing_fee,
             regulatory_fee=costs.regulatory_fee,
+            other_fee=costs.other_fee,
             spread_ticks=Decimal(0) if commission_only else costs.spread_ticks,
             slippage_ticks=Decimal(0) if commission_only else costs.slippage_ticks,
             spread_calibrated=costs.spread_calibrated,

@@ -479,3 +479,95 @@ per the CME session calendar). It is its own outcome class, never folded into a 
 `complete` (nothing unmodeled, or only immaterial rules), `conditional_on_modeled_rules` (a
 material rule is unmodeled) or `blocked` (a critical one is). `material_unmodeled` names them
 (ADR-0106).
+
+**Evidence** — where a rule value comes from (ADR-0107 section 7): `official_quote` (an official
+page), `owner_provided` (the owner pasted it; `provided_by: owner`, the URL may be null and the
+saved text is hashed), `assumption` (a named default the owner accepted where the firm is silent,
+with its rationale) or `conflict_resolution` (a genuine contradiction resolved to the stricter
+reading). Every rule declares one, and a synthetic attribution can never be verified.
+
+**Sensitivity scenario** — a full ruleset with one conflict's alternative value switched in, id
+`<conflict_id>#<index>`, label `sensitivity`. It is simulated and reported beside the primary
+result, never presented as an official plan (ADR-0107 section 7). The primary scenario is
+`primary`, label `official`.
+
+**Attempt / start date** — one prop-firm account simulated from one Globex trade date (the
+attempt's START) under one ruleset's phases. A prop evaluation starts one attempt on every trade
+date of a futures run's window with an on-schedule bar; the attempts OVERLAP (two starts a day
+apart share most of their trade dates), which is why their statistics need a block bootstrap rather
+than an i.i.d. one (ADR-0107 section 4).
+
+**Complete start** — a start whose horizon fits in the data, `d + H <= last trade date`. Complete
+starts are never censored, so they are the denominator of the pass probability `p = passes /
+complete starts`; the bounds over ALL starts (`p_low`, `p_high`) are reported beside it
+(ADR-0107 section 5).
+
+**Horizon outcome** — `horizon`: the analyst's horizon H was reached with the attempt unresolved.
+It is not a firm's rule and not a failure: a `timeout` is a firm's own time limit ending a phase,
+and a `censored` attempt is one the data ended before `d + H`. The three are separate classes
+(ADR-0107 section 4).
+
+**Effective independent attempts** — `n / H` for `n` complete starts and horizon H trade dates: how
+many non-overlapping attempts the sequence is worth. On a one-year window with H = 20 it is about
+twelve, which is why an interval over 250 overlapping starts is not twelve times narrower than one
+over twelve independent attempts (ADR-0107 section 5).
+
+**Payout cycle** — the span between two withdrawals on a funded account. Eligibility windows that
+declare `since_last_payout` count only rule-days after the previous withdrawal; the first cycle
+starts at the phase's start (ADR-0107 section 9).
+
+**Practical eligibility** — whether the exact plan may be traded by the exact execution mode:
+`eligible`, `blocked_by_compliance` (a critical compliance rule such as a ban on automated trading
+applies to this ruleset and this `execution_mode`) or `unknown`. A mechanically successful attempt
+under a blocker is never a practically valid pass (ADR-0107 section 11).
+
+**`unlimited` vs `unknown`** — `unlimited` is an explicit source value (a payout cap the firm
+states is uncapped); `unknown` is a value the sources do not give. In a rule it means the rule
+cannot be modeled and goes to `not_modeled`, with one bounded exception: a payout cap
+(`payout.max_usd`, `max_usd_by_payout`) accepts `unknown`, the simulation then pays what the other
+terms allow and the payouts and cash statistics are labelled `upper_bound`. `unknown` is never
+read as `unlimited` and never as zero. A numeric sentinel (>= 1,000,000 USD for a cap) is refused
+(ADR-0107 section 7).
+
+**`upper_bound`** — the label on a cash number computed against a value the sources do not state
+(`cash_estimate_status: upper_bound`, `PayoutRecord.bound: upper_bound`): the payout paid as much
+as every other term allowed, so the real amount can only be lower. The attempt's `estimate_status`
+is then at best `partial`, with the reason "payout cap unknown". Pass/fail outcomes are unaffected.
+
+**Session-calendar coverage gap** - an attempt whose trade dates reach a CME session the table
+could not source (`verified: False`, built from the regular-week regime: the 2023 holidays other
+than Labor Day, Christmas and New Year, and MLK 2024). The attempt lists it
+(`session_calendar_gaps`, `"<first>..<last>"` in the table's own Chicago days, which is why the
+2023-11-24 session lands in the Thanksgiving 2023 window that starts on 2023-11-22) and its
+estimate becomes `partial` with the reason `session calendar unsourced <first>..<last>`: a
+session-relative `flat_by`, a rule-day boundary and an EOD test computed over that day are not
+sourced numbers.
+
+**Activity requirement** — a rule kind that requires at least N qualifying rule-days in EVERY
+rolling window of M days (`calendar_days` or `trading_days`), where a qualifying day satisfies a
+`qualifies_if` predicate (minimum trades, minimum absolute or signed P&L). It is the mirror of
+`inactivity` (a maximum gap since the last traded day) and its violation action is explicit
+(`fail` or `close_account`). A window is judged only once it is full, at that rule-day's close.
+
+**Cost component** — one of the per-side charges an execution costs a prop-firm account, recorded
+separately (ADR-0107 section 10 as amended): the brokerage **commission** (the firm's
+`per_side_usd`), the **exchange** fee, the **clearing** fee, the **nfa** assessment and **other**.
+A ruleset declares, for each of the four non-commission components, whether the firm's commission
+contains it (`included`), charges it on top (`excluded`) or does not say (`unknown`). A component
+the sources do not state is a GAP, never a zero, and the cost total is never presented as complete
+while one is unknown or unpriced.
+
+**Participant type** — the rate class a fee row prices (`non_member_customer`, `member`, …) and the
+class a run passes to price the components a commission excludes (`--fee-participant-type`, MCP
+`fee_participant_type`). A ruleset never states one, so it is a RUN parameter; no fee is carried
+across participant types, with one stated exception: an `nfa` row is the FCM member's pass-through
+assessment (`fcm_member_assessment`) and prices any requested type. Using an assumed participant type
+keeps the cost estimate `conditional` (`participant type assumed: <x>`).
+
+**Cost-assumption file** — the YAML a user passes to price the cost gaps the sources leave
+(`--cost-assumption FILE`): `name`, `description`, `provided_by`, `status: unverified`, `evidence`
+and `amounts` keyed by root, each root a list of `{covers, per_side_usd}`. It prices only the root
+and components it names (no extrapolation), an `unknown` component it prices is ADDED (the
+pessimistic direction), it may not override an `included` or an already-priced `excluded` component,
+and it never turns a gap into a complete cost: the estimate is `conditional`, and the file's SHA-256
+plus the gaps it priced and the gaps it left are recorded in the artifact.

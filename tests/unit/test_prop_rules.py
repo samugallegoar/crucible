@@ -22,6 +22,7 @@ from crucible.prop.ruleset import (
     DayCountsIf,
     MaxContractsRule,
     MinTradingDaysRule,
+    ResetClock,
     StaticDrawdownRule,
     TrailingDrawdownRule,
     TrailingLock,
@@ -100,6 +101,8 @@ def test_static_drawdown_threshold_and_flat_balance_basis() -> None:
         amount_usd=Decimal("2500"),
         basis="balance",
         evaluated="intraday",
+        comparison="<=",
+        action="fail",
         source=SOURCE,
     )
     evaluator = rl.build(rule, 50_000_000_000, Decimal(1))
@@ -116,7 +119,12 @@ def test_daily_loss_percentage_rounds_half_up_on_the_reference() -> None:
     rule = DailyLossRule(
         rule_id="daily",
         pct_of_reference=Decimal("2.5"),
+        reference="day_start_balance",
+        basis="equity",
         evaluated="intraday",
+        comparison="<=",
+        action="soft_lock_until_reset",
+        reset=ResetClock(time=dt.time(17, 0), tz="America/Chicago"),
         source=SOURCE,
     )
     evaluator = rl.build(rule, 50_000_000_000, Decimal(1))
@@ -141,7 +149,15 @@ def test_trailing_lock_freezes_the_threshold_once_the_hwm_reaches_it() -> None:
         amount_usd=Decimal("2500"),
         mode="intraday",
         evaluated="intraday",
-        lock=TrailingLock(at_balance_usd=Decimal("51000"), locked_threshold_usd=Decimal("49000")),
+        basis="equity",
+        hwm_basis="equity",
+        comparison="<=",
+        action="fail",
+        lock=TrailingLock(
+            on=("hwm",),
+            at_balance_usd=Decimal("51000"),
+            locked_threshold_usd=Decimal("49000"),
+        ),
         source=SOURCE,
     )
     evaluator = rl.build(rule, 50_000_000_000, Decimal(1))
@@ -156,6 +172,10 @@ def test_trailing_lock_freezes_the_threshold_once_the_hwm_reaches_it() -> None:
             amount_usd=Decimal("2500"),
             mode="intraday",
             evaluated="intraday",
+            basis="equity",
+            hwm_basis="equity",
+            comparison="<=",
+            action="fail",
             source=SOURCE,
         ),
         50_000_000_000,
@@ -172,7 +192,13 @@ def test_weighted_contract_limits_floor_to_whole_contracts() -> None:
     assert rl.allowed_contracts(Decimal(2), Decimal(1)) == 2
     assert rl.allowed_contracts(Decimal(2), Decimal("0.1")) == 20
     assert rl.allowed_contracts(Decimal(1), Decimal("0.3")) == 3
-    per_instrument = MaxContractsRule(rule_id="c", per_instrument=3, source=SOURCE)
+    per_instrument = MaxContractsRule(
+        rule_id="c",
+        per_instrument=3,
+        comparison="<=",
+        action="clip",
+        source=SOURCE,
+    )
     evaluator = rl.build(per_instrument, 0, Decimal("0.1"))
     assert isinstance(evaluator, rl.MaxContracts)
     assert evaluator.contract_limit() == Decimal("0.3")
@@ -194,7 +220,16 @@ def test_rule_day_comes_from_the_reset_clock_in_its_zone() -> None:
 def test_consistency_is_the_best_days_share_of_total_profit() -> None:
     """458.50 and 458.50: the best share is 458.50 / 917.00 = 0.5, inside 0.8. A single day of
     917.00 is a share of 1.0 and outside it, and a loss-making total satisfies nothing."""
-    rule = ConsistencyRule(rule_id="c", max_day_share=Decimal("0.8"), source=SOURCE)
+    rule = ConsistencyRule(
+        rule_id="c",
+        max_day_share=Decimal("0.8"),
+        measure="best_day_profit/total_profit",
+        applies_to="pass",
+        window="all_time",
+        comparison="<=",
+        action="promote_phase",
+        source=SOURCE,
+    )
     two_days = {1: rl.DayStats(0), 2: rl.DayStats(0)}
     two_days[1].close_balance = 458_500_000
     two_days[2].close_balance = 458_500_000
@@ -211,7 +246,13 @@ def test_consistency_is_the_best_days_share_of_total_profit() -> None:
 def test_min_trading_days_counts_only_days_that_satisfy_the_day_test() -> None:
     """Two days are required; a day counts when it has at least one trade."""
     rule = MinTradingDaysRule(
-        rule_id="days", days=2, day_counts_if=DayCountsIf(min_trades=1), source=SOURCE
+        rule_id="days",
+        days=2,
+        unit="trading_days",
+        day_counts_if=DayCountsIf(min_trades=1),
+        comparison=">=",
+        action="promote_phase",
+        source=SOURCE,
     )
     days = {1: rl.DayStats(0), 2: rl.DayStats(0), 3: rl.DayStats(0)}
     days[1].trades = 1
@@ -247,7 +288,10 @@ def test_an_eod_evaluated_static_drawdown_has_no_intrabar_breach_price() -> None
     rule = StaticDrawdownRule(
         rule_id="dd",
         amount_usd=Decimal("2500"),
+        basis="equity",
         evaluated="eod",
+        comparison="<=",
+        action="fail",
         source=SOURCE,
     )
     evaluator = rl.build(rule, 50_000_000_000, Decimal(1))
@@ -266,8 +310,12 @@ def test_an_eod_evaluated_daily_loss_is_only_tested_at_the_close() -> None:
     rule = DailyLossRule(
         rule_id="daily",
         amount_usd=Decimal("1000"),
+        reference="day_start_balance",
+        basis="equity",
         evaluated="eod",
-        severity="hard",
+        comparison="<=",
+        action="fail",
+        reset=ResetClock(time=dt.time(17, 0), tz="America/Chicago"),
         source=SOURCE,
     )
     evaluator = rl.build(rule, 50_000_000_000, Decimal(1))
@@ -290,6 +338,10 @@ def test_eod_mode_trailing_with_intraday_evaluation_tests_the_threshold_intrabar
         amount_usd=Decimal("2500"),
         mode="eod",
         evaluated="intraday",
+        basis="equity",
+        hwm_basis="equity",
+        comparison="<=",
+        action="fail",
         source=SOURCE,
     )
     evaluator = rl.build(rule, 50_000_000_000, Decimal(1))

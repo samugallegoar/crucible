@@ -8,6 +8,74 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
+- **201 sourced firm rulesets.**
+  - Files `rulesets/prop/<firm>/` cover Topstep, Apex, MyFundedFutures, Lucid, FTMO and FundedNext.
+    They include every futures product currently sold, with every size and every rule-, fee- or
+    platform-changing variant.
+  - All are `unverified`. Every value carries an official URL, a verbatim quote, a page snapshot
+    hash and a retrieval time.
+  - `RESEARCH.md` per firm holds the product matrix, conflicts, assumptions and an owner review
+    checklist.
+  - `rulesets/prop/INDEX.json` hash-locks every version and is append-only.
+  - Verification is a sidecar bound to the content hash. Only the owner writes it, with
+    `crucible prop confirm` (TTY only).
+- **Ruleset schema 2.**
+  - Every rule declares its metric and basis, threshold, observation frequency, reset, comparison
+    and action, with no defaults.
+  - Evidence types are `official_quote`, `owner_provided`, `assumption` and
+    `conflict_resolution`.
+  - Conflicts keep both sources and generate sensitivity scenarios.
+  - Day units are explicit. `unlimited`, `unknown` and `not_modeled` are distinct, and numeric
+    sentinels are refused.
+  - Commissions per root are declared, and each cost component (exchange, clearing, NFA, other)
+    is declared separately as `included`, `excluded` or `unknown`, with its evidence. Cost
+    statistics are `complete` only when no component is unknown or unpriced.
+  - An unpriced gap is priced only by an explicit cost-assumption file (unverified, hashed, per
+    root and component, added to the cost). The result is then `conditional`.
+  - Owner-provided CME fee files record the source URL, effective dates, root, participant type
+    and the components each amount covers. Lookups are historical and per root, with no
+    extrapolation across contracts.
+  - Compliance rules feed practical eligibility (for example, a critical automation ban).
+  - The account lifecycle is a state machine (payout cycles, post-payout effects).
+- **New vocabulary.**
+  - Payouts:
+    - caps that are a number, `unknown` (paid as an upper bound) or `unlimited`;
+    - caps by payout index, as a percentage of the balance or as a share of the withdrawable;
+    - windows since the last payout;
+    - cycle goals and a first-payout gate;
+    - payout groups;
+    - a minimum new-profit share.
+  - Trailing: a separate high-water-mark basis, and multi-trigger locks.
+  - Daily loss: tiered and ratcheting limits.
+  - Scaling: `on_excess`.
+  - Other rules:
+    - daily profit cap;
+    - session-relative flat, which blocks entries until the session close;
+    - inactivity and activity requirements;
+    - monthly and reset fees;
+    - news restrictions (block or contract cap).
+- **New data.**
+  - `econ_events_v1` and `v2` hold FOMC statements, press conferences and minutes, CPI, PPI and
+    NFP from federalreserve.gov and bls.gov.
+  - An event without a stated time is a coverage gap, never a window at an invented time.
+  - `exchange_fees_v1` holds the official NFA rows. CME exchange fees are taken only from
+    owner-provided files.
+- **Prop evaluation.** `crucible futures prop` (and `crucible_futures_prop`):
+  - One causal signal, and attempts on every eligible start date.
+  - Outcomes are `pass`, `fail`, `timeout`, `horizon` and `censored`.
+  - `p` is computed over complete starts, with bounds for the censored starts.
+  - A seeded circular block bootstrap uses blocks of at least H days.
+  - `pass_probability` is reported only when nothing is unmodeled, unverified or uncosted.
+    Otherwise it is `conditional_pass_probability` with `definitive: false` and the reasons.
+  - Practical eligibility is reported separately.
+  - The sealed artifact is `PRP-`. It is not a trial.
+- **Fixes found during C7b.**
+  - An EOD-evaluated pass condition is now tested only at the rule-day's last scheduled bar.
+  - Days to pass are measured from the attempt's own start.
+- **Scope:** no verdict (C7e). Market data stay before 2025-01-01 and the vault is closed. Current
+  rules on pre-2025 data are labelled a counterfactual application.
+
 ### Fathom C7a: generic prop-firm rule engine (ADR-0106)
 - **The rules run inside the simulation, bar by bar.**
   - `simulate_futures` gains an optional `account` (the `AccountOverlay` Protocol in

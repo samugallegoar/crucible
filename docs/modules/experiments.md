@@ -308,6 +308,23 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   - **Interfaces:** `crucible futures compare` and MCP `crucible_futures_compare`;
     `crucible schema --kind futures-compare` prints `cross_run.json`'s JSON Schema; the keys
     are in `docs/SCHEMAS.md`.
+- `futures_prop.py` — the **prop evaluation** (C7b, ADR-0107 sections 4-6 and 10-12):
+  `run_prop_evaluation(config, *, ruleset_path, horizon_trading_days, execution_mode, ...)` ->
+  `PropEvaluationResult(evaluation_dir, evaluation_id, artifact_id, summary)`. It prepares the run
+  ONCE (`import_prepared_run`, so the signal is the run's own causal one and no second pipeline
+  exists), starts an attempt on every Globex trade date of the window with an on-schedule bar,
+  converts H trading days into a calendar-day window per start with the CME session calendar,
+  refuses an H shorter than any phase's own limit (a `time_limit` rule included, a calendar-day
+  limit converted per start), and runs `crucible.prop.attempt.simulate_attempt` for every
+  (scenario, start) with the rule's news events and its coverage, the `ComponentFeeSource` the
+  commission's excluded components need, the run's `fee_participant_type` and the
+  `cost_assumption` FILE. It then classifies every attempt
+  (`classify_attempt`: `pass | fail | timeout | horizon | censored`, evaluation phases only) and
+  writes the statistics (section "Prop evaluation" below), the labels and the sealed artifact
+  `PRP-<16 hex>/` (`attempts.parquet`, `summary.json`, `ruleset.yaml`, `manifest.json`).
+  `PROP_ATTEMPTS_SCHEMA` is the attempt frame's contract, `prop_evaluation_json_schema()` is
+  `summary.json`'s JSON Schema and `attempts_frame`/`covered_intervals`/`evaluation_basis` are the
+  pieces a test hand-checks. Nothing here records a trial.
 - `futures_signals.py` — the futures signal bridge (ADR-0094, ADR-0098): `futures_targets` turns a
   `StrategySpec`, a `FuturesSignalFunction` or a compiled DSL `CompiledSignal` into the targets and
   the `on_schedule` column of `execution.futures_sim.simulate_futures`. Signal on the
@@ -332,7 +349,9 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   `compare_metrics` (`docs/USAGE.md`).
 - `artifact_id.py` — the artifact identity (ADR-0084): `canonical_json`, `manifest_basis`,
   `results_digest`, `compute_artifact_id`, `seal_artifact`, `verify_artifact`, `find_artifact`,
-  `read_seal`, `write_manifest`; `provenance.py` — the manifest blocks that say what was run
+  `read_seal`, `write_manifest`. The digest covers `config.yaml`, `metrics.json`, `summary.json`
+  and `ruleset.yaml` plus every `*.parquet`, so a prop evaluation's JSON/YAML results are sealed
+  like a run's (only an artifact that writes one of those names is affected); `provenance.py` — the manifest blocks that say what was run
   (`datasets_block`, `window_block`, `execution_block`, `expression_block`); `contracts.py` — the
   versioned output documents and their JSON Schemas (`run_document`, `RunDocument`,
   `VerificationDocument`, `ErrorDocument`, `manifest_json_schema`, `OUTPUT_SCHEMA_VERSION`).
@@ -568,6 +587,65 @@ human authorization and the one evaluation per registration.
   (`experiments.artifacts.vault_member_dirs`) to their pool only when asked; the family's counts
   include the evaluation either way.
 
+## Prop evaluation (C7b, ADR-0107)
+
+`run_prop_evaluation` answers one question about an existing candidate: *if this strategy traded
+this futures run under one firm's ruleset, how often would an attempt starting on trade date `d`
+pass, and how little would that number know?* The strategy signal is causal and independent of the
+account, so it is prepared once (`import_prepared_run`, ADR-0095) and every attempt replays a slice
+of the same bars, targets, rolls and raw per-contract bars.
+
+- **Start dates.** Every Globex trade date of the run's window with at least one on-schedule bar.
+  An attempt begins at the open of its trade date; a date the series reaches only off schedule has
+  no open and cannot start one.
+- **The horizon.** `horizon_trading_days` (H) is the analyst's horizon, in TRADING days, and it is
+  required. It becomes a calendar-day window per start with the CME session calendar
+  (`_nth_trade_date`), so the same H covers more calendar days around a holiday. It is refused when
+  it is shorter than any phase's own limit — `Phase.max_trading_days`, `Phase.max_calendar_days` or
+  a `time_limit` rule's — because a firm limit that could never fire inside H would make the
+  horizon a lie. Each phase's calendar-day limit is converted per start.
+- **Outcome classes.** `pass` (every EVALUATION phase passed; the funded phase's own outcome is
+  descriptive), `fail` (a hard breach in an evaluation phase), `timeout` (the firm's own limit),
+  `horizon` (H reached unresolved) and `censored` (the data ended before `d + H` and before
+  resolution). `horizon` and `censored` are separate classes and neither is a failure or a pass.
+  A `time_limit` can resolve an attempt whose H trade dates do not fit in the data: such a start is
+  `timeout` and still INCOMPLETE, because completeness is about H, not about resolution.
+- **Complete starts and the bounds.** A complete start is `d + H <= last trade date`. `p = passes /
+  complete`, `p_low = passes / all starts` (censored as failures), `p_high = (passes + censored) /
+  all starts` (censored as passes) and `effective_independent_attempts = n / H`.
+- **The interval.** A seeded circular block bootstrap over the complete starts in date order
+  (`futures_stats.circular_block_bootstrap`, ADR-0103) with block length `max(H, ceil(sqrt(n)))`
+  (`prop_block_length`), seed `bootstrap_seed(evaluation_id, statistic)`, resamples and confidence
+  from the run's `statistics` section, and a percentile interval for `p` and for the mean net cash
+  per attempt. With `n < 2 * block` the interval is `unavailable` with its reason and no number is
+  invented; with no complete start the mean cash is null rather than a number beside an
+  `unavailable` status.
+- **The cash statistic.** The mean net cash per attempt (trader payouts minus the attempt's fees)
+  follows the attempts' `cash_estimate_status`: `exact`, `conditional` (a named cost assumption),
+  `upper_bound` (a payout cap the sources do not state) or `unavailable` (an unknown cost), and its
+  reasons are listed. Commissions are charged INSIDE the simulated account; the attempt fee columns
+  carry the ruleset's own evaluation/activation/monthly/reset fees.
+- **Labels, never a verdict.** The number is `pass_probability` only when nothing qualifies it
+  (`definitive: true`); otherwise `conditional_pass_probability` with `definitive: false` and every
+  reason: unmodeled material or critical rules, an unverified ruleset, a cost assumption, an unknown
+  cost, a news-calendar coverage gap, an unsourced session-calendar window, the counterfactual
+  application of a current ruleset to pre-2025 data, and a compliance blocker.
+  `practical_eligibility` is judged for the `execution_mode`: under `blocked_by_compliance`,
+  `mechanically_passes` is reported and `practically_valid_passes` is 0 with the reason.
+- **Scenarios.** `scenarios="primary"` evaluates the selected ruleset only; `"all"` adds one full
+  sensitivity scenario per conflict alternative (`crucible.prop.scenarios`), each a row per start
+  and a scenario summary labelled `alternative_sensitivity` beside the primary's
+  `official_primary`.
+- **The artifact.** `<artifacts>/PRP-<16 hex>/`: `attempts.parquet` (one row per scenario and start,
+  `PROP_ATTEMPTS_SCHEMA`), `summary.json` (`PropEvaluationSummary`, the statistics, the bootstrap
+  record and the coverage), `ruleset.yaml` (the exact bytes read) and `manifest.json` with the run
+  id basis, the candidate id (ADR-0103), the ruleset id/version/sha256/verification status, H, the
+  execution mode, the payout policy, the cost assumption and every dataset hash. `PRP-` is a pure
+  function of the inputs (`evaluation_basis`, `evaluation_id_of`), so the same inputs reproduce the
+  same directory and the same bytes; the seal (`seal_artifact`) covers the three result files.
+  A prop evaluation is NOT a submission: it records no trial and changes neither
+  `submission_count` nor `total_trials` (ADR-0107 section 6).
+
 ## Extension points
 New config sections join `ExperimentConfig` as (discriminated-union) fields
 in their phase; hash coverage extends automatically because the hash is over
@@ -577,6 +655,12 @@ the whole model.
 - The futures path (ADR-0095, ADR-0100, ADR-0101, ADR-0102, ADR-0103). C5a (fidelity and
   batches), C5b (walk-forward), C5c (cross-run metrics) and C6a (statistics) are done;
   what remains:
+  - **The prop evaluation reports, it does not judge.** It resamples the COMPLETE starts only, so
+    a window much shorter than H reports wide bounds and an `unavailable` interval instead of a
+    narrower one; the funded phase is descriptive (survival, breaches, payouts, fees) and carries no
+    probability; the analyst's H is the only horizon the sequence knows, and a firm's own time limit
+    shorter than H ends attempts as `timeout`. There is no verdict and no threshold anywhere (C7e),
+    and a ruleset stays `unverified` until the owner confirms it, which the summary labels.
   - **Statistics without a verdict.** C6a reports the per-period and annualized Sharpe, the mean
     daily return, PSR, DSR, bootstrap intervals and (for a DSL expression) the IC, and C6b adds the
     SUPPLEMENTARY effective-trials deflation and PBO on a valid panel, but no ROBUSTNESS

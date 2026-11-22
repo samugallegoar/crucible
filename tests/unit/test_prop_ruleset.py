@@ -33,6 +33,7 @@ from crucible.prop.ruleset import (
     Verification,
     load_registry,
     load_ruleset,
+    write_verification_sidecar,
 )
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "prop"
@@ -91,19 +92,29 @@ def test_a_verified_ruleset_needs_the_owner_confirmation_fields() -> None:
         load_ruleset(FIXTURES / "synthetic_verified_missing.yaml")
 
 
-def test_a_verified_ruleset_with_complete_non_synthetic_sources_validates() -> None:
-    """The owner's edit: confirmed fields and non-synthetic sources on every rule."""
+def test_a_verified_ruleset_comes_from_the_sidecar_not_the_file(tmp_path: Path) -> None:
+    """ADR-0107 section 2: in-file verification is refused; a matching sidecar verifies it."""
     raw = _raw()
-    raw["verification"] = {
-        "status": "verified",
-        "confirmed_by": "owner",
-        "confirmed_at": "2024-02-01T00:00:00Z",
-        "confirmation_note": "synthetic confirmation for a test",
-    }
+    raw["verification"] = {"status": "verified"}
+    with pytest.raises(ValidationError, match="verification"):
+        PropRuleset.model_validate(raw)
+
+    path = tmp_path / "ruleset.yaml"
+    path.write_text(yaml.safe_dump(_raw(), sort_keys=False), encoding="utf-8")
+    ruleset = load_ruleset(path)
+    assert ruleset.verified is False
     for phase in raw["phases"]:  # type: ignore[union-attr]
         for rule in (*phase["rules"], *phase["pass_conditions"], *phase["fees"]):
             rule["source"]["synthetic"] = False
-    verified = PropRuleset.model_validate(raw)
+    clean = PropRuleset.model_validate(raw | {"verification": {"status": "unverified"}})
+    fresh = tmp_path / "clean.yaml"
+    fresh.write_text(
+        yaml.safe_dump(clean.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
+    )
+    write_verification_sidecar(
+        fresh, clean, confirmed_by="owner", confirmation_note="synthetic confirmation"
+    )
+    verified = load_ruleset(fresh)
     assert verified.verified is True
     assert verified.verification.confirmed_by == "owner"
 
@@ -121,10 +132,10 @@ def test_effective_to_before_effective_from_is_refused() -> None:
         PropRuleset.model_validate(raw)
 
 
-def test_schema_version_two_is_refused() -> None:
+def test_schema_version_one_is_refused_with_a_migration_message() -> None:
     raw = _raw()
-    raw["schema_version"] = 2
-    with pytest.raises(ValidationError, match="schema_version"):
+    raw["schema_version"] = 1
+    with pytest.raises(ValidationError, match=r"(?i)migrate"):
         PropRuleset.model_validate(raw)
 
 
@@ -135,6 +146,11 @@ def test_a_pass_condition_may_not_sit_in_the_rules_list() -> None:
             "kind": "profit_target",
             "rule_id": "target",
             "amount_usd": "100",
+            "basis": "balance",
+            "evaluated": "eod",
+            "comparison": ">=",
+            "action": "promote_phase",
+            "evidence": "official_quote",
             "source": {
                 "url": "https://example.invalid/synthetic-rules",
                 "quote": "Synthetic rule value invented for a test",
@@ -257,3 +273,65 @@ def test_the_engine_is_firm_agnostic() -> None:
             if name in text:
                 offenders.append(f"{path.relative_to(package.parent)}: {name}")
     assert not offenders, f"firm-specific names in the engine: {offenders}"
+
+
+def test_every_rule_declares_its_semantics_without_a_default() -> None:
+    """F1 (owner ruling): no metric, threshold, frequency, reset, comparison or action defaults.
+
+    Every rule model must DECLARE ``comparison`` and ``action`` (the state transition), and none
+    of the semantic fields may carry a default. The C7a implicit forms (``severity``,
+    ``consequence``, ``on_excess``, ``on_breach``) are gone: the declaration is the rule.
+    """
+    from crucible.prop import rules_schema as schema
+
+    models = [
+        schema.ProfitTargetRule,
+        schema.StaticDrawdownRule,
+        schema.TrailingDrawdownRule,
+        schema.DailyLossRule,
+        schema.MaxContractsRule,
+        schema.ScalingPlanRule,
+        schema.FlatByRule,
+        schema.MinTradingDaysRule,
+        schema.ConsistencyRule,
+        schema.PayoutRule,
+        schema.TimeLimitRule,
+        schema.FeeRule,
+        schema.DailyProfitCapRule,
+        schema.InactivityRule,
+        schema.NewsRestrictionRule,
+        schema.ComplianceRule,
+    ]
+    required_when_present = {
+        "basis",
+        "evaluated",
+        "mode",
+        "hwm_basis",
+        "reset",
+        "comparison",
+        "action",
+        "unit",
+        "observed",
+        "day_counts_if",
+        "max_day_share",
+        "measure",
+        "applies_to",
+        "window",
+        "threshold_after_payout",
+    }
+    implicit = {"severity", "consequence", "on_excess", "on_breach"}
+    for model in models:
+        fields = model.model_fields
+        assert {"comparison", "action"} <= set(fields), model.__name__
+        assert not (implicit & set(fields)), f"{model.__name__} kept an implicit field"
+        for name in required_when_present & set(fields):
+            assert fields[name].is_required(), f"{model.__name__}.{name} has a default"
+    assert schema.TrailingLock.model_fields["on"].is_required()
+
+
+def test_an_expired_rule_cannot_sit_in_a_current_ruleset() -> None:
+    raw = _raw()
+    raw["as_of"] = "2024-06-01"
+    raw["phases"][0]["rules"][0]["effective_to"] = "2024-05-31"  # type: ignore[index]
+    with pytest.raises(ValidationError, match="effective_to"):
+        PropRuleset.model_validate(raw)

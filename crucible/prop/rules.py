@@ -24,19 +24,25 @@ with ``basis = 5000`` and ``tick = 12_500_000`` micro-dollars.
 from __future__ import annotations
 
 import datetime as dt
-from decimal import ROUND_HALF_UP, Decimal
-from typing import TYPE_CHECKING, Any
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
+from typing import TYPE_CHECKING, Any, Literal
 
 from crucible.core.errors import ConfigurationError
 from crucible.execution.interfaces import AccountMarks, BreachPrice
 
 if TYPE_CHECKING:
     from crucible.prop.ruleset import (
+        ActivityRequirementRule,
+        ComplianceRule,
         ConsistencyRule,
         DailyLossRule,
+        DailyProfitCapRule,
+        DayCountsIf,
         FlatByRule,
+        InactivityRule,
         MaxContractsRule,
         MinTradingDaysRule,
+        NewsRestrictionRule,
         PayoutRule,
         ProfitTargetRule,
         ScalingPlanRule,
@@ -121,6 +127,38 @@ class DayStats:
     @property
     def pnl(self) -> int:
         return self.close_balance - self.start_balance
+
+
+def day_counts(stats: DayStats, predicate: DayCountsIf) -> bool:
+    """Whether a rule-day satisfies the declared day predicate (trades and/or P&L).
+
+    ``min_abs_pnl_usd`` counts a day that moved either way, ``min_pnl_usd`` a day that ended at
+    least that far up; a firm states one or the other, never both.
+    """
+    counts = True
+    if predicate.min_trades is not None:
+        counts = counts and stats.trades >= predicate.min_trades
+    if predicate.min_abs_pnl_usd is not None:
+        counts = counts and abs(stats.pnl) >= micro(predicate.min_abs_pnl_usd, "min_abs_pnl")
+    if predicate.min_pnl_usd is not None:
+        counts = counts and stats.pnl >= micro(predicate.min_pnl_usd, "min_pnl")
+    return counts
+
+
+def pass_frequency(rule: object) -> Literal["intraday", "eod"]:
+    """When a pass condition is tested: at every bar's close, or only at the rule-day's end.
+
+    ADR-0106 section 3 step 8 and ADR-0107 section 9 put the pass conditions at the rule-day's
+    close, after the threshold tests. A firm that states ``evaluated: eod`` means exactly that: its
+    target is tested on the CLOSED figure of the trade date and never on an intraday close, so a
+    target touched inside a bar and lost again by the close does not pass. ``evaluated: intraday``
+    is tested at every bar's close, and a touch counts at the bar's favourable extreme. A pass
+    condition that declares no frequency (``min_trading_days``, ``consistency``) is tested at every
+    close as well: those rules read the CLOSED rule-days, so a test before a day closes simply
+    restates the previous answer. ``on_request`` has no channel in a simulation and is treated the
+    same way (it is never promoted to a rule-day-only test either).
+    """
+    return "eod" if getattr(rule, "evaluated", None) == "eod" else "intraday"
 
 
 class Evaluator:
@@ -213,8 +251,13 @@ class StaticDrawdown(Evaluator):
 
 
 class TrailingDrawdown(Evaluator):
-    """Threshold ``hwm - amount``, the high-water mark from the declared basis (intraday: the
-    favourable extreme; EOD: the rule-day close). A lock freezes the threshold."""
+    """Threshold ``hwm - amount``, with the mark's basis separate from the tested basis.
+
+    ``mode`` moves the high-water mark (intraday: the favourable extreme; EOD: the rule-day
+    close) from ``mark_basis``; ``evaluated`` tests the threshold on ``basis``. A lock freezes
+    the threshold, either when the mark reaches a level (``lock.on: hwm``) or on the first payout
+    (``lock.on: first_payout``), which the overlay signals.
+    """
 
     rule: TrailingDrawdownRule
 
@@ -222,6 +265,7 @@ class TrailingDrawdown(Evaluator):
         super().__init__(rule, start_micro, weight)
         self.hwm = start_micro
         self.locked: int | None = None
+        self.first_payout: bool = False
 
     @property
     def threshold(self) -> int:
@@ -231,13 +275,25 @@ class TrailingDrawdown(Evaluator):
         return self.hwm - amount
 
     def _observe(self, marks: AccountMarks, price_ticks: int) -> None:
-        value = basis_at(marks, price_ticks, self.rule.basis)
+        value = basis_at(marks, price_ticks, self.rule.mark_basis)
         self.hwm = max(self.hwm, value)
         self._apply_lock()
 
+    def _locked_value(self) -> int:
+        lock = self.rule.lock
+        assert lock is not None
+        absolute = lock.locked_threshold_usd
+        locked_offset = lock.locked_offset_usd
+        if absolute is not None:
+            return micro(absolute, "lock.locked_threshold_usd")
+        return self.start_micro + micro(
+            locked_offset if locked_offset is not None else Decimal(0),
+            "lock.locked_offset_usd",
+        )
+
     def _apply_lock(self) -> None:
         lock = self.rule.lock
-        if lock is None or self.locked is not None:
+        if lock is None or self.locked is not None or "hwm" not in lock.on:
             return
         balance = lock.at_balance_usd
         offset = lock.at_offset_usd
@@ -249,17 +305,23 @@ class TrailingDrawdown(Evaluator):
         )
         if self.hwm < trigger:
             return
-        absolute = lock.locked_threshold_usd
-        locked_offset = lock.locked_offset_usd
-        self.locked = (
-            micro(absolute, "lock.locked_threshold_usd")
-            if absolute is not None
-            else self.start_micro
-            + micro(
-                locked_offset if locked_offset is not None else Decimal(0),
-                "lock.locked_offset_usd",
-            )
-        )
+        self.locked = self._locked_value()
+
+    def on_first_payout(self) -> None:
+        """The first withdrawal happened: a payout-triggered lock freezes the threshold now."""
+        self.first_payout = True
+        lock = self.rule.lock
+        if lock is None or "first_payout" not in lock.on or self.locked is not None:
+            return
+        self.locked = self._locked_value()
+
+    def lock_at(self, level_micro: int) -> None:
+        """Freeze the threshold at an explicit level (a payout's ``threshold_after_payout``).
+
+        Used by ``payout.threshold_after_payout: set_threshold``: after the withdrawal the firm
+        states the level the threshold sits at instead of letting it trail.
+        """
+        self.locked = int(level_micro)
 
     def new_day(self, day: int, marks: AccountMarks) -> None:
         return None
@@ -297,6 +359,8 @@ class DailyLoss(Evaluator):
         self.reference = start_micro
         self.prior_close = start_micro
         self.amount = 0
+        self.peak_profit = 0
+        self.last_amount = 0
 
     @property
     def threshold(self) -> int:
@@ -304,7 +368,42 @@ class DailyLoss(Evaluator):
 
     @property
     def hard(self) -> bool:
-        return self.rule.severity == "hard"
+        return self.rule.action == "fail"
+
+    def _tier_amount(self, balance_micro: int) -> int:
+        tiers = self.rule.amount_by_balance_tier or ()
+        chosen = tiers[0]
+        for tier in tiers:
+            if balance_micro >= micro(tier.min_balance_usd, "daily_loss.tier.min_balance_usd"):
+                chosen = tier
+        return micro(chosen.amount_usd, "daily_loss.tier.amount_usd")
+
+    def _ratchet_amount(self, marks: AccountMarks) -> int:
+        value = basis_at(marks, marks.close_ticks, self.rule.basis)
+        self.peak_profit = max(self.peak_profit, value - self.start_micro)
+        pct = self.rule.pct_of_peak_profit
+        assert pct is not None
+        amount = int(
+            (Decimal(self.peak_profit) * pct / 100).to_integral_value(rounding=ROUND_HALF_UP)
+        )
+        if self.rule.non_decreasing:
+            self.last_amount = max(self.last_amount, amount)
+            return self.last_amount
+        return amount
+
+    def _recompute(self, marks: AccountMarks) -> None:
+        if self.rule.amount_by_balance_tier is not None:
+            self.amount = self._tier_amount(marks.balance_micro)
+        elif self.rule.pct_of_peak_profit is not None:
+            self.amount = self._ratchet_amount(marks)
+        elif self.rule.amount_usd is not None:
+            self.amount = micro(self.rule.amount_usd, "daily_loss.amount_usd")
+        else:
+            pct = self.rule.pct_of_reference
+            assert pct is not None
+            self.amount = int(
+                (Decimal(self.reference) * pct / 100).to_integral_value(rounding=ROUND_HALF_UP)
+            )
 
     def new_day(self, day: int, marks: AccountMarks) -> None:
         if self.rule.reference == "day_start_balance":
@@ -313,14 +412,11 @@ class DailyLoss(Evaluator):
             self.reference = marks.equity_micro(marks.open_ticks)
         else:
             self.reference = self.prior_close
-        if self.rule.amount_usd is not None:
-            self.amount = micro(self.rule.amount_usd, "daily_loss.amount_usd")
-        else:
-            pct = self.rule.pct_of_reference
-            assert pct is not None
-            self.amount = int(
-                (Decimal(self.reference) * pct / 100).to_integral_value(rounding=ROUND_HALF_UP)
-            )
+        self._recompute(marks)
+
+    def favorable(self, marks: AccountMarks, price_ticks: int) -> None:
+        if self.rule.pct_of_peak_profit is not None:
+            self._recompute(marks)
 
     def close_of_day(self, marks: AccountMarks) -> None:
         self.prior_close = marks.balance_micro
@@ -358,7 +454,7 @@ class MaxContracts(Evaluator):
         return self.rule.limit
 
     def on_excess(self) -> str:
-        return self.rule.on_excess
+        return self.rule.action
 
 
 class ScalingPlan(Evaluator):
@@ -387,32 +483,49 @@ class ScalingPlan(Evaluator):
         return self.limit
 
     def on_excess(self) -> str:
-        return "clip"
+        return self.rule.action
 
 
 class FlatBy(Evaluator):
-    """Step 6: liquidate at the open of the first bar reaching ``time``; no entry until
-    ``reopen``."""
+    """A forced-flat clock: an absolute time, or a distance before the session's scheduled end.
+
+    The session-relative form is what makes a holiday early close come from the CME calendar
+    instead of a guessed clock time (ADR-0107, vocabulary added in C7b).
+    """
 
     rule: FlatByRule
 
-    def flat_and_reopen(self, open_ns: int, close_ns: int) -> tuple[int, int] | None:
-        """``(flat_instant_ns, reopen_instant_ns)`` of the bar's rule-day, or None when the bar
-        neither reaches the flat time nor sits inside a forced-flat window."""
-        day = local_day(open_ns, dt.time(0, 0), self.rule.tz)
-        flat = day_instant_ns(day, self.rule.time, self.rule.tz)
-        reopen = (
-            day_instant_ns(day, self.rule.reopen, self.rule.tz)
-            if self.rule.reopen is not None
-            else flat
-        )
-        if reopen <= flat:
-            reopen += 24 * 60 * 60 * _NS_PER_S
+    def flat_and_reopen(
+        self, open_ns: int, close_ns: int, session_close_ns: int = 0
+    ) -> tuple[int, int] | None:
+        """``(flat_instant_ns, reopen_instant_ns)`` for this bar, or None without a clock."""
+        rule = self.rule
+        if rule.minutes_before_session_end is not None:
+            if session_close_ns <= 0:
+                return None
+            flat = int(session_close_ns) - rule.minutes_before_session_end * 60 * _NS_PER_S
+        else:
+            assert rule.time is not None
+            assert rule.tz is not None
+            day = local_day(open_ns, dt.time(0, 0), rule.tz)
+            flat = day_instant_ns(day, rule.time, rule.tz)
+        if rule.reopen is not None and rule.tz is not None:
+            day = local_day(open_ns, dt.time(0, 0), rule.tz)
+            reopen = day_instant_ns(day, rule.reopen, rule.tz)
+            if reopen <= flat:
+                reopen += 24 * 60 * 60 * _NS_PER_S
+        elif rule.minutes_before_session_end is not None:
+            # a session-relative close: no entry from the flat instant until the scheduled
+            # session close (the next session's open is after it), so a strategy cannot re-enter
+            # in the minutes between the firm's flat time and the session end
+            reopen = int(session_close_ns)
+        else:
+            reopen = flat
         return flat, reopen
 
 
 class MinTradingDays(Evaluator):
-    """Pass condition: enough rule-days satisfy the declared day test."""
+    """Pass condition: enough rule-days satisfy the declared day test, in the declared unit."""
 
     rule: MinTradingDaysRule
 
@@ -425,31 +538,52 @@ class MinTradingDays(Evaluator):
     def pass_ok(self, marks: AccountMarks) -> bool:
         return self.passes()
 
+    def _counts(self, stats: DayStats) -> bool:
+        counts = day_counts(stats, self.rule.day_counts_if)
+        if self.rule.unit == "winning_days":
+            counts = counts and stats.pnl > 0
+        return counts
+
     def passes(self) -> bool:
-        count = 0
-        for stats in self.days.values():
-            if self.rule.day_counts_if.min_trades is not None:
-                counts = stats.trades >= self.rule.day_counts_if.min_trades
-            else:
-                limit = micro(self.rule.day_counts_if.min_abs_pnl_usd or Decimal(0), "min_abs_pnl")
-                counts = abs(stats.pnl) >= limit
-            count += 1 if counts else 0
-        return count >= self.rule.days
+        return sum(1 for stats in self.days.values() if self._counts(stats)) >= self.rule.days
 
 
-def consistency_ok(rule: ConsistencyRule, days: dict[int, DayStats]) -> bool:
-    """``best_day_profit/total_profit <= max_day_share``. Days with no profit do not count, and a
-    total profit of zero or less satisfies nothing (there is no share of nothing)."""
-    profits = [stats.pnl for stats in days.values()]
-    total = sum(profits)
-    if total <= 0:
+def consistency_ok(
+    rule: ConsistencyRule,
+    days: dict[int, DayStats],
+    since_day: int | None = None,
+    *,
+    cycle_profit: int | None = None,
+) -> bool:
+    """``best_day_profit/total_profit <= max_day_share`` over the two declared windows.
+
+    The numerator's window (which day is the best) and the denominator's (which profit it is
+    shared with) are separate: ``all_time`` every rule-day, ``since_last_payout`` the rule-days
+    after the previous withdrawal, and ``current_cycle`` the profit of the payout cycle measured
+    from the balance the cycle opened at (``cycle_profit``; absent it falls back to the rule-days
+    since the last payout). A total profit of zero or less satisfies nothing (there is no share of
+    nothing).
+    """
+    if rule.best_day_window == "since_last_payout" and since_day is not None:
+        numerator = [stats.pnl for day, stats in days.items() if day > since_day]
+    else:
+        numerator = [stats.pnl for stats in days.values()]
+    if rule.profit_window == "all_time":
+        total = sum(stats.pnl for stats in days.values())
+    elif rule.profit_window == "current_cycle" and cycle_profit is not None:
+        total = int(cycle_profit)
+    elif since_day is not None:
+        total = sum(stats.pnl for day, stats in days.items() if day > since_day)
+    else:
+        total = sum(stats.pnl for stats in days.values())
+    if not numerator or total <= 0:
         return False
-    share = Decimal(max(profits)) / Decimal(total)
+    share = Decimal(max(numerator)) / Decimal(total)
     return share <= rule.max_day_share
 
 
 class Consistency(Evaluator):
-    """Pass condition: the best day's share of total profit is at most ``max_day_share``."""
+    """The best day's share of total profit is at most ``max_day_share``."""
 
     rule: ConsistencyRule
 
@@ -462,35 +596,72 @@ class Consistency(Evaluator):
     ) -> None:
         super().__init__(rule, start_micro, weight)
         self.days = days
+        self.last_payout_day: int | None = None
+        self.cycle_open_balance: int | None = None
+        """The balance the current payout cycle opened at (after the last withdrawal), for a
+        ``current_cycle`` denominator; None means the cycle opened at the phase's start."""
 
     def pass_ok(self, marks: AccountMarks) -> bool:
         # a payout condition never gates the phase pass (it is checked at payout time instead)
         if self.rule.applies_to != "pass":
             return True
-        return self.passes()
+        return self.passes(balance=marks.balance_micro)
 
-    def passes(self) -> bool:
-        return consistency_ok(self.rule, self.days)
+    def passes(self, since_day: int | None = None, *, balance: int | None = None) -> bool:
+        anchor = self.last_payout_day if since_day is None else since_day
+        cycle = None if balance is None else self.cycle_profit(balance)
+        return consistency_ok(self.rule, self.days, anchor, cycle_profit=cycle)
+
+    def cycle_profit(self, balance: int) -> int:
+        """The current payout cycle's profit: the balance less the balance the cycle opened at."""
+        opening = self.start_micro if self.cycle_open_balance is None else self.cycle_open_balance
+        return int(balance) - int(opening)
 
 
 class PayoutDecision:
-    """One payout the trader takes: ``gross`` withdrawn from the balance, ``net`` to the trader."""
+    """One payout the trader takes: ``gross`` withdrawn, ``net`` to the trader, its group.
 
-    __slots__ = ("gross", "net", "rule_id")
+    ``bound`` is ``exact`` or ``upper_bound``: a cap the sources do not state makes the amount the
+    most the other terms allow, never an unlimited one (ADR-0107 section 7).
+    """
 
-    def __init__(self, gross: int, net: int, rule_id: str) -> None:
+    __slots__ = ("bound", "gross", "net", "payout_group", "payout_index", "reason", "rule_id")
+
+    def __init__(
+        self,
+        gross: int,
+        net: int,
+        rule_id: str,
+        *,
+        payout_group: str | None = None,
+        payout_index: int = 0,
+        reason: str = "",
+        bound: str = "exact",
+    ) -> None:
         self.gross = gross
         self.net = net
         self.rule_id = rule_id
+        self.payout_group = payout_group
+        self.payout_index = payout_index
+        self.reason = reason
+        self.bound = bound
 
 
 class Payout(Evaluator):
     """Payout eligibility, evaluated at a rule-day's close (ADR-0106 section 4).
 
-    ``withdrawable = balance - (base + buffer_usd)``; ``gross = min(max_usd, withdrawable)`` and a
-    payout happens only when ``gross >= min_usd``. ``base`` starts at the phase's starting balance
-    and follows ``threshold_after_payout``. Whether an eligible payout is taken is the trader's
-    choice (``payout_policy``), never a firm rule.
+    ``withdrawable = balance - (base + buffer_usd)``. The gross is the smallest of the declared
+    caps (``max_usd`` or ``unlimited``, ``max_usd_by_payout`` for this payout index,
+    ``max_pct_of_balance``, ``max_share_of_withdrawable``, ``min_new_profit_share_of_request``)
+    and ``withdrawable``; a payout happens only when that gross is at least ``min_usd`` and every
+    gate (trading days since the last withdrawal, profitable/traded days in the declared window,
+    the profit gates, the first-payout calendar gate, the consistency rule) holds.
+
+    A cap the source does not state is ``unknown``: it does not bind (the payout is what the other
+    terms allow) and the decision is labelled ``upper_bound``. It is never read as ``unlimited``.
+
+    Whether an eligible payout is taken is the trader's choice (``payout_policy``), never a firm
+    rule; ``payout_group`` limits a close to at most one payout from the group.
     """
 
     rule: PayoutRule
@@ -501,10 +672,51 @@ class Payout(Evaluator):
         self.count = 0
         self.last_payout_day: int | None = None
         self.last_payout_trading_day: int | None = None
+        self.last_payout_balance = start_micro
+
+    def _window_days(self, days: dict[int, DayStats]) -> list[DayStats]:
+        if self.rule.window == "since_last_payout" and self.last_payout_day is not None:
+            return [stats for day, stats in days.items() if day > self.last_payout_day]
+        return list(days.values())
 
     def profitable_days(self, days: dict[int, DayStats]) -> int:
         floor = micro(self.rule.min_day_profit_usd, "payout.min_day_profit_usd")
-        return sum(1 for stats in days.values() if stats.pnl >= floor)
+        return sum(1 for stats in self._window_days(days) if stats.pnl >= floor)
+
+    def traded_days(self, days: dict[int, DayStats]) -> int:
+        return sum(1 for stats in self._window_days(days) if stats.trades > 0)
+
+    def _cap(self, balance: int, withdrawable: int) -> int:
+        rule = self.rule
+        # ``unlimited`` and ``unknown`` do not bind arithmetically; only ``unknown`` is labelled
+        cap = withdrawable
+        if isinstance(rule.max_usd, Decimal):
+            cap = min(cap, micro(rule.max_usd, "payout.max_usd"))
+        if rule.max_usd_by_payout:
+            caps = rule.max_usd_by_payout
+            index = min(self.count, len(caps) - 1)
+            declared = caps[index]
+            if isinstance(declared, Decimal):
+                cap = min(cap, micro(declared, f"payout.max_usd_by_payout[{index}]"))
+        if rule.max_pct_of_balance is not None:
+            cap = min(
+                cap,
+                int(
+                    (Decimal(balance) * rule.max_pct_of_balance / 100).to_integral_value(
+                        rounding=ROUND_HALF_UP
+                    )
+                ),
+            )
+        if rule.max_share_of_withdrawable is not None:
+            cap = min(
+                cap,
+                int(
+                    (Decimal(withdrawable) * rule.max_share_of_withdrawable).to_integral_value(
+                        rounding=ROUND_HALF_UP
+                    )
+                ),
+            )
+        return cap
 
     def decision(
         self,
@@ -512,38 +724,222 @@ class Payout(Evaluator):
         days: dict[int, DayStats],
         *,
         trading_days: int,
+        calendar_days: int,
         consistency_holds: bool,
     ) -> PayoutDecision | None:
         """The payout this close allows, or None. ``marks.balance_micro`` is the balance the
         payout is computed from (already net of earlier withdrawals)."""
-        if self.rule.max_payouts is not None and self.count >= self.rule.max_payouts:
+        rule = self.rule
+        if rule.max_payouts is not None and self.count >= rule.max_payouts:
             return None
         since = (
             trading_days
             if self.last_payout_trading_day is None
             else trading_days - self.last_payout_trading_day
         )
-        if since < self.rule.min_days_since_last:
+        if since < rule.min_days_since_last:
             return None
-        if self.profitable_days(days) < self.rule.min_profitable_days:
+        if (
+            rule.first_payout_after_calendar_days is not None
+            and self.count == 0
+            and calendar_days < rule.first_payout_after_calendar_days
+        ):
+            return None
+        if self.profitable_days(days) < rule.min_profitable_days:
+            return None
+        if self.traded_days(days) < rule.min_traded_days:
+            return None
+        profit_since = marks.balance_micro - self.last_payout_balance
+        if profit_since < micro(rule.min_profit_since_last_usd, "min_profit_since_last_usd"):
+            return None
+        if rule.cycle_goal_usd is not None and profit_since < micro(
+            rule.cycle_goal_usd, "payout.cycle_goal_usd"
+        ):
             return None
         if not consistency_holds:
             return None
-        buffer = micro(self.rule.buffer_usd, "payout.buffer_usd")
+        buffer = micro(rule.buffer_usd, "payout.buffer_usd")
         withdrawable = marks.balance_micro - (self.base + buffer)
-        gross = min(micro(self.rule.max_usd, "payout.max_usd"), withdrawable)
-        if gross < micro(self.rule.min_usd, "payout.min_usd"):
+        if withdrawable <= 0:
             return None
-        net = int((Decimal(gross) * self.rule.split).to_integral_value(rounding=ROUND_HALF_UP))
-        return PayoutDecision(gross, net, self.rule_id)
+        cap = self._cap(marks.balance_micro, withdrawable)
+        share = rule.min_new_profit_share_of_request
+        if share is not None:
+            # a request of X needs new profit >= share * X: the largest X that satisfies it
+            cap = min(
+                cap,
+                int((Decimal(profit_since) / share).to_integral_value(rounding=ROUND_FLOOR)),
+            )
+        gross = min(cap, withdrawable)
+        if gross < micro(rule.min_usd, "payout.min_usd"):
+            return None
+        net = int((Decimal(gross) * rule.split).to_integral_value(rounding=ROUND_HALF_UP))
+        return PayoutDecision(
+            gross,
+            net,
+            self.rule_id,
+            payout_group=rule.payout_group,
+            payout_index=self.count + 1,
+            reason=f"withdrawable {withdrawable} micro-dollars",
+            bound="upper_bound" if rule.unknown_cap else "exact",
+        )
+
+    def threshold_level(self) -> int:
+        """The explicit level ``threshold_after_payout: set_threshold`` sets, in micro-dollars.
+
+        ``start`` is the phase's starting balance, ``start_plus_usd`` that balance plus a fixed
+        amount, ``zero_balance_offset`` an absolute level above a zero balance.
+        """
+        from crucible.prop.rules_schema import threshold_level
+
+        declared = self.rule.set_threshold_to
+        if declared is None:
+            msg = (
+                f"payout {self.rule_id}: threshold_after_payout is not set_threshold, so it has no "
+                "explicit level to set"
+            )
+            raise ConfigurationError(msg)
+        kind, amount = threshold_level(declared)
+        if kind == "start":
+            return self.start_micro
+        value = micro(amount, f"payout.set_threshold_to[{kind}]")
+        return self.start_micro + value if kind == "start_plus_usd" else value
 
     def apply(self, decision: PayoutDecision, *, day: int, trading_days: int, balance: int) -> None:
         """Record the payout: the balance has already fallen by ``gross``; update the base."""
         self.count += 1
         self.last_payout_day = day
         self.last_payout_trading_day = trading_days
+        self.last_payout_balance = balance
         if self.rule.threshold_after_payout == "trail_from_new_balance":
             self.base = balance
+        elif self.rule.threshold_after_payout in ("reset_to_start", "set_threshold"):
+            self.base = (
+                self.start_micro
+                if self.rule.threshold_after_payout == "reset_to_start"
+                else self.threshold_level()
+            )
+
+
+class DailyProfitCap(Evaluator):
+    """A per-rule-day profit ceiling: forfeit the excess or promote the phase (ADR-0107)."""
+
+    rule: DailyProfitCapRule
+
+    def excess(self, marks: AccountMarks, day_start: int) -> int:
+        value = basis_at(marks, marks.close_ticks, self.rule.basis)
+        cap = micro(self.rule.amount_usd, "daily_profit_cap.amount_usd")
+        return max(0, (value - day_start) - cap)
+
+
+class Inactivity(Evaluator):
+    """A maximum gap between trading days, in the declared unit (ADR-0107)."""
+
+    rule: InactivityRule
+
+    def __init__(self, rule: InactivityRule, start_micro: int, weight: Decimal) -> None:
+        super().__init__(rule, start_micro, weight)
+        self.last_trade_day: int | None = None
+        self.last_trade_date: dt.date | None = None
+        self.days_since_trade = 0
+
+    def note_trade(self, day: int, trade_date: dt.date) -> None:
+        self.last_trade_day = day
+        self.last_trade_date = trade_date
+        self.days_since_trade = 0
+
+    def on_new_day(self, day: int, trade_date: dt.date) -> bool:
+        """Whether the gap is now exceeded (``True`` is a breach of this rule)."""
+        self.days_since_trade += 1
+        if self.rule.unit == "calendar_days":
+            anchor = self.last_trade_date
+            gap = (trade_date - anchor).days if anchor is not None else self.days_since_trade
+        else:
+            gap = self.days_since_trade
+        return gap > self.rule.max_gap
+
+
+class News(Evaluator):
+    """A news restriction: the overlay owns the event calendar and the coverage record.
+
+    With ``effect: contract_cap`` an active window also clips the admitted size to
+    ``cap_contracts`` (a contract WEIGHT); the overlay sets ``cap_active`` per bar, because only
+    it knows the calendar windows.
+    """
+
+    rule: NewsRestrictionRule
+
+    def __init__(self, rule: NewsRestrictionRule, start_micro: int, weight: Decimal) -> None:
+        super().__init__(rule, start_micro, weight)
+        self.cap_active: bool = False
+
+    def contract_limit(self) -> Decimal | None:
+        if self.rule.effective_effect != "contract_cap" or not self.cap_active:
+            return None
+        assert self.rule.cap_contracts is not None
+        return self.rule.cap_contracts
+
+    def on_excess(self) -> str:
+        return "clip"
+
+
+class ActivityRequirement(Evaluator):
+    """At least ``days`` qualifying rule-days in EVERY rolling window of ``window`` days.
+
+    The window is the one ending at the rule-day being closed, and it is tested only once it is
+    full: for ``calendar_days`` from the phase's start to the day, for ``trading_days`` the last
+    ``window`` closed rule-days. Days come from the overlay's closed rule-days, so a window is
+    judged on complete days only (never on the day in progress).
+    """
+
+    rule: ActivityRequirementRule
+
+    def __init__(
+        self,
+        rule: ActivityRequirementRule,
+        start_micro: int,
+        weight: Decimal,
+        days: dict[int, DayStats],
+        start_day: dt.date,
+    ) -> None:
+        super().__init__(rule, start_micro, weight)
+        self.days = days
+        self.start_day = start_day
+
+    def _window(self, today: dt.date) -> list[DayStats]:
+        ordered = sorted(self.days.items())
+        if self.rule.unit == "trading_days":
+            if len(ordered) < self.rule.window:
+                return []
+            return [stats for _, stats in ordered[-self.rule.window :]]
+        low = today - dt.timedelta(days=self.rule.window - 1)
+        return [stats for day, stats in ordered if low <= rule_date(day) <= today]
+
+    def full(self, today: dt.date) -> bool:
+        """Whether a whole window has elapsed, so its count can be judged."""
+        if self.rule.unit == "trading_days":
+            return len(self.days) >= self.rule.window
+        return (today - self.start_day).days + 1 >= self.rule.window
+
+    def violated(self, today: dt.date) -> bool:
+        """Whether the window ending at ``today`` holds fewer than the required qualifying days."""
+        if not self.full(today):
+            return False
+        qualifying = sum(
+            1 for stats in self._window(today) if day_counts(stats, self.rule.qualifies_if)
+        )
+        return qualifying < self.rule.days
+
+
+def rule_date(day: int) -> dt.date:
+    """The calendar date of a rule-day integer (``YYYYMMDD``, as ``local_day`` returns)."""
+    return dt.date(day // 10_000, (day // 100) % 100, day % 100)
+
+
+class Compliance(Evaluator):
+    """A conduct restriction: practical eligibility, never a mechanical account effect."""
+
+    rule: ComplianceRule
 
 
 class TimeLimit(Evaluator):
@@ -617,6 +1013,18 @@ def build(
         return TimeLimit(rule, start_micro, weight, start_day)
     if isinstance(rule, rs.FeeRule):
         return Fee(rule, start_micro, weight)
+    if isinstance(rule, rs.DailyProfitCapRule):
+        return DailyProfitCap(rule, start_micro, weight)
+    if isinstance(rule, rs.InactivityRule):
+        return Inactivity(rule, start_micro, weight)
+    if isinstance(rule, rs.ActivityRequirementRule):
+        assert days is not None
+        assert start_day is not None
+        return ActivityRequirement(rule, start_micro, weight, days, start_day)
+    if isinstance(rule, rs.NewsRestrictionRule):
+        return News(rule, start_micro, weight)
+    if isinstance(rule, rs.ComplianceRule):
+        return Compliance(rule, start_micro, weight)
     msg = (
         f"rule kind {kind!r} has no evaluator in crucible.prop.rules: a rule the engine cannot "
         "express must be listed in the ruleset's not_modeled, never approximated"

@@ -34,12 +34,15 @@
 | `crucible futures batch` | `--artifacts --batch --home --json --overwrite --store` | Run N DSL expressions on one futures base config and write the batch document (C5a) |
 | `crucible futures check` | `--config --json` | Load and validate a futures config only (no store, no run) |
 | `crucible futures compare` | `--artifacts --home --include-vault --json --min-overlap --target` | Compare a futures run or walk-forward against the artifact pool (C5c) |
+| `crucible futures prop` | `--artifacts --config --cost-assumption --exchange-fees-dataset --execution-mode --fee-participant-type --home --horizon --json --news-dataset --overwrite --payout-policy --ruleset --scenarios --store` | Evaluate one firm's ruleset over a futures run's attempt sequence (C7b, ADR-0107): the attempt classes, the pass probability with its overlapping-attempt interval and the labels, never a verdict |
 | `crucible futures run` | `--artifacts --config --home --json --overwrite --store` | Simulate a futures config and write its sealed artifact (ADR-0095) |
 | `crucible futures trials` | `--artifacts --family --home --include-vault --json --min-overlap --threshold` | Estimate the family's EFFECTIVE number of trials and read the family's daily series correlations (C6b, ADR-0104) |
 | `crucible futures walkforward` | `--artifacts --config --home --json --overwrite --store` | Train candidates per fold, select inside the training window and concatenate the out-of-sample windows (C5b) |
 | `crucible optimize` | `<config> --artifacts --json --metric --override --param --pbo-groups --values --vectorized --workers` | 1D parameter sweep, tagged as trials, assembling a PBO panel (R4.3/R4.9) |
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
-| `crucible prop validate` | `<ruleset> --json` | Check a ruleset file: identity, content hash, verification, rule coverage and warnings. Changes no file |
+| `crucible prop confirm` | `<ruleset> --json` | The OWNER's interactive verification: prints every rule, asks for the content hash prefix and writes the sidecar. Refused without a TTY; never exposed over MCP |
+| `crucible prop list` | `--firm --json --root` | List every ruleset under rulesets/prop with its hash, evidence counts, conflicts, unmodeled rules by materiality and verification status |
+| `crucible prop validate` | `<ruleset> --json` | Check a ruleset file: identity, content hash, verification, evidence, conflicts, commissions, scenarios, rule coverage and warnings. Changes no file |
 | `crucible report` | `<experiment_id> --artifacts --json` | Re-render the report for a finished experiment |
 | `crucible results` | `--home --json --limit` | List earlier one-step backtests, newest first |
 | `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --detail --json --override --overwrite --resume --runtime --stop-at` | Run an experiment from a YAML config |

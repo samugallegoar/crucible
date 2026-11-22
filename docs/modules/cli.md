@@ -8,6 +8,7 @@ options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-path
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
 `data fetch`, `data check`, `data integrity`, `data catalog`, `data list`, `futures run`,
 `futures check`, `futures batch`, `futures walkforward`, `futures compare`, `futures trials`,
+`futures prop`,
 `vault declare`, `vault status`, `vault register`, `vault authorize`, `vault evaluate`,
 `vault log`, `vault set-admin`.
 Handlers are
@@ -19,8 +20,22 @@ run, `artifact verify` recomputes its id from the files; a futures run's `artifa
 futures-run document (`experiments.futures_document`, ADR-0097); `schema --kind` also serves `run`,
 `verification`, `error`, `manifest`, `futures-run-document`, `futures-batch`, `futures-walkforward`,
 `futures-compare` (the comparison document of C5c, ADR-0102), `futures-trials` (the
-effective-trials report of C6b, ADR-0104), `vault-declaration` and `vault-registration` (the
-holdout vault of C6c, ADR-0105). stdout and
+effective-trials report of C6b, ADR-0104), `prop-ruleset`, `prop-attempt` and `prop-evaluation`
+(C7a/C7b, ADR-0106/0107), `vault-declaration` and `vault-registration` (the holdout vault of C6c,
+ADR-0105).
+
+`crucible futures prop --config RUN --ruleset FILE --horizon H --execution-mode
+automated|manual [--payout-policy max_eligible|none] [--cost-assumption FILE] [--fee-participant-type
+NAME] [--scenarios primary|all] [--news-dataset NAME] [--exchange-fees-dataset NAME] [--store DIR]
+[--artifacts DIR]
+[--home DIR] [--overwrite] [--json]` is the prop evaluation (C7b, ADR-0107 section 6). It writes
+`<artifacts>/PRP-<16 hex>/` and prints the per-scenario attempt counts, the pass probability under
+the name its estimate earned (`pass_probability` or `conditional_pass_probability`), its interval,
+its all-start bounds, the mean net cash per attempt, the practical eligibility and the verdict
+line; `--json` prints `summary.json` itself, so the command and the file cannot drift. `--horizon`
+is a positive integer in TRADING days, `--execution-mode` is required (practical eligibility
+depends on it) and `--ruleset` is one prop-firm YAML whose exact bytes are copied into the
+artifact. stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
 `UnicodeEncodeError` on a legacy Windows code page.
 
@@ -285,18 +300,27 @@ the data layer refuses the read even when a caller bypasses them. `futures compa
 `futures trials` exclude the `VAULT/` artifacts unless `--include-vault` is passed (after the
 evaluation).
 
-## The prop-firm commands (C7a, ADR-0106)
+## The prop-firm commands (C7a/C7b, ADR-0106/0107)
 
 - **`crucible prop validate <ruleset.yaml>`** checks a prop-firm ruleset and changes no file: the
   identity (`ruleset_id`, version, firm, program, account size, platform, jurisdiction), the
-  content `ruleset_sha256`, the `effective_from`/`effective_to` window, the instruments and their
-  contract weights, the verification status (only the owner can confirm a ruleset, and a synthetic
-  one can never be `verified`), one `rule_coverage` row per rule, the `evaluation_status`
-  (`complete`, `conditional_on_modeled_rules` or `blocked`) and the `warnings`. `--json` prints the
-  same document; a file that does not validate is refused with the loader's actionable message.
+  content `ruleset_sha256` (which excludes verification), the `effective_from`/`effective_to`
+  window, the instruments and their contract weights, the reset clock, the commissions, the
+  evidence counts, every conflict and its sensitivity scenarios, the verification status (only the
+  owner can confirm a ruleset with `prop confirm`, and a synthetic one can never be `verified`),
+  one `rule_coverage` row per rule, the `evaluation_status` (`complete`,
+  `conditional_on_modeled_rules` or `blocked`) and the `warnings`. `--json` prints the same
+  document; a v1 file is refused with a migration message.
+- **`crucible prop list [--firm F] [--root R] [--json]`** lists every ruleset under
+  `rulesets/prop`: id, version, content hash, evidence counts, conflicts, unmodeled rules by
+  materiality and verification status. A v1 file is `pending_migration`, never a crash.
+- **`crucible prop confirm <ruleset.yaml>`** is the OWNER's verification step: it refuses without
+  an interactive TTY (like `vault set-admin`), prints every rule with its evidence, quotation,
+  URL, conflicts and assumptions, asks the owner to type the first 12 hex of `ruleset_sha256` and
+  writes `<file>.verification.yaml`. It is never exposed over MCP.
 - **`crucible schema --kind prop-ruleset`** prints the JSON Schema of a ruleset file and
   **`crucible schema --kind prop-attempt`** the JSON Schema of an attempt result (outcome, phases,
-  breach, buffer, payouts, coverage, evaluation status).
+  breach, buffer, fees, payouts, coverage, estimate status, practical eligibility).
 
 ## Extension points
 Handlers stay thin: parse args, call into `experiments`/`analytics`/`data`,

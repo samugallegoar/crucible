@@ -62,9 +62,24 @@ and correlation, the ESTIMATE of the effective number of trials (average linkage
 `d = sqrt((1 - rho) / 2)`, threshold `threshold`) with its sensitivity table for
 `0.3/0.5/0.7/0.9`, the reasons when one pair has no valid correlation, and the null verdict. The
 defletion it supports (`dsr_effective_trials`) is supplementary: the primary `dsr` is unchanged.
-All six are thin `build_argv` + `run_cli` wrappers over
-`crucible futures run|check|batch|walkforward|compare|trials` (ADR-0066), with absolute paths and
-the home's experiments folder as the default `artifacts`.
+`crucible_futures_prop(config, ruleset, horizon, execution_mode, payout_policy="max_eligible",
+cost_assumption=None, fee_participant_type=None, scenarios="primary", news_dataset="econ_events_v2",
+exchange_fees_dataset="exchange_fees_v1", store=None, home=None, artifacts=None,
+overwrite=False)` (C7b, ADR-0107) evaluates one firm's ruleset over a futures run's attempt
+sequence and returns `summary.json`: the per-scenario attempt classes (`pass`, `fail`, `timeout`,
+`horizon`, `censored`), the pass probability under the name its estimate earned
+(`pass_probability` only when nothing qualifies it, otherwise `conditional_pass_probability` with
+`definitive: false` and every reason), its seeded circular block-bootstrap interval, its all-start
+bounds, `effective_independent_attempts`, the mean net cash per attempt, and the practical
+eligibility for `execution_mode` (a mechanically successful attempt under a compliance blocker is
+never a practically valid pass). `horizon` is in TRADING days and `execution_mode` is required.
+`cost_assumption` is the path of a cost-assumption YAML file (it prices the per-component cost gaps
+it names, keeps the estimate `conditional` and is recorded by SHA-256), and `fee_participant_type`
+is the rate class the components a commission EXCLUDES are priced for — required as soon as one is
+`excluded`, because the ruleset never states one. It records no trial and states no verdict.
+All seven are thin `build_argv` + `run_cli` wrappers over
+`crucible futures run|check|batch|walkforward|compare|trials|prop` (ADR-0066), with absolute paths
+and the home's experiments folder as the default `artifacts`.
 
 Holdout vault tools (C6c, ADR-0105): `crucible_vault_status(store=None, home=None)` returns the
 vault id, the protected period, the persistent open counter and every registration with its status;
@@ -80,11 +95,15 @@ decision, so an agent cannot read the holdout by asking for it.
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
 (`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).
 
-**Prop-firm tools (ADR-0106).** `crucible_prop_validate` runs `crucible prop validate --json` on
-a ruleset path (identity, content hash, verification, one coverage row per rule, evaluation status
-and warnings; it changes no file) and `crucible_prop_schema` runs `crucible schema --kind
-prop-ruleset|prop-attempt`. There is no tool that runs an attempt: that is `simulate_attempt` in the
-library, and the futures-run config that names a ruleset is C7b.
+**Prop-firm tools (ADR-0106/0107).** `crucible_prop_validate` runs `crucible prop validate --json`
+on a ruleset path (identity, content hash, evidence counts, conflicts and scenarios, verification,
+one coverage row per rule, evaluation status and warnings; it changes no file),
+`crucible_prop_list` runs `crucible prop list --json` (id, version, hash, evidence counts,
+conflicts, unmodeled rules by materiality and verification status) and `crucible_prop_schema` runs
+`crucible schema --kind prop-ruleset|prop-attempt`. `crucible prop confirm` is deliberately absent:
+verification is the owner's interactive TTY step (ADR-0107 section 2). There is no tool that runs
+an attempt: that is `simulate_attempt` in the library, and the futures-run config that names a
+ruleset is C7c.
 
 ### Operational rules
 

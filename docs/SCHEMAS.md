@@ -605,6 +605,87 @@ One column per factor (header row = factor names), one row per period, **row-ali
 run's own return series**; no date column; all values floats (ADR-0022). Loaded by
 `experiments.validate.load_factors_csv`.
 
+### 1.6 Economic-event calendar (`econ_events_v2`)
+
+A dataset of release instants, not market data (ADR-0107 section 12; ingestion record in
+`docs/data/econ-events.md`). Hand-written here because it is not one of the `crucible/data/contracts.py`
+schemas: its rows are events, and its `event_type` column replaces the `symbol` of a bar dataset.
+Stored sort order: `event_time`, `event_type`, `event_id`. Built by
+`crucible.data.econ_events.build_econ_events` (which still builds the superseded
+`econ_events_v1` with `version=1`: the same six-column contract, the three original event types,
+and the same rows).
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `event_id` | `String` | no | stable id: `<event_type>-<YYYYMMDD>[-<seq>]`, dated by the **scheduled** release date (the original one for a rescheduled release) |
+| `event_type` | `String` | no | `FOMC_STATEMENT`, `FOMC_PRESS_CONFERENCE`, `FOMC_MINUTES`, `CPI`, `NFP` or `PPI` |
+| `scheduled_local` | `String` | no | the release instant the source states, ISO 8601 with the UTC offset `America/New_York` had on that date |
+| `timezone` | `String` | no | IANA zone of `scheduled_local`: `America/New_York` |
+| `event_time` | `Int64` | no | the release instant that materialised (UTC ns); 00:00 local when the source states no hour |
+| `time_known` | `Boolean` | no | `false` = no source stated the hour, so `event_time` marks the local **day**, not the release |
+| `scheduled_time_source` | `String` | no | who stated the release time: `fed_stated`, `bls_stated` or `not_stated` |
+| `status` | `String` | no | `released`, `scheduled`, `rescheduled` or `cancelled`; a `cancelled` release never happened and has no actual date |
+| `actual_publication_date` | `String` | yes | `YYYY-MM-DD` the release actually happened; `null` until it does |
+| `unscheduled` | `Boolean` | no | `true` for an intermeeting action: no advance schedule existed |
+| `source_url` | `String` | no | the page the row was read from: a statement or press-conference page, a meeting calendar/historical page, or a BLS schedule page |
+| `snapshot_sha256` | `String` | no | SHA-256 of that page's raw bytes, as the raw folder's `MANIFEST.json` records them |
+| `available_at` | `Int64` | no | UTC ns the schedule entry was publicly known; **may be earlier than `event_time`**, which a bar dataset may not |
+| `availability_basis` | `String` | no | `schedule_publication_unknown` (every row today: `available_at = event_time`) or `schedule_page_stated_date` |
+| `record_sha256` | `String` | no | SHA-256 of this row's other fields in canonical JSON; a row that changes under a stable `event_id` is detectable |
+| `dataset_version` | `Int64` | no | the version of the **rows**: `2` for this dataset, `1` for a `version=1` rebuild. The stored `econ_events_v1` predates the integer column and carries its dataset name (`"econ_events_v1"`) in a `String` column instead; a v1 rebuild under this schema writes `1`. Bumped when a parsing rule changes what a row says |
+
+Two differences from every other dataset, both deliberate:
+
+- **`available_at` may be before `event_time`.** A release schedule is published in advance, so
+  the schedule is knowable before the event; a bar can only be known after it closed. `1.1`'s rule
+  that `available_at >= event_time` therefore does not apply to this dataset.
+- **A window is not always placeable.** When `time_known` is `false` the source states the day but
+  no hour (a 2010-2015 FOMC statement went out "for immediate release"; a future meeting has no
+  stated hour; **no page states the hour of a press conference**; and only a meeting's
+  press-conference page states the minutes release hour), and a consumer must widen its window to
+  the whole local day rather than place it at `event_time`. `day_only_events(frame)` returns
+  exactly those rows.
+
+A strategy must not read this dataset as a signal: with `available_at = event_time`, a
+point-in-time read hides each event until the instant it happens. Its consumer is a firm rule
+(`news_restriction`), which reads it structurally through `load_econ_events`.
+
+### 1.7 Execution fees by component (`exchange_fees_v1`)
+
+Per-side, per-contract USD amounts over and above commission, split into the components a firm's
+commission may or may not contain (ingestion record in `docs/data/cme-exchange-fees.md`).
+Hand-written here for the same reason as `1.6`: the rows are reference data keyed by a date range,
+not bars. Stored sort order: `root`, `participant_type`, `fee_type`, `effective_from`, `covers`.
+Built by `crucible.data.exchange_fees.build_exchange_fees`; read per root and per component through
+`fee_rows_as_of(store, root, date, participant_type=..., components=...)`.
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `root` | `String` | no | product root: ES, NQ, YM, RTY, NKD, MES, MNQ, MYM or M2K |
+| `venue` | `String` | no | the exchange the root trades on: `CME` or `CBOT` |
+| `fee_type` | `String` | no | the component the row is typed as: `exchange`, `clearing`, `nfa` or `other`; it must appear in `covers` |
+| `participant_type` | `String` | no | who the amount is for: `non_member_customer` (the assumed customer class), `member`, `fcm_member_assessment` (the NFA row), … A row prices its own type only; an `nfa` row prices any requested type, because the assessment is the FCM member's pass-through |
+| `covers` | `String` | no | `;`-separated components the amount covers; it must contain `fee_type`. A CME "Exchange Fees for Clearing & Trading" cell is `exchange` / `exchange;clearing`, and the caller charges that row ONCE for both |
+| `per_side_usd` | `String` | no | USD per contract per side as a **Decimal string** (a float would round the money); a round trip is `2 x` this |
+| `effective_from` | `Date` | no | first calendar date the rate applies to |
+| `effective_to` | `Date` | yes | last date it applies to; `null` = open-ended, as the source states it |
+| `source_kind` | `String` | no | `official_page` (a publisher's own page) or `owner_provided` (a file the owner supplied) |
+| `provided_by` | `String` | yes | who supplied the file; `null` for an `official_page` row |
+| `source_url` | `String` | no | the page fetched or the document the owner's cell came from (the current or historical CME fee page, the NFA bylaw). Required: a rate nobody can point at is not a fee |
+| `snapshot_sha256` | `String` | no | SHA-256 of the bytes the row was read from (the page or the owner's file) |
+| `quote` | `String` | no | the exact text the rate was read from: the bylaw sentence or the cell text. Evidence, never a summary |
+| `event_time` | `Int64` | no | UTC ns: first instant of `effective_from` |
+| `available_at` | `Int64` | no | UTC ns the rate was knowable; equals `event_time` (no source states a publication instant) |
+| `record_sha256` | `String` | no | SHA-256 of this row's other fields in canonical JSON; two components one row covers share it, which is how the pricing charges that row once |
+| `dataset_version` | `String` | no | `exchange_fees_v1`: the version of the **rows**, bumped when a parsing rule changes what a row says |
+
+One difference from a bar dataset: `event_time` is a **calendar date**, not an instant of market
+activity, so a rate is visible from the start of the day it takes effect and never before. The
+dataset intentionally holds no `exchange`, `clearing` or `other` row in this build (CME Group's fee
+is not attributable to a root from its published document; `docs/data/cme-exchange-fees.md`), and
+`fee_rows_as_of` returns no amount for a component it cannot price — a gap the caller reports, never
+a zero.
+
 ## 2. Output artifacts
 
 ```
@@ -1490,14 +1571,18 @@ The two copies must agree on every key except `opens`/`last_log_hash`; a disagre
 The access log is written by BOTH the data layer (every read/whole-file attempt on a dataset of a
 protected root) and the protocol (`authorize`, `register`, `evaluate` steps): one log, never two.
 
-## The prop-firm ruleset file (ADR-0106, `crucible prop validate`)
+## The prop-firm ruleset file (ADR-0106/0107, `crucible prop validate`)
 
-A ruleset is YAML that validates into `crucible.prop.ruleset.PropRuleset` (`schema_version: 1`);
-`crucible schema --kind prop-ruleset` prints its JSON Schema. The required fields:
+A ruleset is YAML that validates into `crucible.prop.ruleset.PropRuleset` (`schema_version: 2`);
+`crucible schema --kind prop-ruleset` prints its JSON Schema. A v1 file is refused with a
+migration message, never silently upgraded. The required fields:
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `schema_version` | `1` | the ruleset file's format version |
+| `schema_version` | `2` | the ruleset file's format version |
+| `reset` | `{time, tz}` | the ruleset's rule-day boundary; no default, a firm declares it |
+| `commissions` | `{status: known\|unknown, components: {exchange, clearing, nfa, other each {status: included\|excluded\|unknown, evidence: official_quote\|owner_provided\|not_stated, text}}, per_side_usd: {ROOT: decimal}, platform, evidence, source}` | per-side commissions; unknown is never zero and a sentinel is refused. `components` is **required with all four keys and no default** (a missing key is refused): `included` means the firm's commission contains the component (and needs a quotation that says so), `excluded` means it is charged on top (also quoted, and the run then needs a participant type and a fee dataset), `unknown` means the sources do not say (`evidence: not_stated` plus a note naming what was checked) and is a gap, never a zero. The old `includes_exchange_and_regulatory_fees` flag is refused BY NAME. `commissions.evidence` is `official_quote` or `owner_provided` for the figures themselves |
+| `conflicts` | list (optional) | `{conflict_id, rule_id, field, selected_value, alternatives [{value, source}], selected_source, rationale, applicability_checked: true}` |
 | `ruleset_id` | string | the program's stable id; `(ruleset_id, version)` is the ruleset's identity |
 | `version` | integer >= 1 | a released version is immutable: a change is a new number |
 | `firm`, `program` | string | labels only: no value in the engine is keyed on them |
@@ -1506,18 +1591,23 @@ A ruleset is YAML that validates into `crucible.prop.ruleset.PropRuleset` (`sche
 | `as_of` | date | when the rules were read (independent of the data window) |
 | `effective_from`, `effective_to` | date, date or null | when the rules are in force; data earlier than `effective_from` is a counterfactual application |
 | `instruments` | list of `{root, contract_weight}` | the roots allowed and their mini/micro weight (1 and 0.1) |
-| `verification` | `{status: unverified\|verified, confirmed_by, confirmed_at, confirmation_note}` | `verified` requires all three confirmation fields and a complete, non-synthetic attribution on every rule, pass condition and fee |
+| `verification` | `{status: unverified}` | only `unverified` is allowed in the file; verification lives in `<file>.verification.yaml` (`ruleset_sha256`, `confirmed_by`, `confirmed_at`, `confirmation_note`, `rules_checked`) and is written only by `crucible prop confirm` |
 | `phases` | list of `Phase` | ordered: `phase_id`, `kind` (`evaluation` or `funded`), `starting_balance_usd`, `rules`, `pass_conditions`, `max_calendar_days`/`max_trading_days`, `fees` |
 | `not_modeled` | list of `{rule, description, materiality: immaterial\|material\|critical, source}` | every firm rule the vocabulary cannot express; declared, never dropped |
 
-Every rule, pass condition, fee and `not_modeled` entry carries `source`: `url`, `quote`,
-`snapshot_sha256` (64 hex), `retrieved_at` (a UTC timestamp), optional `section` and `synthetic`.
-A rule is a discriminated union on `kind`; the parameters of each kind are in
-`docs/modules/prop.md` ("The rule kinds"), and `evaluated` (`intraday` or `eod`) is required on
-`static_drawdown`, `trailing_drawdown` and `daily_loss`.
+Every rule, pass condition, fee and `not_modeled` entry carries `source`: `url` (null only with
+`provided_by: owner`), `quote`, `snapshot_sha256` (64 hex), `retrieved_at` (a UTC timestamp),
+optional `section`, `synthetic`, `provided_by`; and `evidence: official_quote | owner_provided |
+assumption | conflict_resolution`, with `assumption {name, rationale}` required when the value is
+an assumption. A rule may declare its own `effective_from`/`effective_to`. A rule is a
+discriminated union on `kind`; the parameters of each kind are in `docs/modules/prop.md`
+("The rule kinds"), and `evaluated` (`intraday`, `eod` or `on_request`) is required on every
+threshold rule.
 
-`ruleset_sha256` is the canonical JSON hash of the content (not a field in the file): the loader
-refuses two files with the same `(ruleset_id, version)` and different hashes.
+`ruleset_sha256` is the canonical JSON hash of the content **excluding** `verification` (not a
+field in the file): confirming a ruleset never changes its identity, and the loader refuses two
+files with the same `(ruleset_id, version)`. `rulesets/prop/INDEX.json` (generated) locks every
+file's hash and is append-only.
 
 ## The prop-firm attempt result (C7a, `AttemptResult`)
 
@@ -1531,13 +1621,103 @@ prints its JSON Schema. The fields:
 | `breached_rule`, `breach_time_ns` | string / integer or null | the rule that ended the attempt and the instant it was found |
 | `days_to_pass_trading`, `days_to_pass_calendar` | integer or null | trading days and calendar days from the start to the pass |
 | `min_buffer_usd`, `min_buffer_bar`, `min_buffer_time_ns`, `min_buffer_rule` | decimal / integer / integer / string or null | the smallest basis-minus-threshold over every failure threshold, at each bar's conservative extreme, and where it happened |
-| `fees_usd`, `payouts_usd`, `payouts`, `payout_policy`, `payout_modeled`, `net_cash_usd` | decimal / decimal / list of `{time_ns, gross_usd, net_usd, rule_id}` / `max_eligible` or `none` / boolean / decimal | attempt costs; the trader's net payouts, the choice that produced them and whether withdrawals are modeled at all; `net_cash_usd = payouts_usd - fees_usd` |
+| `fees_usd`, `fees`, `payouts_usd`, `payouts`, `payout_policy`, `payout_modeled`, `net_cash_usd` | decimal / `{evaluation_usd, activation_usd, monthly_usd, reset_usd, total_usd}` / decimal / list of `{time_ns, gross_usd, net_usd, rule_id, bound}` / `max_eligible` or `none` / boolean / decimal | attempt costs broken out (monthly is per started calendar month); the trader's net payouts, the choice that produced them and whether withdrawals are modeled; `net_cash_usd = payouts_usd - fees_usd`. `bound` is `exact` or `upper_bound` (a payout cap the sources do not state) |
+| `mechanical_outcome`, `estimate_status`, `estimate_reasons`, `practical_eligibility`, `scenario_id` | outcome / `complete\|conditional\|partial\|unavailable` / list of strings / `eligible\|blocked_by_compliance\|unknown` / string | what the simulated account did, what the evidence allows it to claim (and why), whether the exact execution mode may trade the plan, and which scenario ran |
+| `commissions`, `news_covered`, `news_coverage_gaps`, `session_calendar_gaps`, `cash_estimate_status`, `cash_estimate_reasons` | `{status, per_side_usd, root, source, components: [{component, status, usd, detail}], cost_gaps, fees_incomplete, cost_status, participant_type, cost_assumption, cost_assumption_sha256, priced_by_assumption}` / boolean or null / list of event ids / list of `"<first>..<last>"` / `exact\|conditional\|upper_bound\|unavailable` / list of strings | the commission table applied and every component's outcome (`included`, `excluded_priced`, `covered_by_row`, `excluded_unpriced`, `unknown`, `assumption`; `known`/`unknown`/`assumption` for the commission), with the USD it adds, the gaps that remain (`cost_gaps`) and the cost status `complete\|conditional\|unavailable`. The run's fee schedule is replaced, spread/slippage kept; a component the firm charges on top is added per side from the fee dataset for the run's `participant_type`, and a `cost_assumption` file (recorded by its SHA-256, with `priced_by_assumption` naming what it priced) is the only route from a gap to a number. Also: whether the calendar covered the attempt; the events whose release TIME is unknown (`time_known: false`), whose whole trade date is therefore outside coverage, while timed events keep their windows enforced; the unsourced CME session-calendar windows the attempt trades through (`"<first>..<last>"`, which makes the estimate `partial` with the reason `session calendar unsourced <first>..<last>`); what the payout and net-cash numbers are allowed to claim and why (`upper_bound` when a payout cap is unknown) |
 | `overlay_events` | list of `{kind, bar, time_ns, rule_id, requested, allowed, note}` | resizes, rejections, locks, unlocks, breaches, forced flats, payouts, pass, timeout, censored |
 | `rule_coverage` | list of `{rule, description, modeled, materiality, source}` | one row per rule, then one per `not_modeled` entry |
 | `evaluation_status`, `material_unmodeled`, `warnings` | `complete` / `conditional_on_modeled_rules` / `blocked`, list of strings, list of strings | what the declared gaps allow a result to claim |
 | `ruleset_id`, `version`, `ruleset_sha256`, `verification_status`, `unverified_ruleset`, `ruleset_as_of`, `effective_from`, `effective_to` | identity | the ruleset the attempt ran |
 | `start_trade_date`, `data_first_trade_date`, `data_last_trade_date`, `counterfactual_application` | dates / boolean | the attempt's window and whether it precedes the ruleset |
 | `semantics`, `liquidation_assumptions` | string | `high_before_low_conservative`, and the liquidation model in one sentence |
+
+## The prop evaluation's attempt sequence (C7b, ADR-0107)
+
+`crucible futures prop` writes `<artifacts>/PRP-<16 hex>/`: `attempts.parquet` (one row per
+scenario and start, sorted by scenario then start date), `summary.json`, `ruleset.yaml` (the exact
+bytes of the ruleset that was read) and `manifest.json` with the seal. None of them is a submission:
+the manifest records `trial_recorded: false` and no trial registry row is written.
+
+<!-- BEGIN GENERATED: artifact-prop-attempts -->
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `scenario_id` | `String` | no | primary, or <conflict_id>#<index> for a sensitivity scenario |
+| `scenario_label` | `String` | no | official_primary \| alternative_sensitivity |
+| `start_trade_date` | `Date` | no | Globex trade date the attempt started at (a day label) |
+| `outcome` | `String` | no | pass \| fail \| timeout \| horizon \| censored (ADR-0107 section 4) |
+| `complete` | `Boolean` | no | true when d + H fits in the data (the start is never censored) |
+| `horizon_end_trade_date` | `Date` | yes | the H-th trade date of the horizon |
+| `horizon_trading_days` | `Int64` | no | H, the analyst's horizon in TRADING days |
+| `phase_outcomes` | `String` | no | "<phase_id>:<outcome>" per phase, joined by ';' |
+| `breached_rule` | `String` | yes | the rule id of the first hard breach |
+| `breach_time_ns` | `Int64` | yes | UTC ns of that breach |
+| `days_to_pass_trading` | `Int64` | yes | trading days from the start to the pass |
+| `days_to_pass_calendar` | `Int64` | yes | calendar days from the start to the pass |
+| `min_buffer_usd` | `Decimal(precision=38, scale=6)` | yes | USD, the smallest basis-minus-threshold |
+| `payouts_usd` | `Decimal(precision=38, scale=6)` | no | USD; the trader's net payouts over the attempt |
+| `payout_bound` | `String` | no | exact \| upper_bound \| exact+upper_bound \| '' (none paid) |
+| `fees_evaluation_usd` | `Decimal(precision=38, scale=6)` | no | USD; evaluation-kind fees of the attempt |
+| `fees_activation_usd` | `Decimal(precision=38, scale=6)` | no | USD; activation fees (charged only on a pass) |
+| `fees_monthly_usd` | `Decimal(precision=38, scale=6)` | no | USD; monthly fees, per started calendar month |
+| `fees_reset_usd` | `Decimal(precision=38, scale=6)` | no | USD; reset fees bought by the attempt policy |
+| `fees_usd` | `Decimal(precision=38, scale=6)` | no | USD; every fee of the attempt, the four kinds above |
+| `net_cash_usd` | `Decimal(precision=38, scale=6)` | no | USD; payouts_usd - fees_usd (see cash_estimate_status) |
+| `cash_estimate_status` | `String` | no | exact \| conditional \| upper_bound \| unavailable |
+| `commission_usd` | `Decimal(precision=38, scale=6)` | yes | USD per side the firm's commission charges |
+| `commission_status` | `String` | no | known \| unknown \| assumption (never read as zero) |
+| `exchange_usd` | `Decimal(precision=38, scale=6)` | yes | USD per side added for the exchange fee |
+| `exchange_status` | `String` | no | included\|excluded_priced\|excluded_unpriced\|unknown\|assumption |
+| `clearing_usd` | `Decimal(precision=38, scale=6)` | yes | USD per side added for the clearing fee |
+| `clearing_status` | `String` | no | included\|excluded_priced\|excluded_unpriced\|unknown\|assumption |
+| `nfa_usd` | `Decimal(precision=38, scale=6)` | yes | USD per side added for the NFA assessment |
+| `nfa_status` | `String` | no | included\|excluded_priced\|excluded_unpriced\|unknown\|assumption |
+| `other_usd` | `Decimal(precision=38, scale=6)` | yes | USD per side added for any other per-side charge |
+| `other_status` | `String` | no | included\|excluded_priced\|excluded_unpriced\|unknown\|assumption |
+| `cost_status` | `String` | no | complete \| conditional \| unavailable (see cost_gaps) |
+| `cost_gaps` | `String` | no | components no source could price, joined by ';' ('' when none) |
+| `cost_assumption_sha256` | `String` | yes | SHA-256 of the cost-assumption file used |
+| `fee_participant_type` | `String` | yes | rate class the excluded components used |
+| `coverage_gap_count` | `Int64` | no | news and session-calendar coverage gaps of the attempt |
+| `coverage_gaps` | `String` | no | the gaps themselves, joined by ';' ('' when none) |
+| `estimate_status` | `String` | no | complete \| conditional \| partial \| unavailable |
+| `estimate_reasons` | `String` | no | why the estimate is not complete, joined by ';' |
+| `practical_eligibility` | `String` | no | eligible \| blocked_by_compliance \| unknown |
+| `unverified_ruleset` | `Boolean` | no | true when the ruleset has no matching verification |
+| `counterfactual_application` | `Boolean` | no | data starts before the ruleset's effective_from |
+
+<!-- END GENERATED: artifact-prop-attempts -->
+
+`attempts.parquet` columns, in the words of the module: `outcome` is one of the five ADR-0107
+section 4 classes (`pass`, `fail`, `timeout`, `horizon`, `censored`), `complete` says whether the
+start's H trade dates fit in the data, `horizon_end_trade_date` is the trade date the H-th trading
+day falls on, `phase_outcomes` joins `"<phase_id>:<outcome>"` with `;`, `payout_bound` is the set of
+payout bounds that occurred (`exact`, `upper_bound` or both, `''` when nothing was paid), the fee
+columns are the ruleset's own fees (evaluation, activation, monthly per started calendar month,
+reset) and NOT the commissions, which are charged inside the simulated equity, and
+`coverage_gaps` lists the news and session-calendar gaps with `;`.
+
+`summary.json` (`crucible schema --kind prop-evaluation`) has one `scenarios` entry per scenario
+simulated:
+
+| Field | Meaning |
+|---|---|
+| `scenario_id`, `scenario_label`, `ruleset_scenario_label`, `conflict_id`, `rationale` | `primary` with `official_primary` and `official`, or `<conflict_id>#<index>` with `alternative_sensitivity` and `sensitivity` |
+| `starts`, `complete_starts`, `counts` | the attempt count and the per-class counts |
+| `probability` | `{field, value, interval, bounds, passes, passes_complete, complete_starts, all_starts, censored, effective_independent_attempts, evaluation_status, definitive, reasons}`: `field` is `pass_probability` only when `definitive`; `value = passes_complete / complete_starts`; `bounds = {low: passes / all_starts, high: (passes + censored) / all_starts}`; `interval` is the seeded circular block bootstrap's percentile interval (`{status, low, high, reason}`) with blocks of `max(H, ceil(sqrt(n)))` trade dates; `effective_independent_attempts = n / H` |
+| `cash` | `{status, mean_net_cash_usd, interval, reasons}`: payouts minus the attempt's fees per complete start, labelled `exact`, `conditional`, `upper_bound` or `unavailable` (and then bounded/null, never both) |
+| `funded` | `{passing_starts, no_funded_phase, survived, breached, unresolved, payouts_made, payout_total_usd, payout_gross_usd, fees_usd, mean_net_cash_usd}`: the funded phase, DESCRIPTIVELY, over the starts whose evaluation passed |
+| `bootstrap` | `{pass_probability, mean_net_cash_usd}`: each statistic's `{rng, seed, block_length_policy, block_length, resamples, confidence, observations}` |
+| `coverage_gap_starts`, `estimate_status`, `estimate_reasons`, `warnings` | how many starts hit a coverage gap, the worst attempt estimate status and every distinct reason |
+| `practical_eligibility` | `{execution_mode, status, mechanical_passes, practically_valid_passes, reason}`: under `blocked_by_compliance` the valid passes are 0 |
+
+The top level carries `evaluation_id`, `run_id` (the futures run the attempts replay), `candidate_id`,
+`trial_family`, `root`, `window`, `horizon_trading_days`, `execution_mode`, `payout_policy`,
+`cost_assumption`, `scenarios_requested`, `start_dates`, `ruleset` (id, version, content hash,
+verification status, effective dates), `news` (dataset, content hash, event types, events in the
+window, the events whose release time is unknown, the covered intervals and the declared gaps),
+`exchange_fees` (dataset and content hash, or null when no commission excludes the fees),
+`not_a_submission` and a `source_note` that says in words that no number there is a verdict.
 
 ## Known gaps
 
