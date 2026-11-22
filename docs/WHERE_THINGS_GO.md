@@ -58,6 +58,8 @@ Anti-examples are real temptations, each of which breaks a rule stated in `AGENT
 | A live / paper venue or feed | `live/` behind the `Broker`, `DataFeed` or `ExecutionBackend` seam and the `live.enabled` flag | live-parity and reconciliation tests, `docs/modules/live.md`, ADR | `SimulatedVenue` | Wall-clock or timezone code outside the I/O boundary; bypassing `_book_fill` |
 | A helper used by several packages | the **lowest** package all its users may import (usually `core/`) | a unit test | `price_to_decimal` in `accounting/ledger.py` | A `utils.py`; copying the helper into each package |
 | A doc generator or repo tool | `tools/` (not the `crucible` package) | `docs/DEPENDENCIES.md` if it needs a package | `tools/docgen.py` | Adding it to the shipped package |
+| A new prop-firm rule kind | `prop/ruleset.py` (a typed rule in the discriminated union) + `prop/rules.py` (its evaluator and its branch in `build`) | the evaluator's own test with hand-computed money, a `SCHEMA_VERSION` bump if the file format changes, a fixture under `tests/fixtures/prop/`, `docs/modules/prop.md` | `payout` | Approximating a rule the engine cannot express instead of listing it in `not_modeled`, or defaulting a firm's value in code |
+| A new or updated firm ruleset | a versioned YAML under a ruleset registry (data, never code) | a new `version` (old ones are immutable), a `snapshot_sha256` per attribution, `docs/modules/prop.md` if a kind's meaning changed | a v2 file for a changed rule | Editing a released ruleset in place, or putting a firm's name or number in `crucible/` |
 | A decision someone will question | `docs/adr/NNNN-title.md` | `docs/adr/README.md` (regenerated), `CHANGELOG.md` | ADR-0012 | Recording it only in a commit message |
 
 ## 3. Layers at a glance

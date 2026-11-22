@@ -445,3 +445,37 @@ one-step result is shown next to it (ADR-0068). With several symbols: equal weig
 
 **MCP (Model Context Protocol)** — a protocol that lets an agent call tools on a server. `crucible-mcp`
 (ADR-0066) exposes the `--json` CLI commands as tools, each run in a fresh process.
+
+**Ruleset** — a versioned, sourced YAML file of one prop-firm program's rules (identity,
+instruments and their contract weights, phases, typed rules, an attribution per value and the
+`not_modeled` gaps). The engine knows rule kinds, never a firm; a released version is immutable and
+`ruleset_sha256` is its canonical content hash (ADR-0106). `docs/modules/prop.md`.
+
+**Rule-day** — the trading day of one rule, from *its own* reset time and time zone (17:00 Chicago
+by default): the instant the daily-loss reference resets, a soft lock lifts and the scaling plan
+takes the next limit. A bar belongs to the rule-day of its OPEN time, and the last bar of a rule-day
+is known causally from the CME session calendar's scheduled close, never from the next bar (ADR-0106).
+
+**Breach price** — the exact price at which a threshold rule's basis touches its money threshold,
+solved in integer ticks and rounded against the strategy: floor for a long (equity falls with
+price), ceiling for a short. Touching the threshold is a breach, so the comparison is `<=`
+(ADR-0106).
+
+**Joint pessimism** (`high_before_low_conservative`) — the conservative OHLC approximation of the
+prop-firm overlay: the favourable extreme (high for a long, low for a short) updates the high-water
+marks *before* the adverse extreme is tested, and both are applied even when no single path inside
+the bar produces both. It is an upper bound on harm, not a path claim, and biases only against
+passing (ADR-0106).
+
+**Counterfactual application** — a ruleset read now (`as_of`, `effective_from`) applied to a data
+window that starts before it took effect. Every pre-2025 run under current rules is one, and the
+attempt result says so (`counterfactual_application: true`, ADR-0106).
+
+**Censored attempt** — an attempt the data ended before it resolved (the last rule-day is incomplete
+per the CME session calendar). It is its own outcome class, never folded into a failure rate
+(ADR-0106).
+
+**Evaluation status** — what a prop-firm ruleset's declared gaps allow a result to claim:
+`complete` (nothing unmodeled, or only immaterial rules), `conditional_on_modeled_rules` (a
+material rule is unmodeled) or `blocked` (a critical one is). `material_unmodeled` names them
+(ADR-0106).

@@ -244,7 +244,27 @@ time; the engine books them through the same `_book_fill`/`_handle_closures`. Kn
 divergences from the backtest order (a risk FLATTEN is refused, event-id numbering
 differs) are in `docs/modules/live.md` and invariant I14.
 
-## 7. Known gaps
+## 7. The prop-firm overlay (ADR-0106)
+
+`simulate_futures(..., account=...)` wraps an `AccountOverlay` around the futures bar loop. The
+overlay never reads a bar after the one it acts on: the bar's interval, its session's scheduled
+close (from the CME session calendar) and its own OHLC are the only facts it sees.
+
+| # | Call | What the overlay does | What the simulator does next |
+|---|------|-----------------------|------------------------------|
+| 1 | `begin_bar(i, marks)` | the rule-day transition (a rule's reset time and zone), then the gap test on equity at the open | an action liquidates at the open and nothing else happens in the bar |
+| 2 | `forced_flat(i, marks)` | a rule's flat-by clock time reached by this bar | an action liquidates at the open; no entry is admitted until the reopen |
+| 3 | `admit(i, marks, requested)` | the rule-day's contract limit and scaling plan by weight, a lock, a closed account, the forced-flat window | fills the allowed target at the open (a roll is never refused) |
+| 4 | `favorable(i, marks, price)` | the bar's favourable extreme: the intraday high-water marks rise **first** | |
+| 5 | `breach_prices(i, marks)` | each active threshold's breach price, given the updated marks | merged with the touched lot stops along the adverse path and **recomputed after every stop**; a breach liquidates everything at that price (or at the current point when a recomputation placed it behind the walk) |
+| 6 | `breach_filled(...)`, `fill(...)` | the consequence (hard: close the account; soft: liquidate and lock) and the day statistics | the adverse walk ends; no target fills in a bar where a stop or a breach price was touched |
+| 7 | `end_bar(i, marks)` | the close mark; on the rule-day's last scheduled bar the EOD rules, the payouts and the pass conditions | an EOD-evaluated breach liquidates **at this close** (close cost tables), and a pass with a position still open flattens it at this close as `phase_flatten` |
+| 8 | `finish(marks)` | the end of the data | a complete rule-day was already handled at its close; an unresolved attempt ending inside a rule-day is `censored` |
+
+A new attempt phase starts a fresh, flat account at the next bar with the re-entry reset in force
+(`initial_blocked_target`): the strategy re-enters only after its decided target changes.
+
+## 8. Known gaps
 
 - `Strategy.on_data` and `Strategy.on_session` exist on the Protocol (and
   `MultiStrategy` forwards them) but **the engine never calls them**: only

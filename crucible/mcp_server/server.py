@@ -385,6 +385,24 @@ def build_server() -> MCPServer:
         return await run_cli(build_argv("schema", [], {"kind": kind}))
 
     @server.tool()
+    async def crucible_prop_validate(ruleset: str) -> dict[str, object]:
+        """Validate a prop-firm ruleset file (`crucible prop validate`): its identity, its
+        content hash, whether it is verified (only the owner can confirm one, and a synthetic
+        ruleset can never be), one coverage row per rule, the evaluation status (`complete`,
+        `conditional_on_modeled_rules` or `blocked`) and the warnings that follow. It changes no
+        file, and no rule value is ever inferred: the rules are sourced data (ADR-0106)."""
+        return await run_cli(
+            build_argv(["prop", "validate"], [absolute(ruleset) or ruleset], {"json": True})
+        )
+
+    @server.tool()
+    async def crucible_prop_schema(kind: str = "prop-ruleset") -> dict[str, object]:
+        """A prop-firm JSON Schema: `prop-ruleset` (a ruleset file: identity, instruments,
+        verification, phases and every rule kind) or `prop-attempt` (the attempt result: outcome,
+        phases, breach, buffer, costs, payouts, rule coverage, evaluation status)."""
+        return await run_cli(build_argv("schema", [], {"kind": kind}))
+
+    @server.tool()
     async def crucible_artifact(
         artifact_id: str,
         detail: bool = False,

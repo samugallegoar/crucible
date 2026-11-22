@@ -71,6 +71,18 @@ equity in USD (`Decimal(38, 6)`), plus a fills table and a rolls table. No compo
 - `execution_policy()` records every assumption, with the spec table's version and SHA-256.
 - Tests: `tests/unit/test_futures_sim.py` (hand-computed ledgers); on the real data,
   `tests/bench/test_futures_sim_real_data.py` (opt-in).
+- **Account overlay hook** (ADR-0106, `crucible/prop/`). `simulate_futures(..., account=...)`
+  takes an optional `AccountOverlay` and calls it at fixed points of each bar: `begin_bar` (the
+  rule-day transition and the gap test at the open), `forced_flat`, `admit` (a resized target at
+  the open), `favorable` (the favourable extreme, before the adverse side), `breach_prices` (merged
+  with the touched stops along the adverse walk and recomputed after each), `breach_filled` and
+  `fill`, `end_bar` (its return value is executed at **that bar's close**, with the close cost
+  tables) and `finish`. A liquidation is a market order at the trigger price — the breach price,
+  the open or the close, never outside the bar — paying the bar's schedule plus
+  `liquidation_extra_slippage_ticks` charged as money. `initial_blocked_target` starts a phase's
+  simulation with the re-entry reset in force, so a new account waits for the strategy's decided
+  target to change. With `account=None` the code path is the original one, byte for byte; the
+  overlay member order is listed in `crucible/execution/interfaces.py`.
 
 ## Responsibility
 The realism ladder, Levels 0-4. Enforces in code: fills within

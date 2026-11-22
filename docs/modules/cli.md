@@ -285,6 +285,19 @@ the data layer refuses the read even when a caller bypasses them. `futures compa
 `futures trials` exclude the `VAULT/` artifacts unless `--include-vault` is passed (after the
 evaluation).
 
+## The prop-firm commands (C7a, ADR-0106)
+
+- **`crucible prop validate <ruleset.yaml>`** checks a prop-firm ruleset and changes no file: the
+  identity (`ruleset_id`, version, firm, program, account size, platform, jurisdiction), the
+  content `ruleset_sha256`, the `effective_from`/`effective_to` window, the instruments and their
+  contract weights, the verification status (only the owner can confirm a ruleset, and a synthetic
+  one can never be `verified`), one `rule_coverage` row per rule, the `evaluation_status`
+  (`complete`, `conditional_on_modeled_rules` or `blocked`) and the `warnings`. `--json` prints the
+  same document; a file that does not validate is refused with the loader's actionable message.
+- **`crucible schema --kind prop-ruleset`** prints the JSON Schema of a ruleset file and
+  **`crucible schema --kind prop-attempt`** the JSON Schema of an attempt result (outcome, phases,
+  breach, buffer, payouts, coverage, evaluation status).
+
 ## Extension points
 Handlers stay thin: parse args, call into `experiments`/`analytics`/`data`,
 print. Engine logic never lives here.

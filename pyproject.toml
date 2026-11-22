@@ -146,7 +146,7 @@ layers = [
     "crucible.live.runtime",
     "crucible.experiments",
     "crucible.core.engine | crucible.validation | crucible.vectorized | crucible.analytics | crucible.strategy_spec",
-    "crucible.risk | crucible.strategy | crucible.live.venue | crucible.live.execution | crucible.live.interfaces | crucible.live.feed | crucible.live.paper | crucible.live.replay | crucible.live.venue_feed",
+    "crucible.risk | crucible.strategy | crucible.prop | crucible.live.venue | crucible.live.execution | crucible.live.interfaces | crucible.live.feed | crucible.live.paper | crucible.live.replay | crucible.live.venue_feed",
     "crucible.execution | crucible.portfolio",
     "crucible.dsl",
     "crucible.accounting | crucible.data | crucible.orders | crucible.live.rows",

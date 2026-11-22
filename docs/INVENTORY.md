@@ -39,6 +39,7 @@
 | `crucible futures walkforward` | `--artifacts --config --home --json --overwrite --store` | Train candidates per fold, select inside the training window and concatenate the out-of-sample windows (C5b) |
 | `crucible optimize` | `<config> --artifacts --json --metric --override --param --pbo-groups --values --vectorized --workers` | 1D parameter sweep, tagged as trials, assembling a PBO panel (R4.3/R4.9) |
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
+| `crucible prop validate` | `<ruleset> --json` | Check a ruleset file: identity, content hash, verification, rule coverage and warnings. Changes no file |
 | `crucible report` | `<experiment_id> --artifacts --json` | Re-render the report for a finished experiment |
 | `crucible results` | `--home --json --limit` | List earlier one-step backtests, newest first |
 | `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --detail --json --override --overwrite --resume --runtime --stop-at` | Run an experiment from a YAML config |

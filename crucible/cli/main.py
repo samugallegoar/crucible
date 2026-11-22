@@ -15,7 +15,7 @@ import sys
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from crucible import __version__
 from crucible.cli import machine, product_commands
@@ -531,6 +531,8 @@ def build_parser() -> argparse.ArgumentParser:
             "futures-trials",
             "vault-declaration",
             "vault-registration",
+            "prop-ruleset",
+            "prop-attempt",
             *OUTPUT_SCHEMAS,
         ],
         default="experiment",
@@ -808,6 +810,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_home(vault_set_admin)
     _add_json(vault_set_admin)
+
+    prop = subparsers.add_parser(
+        "prop",
+        help="Prop-firm rulesets (C7a, ADR-0106): validate. The rules are sourced, versioned "
+        "data; the engine knows rule kinds, never a firm",
+    )
+    prop_sub = prop.add_subparsers(dest="prop_command", required=True)
+    prop_validate = prop_sub.add_parser(
+        "validate",
+        help="Check a ruleset file: identity, content hash, verification, rule coverage and "
+        "warnings. Changes no file",
+    )
+    prop_validate.add_argument("ruleset", help="Path to a prop-firm ruleset YAML")
+    _add_json(prop_validate)
 
     product_commands.add_parsers(subparsers)
     return parser
@@ -2065,6 +2081,41 @@ def _home_of(home: object) -> Path | None:
     return None if home is None else Path(str(getattr(home, "root", home)))
 
 
+def _cmd_prop(args: argparse.Namespace) -> int:
+    """``crucible prop validate <ruleset>``: report a ruleset, change nothing (ADR-0106)."""
+    from crucible.prop.validate import validate_ruleset_document
+
+    document = validate_ruleset_document(Path(args.ruleset))
+    if args.json:
+        machine.emit(document)
+        return 0
+    instruments = cast(list[dict[str, str]], document["instruments"])
+    phases = cast(list[dict[str, object]], document["phases"])
+    verification = cast(dict[str, object], document["verification"])
+    warnings = cast(list[str], document["warnings"])
+    lines = [
+        f"ruleset:      {document['ruleset_id']} v{document['version']}",
+        f"sha256:       {document['ruleset_sha256']}",
+        f"firm:         {document['firm']} / {document['program']}",
+        f"account:      {document['account_size_usd']} USD",
+        f"as_of:        {document['as_of']}",
+        f"effective:    {document['effective_from']} .. {document['effective_to'] or 'open'}",
+        "instruments:  "
+        + ", ".join(f"{item['root']} x{item['contract_weight']}" for item in instruments),
+        f"verification: {verification['status']}",
+        f"coverage:     {document['evaluation_status']}",
+    ]
+    for phase in phases:
+        rules = cast(list[str], phase["rules"])
+        lines.append(
+            f"phase {phase['phase_id']} ({phase['kind']}, {phase['starting_balance_usd']}): "
+            f"{', '.join(rules) or 'no rules'}"
+        )
+    lines.extend(f"warning: {warning}" for warning in warnings)
+    sys.stdout.write(chr(10).join(lines) + chr(10))
+    return 0
+
+
 def _cmd_schema(args: argparse.Namespace) -> int:
     """Prints a JSON Schema: the experiment config, the strategy spec, a futures-run config or a
     futures-batch file."""
@@ -2096,6 +2147,10 @@ def _cmd_schema(args: argparse.Namespace) -> int:
         from crucible.experiments.vault import vault_registration_json_schema
 
         schema = vault_registration_json_schema()
+    elif args.kind in ("prop-ruleset", "prop-attempt"):
+        from crucible.prop.validate import schema_document
+
+        schema = schema_document(args.kind)
     elif args.kind in OUTPUT_SCHEMAS:
         schema = output_json_schema(args.kind)
     else:
@@ -2484,6 +2539,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_artifact(args)
         if args.command == "vault":
             return _cmd_vault(args)
+        if args.command == "prop":
+            return _cmd_prop(args)
     except CrucibleError as exc:
         sys.stderr.write(f"refused: {exc}\n")
         if getattr(args, "json", False):

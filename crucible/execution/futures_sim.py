@@ -20,6 +20,11 @@ Pessimism: if any lot's stop is touched in a bar, only the touched stops fill in
 target fills until a later bar; a stop that gapped fills at the open; a target needs a trade
 through it and never fills at a better gap price. A bar flagged off schedule (ADR-0091) cannot
 execute anything: no signal fill and no bracket exit.
+
+An optional ``account`` overlay (ADR-0106) wraps a prop-firm account around the run: it may resize
+a target at admission, liquidate at a failure threshold, lock trading until a reset, or close the
+account. It is called at fixed points of each bar and never reads a bar after the one it acts on.
+With ``account=None`` the code path below is the original one, unchanged.
 """
 
 from __future__ import annotations
@@ -34,13 +39,15 @@ import numpy as np
 import polars as pl
 
 from crucible.core.errors import ConfigurationError, DataQualityError, InvariantViolation
-from crucible.core.types import NS_PER_S
+from crucible.core.types import NS_PER_S, TimestampNs
 from crucible.data.futures_specs import SPEC_TABLE_VERSION, spec_table_hash
+from crucible.execution.interfaces import AccountMarks, BreachPrice, OverlayAction
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from crucible.data.futures_specs import FuturesContractSpec
+    from crucible.execution.interfaces import AccountOverlay
 
 SIMULATOR_VERSION = "2"
 FillTiming = Literal["next_eligible_bar_open", "signal_bar_close"]
@@ -612,6 +619,12 @@ class _Book:
     def position(self) -> int:
         return sum(lot.qty for lot in self.lots)
 
+    @property
+    def cost_basis(self) -> int:
+        """``sum(qty * entry)`` over the open lots, the one number an account overlay needs to
+        price equity at any mark (the book is one-sided, so equity is linear in price)."""
+        return sum(lot.qty * lot.entry for lot in self.lots)
+
     def unrealized_ticks(self, mark: int) -> int:
         return sum(lot.qty * (mark - lot.entry) for lot in self.lots)
 
@@ -731,12 +744,31 @@ class _Run:
     """One simulation: the frame, the cost tables, the per-bar money arrays and the fills."""
 
     def __init__(
-        self, frame: _Frame, table: _Costs, policy: ExecutionPolicy, tick_micro: int, bar_ns: int
+        self,
+        frame: _Frame,
+        table: _Costs,
+        policy: ExecutionPolicy,
+        tick_micro: int,
+        bar_ns: int,
+        capital: int = 0,
+        account: AccountOverlay | None = None,
+        liquidation_extra_slippage_ticks: int = 0,
+        initial_blocked_target: int | None = None,
     ) -> None:
         n = len(frame.times)
         self.frame, self.table, self.policy = frame, table, policy
         self.tick_micro, self.bar_ns = tick_micro, bar_ns
-        self.state = _State(book=_Book())
+        self.state = _State(book=_Book(), blocked=initial_blocked_target)
+        self.capital = capital
+        self.balance = capital
+        self.account = account
+        self.liquidation_extra_slippage_ticks = liquidation_extra_slippage_ticks
+        if liquidation_extra_slippage_ticks < 0:
+            msg = (
+                "liquidation_extra_slippage_ticks must be >= 0: a liquidation can only be made "
+                f"worse than its trigger, got {liquidation_extra_slippage_ticks}"
+            )
+            raise ConfigurationError(msg)
         self.position = np.zeros(n, dtype=np.int64)
         self.realized = np.zeros(n, dtype=np.int64)
         self.unrealized = np.zeros(n, dtype=np.int64)
@@ -765,10 +797,15 @@ class _Run:
         market: bool = True,
         contract: str | None = None,
         fill_time: int | None = None,
+        extra_slippage_ticks: int = 0,
     ) -> None:
         """Books a signal fill of ``qty`` contracts at ``price`` ticks in bar ``i``: opposing lots
         close FIFO and any position left over opens ONE lot whose brackets are measured from THIS
-        fill's price (an add to an existing position does not move the other lots' levels)."""
+        fill's price (an add to an existing position does not move the other lots' levels).
+
+        ``extra_slippage_ticks`` is charged as money on top of the schedule's slippage, over the
+        contracts filled (``abs(qty)`` ticks per contract). The price never moves: a fill stays
+        inside the bar's ``[low, high]`` (AGENTS.md section 9)."""
         if qty == 0:
             return
         stop, target = self.levels(price, 1 if qty > 0 else -1)
@@ -783,6 +820,7 @@ class _Run:
             market=market,
             contract=contract,
             fill_time=fill_time,
+            extra_slippage_ticks=extra_slippage_ticks,
         )
 
     def bracket_exit(self, i: int, lot: _Lot, price: int, kind: str) -> None:
@@ -813,6 +851,7 @@ class _Run:
         market: bool,
         contract: str | None,
         fill_time: int | None,
+        extra_slippage_ticks: int = 0,
     ) -> None:
         """Records already-booked realized ticks as a fill: money arrays, then the fill row."""
         table = self.table
@@ -823,10 +862,13 @@ class _Run:
         slip = int((table.slippage_close if at_close else table.slippage)[i]) * contracts
         if not market:
             spread = slip = 0
+        else:
+            slip += extra_slippage_ticks * self.tick_micro
         self.realized[i] += gained
         self.fees[i] += fees
         self.spread[i] += spread
         self.slippage[i] += slip
+        self.balance += gained - (fees + spread + slip)
         close_time = int(self.frame.times[i])
         self.fills.append(
             _Fill(
@@ -844,6 +886,8 @@ class _Run:
                 slippage=slip,
             )
         )
+        if self.account is not None:
+            self.account.fill(i, self.marks(i), qty, price, kind)
 
     def roll(self, i: int, roll: _Roll) -> None:
         """Closes the old contract and opens the new one at the roll's execution prices; a target
@@ -935,6 +979,9 @@ class _Run:
             st.pending_raw = decided
 
     def bar(self, i: int, decided: int, roll: _Roll | None) -> None:
+        if self.account is not None:
+            self.account_bar(i, decided, roll)
+            return
         st = self.state
         if roll is not None:
             self.roll(i, roll)
@@ -947,6 +994,260 @@ class _Run:
         self.position[i] = st.book.position
         self.unrealized[i] = st.book.unrealized_ticks(int(self.frame.close[i])) * self.tick_micro
 
+    # ------------------------------------------------------------------ account overlay
+
+    def marks(self, i: int) -> AccountMarks:
+        """The account view the overlay gets for bar ``i``: the running balance (initial capital
+        plus realized P&L minus costs so far), the open book and the bar's own OHLC."""
+        frame = self.frame
+        return AccountMarks(
+            bar=i,
+            open_time_ns=TimestampNs(int(frame.times[i]) - self.bar_ns),
+            close_time_ns=TimestampNs(int(frame.times[i])),
+            open_ticks=int(frame.open[i]),
+            high_ticks=int(frame.high[i]),
+            low_ticks=int(frame.low[i]),
+            close_ticks=int(frame.close[i]),
+            position=self.state.book.position,
+            balance_micro=self.balance,
+            cost_basis_ticks=self.state.book.cost_basis,
+            tick_micro=self.tick_micro,
+            tradable=bool(frame.trades[i]),
+        )
+
+    def liquidate(self, i: int, price_ticks: int, kind: str, *, at_close: bool = False) -> None:
+        """Flattens the whole book at ``price_ticks`` as a market order.
+
+        The price is the trigger itself (a breach price or the bar's open/close), so it stays
+        inside the bar; ``liquidation_extra_slippage_ticks`` is charged as extra slippage money
+        (one tick per contract), never by moving the price outside the bar (AGENTS.md section 9).
+        Costs are the bar's open schedule, or its close schedule for a close liquidation (F3)."""
+        qty = self.state.book.position
+        if qty == 0:
+            return
+        self.fill(
+            i,
+            -qty,
+            price_ticks,
+            kind,
+            at_close=at_close,
+            extra_slippage_ticks=self.liquidation_extra_slippage_ticks * abs(qty),
+        )
+
+    def apply_action(
+        self, i: int, action: OverlayAction, kind: str, *, at_close: bool = False
+    ) -> None:
+        """A liquidating action from the overlay, at its price or at the bar's open (or close)."""
+        anchor = int(self.frame.close[i]) if at_close else int(self.frame.open[i])
+        price = anchor if action.price_ticks is None else action.price_ticks
+        self.liquidate(i, price, kind, at_close=at_close)
+
+    def close_bar(self, i: int) -> None:
+        """The close mark, then the overlay's end-of-bar processing.
+
+        A consequence found at the close (an EOD-evaluated breach, or a pass with a position still
+        open) liquidates AT THIS CLOSE, with the close cost tables: the account may not carry the
+        position into the next bar (ADR-0106, F3)."""
+        st = self.state
+        self.position[i] = st.book.position
+        self.unrealized[i] = st.book.unrealized_ticks(int(self.frame.close[i])) * self.tick_micro
+        if self.account is None:
+            return
+        action = self.account.end_bar(i, self.marks(i))
+        if action is None:
+            return
+        kind = "phase_flatten" if action.kind == "phase_flatten" else "liquidation"
+        self.apply_action(i, action, kind, at_close=True)
+        self.position[i] = st.book.position
+        self.unrealized[i] = st.book.unrealized_ticks(int(self.frame.close[i])) * self.tick_micro
+
+    def account_bar(self, i: int, decided: int, roll: _Roll | None) -> None:
+        """One bar with an account overlay, in ADR-0106 section 3's order: rule-day transition
+        and gap test (1-2), forced flat (6), admission of the open fill (3), the favourable
+        extreme then the adverse walk with stops and breach prices (4-5), the close (8). With no
+        overlay ``bar`` is the original code, unchanged."""
+        st, frame, account = self.state, self.frame, self.account
+        assert account is not None
+        if account.closed:
+            self.close_bar(i)
+            return
+        marks = self.marks(i)
+        action = account.begin_bar(i, marks)
+        if action is not None:
+            self.apply_action(i, action, "liquidation")
+            st.pending = None
+            self.close_bar(i)
+            return
+        later = account.forced_flat(i, marks)
+        if later is not None:
+            self.apply_action(i, later, "forced_flat")
+            marks = self.marks(i)
+        if roll is not None:
+            self.roll(i, roll)
+        elif st.pending is not None and frame.trades[i]:
+            allowed = account.admit(i, marks, st.pending)
+            if allowed != st.book.position:
+                self.fill(i, allowed - st.book.position, int(frame.open[i]), "signal")
+                st.in_force_raw = st.pending_raw
+            st.pending = None
+        self.walk(i)
+        if not account.closed:
+            self.account_decide(i, decided)
+        self.close_bar(i)
+
+    def walk(self, i: int) -> None:
+        """Stops and failure thresholds merged along the adverse path (ADR-0106, step 4).
+
+        The favourable extreme was applied first (``high_before_low_conservative``: the high for
+        a long, the low for a short) so an intraday high-water mark moves before the adverse side
+        is tested. Then the path is walked from the open towards the adverse extreme, in the
+        order the adverse path reaches each level: a touched lot's stop fills as today, and each
+        stop changes the balance, the position and therefore every remaining breach price, which
+        is recomputed. When the walk reaches a breach price with a position left, everything is
+        liquidated there (at the current point when a recomputation placed the breach behind it)
+        and the walk ends. A stop or a breach touch in the bar blocks every target in it."""
+        st, frame, account = self.state, self.frame, self.account
+        assert account is not None
+        if not st.book.lots:
+            return
+        marks = self.marks(i)
+        if frame.trades[i]:
+            account.favorable(i, marks, marks.favorable_ticks)
+        if not frame.trades[i]:
+            return
+        side = 1 if st.book.position > 0 else -1
+        through = self.policy.target_fill_through_ticks
+        stops: list[tuple[int, _Lot]] = []
+        targets: list[tuple[_Lot, int]] = []
+        for lot in list(st.book.lots):
+            lot_side, stop, take = lot.side, lot.stop, lot.target
+            if stop is not None and (
+                int(frame.low[i]) <= stop if lot_side > 0 else int(frame.high[i]) >= stop
+            ):
+                gapped = int(frame.open[i]) <= stop if lot_side > 0 else int(frame.open[i]) >= stop
+                stops.append((int(frame.open[i]) if gapped else stop, lot))
+            elif take is not None and (
+                int(frame.high[i]) >= take + through
+                if lot_side > 0
+                else int(frame.low[i]) <= take - through
+            ):
+                targets.append((lot, take))
+        stops.sort(key=lambda item: item[0], reverse=side > 0)
+        touched = bool(stops) or bool(self.live_breaches(i, marks, None, side))
+        current: int | None = None
+        liquidated = False
+        while True:
+            marks = self.marks(i)
+            live = self.live_breaches(i, marks, current, side)
+            behind = [
+                b
+                for b in account.breach_prices(i, marks)
+                if current is not None and self.beyond(b.price_ticks, current, side)
+            ]
+            next_stop = stops[0][0] if stops else None
+            breach: BreachPrice | None = None
+            if behind:
+                breach = behind[0]
+            elif live and (next_stop is None or self.reaches(next_stop, live[0].price_ticks, side)):
+                breach = live[0]
+            if breach is not None:
+                price = (
+                    current
+                    if self.beyond(breach.price_ticks, current, side)
+                    else breach.price_ticks
+                )
+                assert price is not None
+                self.apply_action(
+                    i, OverlayAction("liquidate", breach.rule_id, breach.hard, price), "liquidation"
+                )
+                account.breach_filled(i, marks, price, breach.rule_id, breach.hard)
+                liquidated = True
+                break
+            if next_stop is None:
+                break
+            price, lot = stops.pop(0)
+            self.bracket_exit(i, lot, price, "stop")
+            current = price
+            if st.book.position == 0 or not st.book.lots:
+                break
+        if liquidated or touched:
+            if self.policy.reentry == "require_signal_reset":
+                st.blocked = st.in_force_raw
+            st.pending = None
+            return
+        if targets:
+            for lot, price in targets:
+                self.bracket_exit(i, lot, price, "target")
+            if self.policy.reentry == "require_signal_reset":
+                st.blocked = st.in_force_raw
+            st.pending = None
+
+    @staticmethod
+    def beyond(price: int, current: int | None, side: int) -> bool:
+        """Whether ``price`` lies beyond ``current`` on the adverse path (already reached)."""
+        return current is not None and (price < current if side > 0 else price > current)
+
+    @staticmethod
+    def reaches(stop_price: int, breach_price: int, side: int) -> bool:
+        """Whether the adverse path reaches ``breach_price`` at or before ``stop_price``."""
+        return stop_price <= breach_price if side > 0 else stop_price >= breach_price
+
+    def live_breaches(
+        self, i: int, marks: AccountMarks, current: int | None, side: int
+    ) -> list[BreachPrice]:
+        """The breach prices the remaining adverse path reaches, worst-first: between ``current``
+        (the open at first) and the bar's adverse extreme."""
+        account = self.account
+        assert account is not None
+        frame = self.frame
+        start = int(frame.open[i]) if current is None else current
+        extreme = int(frame.low[i]) if side > 0 else int(frame.high[i])
+        live = []
+        for price in account.breach_prices(i, marks):
+            inside = (
+                extreme <= price.price_ticks <= start
+                if side > 0
+                else start <= price.price_ticks <= extreme
+            )
+            if inside:
+                live.append(price)
+        live.sort(key=lambda b: b.price_ticks, reverse=side > 0)
+        return live
+
+    def account_decide(self, i: int, decided: int) -> None:
+        """``decide`` with admission: an entry at the signal bar's close is subject to the
+        account's contract limit, lock and forced-flat window."""
+        st = self.state
+        effective = decided
+        if st.blocked is not None:
+            if decided == st.blocked:
+                effective = st.book.position
+            else:
+                st.blocked = None
+        if self.policy.fill == "signal_bar_close":
+            if effective != st.book.position and self.frame.trades[i]:
+                marks = self.marks(i)
+                allowed = self.admit(i, marks, effective)
+                if allowed != st.book.position:
+                    self.fill(
+                        i,
+                        allowed - st.book.position,
+                        int(self.frame.close[i]),
+                        "signal",
+                        at_close=True,
+                    )
+                    st.in_force_raw = decided
+        else:
+            st.pending = effective if effective != st.book.position else None
+            st.pending_raw = decided
+
+    def admit(self, i: int, marks: AccountMarks, requested: int) -> int:
+        account = self.account
+        assert account is not None
+        if account.closed:
+            return self.state.book.position
+        return account.admit(i, marks, requested)
+
 
 def simulate_futures(
     *,
@@ -958,6 +1259,9 @@ def simulate_futures(
     initial_capital: Decimal,
     policy: ExecutionPolicy | None = None,
     raw: pl.DataFrame | None = None,
+    account: AccountOverlay | None = None,
+    liquidation_extra_slippage_ticks: int = 0,
+    initial_blocked_target: int | None = None,
 ) -> FuturesSimResult:
     """Simulate ``targets`` (``event_time``, integer ``target`` contracts decided at each bar's
     close) on one continuous futures series (ADR-0090).
@@ -968,8 +1272,28 @@ def simulate_futures(
     table (``ROLL_SCHEMA``). ``raw``: the raw per-contract bars (``symbol`` = contract,
     ``event_time``, OHLC) the causal roll legs come from; without it, strict causal mode refuses
     any roll. ``initial_capital`` in USD. Prices in points; money in USD as ``Decimal(38, 6)``.
+
+    ``account``: an optional prop-firm account overlay (ADR-0106). It is called at fixed points
+    of every bar (``AccountOverlay``) and may resize a target, liquidate at a threshold, lock
+    trading or close the account; ``liquidation_extra_slippage_ticks`` is the adverse slippage a
+    liquidation pays on top of the bar's open spread and slippage. With ``account=None``
+    (the default) this function is byte-for-byte the simulation it always was and ignores
+    ``liquidation_extra_slippage_ticks`` (a non-zero value there would suggest a liquidation that
+    can never happen, so it is refused).
     """
     policy = policy or ExecutionPolicy()
+    if account is None and liquidation_extra_slippage_ticks:
+        msg = (
+            "liquidation_extra_slippage_ticks is set but no account overlay is given, so no "
+            "liquidation can happen and the value would be silently ignored"
+        )
+        raise ConfigurationError(msg)
+    if account is None and initial_blocked_target is not None:
+        msg = (
+            "initial_blocked_target is set but no account overlay is given: re-entry blocking "
+            "after a phase flatten only has meaning for an account"
+        )
+        raise ConfigurationError(msg)
     tick = float(spec.tick_size)
     decided = _validate(bars, targets)
     bar_ns = policy.bar_seconds * NS_PER_S
@@ -980,10 +1304,16 @@ def simulate_futures(
         policy,
         _micro(spec.tick_value, "tick value"),
         bar_ns,
+        capital=_micro(initial_capital, "initial_capital"),
+        account=account,
+        liquidation_extra_slippage_ticks=liquidation_extra_slippage_ticks,
+        initial_blocked_target=initial_blocked_target,
     )
     rolls_at = {r.index: r for r in frame.rolls}
     for i in range(len(frame.times)):
         run.bar(i, int(decided[i]), rolls_at.get(i))
+    if account is not None:
+        account.finish(run.marks(len(frame.times) - 1))
     strict = policy.roll_execution == "causal" and all(
         r.mode == "causal" or r.position == 0 for r in frame.rolls
     )
