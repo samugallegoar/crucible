@@ -556,6 +556,50 @@ Each row names the time, caller, purpose, dataset, `as_of`, outcome and registra
 `vault status` and `vault log` never report a metric: the numbers of the protected period live in the
 sealed artifact of an evaluation that has run.
 
+## 13. A prop-firm attempt (C7a, ADR-0106)
+
+A prop-firm ruleset is sourced, versioned data (`docs/modules/prop.md`); the engine knows rule
+kinds, never a firm. Check one before using it:
+
+```bash
+uv run crucible prop validate path/to/ruleset.yaml          # identity, hash, coverage, warnings
+uv run crucible prop validate path/to/ruleset.yaml --json   # the same document
+uv run crucible schema --kind prop-ruleset                  # the file's JSON Schema
+uv run crucible schema --kind prop-attempt                  # the result's JSON Schema
+```
+
+`prop validate` changes no file. It reports the ruleset's `ruleset_sha256`, its verification status
+(only the owner can confirm a ruleset, and a synthetic one can never be `verified`), one
+`rule_coverage` row per rule, the `evaluation_status` (`complete`, `conditional_on_modeled_rules`
+or `blocked`) and the warnings those gaps imply. A ruleset marked `unverified` makes every result
+`unverified_ruleset: true`, and a data window that starts before the ruleset's `effective_from` is
+labelled a counterfactual application.
+
+Running an attempt is a library call until C7b gives it a run config:
+
+```python
+from crucible.prop import load_ruleset, simulate_attempt
+
+ruleset = load_ruleset("path/to/ruleset.yaml")
+result = simulate_attempt(
+    bars=bars, targets=targets, rolls=rolls, spec=spec, costs=costs,
+    ruleset=ruleset, start_trade_date=date(2024, 1, 8), max_horizon_days=20,
+    calendar=calendar,            # the CME session calendar: it decides when a rule-day ends
+    payout_policy="max_eligible", # the trader's choice, not a firm rule; "none" takes none
+)
+result.outcome          # pass | fail | timeout | censored
+result.breached_rule    # which rule ended it, and when
+result.min_buffer_usd   # the smallest distance to a failure threshold, and where
+result.payouts          # gross and net of every withdrawal
+result.evaluation_status, result.warnings
+```
+
+A `censored` attempt is the data ending before the attempt resolved: it is its own class, never a
+failure. `min_buffer_usd` and every money field are `Decimal`; the breach, lock, resize and payout
+decisions are in `overlay_events`. The semantics are the conservative OHLC approximation
+(`high_before_low_conservative`): a breach liquidates as a market order at its trigger price, not
+at the threshold, so a fast market can fill worse.
+
 ## Known gaps
 
 - No Python API to *list* experiments in an artifact root; use `crucible compare <family>` or

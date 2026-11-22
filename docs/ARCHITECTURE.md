@@ -87,7 +87,7 @@ bottom (siblings in one layer must not import each other):
 | 2 | runtimes | `live.runtime` |
 | 3 | orchestration | `experiments` |
 | 4 | engine and gates | `core.engine`, `validation`, `vectorized`, `analytics`, `strategy_spec` |
-| 5 | domain services | `risk`, `strategy`, `live.venue`, `live.execution`, `live.interfaces`, `live.feed`, `live.paper`, `live.replay`, `live.venue_feed` |
+| 5 | domain services | `risk`, `strategy`, `prop`, `live.venue`, `live.execution`, `live.interfaces`, `live.feed`, `live.paper`, `live.replay`, `live.venue_feed` |
 | 6 | execution and portfolio | `execution`, `portfolio` |
 | 6b | expression language | `dsl` (typed causal expressions, ADR-0096; evaluation and compilation, ADR-0098; reads the CME session calendar for the session features) |
 | 7 | ledger, data, orders | `accounting`, `data`, `orders`, `live.rows` |
@@ -144,6 +144,10 @@ crucible/
                PortfolioSnapshot, FX conversion, mark invariants I1/I3/I4/I12
   portfolio/   six PortfolioConstructors + registry; TargetSetter (ctx.targets)
   risk/        CompositeRiskEngine, seven limits, registry
+  prop/        sourced versioned prop-firm rulesets (ruleset.py), one evaluator per rule kind
+               (rules.py), the AccountOverlay the futures simulation calls inside each bar
+               (overlay.py), one attempt over one start date (attempt.py), rule coverage and
+               evaluation status (coverage.py) (ADR-0106)
   analytics/   compute_metrics (bootstrap CIs), build_trades, attribution, plots, render_report
   validation/  splitters, trial registry (DuckDB), DSR/PBO, sensitivity, Monte Carlo, null tests,
                factor regression, contamination flagging

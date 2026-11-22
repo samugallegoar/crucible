@@ -8,6 +8,47 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C7a: generic prop-firm rule engine (ADR-0106)
+- **The rules run inside the simulation, bar by bar.**
+  - `simulate_futures` gains an optional `account` (the `AccountOverlay` Protocol in
+    `crucible/execution/interfaces.py`).
+  - Without an account, the output is unchanged byte for byte, so every golden and run id is
+    unchanged.
+  - With an account, the per-bar order is fixed:
+    1. rule-day transition and the gap-at-open test;
+    2. forced flat;
+    3. admission (contract limit by contract weight, scaling plan, locks);
+    4. the favourable extreme, then the adverse walk, which merges lot stops and breach prices in
+       path order;
+    5. the close, with the EOD rules and the pass conditions.
+- **Conservative OHLC semantics (`high_before_low_conservative`).**
+  - An intraday high-water mark moves on the favourable extreme before the adverse extreme is
+    tested.
+  - Both are applied together, as a declared approximation biased against passing.
+  - A breach or stop touched in a bar blocks that bar's targets.
+- **Breaches liquidate at market, never at a guaranteed threshold fill.**
+  - A breach fills at the first tick against the strategy, at the open when the bar gapped, or at
+    the close for an EOD-evaluated breach.
+  - It pays spread and slippage, plus `liquidation_extra_slippage_ticks` charged as a cost.
+  - Fills stay inside the bar.
+- **The new package `crucible/prop/` holds the engine.**
+  - Rulesets are versioned and immutable, with a per-rule source attribution (URL, quote, snapshot
+    hash, retrieval time).
+  - A ruleset stays `unverified` until the owner confirms it.
+  - Rule kinds: profit target, static, trailing (intraday or EOD, with lock) and daily-loss
+    thresholds, each with a required `evaluated`; max contracts; scaling plan; flat-by; minimum
+    trading days; consistency; time limit; fees; payouts.
+  - Phases run in order, each with a fresh, flat account.
+  - Rules the engine cannot express are declared `not_modeled` with a materiality.
+  - `simulate_attempt` returns `pass`, `fail`, `timeout` or `censored`. The result also carries the
+    breached rule, the minimum buffer, `rule_coverage`, `evaluation_status`, `material_unmodeled`
+    and `counterfactual_application`.
+  - It contains no firm values: a test checks that no firm name appears in `crucible/`.
+- **Entry points:** `crucible prop validate`, `crucible schema --kind prop-ruleset|prop-attempt`,
+  and the MCP tools `crucible_prop_validate` and `crucible_prop_schema`.
+- **Scope:** synthetic rulesets only. Firm rulesets, attempt sequences and pass probability are
+  C7b; no verdict before C7e.
+
 ### Fathom C6c: futures holdout vault (ADR-0105)
 - **The protected period.**
   - Globex trade dates from 2025-01-01, open-ended.

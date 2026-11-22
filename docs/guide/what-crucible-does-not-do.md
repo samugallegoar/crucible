@@ -93,6 +93,19 @@ risks remain, and they are documented, not solved:
   report the concatenated out-of-fold equity series or its deflated Sharpe, and the
   selection inside a fold is not deflated (the summary says so).
 
+## Prop-firm rules
+
+- The prop-firm simulator is a conservative OHLC approximation, not a tape: it resolves the
+  intrabar order against the strategy (the favourable extreme first, then the adverse one, applied
+  together), so it can fail an account that a real path would have kept. The bias is one-directional
+  (against passing) and declared in every result (`semantics: high_before_low_conservative`).
+- A breach is a market liquidation at its trigger price (the breach price, the open when it gapped,
+  the close for an end-of-day rule) plus costs and the stress slippage, not a fill at the threshold:
+  a fast market can fill worse, and `liquidation_extra_slippage_ticks` exists to measure how much.
+- No firm rule value is in the engine: a ruleset is sourced data, and a ruleset read now applied to
+  older data is labelled a counterfactual application. C7a ships synthetic rulesets only, so no
+  result of it describes a real firm, and a synthetic ruleset can never be `verified`.
+
 ## Scale
 
 A run holds the bars in memory; the replay feed guards at about five million rows. Runs are

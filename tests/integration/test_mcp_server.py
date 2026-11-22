@@ -26,6 +26,8 @@ from examples.momentum.build_data import build_all
 EXPECTED_TOOLS = {
     "crucible_artifact",
     "crucible_schema",
+    "crucible_prop_validate",
+    "crucible_prop_schema",
     "crucible_run",
     "crucible_run_vectorized",
     "crucible_futures_run",
@@ -96,6 +98,32 @@ def test_the_schema_tool_returns_the_config_schema() -> None:
     is_error, text = _call("crucible_schema", {})
     assert not is_error
     assert "properties" in json.loads(text)
+
+
+def test_the_prop_validate_tool_reports_a_ruleset() -> None:
+    ruleset = (Path("tests/fixtures/prop") / "synthetic_g_critical.yaml").resolve()
+    is_error, text = _call("crucible_prop_validate", {"ruleset": str(ruleset)})
+    assert not is_error
+    document = json.loads(text)
+    assert document["ruleset_id"] == "synthetic_g_critical"
+    assert document["evaluation_status"] == "blocked"
+    assert document["material_unmodeled"] == ["news_trading"]
+    assert len(document["ruleset_sha256"]) == 64
+
+
+def test_the_prop_validate_tool_refuses_a_bad_ruleset_as_a_tool_error() -> None:
+    ruleset = (Path("tests/fixtures/prop") / "synthetic_bad_kind.yaml").resolve()
+    is_error, text = _call("crucible_prop_validate", {"ruleset": str(ruleset)})
+    assert is_error
+    assert "does not validate" in text
+
+
+def test_the_prop_schema_tool_serves_the_attempt_schema() -> None:
+    is_error, text = _call("crucible_prop_schema", {"kind": "prop-attempt"})
+    assert not is_error
+    schema = json.loads(text)
+    for field in ("outcome", "payouts", "payout_policy", "evaluation_status"):
+        assert field in schema["properties"]
 
 
 @pytest.mark.single_os  # plumbing over a full run; the process tests stay on every OS
@@ -261,6 +289,8 @@ def _captured_calls() -> list[list[str]]:
             "crucible_report": {"experiment_id": "EXP-1", "artifacts": "a"},
             "crucible_artifact": {"artifact_id": "ART-1", "detail": True, "artifacts": "a"},
             "crucible_schema": {"kind": "manifest"},
+            "crucible_prop_validate": {"ruleset": "r.yaml"},
+            "crucible_prop_schema": {"kind": "prop-attempt"},
             "crucible_data_list": {"store": "s"},
             "crucible_data_check": {
                 "store": "s",
@@ -339,7 +369,7 @@ def test_every_tool_builds_an_argv_the_real_parser_accepts() -> None:
     from crucible.cli.main import build_parser
 
     calls = _captured_calls()
-    assert len(calls) == 27
+    assert len(calls) == 29
     for argv in calls:
         build_parser().parse_args(argv)  # a mistyped flag would exit(2) here
 

@@ -1,0 +1,43 @@
+schema_version: 1
+ruleset_id: synthetic-d-flat-by-fail
+version: 1
+firm: SyntheticFirm A
+program: Synthetic Evaluation
+account_size_usd: "50000"
+platform: TestPlatform
+addons: []
+jurisdiction: TestLand
+as_of: 2024-01-01
+effective_from: 2024-01-01
+effective_to: null
+instruments:
+  - root: ES
+    contract_weight: "1"
+  - root: MES
+    contract_weight: "0.1"
+verification:
+  status: unverified
+phases:
+  - phase_id: evaluation
+    kind: evaluation
+    starting_balance_usd: "50000"
+    rules:
+      - kind: flat_by
+        rule_id: flat
+        description: synthetic flat_by
+        time: "12:00"
+        tz: America/Chicago
+        reopen: "13:00"
+        consequence: fail
+        source: 
+          url: https://example.invalid/synthetic-rules
+          quote: "Synthetic rule value invented for a test, not a real firm's rule"
+          snapshot_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+          retrieved_at: 2024-01-01T00:00:00Z
+          section: "1"
+          synthetic: true
+    pass_conditions: []
+    max_calendar_days: null
+    max_trading_days: null
+    fees: []
+not_modeled: []

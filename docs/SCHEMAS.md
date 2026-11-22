@@ -1490,6 +1490,55 @@ The two copies must agree on every key except `opens`/`last_log_hash`; a disagre
 The access log is written by BOTH the data layer (every read/whole-file attempt on a dataset of a
 protected root) and the protocol (`authorize`, `register`, `evaluate` steps): one log, never two.
 
+## The prop-firm ruleset file (ADR-0106, `crucible prop validate`)
+
+A ruleset is YAML that validates into `crucible.prop.ruleset.PropRuleset` (`schema_version: 1`);
+`crucible schema --kind prop-ruleset` prints its JSON Schema. The required fields:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `schema_version` | `1` | the ruleset file's format version |
+| `ruleset_id` | string | the program's stable id; `(ruleset_id, version)` is the ruleset's identity |
+| `version` | integer >= 1 | a released version is immutable: a change is a new number |
+| `firm`, `program` | string | labels only: no value in the engine is keyed on them |
+| `account_size_usd` | decimal (6 dp) | the account size the rules describe |
+| `platform`, `addons` (sorted), `jurisdiction` | string / list / string | the product's variant fields; `null` where the rules do not say |
+| `as_of` | date | when the rules were read (independent of the data window) |
+| `effective_from`, `effective_to` | date, date or null | when the rules are in force; data earlier than `effective_from` is a counterfactual application |
+| `instruments` | list of `{root, contract_weight}` | the roots allowed and their mini/micro weight (1 and 0.1) |
+| `verification` | `{status: unverified\|verified, confirmed_by, confirmed_at, confirmation_note}` | `verified` requires all three confirmation fields and a complete, non-synthetic attribution on every rule, pass condition and fee |
+| `phases` | list of `Phase` | ordered: `phase_id`, `kind` (`evaluation` or `funded`), `starting_balance_usd`, `rules`, `pass_conditions`, `max_calendar_days`/`max_trading_days`, `fees` |
+| `not_modeled` | list of `{rule, description, materiality: immaterial\|material\|critical, source}` | every firm rule the vocabulary cannot express; declared, never dropped |
+
+Every rule, pass condition, fee and `not_modeled` entry carries `source`: `url`, `quote`,
+`snapshot_sha256` (64 hex), `retrieved_at` (a UTC timestamp), optional `section` and `synthetic`.
+A rule is a discriminated union on `kind`; the parameters of each kind are in
+`docs/modules/prop.md` ("The rule kinds"), and `evaluated` (`intraday` or `eod`) is required on
+`static_drawdown`, `trailing_drawdown` and `daily_loss`.
+
+`ruleset_sha256` is the canonical JSON hash of the content (not a field in the file): the loader
+refuses two files with the same `(ruleset_id, version)` and different hashes.
+
+## The prop-firm attempt result (C7a, `AttemptResult`)
+
+`simulate_attempt(...)` returns a frozen `AttemptResult`; `crucible schema --kind prop-attempt`
+prints its JSON Schema. The fields:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `outcome` | `pass`, `fail`, `timeout`, `censored` | `censored`: the data ended before the attempt resolved |
+| `phase_outcomes` | list of `{phase_id, kind, outcome, breached_rule, breach_time_ns, first_bar, last_bar, trading_days}` | one per phase attempted |
+| `breached_rule`, `breach_time_ns` | string / integer or null | the rule that ended the attempt and the instant it was found |
+| `days_to_pass_trading`, `days_to_pass_calendar` | integer or null | trading days and calendar days from the start to the pass |
+| `min_buffer_usd`, `min_buffer_bar`, `min_buffer_time_ns`, `min_buffer_rule` | decimal / integer / integer / string or null | the smallest basis-minus-threshold over every failure threshold, at each bar's conservative extreme, and where it happened |
+| `fees_usd`, `payouts_usd`, `payouts`, `payout_policy`, `payout_modeled`, `net_cash_usd` | decimal / decimal / list of `{time_ns, gross_usd, net_usd, rule_id}` / `max_eligible` or `none` / boolean / decimal | attempt costs; the trader's net payouts, the choice that produced them and whether withdrawals are modeled at all; `net_cash_usd = payouts_usd - fees_usd` |
+| `overlay_events` | list of `{kind, bar, time_ns, rule_id, requested, allowed, note}` | resizes, rejections, locks, unlocks, breaches, forced flats, payouts, pass, timeout, censored |
+| `rule_coverage` | list of `{rule, description, modeled, materiality, source}` | one row per rule, then one per `not_modeled` entry |
+| `evaluation_status`, `material_unmodeled`, `warnings` | `complete` / `conditional_on_modeled_rules` / `blocked`, list of strings, list of strings | what the declared gaps allow a result to claim |
+| `ruleset_id`, `version`, `ruleset_sha256`, `verification_status`, `unverified_ruleset`, `ruleset_as_of`, `effective_from`, `effective_to` | identity | the ruleset the attempt ran |
+| `start_trade_date`, `data_first_trade_date`, `data_last_trade_date`, `counterfactual_application` | dates / boolean | the attempt's window and whether it precedes the ruleset |
+| `semantics`, `liquidation_assumptions` | string | `high_before_low_conservative`, and the liquidation model in one sentence |
+
 ## Known gaps
 
 - The Polars schemas describe the dtypes but not value domains (`side` in `{buy, sell}`,

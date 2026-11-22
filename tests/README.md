@@ -186,6 +186,35 @@ nothing is ever written into a real store or home.
 - **Property tests** — keep them fast (`max_examples` tuned, `deadline=None` where a cold-start
   import can trip it) and deterministic (the `ci` profile derandomizes).
 
+## 7a. The prop-firm tests (ADR-0106)
+
+The prop-firm engine has its own set, all on synthetic data (no real market data, no firm name):
+
+- `tests/unit/test_prop_ruleset.py` — the ruleset models, the canonical hash, the loader's
+  refusals, rule coverage and the evaluation status (immaterial / material / critical), the
+  counterfactual label, and the firm-agnostic grep over `crucible/`.
+- `tests/unit/test_prop_rules.py` — the integer arithmetic of the evaluators: breach prices
+  (floor for a long, ceiling for a short), thresholds, the payout amount, the lock, weighted
+  contract limits, rule-days, and that `evaluated` is required on every threshold rule.
+- `tests/integration/test_prop_overlay.py` — the hand-computed scenarios: static drawdown, gap
+  open, intraday and EOD trailing (joint pessimism), the lock, daily loss (soft/hard/pct), stops
+  against a breach price, a target blocked by a breach, contract limits, the scaling plan,
+  flat-by, the pass conditions, two phases, timeout and censoring, the close liquidation and the
+  `phase_flatten`, and a mid-run snapshot/restore.
+- `tests/integration/test_prop_payout.py` — payout eligibility (buffer, cap, consistency, the
+  two threshold behaviours, `max_payouts`, the day and profit gates) and the attempt-level record.
+- `tests/integration/test_prop_cli.py` — `crucible prop validate` and the two schemas.
+- `tests/property/test_prop_overlay_properties.py` — a non-binding ruleset is `account=None`
+  exactly, every liquidation is on the grid inside its bar, and a failed static drawdown ends at or
+  below its threshold.
+- `tests/lookahead/test_prop_overlay_lookahead.py` — bars poisoned after a breach change nothing up
+  to and including it.
+
+Fixtures live in `tests/fixtures/prop/`: synthetic rulesets ("SyntheticFirm A",
+`example.invalid` URLs, invented values, every attribution `synthetic: true`), a registry with two
+versions, and the refusals (a duplicate version, a synthetic `verified` ruleset, a bad kind). Every
+money number in the tests is written out as arithmetic.
+
 ## 8. Running subsets
 
 ```bash
