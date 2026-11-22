@@ -38,7 +38,23 @@ reset:
   tz: America/New_York
 commissions:
   status: known
-  includes_exchange_and_regulatory_fees: unknown
+  components:
+    exchange:
+      status: unknown
+      evidence: not_stated
+      text: 'the commission table does not say whether exchange, clearing, NFA or other fees are included'
+    clearing:
+      status: unknown
+      evidence: not_stated
+      text: 'the commission table does not say whether exchange, clearing, NFA or other fees are included'
+    nfa:
+      status: unknown
+      evidence: not_stated
+      text: 'the commission table does not say whether exchange, clearing, NFA or other fees are included'
+    other:
+      status: unknown
+      evidence: not_stated
+      text: 'the commission table does not say whether exchange, clearing, NFA or other fees are included'
   per_side_usd:
     ES: '1.55'
     NQ: '1.55'

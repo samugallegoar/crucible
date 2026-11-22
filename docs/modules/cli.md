@@ -25,8 +25,9 @@ effective-trials report of C6b, ADR-0104), `prop-ruleset`, `prop-attempt` and `p
 ADR-0105).
 
 `crucible futures prop --config RUN --ruleset FILE --horizon H --execution-mode
-automated|manual [--payout-policy max_eligible|none] [--cost-assumption NAME] [--scenarios
-primary|all] [--news-dataset NAME] [--exchange-fees-dataset NAME] [--store DIR] [--artifacts DIR]
+automated|manual [--payout-policy max_eligible|none] [--cost-assumption FILE] [--fee-participant-type
+NAME] [--scenarios primary|all] [--news-dataset NAME] [--exchange-fees-dataset NAME] [--store DIR]
+[--artifacts DIR]
 [--home DIR] [--overwrite] [--json]` is the prop evaluation (C7b, ADR-0107 section 6). It writes
 `<artifacts>/PRP-<16 hex>/` and prints the per-scenario attempt counts, the pass probability under
 the name its estimate earned (`pass_probability` or `conditional_pass_probability`), its interval,

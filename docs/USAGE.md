@@ -612,8 +612,10 @@ for item in scenarios(ruleset):   # primary, then one sensitivity per conflict a
 ```
 
 The ruleset's `commissions` replace the run's fee schedule; spread and slippage still come from
-the run's `CostSchedule`. Unknown commissions are never zero: without a named `cost_assumption` the
-cost-dependent statistics are `unavailable`. A news rule with no calendar coverage is `not_modeled`
+the run's `CostSchedule`. Unknown costs are never zero: `commissions.components` declares, per cost
+component (exchange, clearing, NFA, other), whether the firm's per-side commission contains it
+(`included`), charges it on top (`excluded`) or does not say (`unknown`), and every gap keeps the
+cost-dependent statistics `unavailable`. A news rule with no calendar coverage is `not_modeled`
 (material), so the estimate becomes `partial` rather than "no news".
 
 A `censored` attempt is the data ending before the attempt resolved: it is its own class, never a
@@ -638,9 +640,33 @@ uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml    
 - `--execution-mode automated|manual` is required and decides `practical_eligibility`: a firm that
   bans automated trading makes an automated strategy `blocked_by_compliance` even when the
   mechanical account passes.
-- `--payout-policy max_eligible|none` is the trader's choice, `--cost-assumption NAME` names the
-  assumption that makes an unknown commission a number (without one the cash statistics are
-  `unavailable`), and `--scenarios primary|all` adds one sensitivity scenario per ruleset conflict.
+- `--payout-policy max_eligible|none` is the trader's choice, and `--scenarios primary|all` adds one
+  sensitivity scenario per ruleset conflict.
+- `--fee-participant-type NAME` is the rate class (`non_member_customer`, `member`, …) the components
+  a commission EXCLUDES are priced for. It is required as soon as a component is `excluded`, because
+  the ruleset never states one and a member rate is not a customer rate; using it makes the cost
+  estimate `conditional`.
+- `--cost-assumption FILE` is a YAML file (not a bare name) that prices the cost gaps the sources
+  leave. It is the user's own unverified statement, it prices only the root and components it lists,
+  and it is recorded by SHA-256; the estimate becomes `conditional`, never complete:
+
+  ```yaml
+  name: owner-estimate-2026-11-22
+  description: the owner's working per-side figure, composition unknown
+  provided_by: owner
+  status: unverified            # the only accepted value
+  evidence: the owner's note of 2026-11-22; no document states the split
+  amounts:
+    ES:
+      - covers: [exchange, clearing]
+        per_side_usd: '0.77'    # SYNTHETIC value, this file is an example
+      - covers: [nfa]
+        per_side_usd: '0.02'
+  ```
+
+  A component the file does not price stays a gap and the cash number stays `unavailable`. An
+  `unknown` component it prices is ADDED (worse for the strategy), and it may not override a
+  component the ruleset declares `included` or the fee dataset already priced.
 - `--json` prints `summary.json` itself (the text rendering says the same numbers).
 
 Reading it, in order:
@@ -650,9 +676,11 @@ Reading it, in order:
 2. **The probability and its name.** `p` is passes over COMPLETE starts (those whose H trade dates
    fit in the data). The field is `pass_probability` only when nothing qualifies it; otherwise it is
    `conditional_pass_probability` with `definitive: false` and every reason: unmodeled rules, an
-   unverified ruleset, a cost assumption, an unknown cost, a news-calendar gap, an unsourced
-   session-calendar window, the counterfactual application of a current ruleset to pre-2025 data, or
-   a compliance blocker. Read the reasons before the number.
+   unverified ruleset, a cost assumption, an unknown cost component, an assumed participant type, a
+   news-calendar gap, an unsourced session-calendar window, the counterfactual application of a
+   current ruleset to pre-2025 data, or a compliance blocker. Read the reasons before the number.
+   `summary.json`'s `cost_components` lists, per root, the status each component ended with and the
+   gaps that remained, so a cost that is not complete says exactly which component is missing.
 3. **The bounds.** `p_low` counts censored attempts as failures and `p_high` counts them as passes.
    A wide `[p_low, p_high]` says the window is too short for the horizon, not that the strategy is
    uncertain in the same way.

@@ -557,8 +557,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--cost-assumption",
         default=None,
         dest="cost_assumption",
-        help="A named assumption that makes an unknown commission a number (e.g. "
-        "'owner_statement_2026'). Without one the cash statistics are unavailable, never zero",
+        metavar="FILE",
+        help="Path of a cost-assumption YAML file (name, description, provided_by, status: "
+        "unverified, evidence, amounts per root and component). It is the only way a cost gap "
+        "becomes a number: it prices exactly the gaps it names, makes the estimate CONDITIONAL and "
+        "is never reported as a firm value. Without one an unmatched cost keeps the cash statistic "
+        "unavailable, never zero",
+    )
+    futures_prop.add_argument(
+        "--fee-participant-type",
+        default=None,
+        dest="fee_participant_type",
+        help="The rate class the per-side fees a commission EXCLUDES are priced for "
+        "(non_member_customer, member, ...). Required as soon as a component is declared excluded: "
+        "the ruleset never states one, and using it makes the cost estimate conditional",
     )
     futures_prop.add_argument(
         "--scenarios",
@@ -2028,6 +2040,7 @@ def _cmd_futures_prop(args: argparse.Namespace) -> int:
         execution_mode=args.execution_mode,
         payout_policy=args.payout_policy,
         cost_assumption=args.cost_assumption,
+        fee_participant_type=args.fee_participant_type,
         scenarios=args.scenarios,
         news_dataset=args.news_dataset,
         exchange_fees_dataset=args.exchange_fees_dataset,

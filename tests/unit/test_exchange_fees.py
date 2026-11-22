@@ -1,13 +1,16 @@
-"""Per-side exchange and NFA fees: parsing, effective dates, refusal, hashes (C7b data 3).
+"""Per-component fees: parsing, participant types, coverage, effective dates, refusal (C7b).
 
 Every fixture here is a small hand-written page or file in the shape the source serves — the NFA
 rulebook page carrying Bylaw 1301, and an owner-provided fee CSV — so a rule is tested without a
 network and with hand-computed expectations. The real page and the real store are exercised by
 the ingestion documented in ``docs/data/cme-exchange-fees.md``.
 
-The dataset deliberately holds **no exchange row** of its own (CME Group refuses automated access
-and its published schedule names product buckets, not roots): the tests below pin that down as a
-refusal, not as a zero.
+Every amount in this file is SYNTHETIC: ``0.77`` and the words ``SYNTHETIC TEST VALUE`` mark a
+number a test invented, so no real exchange fee can leak into the repository from here.
+
+The dataset deliberately holds **no exchange, clearing or other row** of its own (CME Group refuses
+automated access and its published schedule names product buckets, not roots): the tests below pin
+that down as a missing component, not as a zero.
 """
 
 from __future__ import annotations
@@ -39,6 +42,9 @@ BYLAW_SENTENCE = (
     "contract market on a per trade basis during the period of July 1, 2026, through June 30, "
     "2027."
 )
+
+CME_PAGE = "https://www.cmegroup.com/company/clearing-fees/historical-fees.html"
+"""The owner's document, as the CSV names it; nothing is fetched from it here."""
 
 
 def bylaw_page(sentence: str = BYLAW_SENTENCE) -> str:
@@ -77,18 +83,30 @@ def owner_file(tmp_path: Path, text: str) -> Path:
     return path
 
 
+def exchange_row(**overrides: str) -> dict[str, str]:
+    """One SYNTHETIC owner row: ES, exchange only, 0.77 USD per side from 2026-01-01."""
+    row = {
+        "root": "ES",
+        "fee_type": "exchange",
+        "participant_type": ef.PARTICIPANT_TYPE_EXCHANGE,
+        "covers": "exchange",
+        "per_side_usd": "0.77",
+        "effective_from": "2026-01-01",
+        "quote": "SYNTHETIC TEST VALUE: E-mini S&P 500 exchange fee $0.77 per side",
+        "source_url": CME_PAGE,
+    }
+    row.update(overrides)
+    return row
+
+
 def exchange_rows(**overrides: str) -> list[dict[str, str]]:
-    """One exchange row per root, priced at the owner's figure, from 2026-01-01 open-ended."""
+    """One SYNTHETIC exchange row per root, from 2026-01-01 and open-ended."""
     rows = []
     for root in ef.ROOTS:
-        row = {
-            "root": root,
-            "fee_type": "exchange",
-            "fee_class": ef.FEE_CLASS_EXCHANGE,
-            "per_side_usd": "1.38",
-            "effective_from": "2026-01-01",
-            "quote": "Non-Members / Globex / E-mini Equity Index Futures: $1.38",
-        }
+        row = exchange_row(
+            root=root,
+            quote=f"SYNTHETIC TEST VALUE: {root} exchange fee $0.77 per side",
+        )
         row.update(overrides)
         rows.append(row)
     return rows
@@ -106,7 +124,8 @@ def test_the_assessment_is_halved_to_one_side_and_keeps_both_stated_periods() ->
     assert first.root == ef.ROOTS[0] == "ES"
     assert first.venue == "CME"
     assert first.fee_type == "nfa"
-    assert first.fee_class == ef.FEE_CLASS_NFA
+    assert first.participant_type == ef.PARTICIPANT_TYPE_NFA
+    assert first.covers == ("nfa",)
     assert first.per_side_usd == Decimal("0.01")
     assert type(first.per_side_usd) is Decimal
     assert first.effective_from == dt.date(2026, 7, 1)
@@ -168,7 +187,7 @@ def test_load_snapshots_refuses_a_raw_byte_that_changed(tmp_path: Path) -> None:
         ef.load_snapshots(raw)
 
 
-def test_build_writes_the_contract_and_prices_no_exchange_fee(tmp_path: Path) -> None:
+def test_build_writes_the_contract_and_prices_no_exchange_component(tmp_path: Path) -> None:
     raw = raw_folder(tmp_path)
     report = ef.build_exchange_fees(raw, tmp_path / "store")
     frame = pl.read_parquet(tmp_path / "store" / ef.DATASET / "data.parquet")
@@ -176,7 +195,12 @@ def test_build_writes_the_contract_and_prices_no_exchange_fee(tmp_path: Path) ->
     assert frame.schema["per_side_usd"] == pl.String
     assert frame.schema["effective_from"] == pl.Date
     assert frame.height == report.rows == 2 * len(ef.ROOTS)
-    assert report.rows_by_type == {"exchange": 0, "nfa": 2 * len(ef.ROOTS)}
+    assert report.rows_by_type == {
+        "exchange": 0,
+        "clearing": 0,
+        "nfa": 2 * len(ef.ROOTS),
+        "other": 0,
+    }
     assert report.rows_by_source == {
         ef.SOURCE_KIND_OFFICIAL: 2 * len(ef.ROOTS),
         ef.SOURCE_KIND_OWNER: 0,
@@ -184,6 +208,9 @@ def test_build_writes_the_contract_and_prices_no_exchange_fee(tmp_path: Path) ->
     # the decision this dataset encodes: no exchange fee is asserted by the build itself
     assert report.exchange_roots_priced == ()
     assert report.exchange_roots_missing == ef.ROOTS
+    assert report.unpriced_components == ("exchange", "clearing", "other")
+    assert report.roots_priced_by_component["exchange"] == ()
+    assert report.roots_priced_by_component["nfa"] == tuple(sorted(ef.ROOTS))
     assert frame.filter(pl.col("fee_type") == "exchange").height == 0
     manifest = ParquetDataStore(tmp_path / "store").manifest(ef.DATASET)
     assert "no exchange fees" in manifest.source
@@ -206,145 +233,292 @@ def test_build_refuses_to_overwrite_a_stored_dataset(tmp_path: Path) -> None:
         ef.build_exchange_fees(raw, tmp_path / "store")
 
 
-def test_build_counts_the_roots_an_owner_file_prices(tmp_path: Path) -> None:
+def test_build_counts_the_roots_and_components_an_owner_file_prices(tmp_path: Path) -> None:
     raw = raw_folder(tmp_path)
     path = owner_file(tmp_path, owner_csv(exchange_rows()))
     report = ef.build_exchange_fees(raw, tmp_path / "store", owner_provided=[path])
     assert set(report.exchange_roots_priced) == set(ef.ROOTS)
     assert report.exchange_roots_missing == ()
     assert report.rows_by_source[ef.SOURCE_KIND_OWNER] == len(ef.ROOTS)
+    assert report.roots_priced_by_component["exchange"] == tuple(sorted(ef.ROOTS))
+    assert report.unpriced_components == ("clearing", "other")
 
 
 # ------------------------------------------------------------------------------ the read API
 
 
-def test_fee_table_refuses_while_the_exchange_fee_is_unknown(tmp_path: Path) -> None:
+def test_a_component_with_no_row_is_missing_not_zero(tmp_path: Path) -> None:
+    # the build holds the NFA rows only: asking for exchange returns no key at all, never 0.00
     ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store")
     store = ParquetDataStore(tmp_path / "store")
-    with pytest.raises(ConfigurationError) as err:
-        ef.fee_table_as_of(store, dt.date(2026, 8, 3))
-    message = str(err.value)
-    assert "no per-side fee table for 2026-08-03" in message
-    assert "ES: no exchange fee is asserted" in message
-    assert "unknown, not zero" in message
-    assert "owner's fee file" in message
+    priced = ef.fee_rows_as_of(
+        store,
+        "ES",
+        dt.date(2026, 8, 3),
+        participant_type=ef.PARTICIPANT_TYPE_EXCHANGE,
+        components=("exchange", "nfa"),
+    )
+    assert "exchange" not in priced
+    amount, record_sha = priced["nfa"]
+    assert amount == Decimal("0.01")
+    assert type(amount) is Decimal
+    assert len(record_sha) == 64
 
 
-def test_fee_table_sums_exchange_and_nfa_in_exact_decimals(tmp_path: Path) -> None:
-    rows = exchange_rows(per_side_usd="1.38")
+def test_rows_are_priced_per_root_so_an_owner_file_with_es_alone_is_usable(tmp_path: Path) -> None:
+    path = owner_file(tmp_path, owner_csv([exchange_row()]))
+    ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
+    store = ParquetDataStore(tmp_path / "store")
+    es = ef.fee_rows_as_of(
+        store,
+        "ES",
+        dt.date(2026, 8, 3),
+        participant_type=ef.PARTICIPANT_TYPE_EXCHANGE,
+        components=("exchange",),
+    )
+    assert es["exchange"][0] == Decimal("0.77")
+    # NQ is simply not priced: the lookup no longer demands all nine roots
+    nq = ef.fee_rows_as_of(
+        store,
+        "NQ",
+        dt.date(2026, 8, 3),
+        participant_type=ef.PARTICIPANT_TYPE_EXCHANGE,
+        components=("exchange",),
+    )
+    assert nq == {}
+
+
+def test_an_unknown_root_is_refused_by_name(tmp_path: Path) -> None:
+    ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store")
+    store = ParquetDataStore(tmp_path / "store")
+    with pytest.raises(ConfigurationError, match="root 'GOLD' is not one of"):
+        ef.fee_rows_as_of(
+            store,
+            "GOLD",
+            dt.date(2026, 8, 3),
+            participant_type=ef.PARTICIPANT_TYPE_EXCHANGE,
+            components=("exchange",),
+        )
+
+
+def test_a_row_covering_several_components_is_charged_once(tmp_path: Path) -> None:
+    # a CME "Exchange Fees for Clearing & Trading" cell: one amount, two components
+    row = exchange_row(covers="exchange;clearing")
+    path = owner_file(tmp_path, owner_csv([row]))
+    ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
+    store = ParquetDataStore(tmp_path / "store")
+    priced = ef.fee_rows_as_of(
+        store,
+        "ES",
+        dt.date(2026, 8, 3),
+        participant_type=ef.PARTICIPANT_TYPE_EXCHANGE,
+        components=("exchange", "clearing"),
+    )
+    assert priced["exchange"] == priced["clearing"]
+    assert priced["exchange"][0] == Decimal("0.77")
+
+
+def test_the_stated_period_boundary_and_a_future_row_are_honoured(tmp_path: Path) -> None:
+    path = owner_file(tmp_path, owner_csv(exchange_rows()))
+    ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
+    store = ParquetDataStore(tmp_path / "store")
+    key = {"participant_type": ef.PARTICIPANT_TYPE_EXCHANGE, "components": ("nfa",)}
+    # the bylaw's own boundary: $.02 per round turn through 2027-06-30, $.04 after
+    assert ef.fee_rows_as_of(store, "ES", dt.date(2027, 6, 30), **key)["nfa"][0] == Decimal("0.01")
+    assert ef.fee_rows_as_of(store, "ES", dt.date(2027, 7, 1), **key)["nfa"][0] == Decimal("0.02")
+    # a date before the first stated period is a missing component, not a zero
+    assert ef.fee_rows_as_of(store, "ES", dt.date(2026, 6, 30), **key) == {}
+
+
+def test_a_rate_that_starts_later_is_invisible_before_its_date(tmp_path: Path) -> None:
+    # available_at = effective_from: a read for a date before the row starts cannot see it
+    path = owner_file(tmp_path, owner_csv([exchange_row(effective_from="2026-09-01")]))
+    ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
+    store = ParquetDataStore(tmp_path / "store")
+    key = {"participant_type": ef.PARTICIPANT_TYPE_EXCHANGE, "components": ("exchange",)}
+    assert ef.fee_rows_as_of(store, "ES", dt.date(2026, 8, 31), **key) == {}
+    assert ef.fee_rows_as_of(store, "ES", dt.date(2026, 9, 1), **key)["exchange"][0] == Decimal(
+        "0.77"
+    )
+
+
+def test_a_date_picks_its_own_historical_row(tmp_path: Path) -> None:
+    rows = [
+        exchange_row(
+            per_side_usd="0.51",
+            effective_from="2023-01-01",
+            effective_to="2023-12-31",
+            quote="SYNTHETIC TEST VALUE: 2023 ES exchange fee 0.51",
+        ),
+        exchange_row(
+            per_side_usd="0.63",
+            effective_from="2024-01-01",
+            quote="SYNTHETIC TEST VALUE: 2024 ES exchange fee 0.63",
+        ),
+    ]
     path = owner_file(tmp_path, owner_csv(rows))
     ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
     store = ParquetDataStore(tmp_path / "store")
-
-    table = ef.fee_table_as_of(store, dt.date(2026, 8, 3))
-    assert table["ES"] == Decimal("1.39")
-    assert type(table["ES"]) is Decimal
-    # a binary float would not land exactly on 1.39 for every root
-    assert all(amount == Decimal("1.39") for amount in table.values())
-    assert set(table) == set(ef.ROOTS)
-
-
-def test_fee_table_follows_the_stated_period_boundary(tmp_path: Path) -> None:
-    path = owner_file(tmp_path, owner_csv(exchange_rows()))
-    ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
-    store = ParquetDataStore(tmp_path / "store")
-    # the bylaw's own boundary: $.02 per round turn through 2027-06-30, $.04 after
-    assert ef.fee_table_as_of(store, dt.date(2027, 6, 30))["ES"] == Decimal("1.39")
-    assert ef.fee_table_as_of(store, dt.date(2027, 7, 1))["ES"] == Decimal("1.40")
-
-
-def test_fee_table_refuses_a_date_before_the_first_stated_period(tmp_path: Path) -> None:
-    path = owner_file(tmp_path, owner_csv(exchange_rows()))
-    ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
-    store = ParquetDataStore(tmp_path / "store")
-    with pytest.raises(ConfigurationError, match="2026-06-30"):
-        ef.fee_table_as_of(store, dt.date(2026, 6, 30))
-
-
-def test_fee_table_hides_a_rate_that_starts_later(tmp_path: Path) -> None:
-    # available_at = effective_from: a read for a date before the row starts cannot see it
-    path = owner_file(
-        tmp_path,
-        owner_csv(exchange_rows(effective_from="2026-09-01")),
+    key = {"participant_type": ef.PARTICIPANT_TYPE_EXCHANGE, "components": ("exchange",)}
+    assert ef.fee_rows_as_of(store, "ES", dt.date(2023, 7, 3), **key)["exchange"][0] == Decimal(
+        "0.51"
     )
+    assert ef.fee_rows_as_of(store, "ES", dt.date(2024, 7, 1), **key)["exchange"][0] == Decimal(
+        "0.63"
+    )
+
+
+def test_a_member_row_never_prices_a_non_member_request(tmp_path: Path) -> None:
+    # no extrapolation across participant types; an nfa row is the FCM member's pass-through
+    rows = [
+        exchange_row(participant_type="member"),
+        exchange_row(participant_type="non_member_customer"),
+    ]
+    path = owner_file(tmp_path, owner_csv(rows))
     ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
     store = ParquetDataStore(tmp_path / "store")
-    with pytest.raises(ConfigurationError, match="2026-08-31"):
-        ef.fee_table_as_of(store, dt.date(2026, 8, 31))
-    assert ef.fee_table_as_of(store, dt.date(2026, 9, 1))["ES"] == Decimal("1.39")
+    member = ef.fee_rows_as_of(
+        store,
+        "ES",
+        dt.date(2026, 8, 3),
+        participant_type="member",
+        components=("exchange", "nfa"),
+    )
+    assert member["exchange"][0] == Decimal("0.77")
+    assert "nfa" in member
+    customer = ef.fee_rows_as_of(
+        store,
+        "ES",
+        dt.date(2026, 8, 3),
+        participant_type="non_member_customer",
+        components=("exchange", "nfa"),
+    )
+    assert customer["exchange"][0] == Decimal("0.77")
+    unknown_class = ef.fee_rows_as_of(
+        store,
+        "ES",
+        dt.date(2026, 8, 3),
+        participant_type="proprietary_trader",
+        components=("exchange", "nfa"),
+    )
+    assert unknown_class.keys() == {"nfa"}
+
+
+def test_two_rows_covering_one_component_on_one_date_are_refused(tmp_path: Path) -> None:
+    # an overlapping partial coverage: one row prices exchange+clearing, another clearing alone
+    rows = [
+        exchange_row(covers="exchange;clearing"),
+        {
+            "root": "ES",
+            "fee_type": "clearing",
+            "participant_type": ef.PARTICIPANT_TYPE_EXCHANGE,
+            "covers": "clearing",
+            "per_side_usd": "0.11",
+            "effective_from": "2026-06-01",
+            "effective_to": "2026-12-31",
+            "quote": "SYNTHETIC TEST VALUE: clearing 0.11 per side",
+            "source_url": CME_PAGE,
+        },
+    ]
+    path = owner_file(tmp_path, owner_csv(rows))
+    with pytest.raises(ConfigurationError, match="overlaps"):
+        ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store", owner_provided=[path])
 
 
 def test_coverage_reports_the_intervals_the_rows_state(tmp_path: Path) -> None:
     ef.build_exchange_fees(raw_folder(tmp_path), tmp_path / "store")
     frame = pl.read_parquet(tmp_path / "store" / ef.DATASET / "data.parquet")
     coverage = ef.coverage_of(frame)
-    assert coverage[("ES", "nfa")] == [
+    assert coverage[("ES", ef.PARTICIPANT_TYPE_NFA, "nfa")] == [
         (dt.date(2026, 7, 1), dt.date(2027, 6, 30)),
         (dt.date(2027, 7, 1), None),
     ]
-    assert ("ES", "exchange") not in coverage
+    assert ("ES", ef.PARTICIPANT_TYPE_EXCHANGE, "exchange") not in coverage
 
 
 # --------------------------------------------------------------------------- the owner file
 
 
 def test_an_owner_row_without_a_quote_is_refused(tmp_path: Path) -> None:
-    path = owner_file(tmp_path, owner_csv(exchange_rows(quote="")))
+    path = owner_file(tmp_path, owner_csv([exchange_row(quote="")]))
     with pytest.raises(ConfigurationError, match="quote is empty"):
         ef.load_owner_provided_csv(path)
 
 
+def test_an_owner_row_without_a_source_url_is_refused(tmp_path: Path) -> None:
+    path = owner_file(tmp_path, owner_csv([exchange_row(source_url="")]))
+    with pytest.raises(ConfigurationError, match="source_url is required"):
+        ef.load_owner_provided_csv(path)
+
+
 def test_an_owner_file_without_the_supplier_is_refused(tmp_path: Path) -> None:
-    path = owner_file(tmp_path, owner_csv(exchange_rows()))
+    path = owner_file(tmp_path, owner_csv([exchange_row()]))
     with pytest.raises(ConfigurationError, match="must name who supplied the file"):
         ef.load_owner_provided_csv(path, provided_by="")
 
 
 def test_an_owner_file_with_an_unknown_column_is_refused(tmp_path: Path) -> None:
-    text = owner_csv(exchange_rows())
+    text = owner_csv([exchange_row()])
     path = owner_file(tmp_path, text)
     path.write_text(text.replace("quote,", "quote,fee_bps,", 1), encoding="utf-8")
     with pytest.raises(ConfigurationError, match="unknown column"):
         ef.load_owner_provided_csv(path)
 
 
+def test_an_owner_file_without_the_covers_column_is_refused(tmp_path: Path) -> None:
+    header = ef.owner_template().replace("covers,", "")
+    text = owner_csv([exchange_row()], header=header)
+    path = owner_file(tmp_path, text)
+    with pytest.raises(ConfigurationError, match="missing column"):
+        ef.load_owner_provided_csv(path)
+
+
+def test_covers_must_contain_the_rows_own_fee_type(tmp_path: Path) -> None:
+    path = owner_file(tmp_path, owner_csv([exchange_row(covers="clearing")]))
+    with pytest.raises(ConfigurationError, match="does not contain its own fee_type"):
+        ef.load_owner_provided_csv(path)
+
+
+def test_a_covers_name_that_is_not_a_component_is_refused(tmp_path: Path) -> None:
+    path = owner_file(tmp_path, owner_csv([exchange_row(covers="exchange;exchange_tax")]))
+    with pytest.raises(ConfigurationError, match="is not one of"):
+        ef.load_owner_provided_csv(path)
+
+
 def test_an_owner_row_with_the_wrong_venue_is_refused(tmp_path: Path) -> None:
-    rows = exchange_rows()
-    rows[0]["venue"] = "CBOT"  # ES trades on CME
-    path = owner_file(tmp_path, owner_csv(rows))
+    path = owner_file(tmp_path, owner_csv([exchange_row(venue="CBOT")]))
     with pytest.raises(ConfigurationError, match="ES trades on CME"):
         ef.load_owner_provided_csv(path)
 
 
 def test_an_owner_row_for_an_unknown_root_is_refused(tmp_path: Path) -> None:
-    rows = exchange_rows()
-    rows[0]["root"] = "GOLD"
+    path = owner_file(tmp_path, owner_csv([exchange_row(root="GOLD")]))
     with pytest.raises(ConfigurationError, match="root 'GOLD' is not one of"):
-        ef.load_owner_provided_csv(owner_file(tmp_path, owner_csv(rows)))
+        ef.load_owner_provided_csv(path)
 
 
 def test_an_owner_file_carries_the_file_sha_and_the_supplier(tmp_path: Path) -> None:
-    path = owner_file(tmp_path, owner_csv(exchange_rows()))
+    path = owner_file(tmp_path, owner_csv([exchange_row()]))
     rows, sha = ef.load_owner_provided_csv(path, provided_by="the owner")
     assert sha == hashlib.sha256(path.read_bytes()).hexdigest()
     assert {row.snapshot_sha256 for row in rows} == {sha}
     assert {row.provided_by for row in rows} == {"the owner"}
     assert {row.source_kind for row in rows} == {ef.SOURCE_KIND_OWNER}
-    assert rows[0].per_side_usd == Decimal("1.38")
+    assert {row.source_url for row in rows} == {CME_PAGE}
+    assert rows[0].per_side_usd == Decimal("0.77")
+    assert rows[0].covers == ("exchange",)
 
 
 def test_overlapping_owner_rows_are_refused(tmp_path: Path) -> None:
     rows = [
         *exchange_rows(),
-        {
-            "root": "NQ",
-            "fee_type": "exchange",
-            "fee_class": ef.FEE_CLASS_EXCHANGE,
-            "per_side_usd": "1.40",
-            "effective_from": "2026-06-01",
-            "effective_to": "2026-12-31",
-            "quote": "Non-Members / Globex / E-mini Nasdaq-100 Futures: $1.40",
-        },
+        exchange_row(
+            root="NQ",
+            per_side_usd="0.88",
+            effective_from="2026-06-01",
+            effective_to="2026-12-31",
+            quote="SYNTHETIC TEST VALUE: NQ exchange fee 0.88",
+        ),
     ]
     path = owner_file(tmp_path, owner_csv(rows))
     with pytest.raises(ConfigurationError, match="overlaps"):
@@ -363,3 +537,4 @@ def test_record_sha256_is_recomputable_from_a_stored_row(tmp_path: Path) -> None
     changed = dict(stored, per_side_usd="0.02")
     assert ef.record_sha256(changed) != stored["record_sha256"]
     assert ef.record_sha256(dict(stored, quote=stored["quote"] + " ")) != stored["record_sha256"]
+    assert ef.record_sha256(dict(stored, covers="nfa;other")) != stored["record_sha256"]

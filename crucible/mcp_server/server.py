@@ -648,6 +648,7 @@ def build_server() -> MCPServer:
         execution_mode: Literal["automated", "manual"],
         payout_policy: Literal["max_eligible", "none"] = "max_eligible",
         cost_assumption: str | None = None,
+        fee_participant_type: str | None = None,
         scenarios: Literal["primary", "all"] = "primary",
         news_dataset: str = "econ_events_v2",
         exchange_fees_dataset: str = "exchange_fees_v1",
@@ -669,8 +670,12 @@ def build_server() -> MCPServer:
         session-calendar coverage gap, the counterfactual application to pre-2025 data) whenever
         anything qualifies it, and `practical_eligibility` is judged for `execution_mode`, so a
         mechanically successful attempt under a compliance blocker is never a practically valid
-        pass. `scenarios="all"` adds one sensitivity scenario per conflict alternative beside the
-        primary. Not a submission: no trial is recorded. No threshold, no verdict."""
+        pass. `cost_assumption` is the path of a cost-assumption YAML file: it prices exactly the
+        per-component cost gaps it names, keeps the estimate conditional and is never a firm value.
+        `fee_participant_type` is the rate class the fees a commission EXCLUDES are priced for, and
+        is required as soon as a component is declared excluded. `scenarios="all"` adds one
+        sensitivity scenario per conflict alternative beside the primary. Not a submission: no
+        trial is recorded. No threshold, no verdict."""
         options: dict[str, Option] = {
             "config": absolute(config),
             "ruleset": absolute(ruleset) or ruleset,
@@ -685,7 +690,9 @@ def build_server() -> MCPServer:
             "json": True,
         }
         if cost_assumption is not None:
-            options["cost_assumption"] = cost_assumption
+            options["cost_assumption"] = absolute(cost_assumption) or cost_assumption
+        if fee_participant_type is not None:
+            options["fee_participant_type"] = fee_participant_type
         if home is not None:
             options["home"] = absolute(home)
         if artifacts is not None:

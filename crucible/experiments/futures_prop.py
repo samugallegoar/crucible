@@ -109,7 +109,11 @@ from crucible.experiments.futures_stats import (
     percentile_interval,
 )
 from crucible.prop.attempt import AttemptResult, practical_eligibility, simulate_attempt
-from crucible.prop.costs import ExchangeFeeSource, store_exchange_fees
+from crucible.prop.costs import (
+    CostAssumption,
+    load_cost_assumption,
+    store_component_fees,
+)
 from crucible.prop.coverage import (
     EvaluationStatus,
     evaluation_status,
@@ -142,7 +146,7 @@ EVALUATION_ID_HEX: Final = 16
 SCHEMA_VERSION: Final = 1
 """Version of this artifact layout: its file set, its attempt columns and its summary fields."""
 
-EVALUATION_VERSION: Final = "prop-evaluation:1"
+EVALUATION_VERSION: Final = "prop-evaluation:2"
 """The semantics of a prop evaluation, in the evaluation id: a change to how an attempt is
 classified or to how an interval is built is a new version, never a silent re-reading of an old
 id."""
@@ -216,6 +220,20 @@ PROP_ATTEMPTS_SCHEMA: dict[str, pl.DataType] = {
     "fees_usd": pl.Decimal(38, 6),  # USD; every fee of the attempt, the four kinds above
     "net_cash_usd": pl.Decimal(38, 6),  # USD; payouts_usd - fees_usd (see cash_estimate_status)
     "cash_estimate_status": pl.String(),  # exact | conditional | upper_bound | unavailable
+    "commission_usd": pl.Decimal(38, 6),  # nullable: USD per side the firm's commission charges
+    "commission_status": pl.String(),  # known | unknown | assumption (never read as zero)
+    "exchange_usd": pl.Decimal(38, 6),  # nullable: USD per side added for the exchange fee
+    "exchange_status": pl.String(),  # included|excluded_priced|excluded_unpriced|unknown|assumption
+    "clearing_usd": pl.Decimal(38, 6),  # nullable: USD per side added for the clearing fee
+    "clearing_status": pl.String(),  # included|excluded_priced|excluded_unpriced|unknown|assumption
+    "nfa_usd": pl.Decimal(38, 6),  # nullable: USD per side added for the NFA assessment
+    "nfa_status": pl.String(),  # included|excluded_priced|excluded_unpriced|unknown|assumption
+    "other_usd": pl.Decimal(38, 6),  # nullable: USD per side added for any other per-side charge
+    "other_status": pl.String(),  # included|excluded_priced|excluded_unpriced|unknown|assumption
+    "cost_status": pl.String(),  # complete | conditional | unavailable (see cost_gaps)
+    "cost_gaps": pl.String(),  # components no source could price, joined by ';' ('' when none)
+    "cost_assumption_sha256": pl.String(),  # nullable: SHA-256 of the cost-assumption file used
+    "fee_participant_type": pl.String(),  # nullable: rate class the excluded components used
     "coverage_gap_count": pl.Int64(),  # news and session-calendar coverage gaps of the attempt
     "coverage_gaps": pl.String(),  # the gaps themselves, joined by ';' ('' when none)
     "estimate_status": pl.String(),  # complete | conditional | partial | unavailable
@@ -342,7 +360,34 @@ class PropScenarioSummary(_Strict):
     estimate_status: str
     estimate_reasons: list[str]
     practical_eligibility: PropPracticalEligibility
+    cost_components: list[PropCostComponents]
     warnings: list[str]
+
+
+class PropCostAssumption(_Strict):
+    """The cost-assumption file a run used: its identity, and what it priced (ADR-0107 s10)."""
+
+    name: str
+    sha256: str
+    provided_by: str
+    status: str
+    description: str
+    evidence: str
+    source_path: str
+    roots: list[str]
+    unused_roots: list[str]
+    priced_components: list[str]
+    remaining_gaps: list[str]
+
+
+class PropCostComponents(_Strict):
+    """The per-component cost status of one root: declared, and how the attempts priced it."""
+
+    root: str
+    participant_type: str | None
+    components: dict[str, str]
+    cost_status: str
+    gaps: list[str]
 
 
 class PropNewsCoverage(_Strict):
@@ -385,7 +430,9 @@ class PropEvaluationSummary(_Strict):
     horizon_trading_days: int
     execution_mode: str
     payout_policy: str
-    cost_assumption: str | None
+    cost_assumption: PropCostAssumption | None
+    cost_components: list[PropCostComponents]
+    fee_participant_type: str | None
     scenarios_requested: Literal["primary", "all"]
     start_dates: dict[str, object]
     ruleset: PropRulesetReference
@@ -846,6 +893,49 @@ def _funded_document(passing: Sequence[_Classified]) -> PropFunded:
     )
 
 
+def _cost_components_document(
+    classifications: Sequence[_Classified],
+) -> list[PropCostComponents]:
+    """The per-component cost status of each root the attempts priced (ADR-0107 section 10).
+
+    One entry per root, listing the five components (``commission`` plus ``exchange``,
+    ``clearing``, ``nfa``, ``other``) with the status the attempt recorded, and the gaps that
+    remained. A component priced differently by different starts is ``mixed``: the table reports
+    the disagreement instead of picking one.
+    """
+    seen: dict[str, dict[str, set[str]]] = {}
+    gaps: dict[str, set[str]] = {}
+    statuses: dict[str, set[str]] = {}
+    participant: dict[str, str | None] = {}
+    for item in classifications:
+        application = item.attempt.commissions
+        root = application.root
+        entries = seen.setdefault(root, {})
+        for charge in application.components:
+            entries.setdefault(charge.component, set()).add(charge.status)
+        gaps.setdefault(root, set()).update(application.cost_gaps)
+        statuses.setdefault(root, set()).add(application.cost_status)
+        if application.participant_type is not None:
+            participant[root] = application.participant_type
+    document: list[PropCostComponents] = []
+    for root in sorted(seen):
+        components = {
+            name: (next(iter(values)) if len(values) == 1 else "mixed")
+            for name, values in seen[root].items()
+        }
+        cost_statuses = statuses.get(root, set())
+        document.append(
+            PropCostComponents(
+                root=root,
+                participant_type=participant.get(root),
+                components=components,
+                cost_status=(next(iter(cost_statuses)) if len(cost_statuses) == 1 else "mixed"),
+                gaps=sorted(gaps.get(root, set())),
+            )
+        )
+    return document
+
+
 def _scenario_summary(
     scenario: RulesetScenario,
     classifications: Sequence[_Classified],
@@ -1001,6 +1091,7 @@ def _scenario_summary(
         ),
         estimate_status=estimate_status,
         estimate_reasons=estimate_reasons,
+        cost_components=_cost_components_document(classifications),
         practical_eligibility=PropPracticalEligibility(
             execution_mode=execution_mode,
             status=eligibility,
@@ -1026,6 +1117,7 @@ def _scenario_summary(
 def _attempt_row(item: _Classified, horizon_trading_days: int) -> dict[str, object]:
     """One ``attempts.parquet`` row: the attempt, its class and its coverage."""
     attempt = item.attempt
+    application = attempt.commissions
     gaps = [*attempt.news_coverage_gaps, *attempt.session_calendar_gaps]
     return {
         "scenario_id": item.scenario.scenario_id,
@@ -1052,6 +1144,20 @@ def _attempt_row(item: _Classified, horizon_trading_days: int) -> dict[str, obje
         "fees_usd": attempt.fees.total_usd,
         "net_cash_usd": attempt.net_cash_usd,
         "cash_estimate_status": attempt.cash_estimate_status,
+        "commission_usd": application.component("commission").usd,
+        "commission_status": application.component("commission").status,
+        "exchange_usd": application.component("exchange").usd,
+        "exchange_status": application.component("exchange").status,
+        "clearing_usd": application.component("clearing").usd,
+        "clearing_status": application.component("clearing").status,
+        "nfa_usd": application.component("nfa").usd,
+        "nfa_status": application.component("nfa").status,
+        "other_usd": application.component("other").usd,
+        "other_status": application.component("other").status,
+        "cost_status": application.cost_status,
+        "cost_gaps": ";".join(application.cost_gaps),
+        "cost_assumption_sha256": application.cost_assumption_sha256,
+        "fee_participant_type": application.participant_type,
         "coverage_gap_count": len(gaps),
         "coverage_gaps": ";".join(gaps),
         "estimate_status": attempt.estimate_status,
@@ -1196,12 +1302,13 @@ def evaluation_basis(
     horizon_trading_days: int,
     execution_mode: str,
     payout_policy: str,
-    cost_assumption: str | None,
+    cost_assumption: CostAssumption | None,
     scenarios_requested: str,
     news_dataset: str,
     news_hash: str,
     exchange_fees_dataset: str,
     exchange_fees_hash: str,
+    participant_type: str | None = None,
 ) -> str:
     """The text the evaluation id hashes: every input that can change a number or a label."""
     return "|".join(
@@ -1211,7 +1318,9 @@ def evaluation_basis(
             f"horizon={horizon_trading_days}",
             f"execution_mode={execution_mode}",
             f"payout_policy={payout_policy}",
-            f"cost_assumption={cost_assumption or ''}",
+            f"cost_assumption={cost_assumption.name if cost_assumption else ''}"
+            f":{cost_assumption.sha256 if cost_assumption else ''}",
+            f"fee_participant_type={participant_type or ''}",
             f"scenarios={scenarios_requested}",
             f"news={news_dataset}:{news_hash}",
             f"exchange_fees={exchange_fees_dataset}:{exchange_fees_hash}",
@@ -1235,8 +1344,30 @@ def _content_hash(store: ParquetDataStore, dataset: str) -> str | None:
 
 
 def _needs_exchange_fees(rulesets: Iterable[PropRuleset]) -> bool:
-    """Whether any scenario's commission EXCLUDES the exchange and regulatory fees."""
-    return any(ruleset.commissions.exchange_fees_included is False for ruleset in rulesets)
+    """Whether any scenario's commission declares a component the firm charges ON TOP of it."""
+    return any(bool(ruleset.commissions.excluded_components) for ruleset in rulesets)
+
+
+def _refuse_missing_participant_type(
+    rulesets: Iterable[PropRuleset], *, selected: PropRuleset, value: str | None
+) -> None:
+    """Refuse ``fee_participant_type is None`` when a ruleset prices a component on top.
+
+    The participant type is a RUN parameter because a ruleset never states one, and the fee dataset
+    prices a rate class: without it an ``excluded`` component cannot be priced at all, so the run
+    stops here instead of reporting every attempt as a gap.
+    """
+    excluded = sorted(
+        {name for ruleset in rulesets for name in ruleset.commissions.excluded_components}
+    )
+    if excluded and value is None:
+        msg = (
+            f"ruleset {selected.ruleset_id} v{selected.version} declares {excluded} charged on top "
+            "of the commission, so the run needs fee_participant_type (--fee-participant-type), "
+            "e.g. non_member_customer: the fee dataset prices a participant type and the ruleset "
+            "never states one"
+        )
+        raise ConfigurationError(msg)
 
 
 def _replace(directory: Path, overwrite: bool) -> None:
@@ -1277,7 +1408,8 @@ def run_prop_evaluation(
     horizon_trading_days: int,
     execution_mode: ExecutionMode,
     payout_policy: str = "max_eligible",
-    cost_assumption: str | None = None,
+    cost_assumption: str | Path | None = None,
+    fee_participant_type: str | None = None,
     scenarios: str = "primary",
     news_dataset: str = "econ_events_v2",
     exchange_fees_dataset: str = "exchange_fees_v1",
@@ -1293,8 +1425,12 @@ def run_prop_evaluation(
     artifact and its content hash locks the evaluation id. ``horizon_trading_days`` (H) is the
     analyst's horizon, refused when it is shorter than any phase's own limit. ``execution_mode`` is
     required because practical eligibility depends on it, and ``payout_policy`` is the trader's
-    choice between taking every eligible payout and none. ``cost_assumption`` names the assumption
-    that makes an unknown cost a number (without it the cash statistics are ``unavailable``).
+    choice between taking every eligible payout and none. ``cost_assumption`` is the PATH of a
+    cost-assumption YAML file (``crucible.prop.costs.load_cost_assumption``): the user's explicit,
+    unverified statement that prices the exact cost gaps it names, without which the cash statistics
+    are ``unavailable``. ``fee_participant_type`` is the rate class the components the firm charges
+    on top of the commission are priced for; the ruleset never states one, so it is required as soon
+    as a component is declared ``excluded``, and using it keeps the cost ``conditional``.
 
     ``scenarios``: ``primary`` evaluates the selected ruleset only; ``all`` adds one full
     sensitivity scenario per conflict alternative (ADR-0107 section 7), reported beside the
@@ -1347,7 +1483,8 @@ def run_prop_evaluation(
     _refuse_horizon(ruleset, plan, horizon_trading_days, calendar)
 
     # the auxiliary datasets: the calendar is always read (its coverage labels every attempt); the
-    # fee table only when a commission excludes the exchange and regulatory fees
+    # fee table only when a component is charged on top of the commission
+    assumption = None if cost_assumption is None else load_cost_assumption(Path(cost_assumption))
     store = ParquetDataStore(store_root)
     calendar_coverage = econ_calendar_coverage(store, dataset=DatasetId(news_dataset))
     event_types = calendar_event_types(item.ruleset for item in chosen)
@@ -1356,11 +1493,14 @@ def run_prop_evaluation(
     news_events = _news_events(store, news_dataset, event_types, start_ns, end_ns)
     news_coverage: Coverage = covered_intervals(calendar_coverage, event_types)
     news_gaps = _calendar_gaps(calendar_coverage, event_types, start_ns, end_ns)
-    exchange_fees: ExchangeFeeSource | None = None
+    fee_source = None
     if _needs_exchange_fees(item.ruleset for item in chosen):
-        exchange_fees = store_exchange_fees(store, dataset=exchange_fees_dataset)
-    fees_hash = _content_hash(store, exchange_fees_dataset) if exchange_fees is not None else None
+        fee_source = store_component_fees(store, dataset=exchange_fees_dataset)
+    fees_hash = _content_hash(store, exchange_fees_dataset) if fee_source is not None else None
     news_hash = _content_hash(store, news_dataset)
+    _refuse_missing_participant_type(
+        (item.ruleset for item in chosen), selected=chosen[0].ruleset, value=fee_participant_type
+    )
 
     run_basis = run_id_basis(config, prepared.refs, _session_table_hash(calendar))
     run_id = f"{RUN_ID_PREFIX}{hashlib.sha256(run_basis.encode('utf-8')).hexdigest()[:RUN_ID_HEX]}"
@@ -1370,12 +1510,13 @@ def run_prop_evaluation(
         horizon_trading_days=horizon_trading_days,
         execution_mode=execution_mode,
         payout_policy=payout_policy,
-        cost_assumption=cost_assumption,
+        cost_assumption=assumption,
         scenarios_requested=scenarios,
         news_dataset=news_dataset,
         news_hash=news_hash or "",
         exchange_fees_dataset=exchange_fees_dataset,
         exchange_fees_hash=fees_hash or "",
+        participant_type=fee_participant_type,
     )
     evaluation_id = evaluation_id_of(basis)
     evaluation_dir = artifacts_root / evaluation_id
@@ -1401,8 +1542,9 @@ def run_prop_evaluation(
                 execution_mode=execution_mode,
                 news_events=news_events,
                 news_coverage=news_coverage,
-                exchange_fees=exchange_fees,
-                cost_assumption=cost_assumption,
+                fee_source=fee_source,
+                cost_assumption=assumption,
+                participant_type=fee_participant_type,
                 scenario_id=scenario.scenario_id,
             )
             classifications.append(
@@ -1423,7 +1565,7 @@ def run_prop_evaluation(
             evaluation_id=evaluation_id,
             horizon_trading_days=horizon_trading_days,
             execution_mode=execution_mode,
-            cost_assumption=cost_assumption,
+            cost_assumption=None if assumption is None else assumption.name,
             resamples=config.statistics.resamples,
             confidence=config.statistics.confidence,
         )
@@ -1445,7 +1587,34 @@ def run_prop_evaluation(
         horizon_trading_days=horizon_trading_days,
         execution_mode=execution_mode,
         payout_policy=payout_policy,
-        cost_assumption=cost_assumption,
+        cost_assumption=(
+            None
+            if assumption is None
+            else PropCostAssumption(
+                name=assumption.name,
+                sha256=assumption.sha256,
+                provided_by=assumption.provided_by,
+                status=assumption.status,
+                description=assumption.description,
+                evidence=assumption.evidence,
+                source_path=assumption.source_path,
+                roots=list(assumption.roots),
+                unused_roots=list(assumption.unused_roots(sorted(roots))),
+                priced_components=sorted(
+                    {
+                        charge.component
+                        for item in classifications
+                        for charge in item.attempt.commissions.components
+                        if charge.status == "assumption"
+                    }
+                ),
+                remaining_gaps=sorted(
+                    {gap for item in classifications for gap in item.attempt.commissions.cost_gaps}
+                ),
+            )
+        ),
+        cost_components=_cost_components_document(classifications),
+        fee_participant_type=fee_participant_type,
         scenarios_requested=_scenario_mode(scenarios),
         start_dates={
             "count": len(plan.start_dates),
@@ -1479,7 +1648,7 @@ def run_prop_evaluation(
         ),
         exchange_fees=(
             None
-            if exchange_fees is None
+            if fee_source is None
             else {
                 "dataset": exchange_fees_dataset,
                 "content_hash": fees_hash or "",
@@ -1521,7 +1690,11 @@ def run_prop_evaluation(
         },
         "execution_mode": execution_mode,
         "payout_policy": payout_policy,
-        "cost_assumption": cost_assumption,
+        "cost_assumption": (
+            None if assumption is None else summary.model_dump(mode="json")["cost_assumption"]
+        ),
+        "cost_components": summary.model_dump(mode="json")["cost_components"],
+        "fee_participant_type": fee_participant_type,
         "scenarios_requested": scenarios,
         "ruleset": {
             "file": ruleset_file.name,

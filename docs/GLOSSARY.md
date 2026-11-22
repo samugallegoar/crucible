@@ -548,3 +548,26 @@ rolling window of M days (`calendar_days` or `trading_days`), where a qualifying
 `qualifies_if` predicate (minimum trades, minimum absolute or signed P&L). It is the mirror of
 `inactivity` (a maximum gap since the last traded day) and its violation action is explicit
 (`fail` or `close_account`). A window is judged only once it is full, at that rule-day's close.
+
+**Cost component** — one of the per-side charges an execution costs a prop-firm account, recorded
+separately (ADR-0107 section 10 as amended): the brokerage **commission** (the firm's
+`per_side_usd`), the **exchange** fee, the **clearing** fee, the **nfa** assessment and **other**.
+A ruleset declares, for each of the four non-commission components, whether the firm's commission
+contains it (`included`), charges it on top (`excluded`) or does not say (`unknown`). A component
+the sources do not state is a GAP, never a zero, and the cost total is never presented as complete
+while one is unknown or unpriced.
+
+**Participant type** — the rate class a fee row prices (`non_member_customer`, `member`, …) and the
+class a run passes to price the components a commission excludes (`--fee-participant-type`, MCP
+`fee_participant_type`). A ruleset never states one, so it is a RUN parameter; no fee is carried
+across participant types, with one stated exception: an `nfa` row is the FCM member's pass-through
+assessment (`fcm_member_assessment`) and prices any requested type. Using an assumed participant type
+keeps the cost estimate `conditional` (`participant type assumed: <x>`).
+
+**Cost-assumption file** — the YAML a user passes to price the cost gaps the sources leave
+(`--cost-assumption FILE`): `name`, `description`, `provided_by`, `status: unverified`, `evidence`
+and `amounts` keyed by root, each root a list of `{covers, per_side_usd}`. It prices only the root
+and components it names (no extrapolation), an `unknown` component it prices is ADDED (the
+pessimistic direction), it may not override an `included` or an already-priced `excluded` component,
+and it never turns a gap into a complete cost: the estimate is `conditional`, and the file's SHA-256
+plus the gaps it priced and the gaps it left are recorded in the artifact.

@@ -13,7 +13,7 @@ example.invalid URLs, ``synthetic: true`` on every attribution) and the ES tick 
 5. ``payout.min_new_profit_share_of_request`` lowers the request.
 6. ``consistency`` numerator and denominator windows declared separately.
 7. A conflict alternative of ``absent`` removes the rule from that scenario.
-8. ``commissions.includes_exchange_and_regulatory_fees`` with an ``ExchangeFeeSource``.
+8. ``commissions.components`` with a ``ComponentFeeSource``: per-component costs.
 9. A session-relative ``flat_by`` follows the CME calendar's early close.
 """
 
@@ -45,15 +45,32 @@ from crucible.prop.attempt import (
     simulate_attempt,
 )
 from crucible.prop.costs import (
-    ExchangeFeeRow,
-    ExchangeFeeTable,
-    store_exchange_fees,
+    ComponentFeeRow,
+    ComponentFeeTable,
+    store_component_fees,
 )
 from crucible.prop.coverage import RuleCoverageRow, rule_coverage
 from crucible.prop.news import NewsEvent
 from crucible.prop.overlay import PropAccountOverlay
 from crucible.prop.ruleset import Attribution, PropRuleset, threshold_level
 from crucible.prop.scenarios import scenarios
+
+_COMPONENTS_ALL_IN = {
+    name: {"status": "included", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four cost components are all inside it (synthetic, all-in)."""
+_COMPONENTS_EXCLUDED = {
+    name: {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission that excludes every component: each is charged on top (synthetic)."""
+_COMPONENTS_UNKNOWN = {
+    name: {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four components the source does not state (synthetic)."""
+
 
 TICK = 12_500_000
 _NS = 1_000_000_000
@@ -97,7 +114,7 @@ def _ruleset(
         "commissions": commissions
         or {
             "status": "known",
-            "includes_exchange_and_regulatory_fees": True,
+            "components": _COMPONENTS_ALL_IN,
             "per_side_usd": {"ES": "2.00"},
             "platform": None,
             "source": source,
@@ -249,7 +266,7 @@ def test_an_unknown_payout_cap_pays_what_the_other_terms_allow_and_says_upper_bo
     assert cash_estimate(
         payouts_modeled=True,
         payout_cap_unknown=True,
-        costs_available=True,
+        cost_status="complete",
         cost_assumption=None,
     ) == ("upper_bound", (PAYOUT_CAP_UNKNOWN,))
 
@@ -744,161 +761,204 @@ def test_an_absent_conflict_alternative_removes_the_rule_from_its_scenario() -> 
     assert generated[1].label == "sensitivity"
 
 
-# --------------------------------------------- 8. exchange and regulatory fees
+# --------------------------------------------- 8. per-component execution costs
 
-_FEE_TABLE = ExchangeFeeTable(
+_FEE_TABLE = ComponentFeeTable(
     rows=(
-        ExchangeFeeRow(
+        ComponentFeeRow(
             root="ES",
+            fee_type="exchange",
+            participant_type="non_member_customer",
+            covers=("exchange", "clearing"),
             per_side_usd=Decimal("1.27"),
             effective_from=dt.date(2024, 1, 1),
         ),
     ),
     source_sha256="1" * 64,
 )
+"""One synthetic row covering BOTH the exchange and the clearing fee, at 1.27 per side."""
 
 
-def test_a_commission_that_excludes_the_exchange_fees_adds_them_from_the_table() -> None:
-    """Per side: commission 2.00 and an exchange-and-regulatory fee of 1.25 + 0.02 = 1.27.
+def test_a_commission_that_excludes_a_component_adds_it_from_the_fee_table() -> None:
+    """Per side: commission 2.00 plus a row covering exchange and clearing at 1.27.
 
-    With ``includes_exchange_and_regulatory_fees: false`` and the table the run pays 2.00 + 1.27 =
-    3.27 per contract per side; without the table, or when the table has no ES row for the date,
-    the cost is a named gap and the cash statistic is unavailable; ``true`` keeps the 2.00 and
-    never charges an exchange fee.
+    One row covers two components and is charged ONCE, so the run pays 2.00 + 1.27 = 3.27 per
+    contract per side. ``unknown`` components are gaps and an all-``included`` commission keeps the
+    2.00 and adds nothing; without the table, or when it has no ES row for the date, the excluded
+    component is a named gap and the cash statistic is unavailable.
     """
-    base = _ruleset(
+    costs = CostSchedule(commission=Decimal("9.99"), exchange_fee=Decimal("9.99"))
+    excluded = _ruleset(
         [],
         commissions={
             "status": "known",
-            "includes_exchange_and_regulatory_fees": False,
+            "components": _COMPONENTS_EXCLUDED,
             "per_side_usd": {"ES": "2.00"},
             "platform": None,
             "source": _source().model_dump(mode="json"),
         },
     )
-    costs = CostSchedule(commission=Decimal("9.99"), exchange_fee=Decimal("9.99"))
-    schedule, application, available, gap = _commissions_for(
-        base,
+    schedule, application = _commissions_for(
+        _unknowning(excluded),
         costs,
         "ES",
         None,
-        exchange_fees=_FEE_TABLE,
+        fee_source=_FEE_TABLE,
+        participant_type="non_member_customer",
         when=dt.date(2024, 1, 8),
     )
     assert schedule.commission == Decimal("2.00")
     assert schedule.exchange_fee == Decimal("1.27")
-    assert schedule.regulatory_fee == Decimal("0")
+    # one row, two components: charged once, so the clearing component adds nothing of its own
+    assert application.component("clearing").status == "covered_by_row"
     assert schedule.clearing_fee == Decimal("0")
-    assert application.exchange_fee_usd == Decimal("1.27")
-    assert application.exchange_fee_source_sha256 == "1" * 64
-    assert (available, gap) == (True, None)
+    assert schedule.regulatory_fee == Decimal("0")
+    assert application.component("exchange").usd == Decimal("1.27")
+    assert application.component("exchange").status == "excluded_priced"
+    assert application.component("nfa").status == "unknown"
+    assert application.cost_status == "unavailable"
+    assert application.cost_gaps == ("nfa", "other")
+    assert application.participant_type == "non_member_customer"
 
-    _, without, available, gap = _commissions_for(
-        base, costs, "ES", None, exchange_fees=None, when=dt.date(2024, 1, 8)
+    # an excluded component with no participant type cannot be priced at all: refused, by name
+    with pytest.raises(ConfigurationError, match="fee_participant_type"):
+        _commissions_for(_unknowning(excluded), costs, "ES", None, when=dt.date(2024, 1, 8))
+    _, blind = _commissions_for(
+        _unknowning(excluded),
+        costs,
+        "ES",
+        None,
+        participant_type="non_member_customer",
+        when=dt.date(2024, 1, 8),
     )
-    assert available is False
-    assert gap is not None
-    assert "no exchange fee table" in gap
-    assert without.fees_incomplete == gap
+    assert blind.component("exchange").status == "excluded_unpriced"
+    assert "no fee dataset was given" in (blind.fees_incomplete or "")
 
-    _, uncovered, available, gap = _commissions_for(
-        base, costs, "ES", None, exchange_fees=_FEE_TABLE, when=dt.date(2023, 12, 1)
+    _, uncovered = _commissions_for(
+        _unknowning(excluded),
+        costs,
+        "ES",
+        None,
+        fee_source=_FEE_TABLE,
+        participant_type="non_member_customer",
+        when=dt.date(2023, 12, 1),
     )
-    assert available is False
-    assert gap is not None
-    assert "no row for ES on 2023-12-01" in gap
-    assert uncovered.exchange_fee_usd == Decimal("0")
+    assert uncovered.component("exchange").usd is None
+    assert "no exchange row for ES on 2023-12-01" in (uncovered.fees_incomplete or "")
 
-    included = _ruleset([])  # the helper's default: includes_exchange_and_regulatory_fees true
-    schedule, application, available, gap = _commissions_for(
+    included = _ruleset([])  # the helper's default: every component included
+    schedule, application = _commissions_for(
         included,
         costs,
         "ES",
         None,
-        exchange_fees=_FEE_TABLE,
+        fee_source=_FEE_TABLE,
         when=dt.date(2024, 1, 8),
     )
     assert schedule.commission == Decimal("2.00")
     assert schedule.exchange_fee == Decimal("0")
-    assert (available, gap) == (True, None)
+    assert application.cost_status == "complete"
 
-    with pytest.raises(ValidationError, match="includes_exchange_and_regulatory_fees"):
+
+def _unknowning(ruleset: PropRuleset) -> PropRuleset:
+    """The same ruleset with only the exchange and clearing components excluded.
+
+    The four-component helper above excludes every component; this narrows it so the arithmetic of
+    one test names exactly which components it prices.
+    """
+    components = {
+        "exchange": {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC"},
+        "clearing": {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC"},
+        "nfa": {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC"},
+        "other": {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC"},
+    }
+    raw = ruleset.model_dump(mode="python")
+    raw["commissions"]["components"] = components
+    return PropRuleset.model_validate(raw)
+
+
+def test_the_attempt_reports_an_uncovered_component_as_unavailable_cash() -> None:
+    """Four flat bars, one contract: no trade, so the cash statistic is the fees alone.
+
+    Without the fee table the attempt cannot say what the commission excludes, so the cash
+    statistic is unavailable and the reason names the component; with the table the priced
+    components are exact and the unknown ones keep the number unavailable.
+    """
+    ruleset = _unknowning(
         _ruleset(
             [],
             commissions={
                 "status": "known",
+                "components": _COMPONENTS_EXCLUDED,
                 "per_side_usd": {"ES": "2.00"},
                 "platform": None,
                 "source": _source().model_dump(mode="json"),
             },
         )
-    undeclared = _ruleset(
-        [],
-        commissions={
-            "status": "known",
-            "includes_exchange_and_regulatory_fees": "unknown",
-            "per_side_usd": {"ES": "2.00"},
-            "platform": None,
-            "source": _source().model_dump(mode="json"),
-        },
     )
-    _, application, available, gap = _commissions_for(
-        undeclared, costs, "ES", None, exchange_fees=_FEE_TABLE, when=dt.date(2024, 1, 8)
+    # the run parameter the ruleset never states: without it an excluded component is refused
+    with pytest.raises(ConfigurationError, match="fee_participant_type"):
+        _attempt(ruleset, [5000.0, 5000.0, 5000.0, 5000.0])
+    blind = _attempt(
+        ruleset, [5000.0, 5000.0, 5000.0, 5000.0], participant_type="non_member_customer"
     )
-    assert application.includes_exchange_and_regulatory_fees == "unknown"
-    assert available is False
-    assert gap is not None
-    assert "does not declare whether it includes" in gap
-
-
-def test_the_attempt_reports_an_uncovered_exchange_fee_as_unavailable_cash() -> None:
-    """Four flat bars, one contract: no trade, so the cash statistic is the fees alone.
-
-    Without the fee table the attempt cannot say what the commission excludes, so the cash
-    statistic is unavailable and the reason names the exchange fees; with the table it is exact.
-    """
-    ruleset = _ruleset(
-        [],
-        commissions={
-            "status": "known",
-            "includes_exchange_and_regulatory_fees": False,
-            "per_side_usd": {"ES": "2.00"},
-            "platform": None,
-            "source": _source().model_dump(mode="json"),
-        },
-    )
-    blind = _attempt(ruleset, [5000.0, 5000.0, 5000.0, 5000.0])
     assert blind.cash_estimate_status == "unavailable"
-    assert any("exchange and regulatory fees" in reason for reason in blind.cash_estimate_reasons)
-    assert blind.estimate_status == "unavailable"
-    assert blind.commissions.exchange_fee_usd == Decimal("0")
+    assert blind.commissions.cost_gaps == ("exchange", "clearing", "nfa", "other")
     assert blind.commissions.fees_incomplete is not None
+    assert "exchange: the commission excludes it" in blind.commissions.fees_incomplete
 
-    priced = _attempt(ruleset, [5000.0, 5000.0, 5000.0, 5000.0], exchange_fees=_FEE_TABLE)
-    assert priced.cash_estimate_status == "exact"
-    assert priced.commissions.exchange_fee_usd == Decimal("1.27")
-
-    assumed = _attempt(
+    priced = _attempt(
         ruleset,
         [5000.0, 5000.0, 5000.0, 5000.0],
-        cost_assumption="owner's all-in broker schedule",
+        fee_source=_FEE_TABLE,
+        participant_type="non_member_customer",
     )
-    assert assumed.cash_estimate_status == "conditional"
-    assert assumed.estimate_status == "conditional"
+    assert priced.commissions.component("exchange").usd == Decimal("1.27")
+    # nfa and other are declared unknown, so the cash number is still not available
+    assert priced.cash_estimate_status == "unavailable"
+    assert priced.commissions.cost_gaps == ("nfa", "other")
 
 
-def test_an_exchange_fee_table_refuses_an_ambiguous_or_unsourced_row() -> None:
-    row = ExchangeFeeRow(
-        root="ES", per_side_usd=Decimal("1.25"), effective_from=dt.date(2024, 1, 1)
+def test_a_fee_table_refuses_an_ambiguous_or_unsourced_row() -> None:
+    row = ComponentFeeRow(
+        root="ES",
+        fee_type="exchange",
+        participant_type="non_member_customer",
+        covers=("exchange",),
+        per_side_usd=Decimal("1.25"),
+        effective_from=dt.date(2024, 1, 1),
     )
     with pytest.raises(ConfigurationError, match="overlap"):
-        ExchangeFeeTable(rows=(row, row), source_sha256="1" * 64)
+        ComponentFeeTable(rows=(row, row), source_sha256="1" * 64)
     with pytest.raises(ConfigurationError, match="source_sha256"):
-        ExchangeFeeTable(rows=(row,), source_sha256="short")
+        ComponentFeeTable(rows=(row,), source_sha256="short")
     with pytest.raises(ConfigurationError, match="upper-case root"):
-        ExchangeFeeRow(root="es", per_side_usd=Decimal("1.25"), effective_from=dt.date(2024, 1, 1))
+        ComponentFeeRow(
+            root="es",
+            fee_type="exchange",
+            participant_type="non_member_customer",
+            covers=("exchange",),
+            per_side_usd=Decimal("1.25"),
+            effective_from=dt.date(2024, 1, 1),
+        )
     with pytest.raises(ConfigurationError, match="must be >= 0"):
-        ExchangeFeeRow(root="ES", per_side_usd=Decimal("-1"), effective_from=dt.date(2024, 1, 1))
+        ComponentFeeRow(
+            root="ES",
+            fee_type="exchange",
+            participant_type="non_member_customer",
+            covers=("exchange",),
+            per_side_usd=Decimal("-1"),
+            effective_from=dt.date(2024, 1, 1),
+        )
+    with pytest.raises(ConfigurationError, match="does not contain its own fee_type"):
+        ComponentFeeRow(
+            root="ES",
+            fee_type="exchange",
+            participant_type="non_member_customer",
+            covers=("clearing",),
+            per_side_usd=Decimal("1.25"),
+            effective_from=dt.date(2024, 1, 1),
+        )
 
 
 # ------------------------------------------------------ 9. the holiday early close
@@ -986,15 +1046,15 @@ def test_an_unsourced_session_calendar_window_is_a_reported_coverage_gap() -> No
     assert not any("session calendar" in warning for warning in sourced.warnings)
 
 
-# ------------------------- 8b. the stored exchange-fee dataset as an ExchangeFeeSource
+# --------------------------- 8b. the stored fee dataset as a ComponentFeeSource
 
 _MONEY_NS = 86_400 * _NS
 
 
 def _fee_row(
-    root: str, fee_type: str, amount: str, fee_class: str, source_kind: str
+    root: str, fee_type: str, amount: str, participant_type: str, covers: str, source_kind: str
 ) -> dict[str, object]:
-    """One row of the exchange-fees contract, in the shape ``build_exchange_fees`` writes."""
+    """One row of the fee contract, in the shape ``build_exchange_fees`` writes."""
     from crucible.data import exchange_fees as ef
 
     day = dt.date(2024, 1, 1)
@@ -1002,7 +1062,8 @@ def _fee_row(
         "root": root,
         "venue": ef.VENUE_OF[root],
         "fee_type": fee_type,
-        "fee_class": fee_class,
+        "participant_type": participant_type,
+        "covers": covers,
         "per_side_usd": amount,
         "effective_from": day,
         "effective_to": None,
@@ -1010,7 +1071,7 @@ def _fee_row(
         "provided_by": "owner" if source_kind == ef.SOURCE_KIND_OWNER else None,
         "source_url": "https://example.invalid/synthetic-fees",
         "snapshot_sha256": "0" * 64,
-        "quote": "Synthetic fee row invented for a test, not a real exchange's rate",
+        "quote": "SYNTHETIC TEST VALUE: a fee row invented for a test",
         "event_time": int(dt.datetime.combine(day, dt.time(0, 0), tzinfo=dt.UTC).timestamp()) * _NS,
         "available_at": int(dt.datetime.combine(day, dt.time(0, 0), tzinfo=dt.UTC).timestamp())
         * _NS,
@@ -1021,16 +1082,32 @@ def _fee_row(
 
 
 def _fee_store(root: Path, *, exchange: bool):
-    """A tmp store holding the exchange-fees contract: NFA rows always, exchange rows on demand."""
+    """A tmp store holding the fee contract: NFA rows always, exchange rows on demand."""
     from crucible.data import exchange_fees as ef
     from crucible.data.store import ParquetDataStore, build_dataset
 
     rows: list[dict[str, object]] = []
     for name in ef.ROOTS:
-        rows.append(_fee_row(name, "nfa", "0.02", ef.FEE_CLASS_NFA, ef.SOURCE_KIND_OFFICIAL))
+        rows.append(
+            _fee_row(
+                name,
+                "nfa",
+                "0.02",
+                ef.PARTICIPANT_TYPE_NFA,
+                "nfa",
+                ef.SOURCE_KIND_OFFICIAL,
+            )
+        )
         if exchange:
             rows.append(
-                _fee_row(name, "exchange", "1.25", ef.FEE_CLASS_EXCHANGE, ef.SOURCE_KIND_OWNER)
+                _fee_row(
+                    name,
+                    "exchange",
+                    "1.25",
+                    ef.PARTICIPANT_TYPE_EXCHANGE,
+                    "exchange",
+                    ef.SOURCE_KIND_OWNER,
+                )
             )
     frame = pl.DataFrame(rows, orient="row", schema=ef.EXCHANGE_FEE_SCHEMA)
     build_dataset(
@@ -1044,46 +1121,60 @@ def _fee_store(root: Path, *, exchange: bool):
     return ParquetDataStore(root)
 
 
-def _excluding_ruleset() -> PropRuleset:
-    return _ruleset(
+def _exchange_only_unknown_ruleset() -> PropRuleset:
+    """Exchange excluded, NFA excluded, clearing and other declared unknown."""
+    ruleset = _ruleset(
         [],
         commissions={
             "status": "known",
-            "includes_exchange_and_regulatory_fees": False,
+            "components": _COMPONENTS_EXCLUDED,
             "per_side_usd": {"ES": "2.00"},
             "platform": None,
             "source": _source().model_dump(mode="json"),
         },
     )
+    raw = ruleset.model_dump(mode="python")
+    raw["commissions"]["components"] = {
+        "exchange": {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC"},
+        "clearing": {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC"},
+        "nfa": {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC"},
+        "other": {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC"},
+    }
+    return PropRuleset.model_validate(raw)
 
 
-def test_the_stored_fee_dataset_prices_the_commission_or_says_the_fees_are_unknown(
+def test_the_stored_fee_dataset_prices_each_component_or_says_it_is_unknown(
     tmp_path: Path,
 ) -> None:
     """NFA 0.02 + exchange 1.25 = 1.27 per contract per side, read from the stored dataset.
 
-    A store holding only the NFA rows cannot price the exchange fee, and ``fee_table_as_of``
-    refuses: the attempt must report ``exchange fees unknown`` and leave the cash statistic
-    unavailable, never charge 0.02 as if it were the whole fee.
+    A store holding only the NFA rows cannot price the exchange fee: the attempt reports the
+    exchange component as a gap and the cash statistic is ``conditional`` only when a cost
+    assumption priced it — never 0.02 charged as if it were the whole fee.
     """
-    nfa_only = store_exchange_fees(_fee_store(tmp_path / "nfa_only", exchange=False))
-    blind = _attempt(_excluding_ruleset(), [5000.0, 5000.0, 5000.0, 5000.0], exchange_fees=nfa_only)
-    assert blind.cash_estimate_status == "unavailable"
-    assert blind.commissions.fees_incomplete is not None
-    assert blind.commissions.fees_incomplete.startswith("exchange fees unknown:")
-    assert "ES" in blind.commissions.fees_incomplete
-    assert blind.commissions.exchange_fee_usd == Decimal("0")
-    assert any(
-        reason.startswith("exchange fees unknown:") for reason in blind.cash_estimate_reasons
+    nfa_only = store_component_fees(_fee_store(tmp_path / "nfa_only", exchange=False))
+    blind = _attempt(
+        _exchange_only_unknown_ruleset(),
+        [5000.0, 5000.0, 5000.0, 5000.0],
+        fee_source=nfa_only,
+        participant_type="non_member_customer",
     )
+    assert blind.cash_estimate_status == "unavailable"
+    assert blind.commissions.cost_gaps == ("exchange", "clearing", "other")
+    assert blind.commissions.component("nfa").usd == Decimal("0.02")
 
-    priced = store_exchange_fees(_fee_store(tmp_path / "priced", exchange=True))
-    exact = _attempt(_excluding_ruleset(), [5000.0, 5000.0, 5000.0, 5000.0], exchange_fees=priced)
-    assert exact.cash_estimate_status == "exact"
-    assert exact.commissions.fees_incomplete is None
-    assert exact.commissions.exchange_fee_usd == Decimal("1.27")
-    assert exact.commissions.exchange_fee_source_sha256 == priced.content_hash
+    priced = store_component_fees(_fee_store(tmp_path / "priced", exchange=True))
+    priced_attempt = _attempt(
+        _exchange_only_unknown_ruleset(),
+        [5000.0, 5000.0, 5000.0, 5000.0],
+        fee_source=priced,
+        participant_type="non_member_customer",
+    )
+    assert priced_attempt.commissions.component("exchange").usd == Decimal("1.25")
+    assert priced_attempt.commissions.component("nfa").usd == Decimal("0.02")
+    assert priced_attempt.commissions.cost_gaps == ("clearing", "other")
+    assert priced_attempt.cash_estimate_status == "unavailable"
 
     # a store with no such dataset at all is refused by name, not priced at zero
     with pytest.raises(ConfigurationError, match="cannot read dataset"):
-        store_exchange_fees(ParquetDataStore(tmp_path / "empty"))
+        store_component_fees(ParquetDataStore(tmp_path / "empty"))

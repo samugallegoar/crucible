@@ -33,6 +33,23 @@ from crucible.prop import rules as rl
 from crucible.prop.overlay import PropAccountOverlay
 from crucible.prop.ruleset import Attribution, PropRuleset
 
+_COMPONENTS_ALL_IN = {
+    name: {"status": "included", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four cost components are all inside it (synthetic, all-in)."""
+_COMPONENTS_EXCLUDED = {
+    name: {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission that excludes every component: each is charged on top (synthetic)."""
+_COMPONENTS_UNKNOWN = {
+    name: {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four components the source does not state (synthetic)."""
+
+
 NS = 1_000_000_000
 MINUTE = 60 * NS
 TICK_MICRO = 12_500_000
@@ -84,7 +101,7 @@ def _ruleset() -> PropRuleset:
             "reset": {"time": "17:00:00", "tz": "America/Chicago"},
             "commissions": {
                 "status": "known",
-                "includes_exchange_and_regulatory_fees": True,
+                "components": _COMPONENTS_ALL_IN,
                 "per_side_usd": {"ES": "2.00"},
                 "platform": None,
                 "source": source,

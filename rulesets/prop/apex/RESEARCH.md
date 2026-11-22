@@ -102,7 +102,7 @@ bending the rule to the schema.
 
 | change | files | before | now | why |
 |---|---|---|---|---|
-| commission all-in flag (REQUIRED) | 90/90 | field absent | `includes_exchange_and_regulatory_fees: unknown` | No Apex page says whether the per-side commission is all-in or excludes the exchange and NFA fees; `unknown` is the declaration, never `true` (section 4.3) |
+| cost components (REQUIRED) | 90/90 | field absent | `components`: exchange/clearing/NFA/other all `unknown` | No Apex page says whether the per-side commission is all-in or excludes the exchange and NFA fees; `unknown` is the declaration, never `true` (section 4.3) |
 | trailing lock trigger (REQUIRED to be a list) | 90/90 files, 166 rules | `'on': hwm` | `'on': [hwm]` | The only trigger Apex states is the high-water mark: the EOD evaluation stops at the profit-target balance, the PA at starting balance + $100, and a payout does not reset the threshold. `first_payout` is therefore NOT declared, even though the list allows it (`first_payout` triggers declared: 0) |
 | conflict alternative `absent` | 90/90 files | `value: '1.0'` | `value: absent` | The rendered table says 'Consistency Not Applied', so the alternative reading is that the rule does not exist at all; the scenario drops the consistency pass condition instead of widening its share to 1.0 (section 7.1) |
 | `activity_requirement` | 90 rules in 90/90 files | `not_modeled`: `pa_inactivity_closure` | a modeled `close_account` rule | 2 days of >= $50 net profit in every rolling 30 calendar days is exactly the round-2 kind: a count of qualifying days in a rolling window, not the `inactivity` kind's gap (section 3.3) |
@@ -433,7 +433,7 @@ minis.
 
 ### 4.3 Does the commission include the exchange and regulatory fees? No page says
 
-The engine requires the declaration (`includes_exchange_and_regulatory_fees`), because the
+The engine requires the declaration (`commissions.components`, all four keys), because the
 difference between an all-in commission and a commission that excludes the exchange and
 NFA fees is a real cost (ADR-0107 section 8). Every Apex page was re-read for it in round 2
 and none states it:
@@ -450,7 +450,7 @@ and none states it:
 >
 > — `https://apextraderfunding.com/help-center/tradovate/tradovate-commission-instruments` (snapshot `dd21d47f1461`, Additional Fees)
 
-So the declaration is `includes_exchange_and_regulatory_fees: unknown` in all 90 files,
+So every component is `unknown` in all 90 files,
 with the platform's own page as its source (the same attribution the per-side table uses).
 It is NOT `true`: reading a per-side table as all-in because the number looks plausible is
 exactly the guess AGENTS.md section 1 forbids, and it is not `false` either, because no
@@ -581,7 +581,7 @@ states the moment the evaluation target is judged, so every pass condition is
 `evaluated: eod` on the closed balance (`basis: balance`) under an `official_quote`, and
 no target is checked intraday anywhere in the 90 files.
 
-The commission's `includes_exchange_and_regulatory_fees: unknown` is **not** an assumption:
+The commission's four `unknown` components are **not** an assumption:
 it is a declaration that the sources are silent (ADR-0107 section 8), and it leaves the cost
 statistics unavailable rather than making the commission all-in by default (section 4.3).
 
@@ -732,7 +732,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -750,7 +750,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -768,7 +768,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -786,7 +786,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -804,7 +804,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -822,7 +822,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -840,7 +840,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -858,7 +858,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -876,7 +876,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -894,7 +894,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -912,7 +912,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -930,7 +930,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -948,7 +948,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -966,7 +966,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -984,7 +984,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1002,7 +1002,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1020,7 +1020,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1038,7 +1038,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1056,7 +1056,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1074,7 +1074,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1092,7 +1092,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1110,7 +1110,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1128,7 +1128,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1146,7 +1146,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1164,7 +1164,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1182,7 +1182,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1200,7 +1200,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1218,7 +1218,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1236,7 +1236,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1254,7 +1254,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1272,7 +1272,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1290,7 +1290,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1308,7 +1308,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1326,7 +1326,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1344,7 +1344,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1362,7 +1362,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1380,7 +1380,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1398,7 +1398,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1416,7 +1416,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1434,7 +1434,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1452,7 +1452,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1470,7 +1470,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1488,7 +1488,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1506,7 +1506,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1524,7 +1524,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1542,7 +1542,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1560,7 +1560,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1578,7 +1578,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1596,7 +1596,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1614,7 +1614,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1632,7 +1632,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1650,7 +1650,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1668,7 +1668,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1686,7 +1686,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1704,7 +1704,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1722,7 +1722,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1740,7 +1740,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1758,7 +1758,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1776,7 +1776,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1794,7 +1794,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1812,7 +1812,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1830,7 +1830,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1848,7 +1848,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1866,7 +1866,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1884,7 +1884,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1902,7 +1902,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1920,7 +1920,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1938,7 +1938,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1956,7 +1956,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1974,7 +1974,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -1992,7 +1992,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2010,7 +2010,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2028,7 +2028,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2046,7 +2046,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2064,7 +2064,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2082,7 +2082,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2100,7 +2100,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2118,7 +2118,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2136,7 +2136,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2154,7 +2154,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2172,7 +2172,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2190,7 +2190,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2208,7 +2208,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2226,7 +2226,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2244,7 +2244,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2262,7 +2262,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2280,7 +2280,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2298,7 +2298,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2316,7 +2316,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2334,7 +2334,7 @@ was not followed literally.
 
 - **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); `includes_exchange_and_regulatory_fees: unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
@@ -2347,6 +2347,27 @@ was not followed literally.
 - **Coverage**: 5 `not_modeled` entries (3 material), evaluation status `conditional_on_modeled_rules`, estimate status `unavailable` and cash statistics `unavailable`: the commission does not declare whether it includes the exchange and regulatory fees, so no cost is assumed; unverified.
 
 ## 13. Open questions for the owner
+
+### Per-component costs (C7b fix, 2026-11-22)
+
+`commissions.includes_exchange_and_regulatory_fees` is gone. The ruleset now declares, for each of the four components, whether the firm's per-side commission CONTAINS it (`included`), EXCLUDES it (`excluded`, so the run adds the dataset's amount for its participant type) or does not say (`unknown`, which is never a zero cost). All four keys are required, and no component may be inferred from another firm's page, another product or another participant type (ADR-0107 section 10 as amended).
+
+| Component | Status in the files | Evidence kind | Evidence |
+|---|---|---|---|
+| `exchange` | `unknown` | `not_stated` | the commission table does not say whether exchange, clearing, NFA or other fees are included |
+| `clearing` | `unknown` | `not_stated` | the same: the table itemizes no component at all |
+| `nfa` | `unknown` | `not_stated` | the same: the page states no NFA assessment |
+| `other` | `unknown` | `not_stated` | the same: no other per-side charge is named |
+
+An `excluded` component needs a participant type at RUN time (`--fee-participant-type`): the ruleset never states one, and using it makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
+
+Owner questions, one per component the files declare `unknown`:
+
+1. **exchange**: Does the per-side commission already contain the exchange fee, or is the exchange fee charged on top of it?
+2. **clearing**: Does the per-side commission already contain the clearing fee, or is the clearing fee charged on top of it?
+3. **nfa**: Does the per-side commission already contain the NFA assessment, or is it charged on top of it?
+4. **other**: Is there any other per-side charge beside the commission, the exchange fee, the clearing fee and the NFA assessment?
+
 
 1. **Do the commissions include the exchange and regulatory fees?** This is now
    the one fact that gates every Apex cost statistic: no page says whether the

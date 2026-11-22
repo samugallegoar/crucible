@@ -23,6 +23,7 @@ every store, home and artifacts root is a ``tmp_path``.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -57,6 +58,23 @@ from crucible.experiments.futures_stats import bootstrap_seed
 from crucible.prop.rules_schema import Instrument
 from crucible.prop.ruleset import Attribution, PropRuleset, load_ruleset
 from crucible.validation.trial_registry import DuckDBTrialRegistry
+
+_COMPONENTS_ALL_IN = {
+    name: {"status": "included", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four cost components are all inside it (synthetic, all-in)."""
+_COMPONENTS_EXCLUDED = {
+    name: {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission that excludes every component: each is charged on top (synthetic)."""
+_COMPONENTS_UNKNOWN = {
+    name: {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four components the source does not state (synthetic)."""
+
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -273,7 +291,14 @@ def build_store(root: Path, *, exchange_fees: bool | None = None) -> Path:
     return root
 
 
-def _fee_row(root: str, fee_type: str, amount: str, fee_class: str, source_kind: str) -> dict:
+def _fee_row(
+    root: str,
+    fee_type: str,
+    amount: str,
+    participant_type: str,
+    covers: str,
+    source_kind: str,
+) -> dict:
     """One row of the exchange-fees contract, in the shape ``build_exchange_fees`` writes."""
     from crucible.data import exchange_fees as ef
 
@@ -283,7 +308,8 @@ def _fee_row(root: str, fee_type: str, amount: str, fee_class: str, source_kind:
         "root": root,
         "venue": ef.VENUE_OF[root],
         "fee_type": fee_type,
-        "fee_class": fee_class,
+        "participant_type": participant_type,
+        "covers": covers,
         "per_side_usd": amount,
         "effective_from": day,
         "effective_to": None,
@@ -291,7 +317,7 @@ def _fee_row(root: str, fee_type: str, amount: str, fee_class: str, source_kind:
         "provided_by": "owner" if source_kind == ef.SOURCE_KIND_OWNER else None,
         "source_url": "https://example.invalid/synthetic-fees",
         "snapshot_sha256": "0" * 64,
-        "quote": "Synthetic fee row invented for a test, not a real exchange's rate",
+        "quote": "SYNTHETIC TEST VALUE: a fee row invented for a test",
         "event_time": stamp,
         "available_at": stamp,
         "dataset_version": ef.DATASET_VERSION,
@@ -305,12 +331,19 @@ def _write_fee_table(root: Path, *, exchange: bool) -> None:
     from crucible.data import exchange_fees as ef
 
     rows = [
-        _fee_row(name, "nfa", "0.02", ef.FEE_CLASS_NFA, ef.SOURCE_KIND_OFFICIAL)
+        _fee_row(name, "nfa", "0.02", ef.PARTICIPANT_TYPE_NFA, "nfa", ef.SOURCE_KIND_OFFICIAL)
         for name in ef.ROOTS
     ]
     if exchange:
         rows.extend(
-            _fee_row(name, "exchange", "1.25", ef.FEE_CLASS_EXCHANGE, ef.SOURCE_KIND_OWNER)
+            _fee_row(
+                name,
+                "exchange",
+                "1.25",
+                ef.PARTICIPANT_TYPE_EXCHANGE,
+                "exchange;clearing",
+                ef.SOURCE_KIND_OWNER,
+            )
             for name in ef.ROOTS
         )
     build_dataset(
@@ -420,7 +453,7 @@ def ruleset(
         if commissions is not None
         else {
             "status": "known",
-            "includes_exchange_and_regulatory_fees": True,
+            "components": _COMPONENTS_ALL_IN,
             "per_side_usd": {"ES": "2.00"},
             "platform": None,
             "source": source,
@@ -471,6 +504,23 @@ def write_ruleset(path: Path, ruleset_object: PropRuleset) -> Path:
     return path
 
 
+def write_cost_assumption(
+    path: Path, *, covers: Sequence[str], amount: str = "0.77", root: str = "ES"
+) -> Path:
+    """A SYNTHETIC cost-assumption file pricing ``covers`` for one root."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = {
+        "name": "synthetic-owner-estimate",
+        "description": "SYNTHETIC TEST VALUE: a cost estimate invented for a test",
+        "provided_by": "owner",
+        "status": "unverified",
+        "evidence": "SYNTHETIC TEST VALUE: no document states this split",
+        "amounts": {root: [{"covers": list(covers), "per_side_usd": amount}]},
+    }
+    path.write_text(yaml.safe_dump(document, sort_keys=True), encoding="utf-8", newline="\n")
+    return path
+
+
 def evaluate(
     store: Path,
     artifacts: Path,
@@ -483,9 +533,14 @@ def evaluate(
     **options: object,
 ) -> PropEvaluationResult:
     """One evaluation of a synthetic ruleset over the synthetic store."""
+    ruleset_options = {
+        key: value
+        for key, value in options.items()
+        if key not in ("cost_assumption", "fee_participant_type")
+    }
     ruleset_file = write_ruleset(
         artifacts / "ruleset.yaml",
-        ruleset(rules, pass_conditions, **options),  # type: ignore[arg-type]
+        ruleset(rules, pass_conditions, **ruleset_options),  # type: ignore[arg-type]
     )
     return run_prop_evaluation(
         run_config if run_config is not None else config(),
@@ -493,6 +548,8 @@ def evaluate(
         horizon_trading_days=horizon,
         execution_mode="manual",
         scenarios=scenarios,
+        cost_assumption=options.get("cost_assumption"),  # type: ignore[arg-type]
+        fee_participant_type=options.get("fee_participant_type"),  # type: ignore[arg-type]
         store_root=store,
         artifacts_root=artifacts,
         overwrite=True,
@@ -946,7 +1003,7 @@ def test_unknown_commissions_make_the_cash_unavailable_unless_a_named_assumption
     """
     unknown = {
         "status": "unknown",
-        "includes_exchange_and_regulatory_fees": "unknown",
+        "components": _COMPONENTS_UNKNOWN,
         "platform": None,
         "source": _source(),
     }
@@ -955,9 +1012,21 @@ def test_unknown_commissions_make_the_cash_unavailable_unless_a_named_assumption
     assert cash["status"] == "unavailable"
     assert cash["mean_net_cash_usd"] is None
     assert cash["interval"]["status"] == "unavailable"
-    assert any("cost is not exact" in reason for reason in cash["reasons"])
+    assert any("cost is not known" in reason for reason in cash["reasons"])
     assert blind.summary["scenarios"][0]["counts"]["pass"] == 5
+    assert blind.summary["cost_components"][0]["gaps"] == [
+        "clearing",
+        "commission",
+        "exchange",
+        "nfa",
+        "other",
+    ]
 
+    # a cost-assumption FILE that prices every gap of the root the run trades
+    assumption = write_cost_assumption(
+        artifacts / "assumed" / "assumption.yaml",
+        covers=("commission", "exchange", "clearing", "nfa", "other"),
+    )
     assumed = run_prop_evaluation(
         config(),
         ruleset_path=write_ruleset(
@@ -966,7 +1035,7 @@ def test_unknown_commissions_make_the_cash_unavailable_unless_a_named_assumption
         ),
         horizon_trading_days=5,
         execution_mode="manual",
-        cost_assumption="owner_statement_2026",
+        cost_assumption=assumption,
         store_root=store,
         artifacts_root=artifacts / "assumed",
         overwrite=True,
@@ -978,6 +1047,10 @@ def test_unknown_commissions_make_the_cash_unavailable_unless_a_named_assumption
     # the cash status of the attempts is what the artifacts record, per start
     frame = pl.read_parquet(assumed.evaluation_dir / "attempts.parquet")
     assert set(frame["cash_estimate_status"].to_list()) == {"conditional"}
+    assert set(frame["cost_assumption_sha256"].to_list()) == {
+        hashlib.sha256(assumption.read_bytes()).hexdigest()
+    }
+    assert set(frame["cost_gaps"].to_list()) == {""}
 
 
 def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path) -> None:
@@ -990,25 +1063,70 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
     """
     excluding = {
         "status": "known",
-        "includes_exchange_and_regulatory_fees": False,
+        "components": {
+            "exchange": {
+                "status": "excluded",
+                "evidence": "official_quote",
+                "text": "SYNTHETIC TEST VALUE",
+            },
+            "clearing": {
+                "status": "unknown",
+                "evidence": "not_stated",
+                "text": "SYNTHETIC TEST VALUE",
+            },
+            "nfa": {
+                "status": "excluded",
+                "evidence": "official_quote",
+                "text": "SYNTHETIC TEST VALUE",
+            },
+            "other": {
+                "status": "unknown",
+                "evidence": "not_stated",
+                "text": "SYNTHETIC TEST VALUE",
+            },
+        },
         "per_side_usd": {"ES": "2.00"},
         "platform": None,
         "source": _source(),
     }
+    # the participant type is a run parameter: without it an excluded component is refused
+    with pytest.raises(ConfigurationError, match="fee_participant_type"):
+        evaluate(
+            build_store(tmp_path / "refuse", exchange_fees=True),
+            tmp_path / "refused",
+            commissions=excluding,
+        )
+
     blind_store = build_store(tmp_path / "nfa_only", exchange_fees=False)
-    blind = evaluate(blind_store, tmp_path / "blind", commissions=excluding)
+    blind = evaluate(
+        blind_store,
+        tmp_path / "blind",
+        commissions=excluding,
+        fee_participant_type="non_member_customer",
+    )
     cash = blind.summary["scenarios"][0]["cash"]
     assert cash["status"] == "unavailable"
-    assert any("exchange fees unknown" in reason for reason in cash["reasons"])
+    assert any("no exchange row for ES" in reason for reason in cash["reasons"])
     frame = pl.read_parquet(blind.evaluation_dir / "attempts.parquet")
     assert set(frame["cash_estimate_status"].to_list()) == {"unavailable"}
+    assert set(frame["exchange_status"].to_list()) == {"excluded_unpriced"}
+    assert set(frame["nfa_usd"].to_list()) == {Decimal("0.020000")}
 
     priced_store = build_store(tmp_path / "priced", exchange_fees=True)
-    priced = evaluate(priced_store, tmp_path / "priced_art", commissions=excluding)
+    priced = evaluate(
+        priced_store,
+        tmp_path / "priced_art",
+        commissions=excluding,
+        fee_participant_type="non_member_customer",
+    )
     cash = priced.summary["scenarios"][0]["cash"]
-    assert cash["status"] == "exact"
+    assert cash["status"] == "unavailable"  # clearing and other stay unknown
     assert priced.summary["exchange_fees"] is not None
     assert len(priced.summary["exchange_fees"]["content_hash"]) == 64
+    frame = pl.read_parquet(priced.evaluation_dir / "attempts.parquet")
+    assert set(frame["exchange_status"].to_list()) == {"excluded_priced"}
+    assert set(frame["exchange_usd"].to_list()) == {Decimal("1.250000")}
+    assert set(frame["fee_participant_type"].to_list()) == {"non_member_customer"}
 
 
 # ----------------------------------------------------------------------------------- 5. the news

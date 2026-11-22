@@ -1,19 +1,32 @@
 """Per-side fees a customer of a prop firm's clearing chain pays on top of commission.
 
-``exchange_fees_v1``: two kinds of fee, per contract, per side, in USD —
+``exchange_fees_v1``: per contract, per side, in USD, keyed by the component the amount covers —
 
-- ``exchange`` — the CME Group exchange fee for an equity-index futures root (ES, NQ, YM, RTY,
-  NKD, MES, MNQ, MYM, M2K). **No exchange row is written by this build.** CME Group's site refuses
-  automated access from the environment this was built in (HTTP 403, "This IP address is blocked
-  due to suspected web scraping activity ... Use of scripts, software, spiders, robots, avatars,
-  agents, tools or other scraping mechanisms is strictly prohibited by CME Group's website Data
-  Terms of Use"), and its published fee schedules name product *buckets* ("E-mini Equity Index",
-  "Micro E-mini Index", "Nikkei/TOPIX"), never a root ticker, so a rate cannot be attached to a
-  root from the published document without guessing. Both are recorded in
-  ``docs/data/cme-exchange-fees.md``: exchange rows are added from an **owner-provided** file
-  (:func:`load_owner_provided_csv`), which carries the supplier, the file's SHA-256 and the exact
-  cell text as evidence. Until such a file is supplied, :func:`fee_table_as_of` **refuses**: an
-  unresolved exchange fee is unknown, not zero (AGENTS.md section 1.5, "refuse, don't warn").
+- ``exchange`` — the exchange's own trading fee (CME Group, for an equity-index root);
+- ``clearing`` — the clearing fee;
+- ``nfa`` — the NFA regulatory assessment;
+- ``other`` — any other per-side charge the source states;
+
+and for the roots ES, NQ, YM, RTY, NKD, MES, MNQ, MYM, M2K. **No exchange, clearing or other row is
+written by this build.** CME Group's site refuses automated access from the environment this was
+built in (HTTP 403, "This IP address is blocked due to suspected web scraping activity ... Use of
+scripts, software, spiders, robots, avatars, agents, tools or other scraping mechanisms is
+strictly prohibited by CME Group's website Data Terms of Use"), and its published fee schedules
+name product *buckets* ("E-mini Equity Index", "Micro E-mini Index", "Nikkei/TOPIX"), never a root
+ticker, so a rate cannot be attached to a root from the published document without guessing. Both
+are recorded in ``docs/data/cme-exchange-fees.md``: those rows are added from an **owner-provided**
+file (:func:`load_owner_provided_csv`), which carries the supplier, the file's SHA-256 and the
+exact cell text as evidence. Until such a file is supplied, :func:`fee_rows_as_of` prices nothing
+for the missing components: an unresolved fee is unknown, not zero (AGENTS.md section 1.5, "refuse,
+don't warn").
+
+**No universal fee, and no extrapolation.** A row prices only its exact root, participant type and
+date range, and it states which components (``covers``) its amount covers. A row covering several
+components is charged once. There is no product-bucket-to-root mapping here: the engine never
+invents one.
+
+Rows:
+
 - ``nfa`` — the NFA assessment fee the FCM member pays per contract for each side
   (nfa.futures.org, NFA Bylaw 1301(b)(i)(A)). Fetched from the official page and parsed in
   :func:`parse_nfa_assessment`; the bylaw states the rate *and* the period it applies to, so the
@@ -86,18 +99,22 @@ VENUE_OF: dict[str, str] = {
 """The exchange each root trades on: CME Group publishes one fee schedule per exchange, so the
 venue decides which document a root's exchange fee must come from."""
 
-FEE_TYPES: tuple[str, ...] = ("exchange", "nfa")
-"""``fee_type`` values: the exchange's own fee and the NFA regulatory assessment."""
+FEE_TYPES: tuple[str, ...] = ("exchange", "clearing", "nfa", "other")
+"""``fee_type`` values: the exchange's own fee, the clearing fee, the NFA regulatory assessment,
+and any other per-side charge. A row's ``fee_type`` must be one of the components its ``covers``
+column lists."""
 
-FEE_CLASS_EXCHANGE = "non_member_customer"
-"""``fee_class`` of an exchange row: the rate a **customer** (non-member) account pays, as opposed
-to a member, a lessee or a clearing member. CME's schedule does not say which class a prop firm's
-accounts fall in; this is the assumption any exchange row must carry, and an owner-provided file
-may name another class explicitly (``docs/data/cme-exchange-fees.md``)."""
+PARTICIPANT_TYPE_EXCHANGE = "non_member_customer"
+"""``participant_type`` of an exchange row: the rate a **customer** (non-member) account pays, as
+ opposed to a member, a lessee or a clearing member. CME's schedule does not say which class a prop
+firm's accounts fall in; this is the assumption any exchange row must carry, and an owner-provided
+file may name another class explicitly (``docs/data/cme-exchange-fees.md``)."""
 
-FEE_CLASS_NFA = "fcm_member_assessment"
-"""``fee_class`` of an NFA row: the bylaw assesses the **FCM member** per contract; a customer sees
-it passed through as a per-contract charge. The class is stated by the source, not assumed."""
+PARTICIPANT_TYPE_NFA = "fcm_member_assessment"
+"""``participant_type`` of an NFA row: the bylaw assesses the **FCM member** per contract; a
+ customer sees it passed through as a per-contract charge. The class is stated by the source, not
+ assumed. It is therefore not a customer rate class, so an ``nfa`` row prices any requested
+ participant type (see :func:`fee_rows_as_of`)."""
 
 SOURCE_KIND_OFFICIAL = "official_page"
 """``source_kind`` of a row read from an official publisher's own page (the NFA bylaw)."""
@@ -116,14 +133,15 @@ states the assessment fee, its period and the date the period ends. Read 2026-11
 EXCHANGE_FEE_SCHEMA: dict[str, pl.DataType] = {
     "root": pl.String(),  # product root: ES, NQ, YM, RTY, NKD, MES, MNQ, MYM or M2K
     "venue": pl.String(),  # the exchange the root trades on: CME or CBOT
-    "fee_type": pl.String(),  # exchange (the exchange's own fee) or nfa (NFA assessment)
-    "fee_class": pl.String(),  # rate class the row states (non_member_customer, fcm_member_...)
+    "fee_type": pl.String(),  # exchange, clearing, nfa or other: the component the row prices
+    "participant_type": pl.String(),  # who the rate is for (non_member_customer, fcm_member_...)
+    "covers": pl.String(),  # ';'-separated components the amount covers; contains fee_type
     "per_side_usd": pl.String(),  # Decimal string: USD per contract per side (a float would round)
     "effective_from": pl.Date(),  # first calendar date the rate applies to
     "effective_to": pl.Date(),  # nullable: last date it applies to; null = open-ended
     "source_kind": pl.String(),  # official_page (a publisher's page) or owner_provided (a file)
     "provided_by": pl.String(),  # nullable: who supplied the file (owner); null if official_page
-    "source_url": pl.String(),  # nullable: the page fetched, or the owner file's name
+    "source_url": pl.String(),  # the page fetched or the owner file's document: never invented
     "snapshot_sha256": pl.String(),  # SHA-256 of the bytes the row was read from (MANIFEST.json)
     "quote": pl.String(),  # the exact text the rate was read from: a bylaw sentence or a cell
     "event_time": pl.Int64(),  # UTC ns: first instant of effective_from; the rate's own start
@@ -131,9 +149,9 @@ EXCHANGE_FEE_SCHEMA: dict[str, pl.DataType] = {
     "record_sha256": pl.String(),  # SHA-256 of this row's other fields in canonical JSON
     "dataset_version": pl.String(),  # DATASET_VERSION the row was built by
 }
-EXCHANGE_FEE_SORT_KEYS = ["root", "fee_type", "effective_from"]
-"""Stored order: by root, then fee type, then effective date, so identical inputs rebuild to
-identical bytes (ADR-0011) and a root's history reads top to bottom."""
+EXCHANGE_FEE_SORT_KEYS = ["root", "participant_type", "fee_type", "effective_from", "covers"]
+"""Stored order: by root, participant type, fee type, effective date and coverage, so identical
+inputs rebuild to identical bytes (ADR-0011) and a root's history reads top to bottom."""
 
 _NS_PER_S = 1_000_000_000
 _DAY_NS = 86_400 * _NS_PER_S
@@ -174,13 +192,14 @@ class RawFee:
     root: str
     venue: str
     fee_type: str
-    fee_class: str
+    participant_type: str
+    covers: tuple[str, ...]
     per_side_usd: Decimal
     effective_from: dt.date
     effective_to: dt.date | None
     source_kind: str
     provided_by: str | None
-    source_url: str | None
+    source_url: str
     snapshot_sha256: str
     quote: str
 
@@ -189,7 +208,8 @@ class RawFee:
             root=self.root,
             venue=self.venue,
             fee_type=self.fee_type,
-            fee_class=self.fee_class,
+            participant_type=self.participant_type,
+            covers=self.covers,
             per_side_usd=self.per_side_usd,
             effective_from=self.effective_from,
             effective_to=self.effective_to,
@@ -223,6 +243,8 @@ class BuildReport:
     content_hash: str
     rows_by_type: dict[str, int]
     rows_by_source: dict[str, int]
+    roots_priced_by_component: dict[str, tuple[str, ...]]
+    unpriced_components: tuple[str, ...]
     exchange_roots_priced: tuple[str, ...]
     exchange_roots_missing: tuple[str, ...]
     snapshots: int
@@ -233,13 +255,14 @@ def _check_row(
     root: str,
     venue: str,
     fee_type: str,
-    fee_class: str,
+    participant_type: str,
+    covers: Sequence[str],
     per_side_usd: Decimal,
     effective_from: dt.date,
     effective_to: dt.date | None,
     source_kind: str,
     provided_by: str | None,
-    source_url: str | None,
+    source_url: str,
     quote: str,
 ) -> None:
     """Refuse a row the dataset's contract cannot hold, with a message that says how to fix it."""
@@ -252,8 +275,33 @@ def _check_row(
     if fee_type not in FEE_TYPES:
         msg = f"fee_type {fee_type!r} is not one of {list(FEE_TYPES)}"
         raise ConfigurationError(msg)
-    if not fee_class.strip():
-        msg = f"{root} {fee_type}: fee_class is empty; record the rate class the source states"
+    if not covers:
+        msg = (
+            f"{root} {fee_type}: covers is empty; list the components the amount covers "
+            f"as a semicolon-separated list, one of {list(FEE_TYPES)}"
+        )
+        raise ConfigurationError(msg)
+    unknown_covers = [name for name in covers if name not in FEE_TYPES]
+    if unknown_covers:
+        msg = (
+            f"{root} {fee_type}: covers names {unknown_covers}, which is not one of "
+            f"{list(FEE_TYPES)}"
+        )
+        raise ConfigurationError(msg)
+    if len(set(covers)) != len(covers):
+        msg = f"{root} {fee_type}: covers repeats a component in {list(covers)}; list each once"
+        raise ConfigurationError(msg)
+    if fee_type not in covers:
+        msg = (
+            f"{root} {fee_type}: covers {list(covers)} does not contain its own fee_type; a row "
+            "prices the component it is typed as"
+        )
+        raise ConfigurationError(msg)
+    if not participant_type.strip():
+        msg = (
+            f"{root} {fee_type}: participant_type is empty; record who the rate is for "
+            "(non_member_customer, member, fcm_member_assessment, ...)"
+        )
         raise ConfigurationError(msg)
     if not per_side_usd.is_finite() or per_side_usd < 0:
         msg = (
@@ -273,8 +321,12 @@ def _check_row(
             "nor an owner file"
         )
         raise ConfigurationError(msg)
-    if source_kind == SOURCE_KIND_OFFICIAL and not source_url:
-        msg = f"{root} {fee_type}: an official_page row must carry the source_url it was read from"
+    if not source_url.strip():
+        msg = (
+            f"{root} {fee_type}: source_url is required; name the page or the document the rate "
+            "was read from (e.g. https://www.cmegroup.com/company/clearing-fees/historical-fees"
+            ".html)"
+        )
         raise ConfigurationError(msg)
     if source_kind == SOURCE_KIND_OWNER and not provided_by:
         msg = (
@@ -373,7 +425,7 @@ def parse_nfa_assessment(html: str, *, url: str = NFA_BYLAW_URL, sha256: str) ->
     that ⇒ ``$0.02`` per side, open-ended).
 
     Every root gets both rows: the assessment is charged per contract regardless of the product,
-    and a first-class row per root keeps :func:`fee_table_as_of` a plain sum. Refuses when the
+    and a first-class row per root keeps :func:`fee_rows_as_of` a plain lookup. Refuses when the
     sentence is not on the page — the layout changed, and a rate that cannot be quoted must not
     be invented.
     """
@@ -398,7 +450,8 @@ def parse_nfa_assessment(html: str, *, url: str = NFA_BYLAW_URL, sha256: str) ->
                 root=root,
                 venue=VENUE_OF[root],
                 fee_type="nfa",
-                fee_class=FEE_CLASS_NFA,
+                participant_type=PARTICIPANT_TYPE_NFA,
+                covers=("nfa",),
                 per_side_usd=first,
                 effective_from=start,
                 effective_to=end,
@@ -414,7 +467,8 @@ def parse_nfa_assessment(html: str, *, url: str = NFA_BYLAW_URL, sha256: str) ->
                 root=root,
                 venue=VENUE_OF[root],
                 fee_type="nfa",
-                fee_class=FEE_CLASS_NFA,
+                participant_type=PARTICIPANT_TYPE_NFA,
+                covers=("nfa",),
                 per_side_usd=second,
                 effective_from=end + dt.timedelta(days=1),
                 effective_to=None,
@@ -433,23 +487,45 @@ def parse_nfa_assessment(html: str, *, url: str = NFA_BYLAW_URL, sha256: str) ->
 OWNER_COLUMNS: tuple[str, ...] = (
     "root",
     "fee_type",
-    "fee_class",
+    "participant_type",
+    "covers",
     "per_side_usd",
     "effective_from",
+    "source_url",
     "quote",
 )
-"""Columns an owner-provided fee file must carry. ``venue`` is optional (it defaults to
-``VENUE_OF[root]`` and must agree with it), ``effective_to`` is optional (empty = open-ended),
-``source_url`` is optional (it names the document the cell came from)."""
+"""Columns an owner-provided fee file must carry.
 
-OWNER_OPTIONAL: tuple[str, ...] = ("venue", "effective_to", "source_url")
+``covers`` is a semicolon-separated list of the components the amount covers and must contain the
+row's own ``fee_type`` (a CME "Exchange Fees for Clearing & Trading" cell is
+``fee_type=exchange``, ``covers=exchange;clearing``). ``source_url`` names the document the cell
+came from — the CME page the owner downloaded, e.g.
+``https://www.cmegroup.com/company/clearing-fees/historical-fees.html`` — and is required: a rate
+nobody can point at is not a fee. ``venue`` and ``effective_to`` are optional."""
+
+OWNER_OPTIONAL: tuple[str, ...] = ("venue", "effective_to")
 """Columns an owner-provided file may also carry; any other column is refused, so a typo in a
 heading cannot silently drop a rate."""
+
+_COVERS_SEPARATOR = ";"
+"""The separator between component names in a row's ``covers`` value."""
+
+
+def parse_covers(text: str, *, where: str) -> tuple[str, ...]:
+    """The components a ``covers`` cell lists, in the order written, each one once."""
+    names = tuple(part.strip() for part in text.split(_COVERS_SEPARATOR) if part.strip())
+    if not names:
+        msg = (
+            f"{where}: covers is empty; list the components the amount covers as a "
+            "semicolon-separated list (exchange, clearing, nfa, other)"
+        )
+        raise ConfigurationError(msg)
+    return names
 
 
 def owner_template() -> str:
     """The header line an owner-provided file starts with, for the docs and the tests."""
-    return ",".join(("root", *OWNER_COLUMNS[1:], *OWNER_OPTIONAL))
+    return ",".join((*OWNER_COLUMNS, *OWNER_OPTIONAL))
 
 
 def load_owner_provided_csv(
@@ -511,19 +587,20 @@ def load_owner_provided_csv(
             except ValueError as exc:
                 msg = f"{where}: effective_to {raw_to!r} is not YYYY-MM-DD (or empty)"
                 raise DataQualityError(msg) from exc
-        source_url = record.get("source_url")
+        source_url = str(record["source_url"] or "").strip()
         rows.append(
             RawFee(
                 root=root,
                 venue=venue_text,
                 fee_type=fee_type,
-                fee_class=str(record["fee_class"]).strip(),
+                participant_type=str(record["participant_type"]).strip(),
+                covers=parse_covers(str(record["covers"]), where=where),
                 per_side_usd=_parse_amount(str(record["per_side_usd"]), where),
                 effective_from=effective_from,
                 effective_to=effective_to,
                 source_kind=SOURCE_KIND_OWNER,
                 provided_by=provided_by,
-                source_url=None if source_url is None else str(source_url).strip(),
+                source_url=source_url,
                 snapshot_sha256=sha,
                 quote="" if record["quote"] is None else str(record["quote"]),
             )
@@ -668,6 +745,11 @@ def load_snapshots(raw_dir: Path) -> list[Snapshot]:
 # ----------------------------------------------------------------------------------- the build
 
 
+def _covers_text(fee: RawFee) -> str:
+    """The stored ``covers`` value: the components separated by ``;``, in the row's own order."""
+    return _COVERS_SEPARATOR.join(fee.covers)
+
+
 def _row_dict(fee: RawFee, dataset_version: str) -> dict[str, object]:
     """The stored row: instants, hash and version attached, money as its decimal string."""
     moment = _day_ns(fee.effective_from)
@@ -675,7 +757,8 @@ def _row_dict(fee: RawFee, dataset_version: str) -> dict[str, object]:
         "root": fee.root,
         "venue": fee.venue,
         "fee_type": fee.fee_type,
-        "fee_class": fee.fee_class,
+        "participant_type": fee.participant_type,
+        "covers": _covers_text(fee),
         "per_side_usd": str(fee.per_side_usd),
         "effective_from": fee.effective_from,
         "effective_to": fee.effective_to,
@@ -692,22 +775,44 @@ def _row_dict(fee: RawFee, dataset_version: str) -> dict[str, object]:
     return row
 
 
-def _check_series(fees: Sequence[RawFee]) -> None:
-    """Refuse a table in which one key has two rows, or two rows overlap in time.
+def _series_key(fee: RawFee, component: str) -> tuple[str, str, str]:
+    """The key one component of a row is stored under on a date.
 
-    ``fee_table_as_of`` has to return *the* rate for a date; two rows covering it would make the
-    answer depend on row order, which is never acceptable for money.
+    Every component is keyed by ``(root, participant_type, component)`` — except ``nfa``, which
+    is the **FCM member's** assessment passed through to every customer, so its participant type
+    is ``fcm_member_assessment`` rather than a customer rate class, and two NFA rows for one root
+    and date would be contradictory whatever their participant type (``fee_rows_as_of`` prices an
+    NFA row for any requested participant type).
     """
-    grouped: dict[tuple[str, str], list[RawFee]] = {}
+    if component == "nfa":
+        return (fee.root, "*", component)
+    return (fee.root, fee.participant_type, component)
+
+
+def _check_series(fees: Sequence[RawFee]) -> None:
+    """Refuse a table in which one component has two rows, or two rows overlap in time.
+
+    ``fee_rows_as_of`` has to return *the* amount for a component on a date; two rows covering it
+    would make the answer depend on row order, which is never acceptable for money. A row that
+    covers several components is checked once per component, because that is how it is charged.
+    """
+    grouped: dict[tuple[str, str, str], list[RawFee]] = {}
     for fee in fees:
-        grouped.setdefault((fee.root, fee.fee_type), []).append(fee)
-    for (root, fee_type), rows in sorted(grouped.items()):
+        for component in fee.covers:
+            grouped.setdefault(_series_key(fee, component), []).append(fee)
+    for key, rows in sorted(grouped.items()):
+        root, participant_type, component = key
+        label = (
+            f"{root} {component}"
+            if participant_type == "*"
+            else f"{root} {participant_type} {component}"
+        )
         ordered = sorted(rows, key=lambda row: row.effective_from)
         seen: dict[dt.date, str] = {}
         for row in ordered:
             if row.effective_from in seen:
                 msg = (
-                    f"{root} {fee_type}: two rows start on {row.effective_from} "
+                    f"{label}: two rows start on {row.effective_from} "
                     f"({seen[row.effective_from]} and {row.source_kind}): one key, one rate"
                 )
                 raise ConfigurationError(msg)
@@ -715,9 +820,11 @@ def _check_series(fees: Sequence[RawFee]) -> None:
         for earlier, later in itertools.pairwise(ordered):
             if earlier.effective_to is None or earlier.effective_to >= later.effective_from:
                 msg = (
-                    f"{root} {fee_type}: the row from {earlier.effective_from} "
+                    f"{label}: the row from {earlier.effective_from} "
                     f"(to {earlier.effective_to or 'open'}) overlaps the row from "
-                    f"{later.effective_from}; close one of them (effective_to) before building"
+                    f"{later.effective_from}; close one of them (effective_to) before building. "
+                    "A component covered twice on one date is ambiguous, and a covering row is "
+                    "charged once"
                 )
                 raise ConfigurationError(msg)
 
@@ -731,11 +838,11 @@ def build_exchange_fees(
 ) -> BuildReport:
     """Build ``exchange_fees_v1`` from ``raw_dir`` plus any owner-supplied fee files.
 
-    The NFA rows come from the fetched bylaw page; the ``exchange`` rows come only from
-    ``owner_provided`` (see :func:`load_owner_provided_csv`) — with none, the dataset holds the
-    regulatory fee and no exchange fee, and :func:`fee_table_as_of` refuses rather than pricing an
-    unknown fee at zero. The report names the roots that were not priced, so a build cannot look
-    complete when it is not.
+    The NFA rows come from the fetched bylaw page; the ``exchange``, ``clearing`` and ``other``
+    rows come only from ``owner_provided`` (see :func:`load_owner_provided_csv`) — with none, the
+    dataset holds the regulatory fee and no other component, and :func:`fee_rows_as_of` prices
+    nothing for the missing components. The report names the roots each component was priced for,
+    so a build cannot look complete when it is not.
 
     Refuses to overwrite an existing dataset: the dataset is a stable, hash-checked artifact and
     silently replacing it would invalidate every attempt that cited it.
@@ -766,6 +873,13 @@ def build_exchange_fees(
     _check_series(fees)
     rows = [_row_dict(fee, dataset_version) for fee in fees]
     frame = pl.DataFrame(rows, orient="row", schema=EXCHANGE_FEE_SCHEMA)
+    priced_by_component = {
+        component: tuple(sorted({fee.root for fee in fees if component in fee.covers}))
+        for component in FEE_TYPES
+    }
+    unpriced = tuple(
+        component for component in FEE_TYPES if set(priced_by_component[component]) != set(ROOTS)
+    )
     priced = tuple(sorted({fee.root for fee in fees if fee.fee_type == "exchange"}))
     missing = tuple(root for root in ROOTS if root not in priced)
     today = dt.datetime.now(dt.UTC).date().isoformat()
@@ -797,6 +911,8 @@ def build_exchange_fees(
             kind: sum(1 for fee in fees if fee.source_kind == kind)
             for kind in (SOURCE_KIND_OFFICIAL, SOURCE_KIND_OWNER)
         },
+        roots_priced_by_component=priced_by_component,
+        unpriced_components=unpriced,
         exchange_roots_priced=priced,
         exchange_roots_missing=missing,
         snapshots=len(snapshots),
@@ -811,91 +927,133 @@ def _read(store: DataStore, as_of_ns: int, dataset: DatasetId | None = None) -> 
     return store.read(name, TimestampNs(as_of_ns)).collect()
 
 
-def fee_table_as_of(
-    store: DataStore, date: dt.date, *, dataset: DatasetId | None = None
-) -> dict[str, Decimal]:
-    """``{root: USD per side}`` — exchange fee plus NFA assessment — as of ``date``.
+def _covers_of(value: object) -> tuple[str, ...]:
+    """The components a stored ``covers`` cell lists."""
+    return tuple(part.strip() for part in str(value).split(_COVERS_SEPARATOR) if part.strip())
 
-    The table is read at the end of ``date`` (UTC), so a rate that starts later is invisible: a
+
+def _participant_matches(*, row_participant_type: object, requested: str, component: str) -> bool:
+    """Whether a stored row prices ``participant_type`` for ``component``.
+
+    An exact match on the row's own ``participant_type`` — plus one stated exception: the ``nfa``
+    assessment is made on the FCM member per contract and passed through to every customer, so its
+    row carries ``fcm_member_assessment`` rather than a customer rate class and it prices any
+    requested participant type. Every other component requires the exact type: a member rate is
+    never offered as a customer rate (ADR-0107 section 10, no extrapolation).
+    """
+    if component == "nfa":
+        return True
+    return str(row_participant_type) == requested
+
+
+def fee_rows_as_of(
+    store: DataStore,
+    root: str,
+    date: dt.date,
+    *,
+    participant_type: str,
+    components: Sequence[str],
+    dataset: DatasetId | None = None,
+) -> dict[str, tuple[Decimal, str]]:
+    """``{component: (USD per side, row record_sha256)}`` for ONE root on ``date``.
+
+    The rows are read at the end of ``date`` (UTC), so a rate that starts later is invisible: a
     backtest cannot be handed a fee that had not taken effect. ``date`` is the calendar date the
     fee applies to (a trade date, not an instant).
 
-    **Refuses** when any root has no row of a fee type covering ``date``. An exchange fee nobody
-    published is *unknown*, not zero, so a caller that wants to continue must price it explicitly
-    — supply the owner's file (:func:`load_owner_provided_csv`) and rebuild. The message names the
-    roots, the date and that route, because a missing regulatory or exchange figure silently
-    priced at zero would flatter every result that used it (AGENTS.md section 1.4/1.5).
+    **Only the root asked for is priced.** The previous lookup demanded a row for every one of the
+    nine roots and refused otherwise, so an owner file that priced ES alone could not be used at
+    all; here an unpriced root is the caller's named gap, not the dataset's refusal.
 
-    ``dataset`` reads another built version of the table instead of :data:`DATASET`.
+    A component with no covering row is simply absent from the result: the caller reports it as a
+    gap, never as a zero fee (AGENTS.md section 1.5). A row that covers several components (a CME
+    "Exchange Fees for Clearing & Trading" cell is ``fee_type=exchange`` with
+    ``covers=exchange;clearing``) is charged once, and each component it covers carries that same
+    amount and record hash.
+
+    ``participant_type`` is the customer's rate class (``non_member_customer``, ``member``, ...).
+    A row prices only its exact participant type — except an ``nfa`` row, which is the FCM
+    member's pass-through assessment and prices any requested type.
+
+    ``dataset`` reads another built version of the table instead of :data:`DATASET`. Two rows
+    covering one component on one date are refused: no rate may be chosen from a contradiction.
     """
-    as_of_ns = _day_ns(date + dt.timedelta(days=1)) - 1
-    frame = _read(store, as_of_ns, dataset).filter(
-        (pl.col("effective_from") <= date)
-        & (pl.col("effective_to").is_null() | (pl.col("effective_to") >= date))
-    )
-    table: dict[str, Decimal] = {}
-    missing: dict[str, list[str]] = {}
-    for root in ROOTS:
-        of_root = frame.filter(pl.col("root") == root)
-        total = Decimal(0)
-        for fee_type in FEE_TYPES:
-            of_type = of_root.filter(pl.col("fee_type") == fee_type)
-            if of_type.height == 0:
-                missing.setdefault(root, []).append(fee_type)
-                continue
-            if of_type.height > 1:
-                msg = (
-                    f"{root} {fee_type}: {of_type.height} rows cover {date}; the stored table is "
-                    "contradictory and no rate may be chosen from it (rebuild it)"
-                )
-                raise ConfigurationError(msg)
-            total += Decimal(str(of_type.get_column("per_side_usd").to_list()[0]))
-        if root not in missing:
-            table[root] = total
-    if missing:
-        lines = []
-        for root in ROOTS:
-            kinds = missing.get(root)
-            if not kinds:
-                continue
-            detail = (
-                "no exchange fee is asserted (CME Group's published schedule names product "
-                "buckets, not root tickers, and its site refuses automated access): supply the "
-                "owner's fee file to load_owner_provided_csv/build_exchange_fees"
-                if kinds == ["exchange"]
-                else f"no {' or '.join(kinds)} row covers {date}"
-            )
-            lines.append(f"  {root}: {detail}")
+    if root not in ROOTS:
+        msg = f"root {root!r} is not one of {list(ROOTS)}: the fee table prices those roots only"
+        raise ConfigurationError(msg)
+    if not participant_type.strip():
         msg = (
-            f"no per-side fee table for {date}: the following roots are unpriced\n"
-            + "\n".join(lines)
-            + "\nThe fees are unknown, not zero: an attempt that excluded fees stays "
-            "conditional until every root is priced."
+            "fee_rows_as_of needs a participant_type (non_member_customer, member, ...): a fee "
+            "without the class it is for is a fee for nobody in particular"
         )
         raise ConfigurationError(msg)
-    return table
+    requested: list[str] = []
+    for component in components:
+        if component not in FEE_TYPES:
+            msg = f"component {component!r} is not one of {list(FEE_TYPES)}"
+            raise ConfigurationError(msg)
+        if component not in requested:
+            requested.append(component)
+    if not requested:
+        return {}
+    as_of_ns = _day_ns(date + dt.timedelta(days=1)) - 1
+    frame = _read(store, as_of_ns, dataset).filter(
+        (pl.col("root") == root)
+        & (pl.col("effective_from") <= date)
+        & (pl.col("effective_to").is_null() | (pl.col("effective_to") >= date))
+    )
+    priced: dict[str, tuple[Decimal, str]] = {}
+    for component in requested:
+        covering = [
+            record
+            for record in frame.iter_rows(named=True)
+            if component in _covers_of(record["covers"])
+            and _participant_matches(
+                row_participant_type=record["participant_type"],
+                requested=participant_type,
+                component=component,
+            )
+        ]
+        if not covering:
+            continue
+        if len(covering) > 1:
+            hashes = ", ".join(sorted(str(record["record_sha256"])[:12] for record in covering))
+            msg = (
+                f"{root} {component}: {len(covering)} rows cover {date} for participant type "
+                f"{participant_type!r} ({hashes}): the stored table contradicts itself and no "
+                "amount may be chosen from it (rebuild it, closing one row's effective_to)"
+            )
+            raise ConfigurationError(msg)
+        record = covering[0]
+        priced[component] = (
+            Decimal(str(record["per_side_usd"])),
+            str(record["record_sha256"]),
+        )
+    return priced
 
 
-def coverage_of(frame: pl.DataFrame) -> dict[tuple[str, str], list[tuple[dt.date, dt.date | None]]]:
-    """The covered date intervals per ``(root, fee_type)``, as the stored rows state them.
+def coverage_of(
+    frame: pl.DataFrame,
+) -> dict[tuple[str, str, str], list[tuple[dt.date, dt.date | None]]]:
+    """The covered date intervals per ``(root, participant_type, component)``.
 
     No interval is invented: a gap between two rows is a gap, and an open-ended row is reported
-    with ``None``. Used by the docs' coverage table and by a caller that wants to know where
-    :func:`fee_table_as_of` will refuse before calling it.
+    with ``None``. A row that covers several components appears under each of them. Used by the
+    docs' coverage table and by a caller that wants to know where :func:`fee_rows_as_of` will
+    report a missing component before calling it.
     """
-    out: dict[tuple[str, str], list[tuple[dt.date, dt.date | None]]] = {}
-    for root in ROOTS:
-        for fee_type in FEE_TYPES:
-            rows = frame.filter((pl.col("root") == root) & (pl.col("fee_type") == fee_type)).sort(
-                "effective_from"
+    out: dict[tuple[str, str, str], list[tuple[dt.date, dt.date | None]]] = {}
+    for record in sorted(
+        frame.iter_rows(named=True),
+        key=lambda row: (row["root"], row["participant_type"], row["effective_from"]),
+    ):
+        for component in _covers_of(record["covers"]):
+            entry = out.setdefault(
+                (str(record["root"]), str(record["participant_type"]), component), []
             )
-            intervals: list[tuple[dt.date, dt.date | None]] = []
-            for record in rows.iter_rows(named=True):
-                start = _as_date(record["effective_from"])
-                end = record["effective_to"]
-                intervals.append((start, None if end is None else _as_date(end)))
-            if intervals:
-                out[(root, fee_type)] = intervals
+            end = record["effective_to"]
+            start = _as_date(record["effective_from"])
+            entry.append((start, None if end is None else _as_date(end)))
     return out
 
 

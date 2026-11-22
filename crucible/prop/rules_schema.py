@@ -34,8 +34,10 @@ declaration (ADR-0107 sections 7-13):
 - ``activity_requirement``: at least N qualifying rule-days in EVERY rolling window of M days.
 - ``payout.min_new_profit_share_of_request``.
 - ``consistency``'s numerator (best day) and denominator (profit) windows declared separately.
-- ``commissions.includes_exchange_and_regulatory_fees``: REQUIRED, and never defaulted: a table
-  that does not say it is refused, not read as all-in.
+- ``commissions.components``: REQUIRED, with all four keys (``exchange``, ``clearing``, ``nfa``,
+  ``other``), each ``{status: included|excluded|unknown, evidence, text}``. A component declared
+  ``included`` or ``excluded`` needs a quotation that says so; ``unknown`` is never a zero cost.
+  The old ``includes_exchange_and_regulatory_fees`` flag is refused by name.
 """
 
 from __future__ import annotations
@@ -53,6 +55,17 @@ SENTINEL_FLOOR_USD = Decimal(1_000_000)
 """A capability above this is a sentinel, not a firm rule; ``unlimited`` says it instead."""
 
 Evidence = Literal["official_quote", "owner_provided", "assumption", "conflict_resolution"]
+COST_COMPONENT_NAME = Literal["exchange", "clearing", "nfa", "other"]
+COST_COMPONENTS: tuple[COST_COMPONENT_NAME, ...] = ("exchange", "clearing", "nfa", "other")
+"""The per-side cost components a firm's commission may or may not contain (ADR-0107 section 10).
+
+``other`` is any other per-side charge the firm states; a component the sources do not state is
+``unknown``, never zero."""
+CostComponentStatus = Literal["included", "excluded", "unknown"]
+"""What a firm says about one component: inside the commission, charged on top, or not stated."""
+CostEvidence = Literal["official_quote", "owner_provided", "not_stated"]
+"""How a component's status is evidenced: a quotation (``official_quote``/``owner_provided``), or
+``not_stated`` with a note naming what was checked, which only ``unknown`` may use."""
 ThresholdLevel = Literal["start", "start_plus_usd", "zero_balance_offset"]
 """The explicit level a payout may set a trailing threshold to (``set_threshold_to``)."""
 LockTrigger = Literal["hwm", "first_payout"]
@@ -180,21 +193,109 @@ class NotModeled(_Frozen):
     source: Attribution
 
 
+class CostComponentDeclaration(_Frozen):
+    """What a firm says about ONE per-side cost component of its commission (ADR-0107 s10).
+
+    ``status`` is ``included`` (the firm's per-side commission contains this component),
+    ``excluded`` (the firm charges it on top of the commission) or ``unknown`` (the sources do not
+    say). An ``included`` or ``excluded`` declaration needs a quote that says so, so ``evidence``
+    is ``official_quote`` or ``owner_provided`` and ``text`` is that quotation. An ``unknown``
+    declaration carries ``evidence: not_stated`` and ``text`` is a short note naming what was
+    checked; an unknown component is never read as a zero cost.
+    """
+
+    status: CostComponentStatus
+    evidence: CostEvidence
+    text: str
+
+    @model_validator(mode="after")
+    def _stated(self) -> CostComponentDeclaration:
+        if not self.text.strip():
+            msg = (
+                "a cost component needs non-empty text: the quotation that states its status, or "
+                "the note naming what was checked when the sources are silent"
+            )
+            raise ValueError(msg)
+        if self.status in ("included", "excluded"):
+            if self.evidence not in ("official_quote", "owner_provided"):
+                msg = (
+                    f"a component declared {self.status} needs a quotation that says so: evidence "
+                    f"must be official_quote or owner_provided, not {self.evidence!r}"
+                )
+                raise ValueError(msg)
+        elif self.evidence != "not_stated":
+            msg = (
+                "a component declared unknown is a fact the sources do not state: evidence must "
+                f"be not_stated, not {self.evidence!r}"
+            )
+            raise ValueError(msg)
+        return self
+
+
+class CostComponents(_Frozen):
+    """Every per-side cost component of a commission, one declaration each (ADR-0107 s10).
+
+    All four keys are REQUIRED and there are no defaults: a missing key would be the engine
+    deciding a cost component the firm never declared (ADR-0107 section 8). There is no ``all_in``
+    shortcut either, because firms that publish an all-in rate still do not say what is inside it.
+    """
+
+    exchange: CostComponentDeclaration
+    clearing: CostComponentDeclaration
+    nfa: CostComponentDeclaration
+    other: CostComponentDeclaration
+
+    def declaration(self, name: COST_COMPONENT_NAME) -> CostComponentDeclaration:
+        """The declaration of one component (the fields above are exactly those four)."""
+        by_name: dict[str, CostComponentDeclaration] = {
+            "exchange": self.exchange,
+            "clearing": self.clearing,
+            "nfa": self.nfa,
+            "other": self.other,
+        }
+        return by_name[name]
+
+    def status(self, name: COST_COMPONENT_NAME) -> CostComponentStatus:
+        """The declared status of one component."""
+        return self.declaration(name).status
+
+    def of_status(self, status: CostComponentStatus) -> tuple[COST_COMPONENT_NAME, ...]:
+        """The components declared with ``status``, in report order."""
+        return tuple(name for name in COST_COMPONENTS if self.status(name) == status)
+
+
 class Commissions(_Frozen):
     """Per-side commissions by root (ADR-0107 section 10). Unknown is never zero.
 
-    ``includes_exchange_and_regulatory_fees`` says whether ``per_side_usd`` is an all-in number
-    (``true``), a commission that must be added to the exchange and regulatory fees of an
-    ``ExchangeFeeSource`` (``false``), or a fact the sources do not state (``unknown``). It is
-    REQUIRED: there is no default, because the difference between an all-in and an ex-fees
-    commission is a cost, and a default would be the engine inventing one (ADR-0107 section 8).
+    ``components`` says, per cost component (exchange, clearing, NFA, other), whether the firm's
+    per-side commission contains it (``included``), excludes it (``excluded``, so the run adds the
+    component from the fee dataset) or does not say (``unknown``). It is REQUIRED, with all four
+    keys: the difference between an all-in and an ex-fees commission is a cost, and a default
+    would be the engine inventing one (ADR-0107 section 8).
+
+    ``evidence`` is the kind of evidence behind the commission figures themselves: a per-side
+    table the owner supplied is ``owner_provided`` and pending independent verification, and it is
+    never described as all-in.
     """
 
     status: Literal["known", "unknown"]
-    includes_exchange_and_regulatory_fees: bool | Literal["unknown"]
+    components: CostComponents
     per_side_usd: dict[str, _MONEY_GE0] = Field(default_factory=dict)
     platform: str | None = None
+    evidence: Evidence = "official_quote"
     source: Attribution
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_all_in_flag(cls, data: object) -> object:
+        if isinstance(data, dict) and "includes_exchange_and_regulatory_fees" in data:
+            msg = (
+                "commissions.includes_exchange_and_regulatory_fees is gone: declare each cost "
+                "component instead in the required commissions.components block "
+                "(exchange, clearing, nfa, other, each {status, evidence, text})"
+            )
+            raise ValueError(msg)
+        return data
 
     @model_validator(mode="after")
     def _consistent(self) -> Commissions:
@@ -226,11 +327,19 @@ class Commissions(_Frozen):
         return self.per_side_usd.get(root)
 
     @property
-    def exchange_fees_included(self) -> bool | None:
-        """``True`` all-in, ``False`` excludes the exchange fees, ``None`` the source is silent."""
-        if isinstance(self.includes_exchange_and_regulatory_fees, bool):
-            return self.includes_exchange_and_regulatory_fees
-        return None
+    def excluded_components(self) -> tuple[str, ...]:
+        """The components the firm charges on top of the commission, in report order."""
+        return self.components.of_status("excluded")
+
+    @property
+    def unknown_components(self) -> tuple[str, ...]:
+        """The components the sources do not state, in report order: never a zero cost."""
+        return self.components.of_status("unknown")
+
+    @property
+    def all_in(self) -> bool:
+        """``True`` only when every component is declared ``included`` by a quotation."""
+        return not self.excluded_components and not self.unknown_components
 
 
 ABSENT = "absent"

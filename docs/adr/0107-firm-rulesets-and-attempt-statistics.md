@@ -367,6 +367,100 @@ schema version 2.
 - Fees: `monthly`, counted per started calendar month of the attempt, and `on_reset`.
 - `news_restriction` (section 12).
 
+## Amendment (2026-11-22): cost components and cost-assumption files
+
+Section 10 above said a ruleset declares whether its per-side commission "includes the exchange and
+regulatory fees" (`true | false | unknown`). The owner ruled that single flag wrong: a firm's
+per-side commission is not one question but five components, and a boolean hides which of them is
+unknown. This amendment replaces it in place (schema version 2 is unreleased), and states the
+binding rules.
+
+**1. Every cost component is recorded separately.**
+
+- The components are: the brokerage **commission** (the firm's `per_side_usd`), the **exchange**
+  fee, the **clearing** fee, the **nfa** assessment, and **other** (any other per-side charge).
+- `commissions.components` is REQUIRED and has exactly those four keys (the commission is the
+  `per_side_usd` itself), each `{status, evidence, text}`:
+  - `included`: the firm's per-side commission contains the component. It needs a quotation that
+    says so (`evidence: official_quote | owner_provided`).
+  - `excluded`: the firm charges the component on top of the commission. It needs a quotation that
+    says so.
+  - `unknown`: the sources do not say. `evidence: not_stated` and `text` is a short note naming what
+    was checked.
+- There are no defaults: a missing key is refused. `commissions.includes_exchange_and_regulatory_fees`
+  is refused BY NAME, with a message that names the new block.
+
+**2. Unknown is never zero.**
+
+- A component the sources do not state is `unknown`, and an `excluded` component with no covering
+  row is unpriced: either is a GAP, never a zero.
+- The cost total is never presented as complete while any component is unknown or unpriced: the
+  attempt's `cost_status` is `unavailable`, and `cost_gaps` names each one.
+- Firm commissions are not all-in unless the firm says so. Apex and Lucid are not all-in (every
+  component `unknown`); Lucid's per-side table is `owner_provided`, pending independent
+  verification, and is never described as all-in; FTMO gets no complete all-in cost while any
+  required fee is missing.
+
+**3. No universal CME fee, and no extrapolation.**
+
+- A fee row prices only its exact root, `participant_type` and date range. There is no
+  product-bucket-to-root mapping anywhere, and no fee is carried across roots, products or
+  participant types.
+- The owner's estimate of USD 1.38 per side is an **unverified owner reference**, recorded only in
+  `docs/data/cme-exchange-fees.md` under "Unverified owner references". It is not a fee, no ruleset
+  or module carries it, and the engine never reads it: it enters a run only through a
+  cost-assumption file the user passes explicitly.
+
+**4. The owner imports CME fee files.**
+
+- Each row records the source (`source_url`, required), its effective dates, the product (root),
+  the participant type, and which components the amount covers (`covers`, a `;`-separated list that
+  must contain the row's own `fee_type`). A row covering several components is charged once.
+- The rows are historical: a date picks its own row. The CME historical-fees page is required for
+  pre-2025 data, and automated retrieval stays refused.
+- `fee_rows_as_of(store, root, date, participant_type=..., components=...)` prices ONLY the root
+  asked for. The earlier lookup demanded a row for every root and therefore could not use an owner
+  file that priced one instrument; that was a bug, and a component with no covering row is now
+  reported as a gap by the caller.
+
+**5. The run states the participant type.**
+
+- A ruleset never states one, so the participant type that prices `excluded` components is a RUN
+  parameter (`--fee-participant-type`, MCP `fee_participant_type`). It is refused when missing as
+  soon as a component is `excluded`.
+- Using it makes the estimate `conditional`, with the reason `participant type assumed: <x>`. It is
+  never `complete`.
+
+**6. A cost assumption is a FILE, not a name.**
+
+- Fields: `name`, `description`, `provided_by`, `status: unverified` (the only accepted value),
+  `evidence`, and `amounts` keyed by root, each root a list of `{covers: [...], per_side_usd: "..."}`.
+- An entry applies only to the root and components it lists: no extrapolation to another root.
+- An `unknown` component it prices is ADDED, which is worse for the strategy and therefore the
+  pessimistic direction.
+- It may not override an `included` component, or an `excluded` one the dataset already priced:
+  the run is refused.
+- The assumption file's SHA-256, the gaps it priced and the gaps that remain are recorded in
+  `attempts.parquet` (per component: status and USD, `cost_gaps`, `cost_assumption_sha256`,
+  `fee_participant_type`), in `summary.json` (a per-component status table per root, plus the file's
+  identity and its unused roots) and in the manifest.
+- With every gap priced the estimate is `conditional` and never `complete`; with any gap left it is
+  `unavailable`.
+
+**Consequences of the amendment.**
+
+- Six firm mappings were re-read against their own pages and rewritten: FundedNext (all four
+  included, `other` unknown), Topstep (exchange and NFA included, clearing and other unknown), FTMO
+  (exchange and NFA excluded, clearing and other unknown), and Apex, Lucid and MFFU (every
+  component unknown — MFFU's former all-in reading rested on a column name and a subtitle that name
+  no component separately, which is exactly the inference this amendment forbids).
+- A cost-driven statistic now needs three explicit things from the user: the participant type, an
+  owner fee file (or a dataset that prices the components), and — for anything a source leaves
+  unknown — a cost-assumption file. Each is recorded by hash in the artifact.
+- `rulesets/prop/INDEX.json` is regenerated: these rulesets are unverified and unmerged, so their
+  content hashes change in place. The index stays append-only in the two senses that still hold: no
+  version disappears, no version number is reused, and a `verified` ruleset's hash never changes.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

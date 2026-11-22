@@ -117,7 +117,9 @@ class CostSchedule:
     """Costs per contract per side, against the trader (ADR-0090, decision 3).
 
     ``commission`` is required: there is no default, because a zero would be silently optimistic.
-    The three fees default to 0 (an all-in commission includes them). ``spread_ticks`` (the full
+    The four per-component fees default to 0 (an all-in commission includes them):
+    ``exchange_fee``, ``clearing_fee``, ``regulatory_fee`` (the NFA assessment) and ``other_fee``.
+    ``spread_ticks`` (the full
     spread; half is paid per side) and ``slippage_ticks`` default to 1 and are uncalibrated
     assumptions unless declared calibrated. ``prices_include_spread`` declares that the execution
     prices already carry the spread, which then must be 0."""
@@ -126,6 +128,7 @@ class CostSchedule:
     exchange_fee: Decimal = Decimal(0)
     clearing_fee: Decimal = Decimal(0)
     regulatory_fee: Decimal = Decimal(0)
+    other_fee: Decimal = Decimal(0)
     spread_ticks: Decimal = Decimal(1)
     slippage_ticks: Decimal = Decimal(1)
     spread_calibrated: bool = False
@@ -157,7 +160,13 @@ class CostSchedule:
 
     @property
     def fees_per_side(self) -> Decimal:
-        return self.commission + self.exchange_fee + self.clearing_fee + self.regulatory_fee
+        return (
+            self.commission
+            + self.exchange_fee
+            + self.clearing_fee
+            + self.regulatory_fee
+            + self.other_fee
+        )
 
     def ticks_at(self, minute: int) -> tuple[Decimal, Decimal]:
         """``(spread_ticks, slippage_ticks)`` for a fill at that Chicago minute of the day."""
@@ -172,6 +181,7 @@ class CostSchedule:
             "exchange_fee": str(self.exchange_fee),
             "clearing_fee": str(self.clearing_fee),
             "regulatory_fee": str(self.regulatory_fee),
+            "other_fee": str(self.other_fee),
             "spread_ticks": str(self.spread_ticks),
             "slippage_ticks": str(self.slippage_ticks),
             "spread_calibrated": self.spread_calibrated,

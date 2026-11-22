@@ -18,10 +18,13 @@ takes it. ``payouts_usd`` is the trader's net share, ``net_cash_usd`` is that mi
 in this stage.
 
 Two cost facts decide whether the cash statistic is a number at all (ADR-0107 section 10):
-``commissions`` may be unknown, and a commission that EXCLUDES the exchange and regulatory fees
-needs an ``ExchangeFeeSource``. Either gap leaves ``cash_estimate_status`` ``unavailable`` unless a
-named ``cost_assumption`` covers it. A payout cap the source does not state (``unknown``) is a
-third case: the cash numbers are paid as the other terms allow and labelled ``upper_bound``.
+the commission may be unknown, and every cost component the firm charges ON TOP of it
+(``exchange``, ``clearing``, ``nfa``, ``other``) must be priced by a ``ComponentFeeSource`` for the
+run's participant type. A component the sources do not state is a gap. Any gap leaves
+``cash_estimate_status`` ``unavailable`` unless a ``CostAssumption`` FILE covers every one of
+them, which makes it ``conditional`` and never ``complete``. A payout cap the source does not
+state (``unknown``) is a third case: the cash numbers are paid as the other terms allow and
+labelled ``upper_bound``.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 
-from crucible.core.errors import ConfigurationError, CrucibleError, DataQualityError
+from crucible.core.errors import ConfigurationError, DataQualityError
 from crucible.data.cme_sessions import assign_bars, trade_date_of
 from crucible.execution.futures_sim import (
     CostSchedule,
@@ -44,7 +47,13 @@ from crucible.execution.futures_sim import (
 )
 from crucible.execution.interfaces import OverlayEvent
 from crucible.prop import rules as rl
-from crucible.prop.costs import ExchangeFeeRow, ExchangeFeeSource, ExchangeFeeTable
+from crucible.prop.costs import (
+    ComponentCharge,
+    ComponentFeeSource,
+    ComponentFeeTable,
+    CostAssumption,
+    price_components,
+)
 from crucible.prop.coverage import (
     EvaluationStatus,
     RuleCoverageRow,
@@ -123,23 +132,44 @@ class FeeBreakdown:
 
 @dataclass(frozen=True, slots=True)
 class CommissionApplication:
-    """The commission table the attempt used, and whether it is known (ADR-0107 section 10).
+    """The commission table the attempt used and what every cost component cost (ADR-0107 s10).
 
-    ``exchange_fee_usd`` is the per-side amount added from the ``ExchangeFeeSource`` when the
-    commission EXCLUDES it (the schedule's ``exchange_fee``), and ``exchange_fee_source_sha256``
-    names the document it came from. ``fees_incomplete`` is the reason the cost statistics cannot
-    claim an exact number, or None.
+    ``components`` holds one :class:`ComponentCharge` per cost component (the commission and the
+    four the firm may charge on top), ``cost_gaps`` names the components no source could price and
+    ``cost_status`` is ``complete``, ``conditional`` (a cost assumption or an assumed participant
+    type supplied a value) or ``unavailable``.
+
+    ``participant_type`` is the rate class the ``excluded`` components were priced for: it is a RUN
+    parameter, because the ruleset never states one, and using it keeps the cost ``conditional``.
+    ``cost_assumption``/``cost_assumption_sha256`` name the file that priced a gap, and
+    ``priced_by_assumption`` lists which components it priced.
     """
 
     status: str
     per_side_usd: Decimal | None
     root: str
     source: str
-    cost_assumption: str | None
-    includes_exchange_and_regulatory_fees: str
-    exchange_fee_usd: Decimal | None = None
-    exchange_fee_source_sha256: str | None = None
-    fees_incomplete: str | None = None
+    components: tuple[ComponentCharge, ...]
+    cost_gaps: tuple[str, ...]
+    fees_incomplete: str | None
+    cost_status: str = "unavailable"
+    participant_type: str | None = None
+    cost_assumption: str | None = None
+    cost_assumption_sha256: str | None = None
+    priced_by_assumption: tuple[str, ...] = ()
+
+    @property
+    def priced_from_dataset(self) -> bool:
+        """Whether any component was priced from the fee dataset for the run's participant type."""
+        return any(item.status == "excluded_priced" for item in self.components)
+
+    def component(self, name: str) -> ComponentCharge:
+        """One component's charge: the commission, exchange, clearing, nfa or other."""
+        for item in self.components:
+            if item.component == name:
+                return item
+        msg = f"no charge recorded for component {name!r}"
+        raise ConfigurationError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,99 +305,57 @@ def _commissions_for(
     ruleset: PropRuleset,
     costs: CostSchedule,
     root: str,
-    cost_assumption: str | None,
+    cost_assumption: CostAssumption | None,
     *,
-    exchange_fees: ExchangeFeeSource | None = None,
+    fee_source: ComponentFeeSource | None = None,
+    participant_type: str | None = None,
     when: dt.date,
-) -> tuple[CostSchedule, CommissionApplication, bool, str | None]:
-    """The ruleset's commission table replaces the run's fee schedule (spread/slippage stay).
+) -> tuple[CostSchedule, CommissionApplication]:
+    """The ruleset's commission replaces the run's fee schedule; every component is priced.
 
-    An unknown commission is never treated as zero: without an explicit named assumption the
-    run's own schedule is kept as a labelled placeholder and the cost statistics are unavailable.
-    A commission that EXCLUDES the exchange and regulatory fees adds the ``ExchangeFeeSource``'s
-    per-side amount, charged as the schedule's exchange fee; without a source, when the source does
-    not cover the root and date, or when the source REFUSES to price it (the stored dataset raises
-    rather than guess), the fee is a named gap (``fees_incomplete``) and the cost statistics stay
-    conditional or unavailable. A commission that declares the fees ``unknown`` is the same gap: an
-    unknown cost is never a cost of zero.
+    An unknown commission is never treated as zero: the run's own schedule is kept as a labelled
+    placeholder and the cost statistics stay unavailable. Each component the firm charges ON TOP of
+    the commission is added from ``fee_source`` for the run's ``participant_type``; a component the
+    sources do not state, or one the source cannot price for this root and date, is a named gap. A
+    ``cost_assumption`` FILE prices exactly the gaps it names for exactly this root — it may not
+    override a component the ruleset includes or the dataset already priced.
 
-    The returned fourth value is the reason the cost statistics cannot claim an exact number, or
-    None when they can.
+    The returned ``CommissionApplication.cost_status`` is ``complete`` (nothing is missing, no
+    assumption and no assumed participant type was needed), ``conditional`` (an assumption or the
+    participant type supplied a value) or ``unavailable`` (a gap remains). The schedule carries the
+    priced amounts; a gap contributes nothing, and the caller must not present the total as
+    complete.
     """
     table = ruleset.commissions
-    declared = table.includes_exchange_and_regulatory_fees
     per_side = table.per_side(root) if table.status == "known" else None
-    if per_side is not None:
-        exchange = Decimal(0)
-        source_sha256: str | None = None
-        gaps: list[str] = []
-        included = table.exchange_fees_included
-        if included is False:
-            row: ExchangeFeeRow | None = None
-            if exchange_fees is None:
-                gaps.append(
-                    "the commission excludes the exchange and regulatory fees and no exchange "
-                    "fee table was given"
-                )
-            else:
-                try:
-                    row = exchange_fees.per_side(root, when)
-                except CrucibleError as exc:
-                    # the table refuses to price this root and date: never a zero fee
-                    gaps.append(f"exchange fees unknown: {exc}")
-                if not gaps and row is None:
-                    gaps.append(
-                        f"the exchange fee table has no row for {root} on {when.isoformat()}, so "
-                        "the per-side fee the commission excludes is unknown"
-                    )
-                if row is not None:
-                    exchange = row.per_side_usd
-                    source_sha256 = getattr(exchange_fees, "source_sha256", None)
-        elif included is None:
-            gaps.append(
-                "the commission does not declare whether it includes the exchange and regulatory "
-                "fees (it is required to)"
-            )
-        schedule = replace(
-            costs,
-            commission=per_side,
-            exchange_fee=exchange,
-            clearing_fee=Decimal(0),
-            regulatory_fee=Decimal(0),
-        )
-        return (
-            schedule,
-            CommissionApplication(
-                status="known",
-                per_side_usd=per_side,
-                root=root,
-                source=table.source.quote,
-                cost_assumption=None,
-                includes_exchange_and_regulatory_fees=(
-                    "unknown" if included is None else str(included).lower()
-                ),
-                exchange_fee_usd=exchange,
-                exchange_fee_source_sha256=source_sha256,
-                fees_incomplete="; ".join(gaps) or None,
-            ),
-            not gaps or cost_assumption is not None,
-            "; ".join(gaps) or None,
-        )
-    available = cost_assumption is not None
+    pricing = price_components(
+        components=table.components,
+        commission_status=table.status,
+        commission_per_side=per_side,
+        root=root,
+        when=when,
+        costs=costs,
+        fee_source=fee_source,
+        participant_type=participant_type,
+        assumption=cost_assumption,
+    )
+    gaps = pricing.gaps
     return (
-        costs,
+        pricing.schedule,
         CommissionApplication(
-            status="unknown",
-            per_side_usd=None,
+            status="known" if per_side is not None else "unknown",
+            per_side_usd=per_side,
             root=root,
             source=table.source.quote,
-            cost_assumption=cost_assumption,
-            includes_exchange_and_regulatory_fees=(
-                "unknown" if not isinstance(declared, bool) else str(declared).lower()
-            ),
+            components=pricing.charges,
+            cost_gaps=gaps,
+            fees_incomplete=pricing.gap_text,
+            cost_status=pricing.status,
+            participant_type=participant_type,
+            cost_assumption=None if cost_assumption is None else cost_assumption.name,
+            cost_assumption_sha256=None if cost_assumption is None else cost_assumption.sha256,
+            priced_by_assumption=pricing.priced_by_assumption,
         ),
-        available,
-        None,
     )
 
 
@@ -413,14 +401,15 @@ def estimate_status(
     session_calendar_gaps: tuple[str, ...] = (),
     fees_incomplete: str | None = None,
     payout_cap_unknown: bool = False,
+    participant_type: str | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     """``complete|conditional|partial|unavailable`` and its reasons (ADR-0107 section 11).
 
-    ``unavailable`` when a critical rule is unmodeled, the commissions are unknown without a named
-    assumption, or a cost the commission excludes has no fee table and no assumption; ``partial``
-    when a material rule (including an uncovered news window or a payout cap the sources do not
-    state) is unmodeled; ``conditional`` when the ruleset is unverified or a cost assumption was
-    used.
+    ``unavailable`` when a critical rule is unmodeled, the commission is unknown without a cost
+    assumption, or a cost component has no source and no assumption; ``partial`` when a material
+    rule (including an uncovered news window or a payout cap the sources do not state) is
+    unmodeled; ``conditional`` when the ruleset is unverified, a cost assumption was used, or the
+    participant type that priced the excluded components had to be assumed.
     """
     reasons: list[str] = []
     critical = [row.rule for row in coverage if not row.modeled and row.materiality == "critical"]
@@ -437,6 +426,8 @@ def estimate_status(
         reasons.append("commissions are unknown and no cost assumption was given")
     elif cost_assumption is not None:
         reasons.append(f"cost assumption {cost_assumption!r} was used")
+    if participant_type is not None:
+        reasons.append(f"participant type assumed: {participant_type}")
     if payout_cap_unknown:
         reasons.append(PAYOUT_CAP_UNKNOWN)
     if (
@@ -458,7 +449,7 @@ def estimate_status(
         return "unavailable", tuple(reasons)
     if material or news_coverage_gaps or session_calendar_gaps or payout_cap_unknown:
         return "partial", tuple(reasons)
-    if not verified or cost_assumption is not None:
+    if not verified or cost_assumption is not None or participant_type is not None:
         return "conditional", tuple(reasons)
     return "complete", tuple(reasons)
 
@@ -467,33 +458,43 @@ def cash_estimate(
     *,
     payouts_modeled: bool,
     payout_cap_unknown: bool,
-    costs_available: bool,
+    cost_status: str,
     cost_assumption: str | None,
+    participant_type: str | None = None,
     fees_incomplete: str | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     """``exact | conditional | upper_bound | unavailable`` for the payout and net-cash numbers.
 
-    A cash number needs every cost the account pays: an unknown commission, or a commission that
-    excludes the exchange fees with no table to add them, makes it ``unavailable`` unless a named
-    ``cost_assumption`` covers the gap (then it is a number under that assumption, so
-    ``conditional``, and the attempt says which). A payout cap the sources do not state does not
-    stop the number: the payouts are paid as the other terms allow and the statistic is an
-    ``upper_bound``.
+    A cash number needs every cost the account pays, so ``cost_status`` decides first:
+    ``unavailable`` (any component is a gap) makes the cash ``unavailable`` unless a
+    ``cost_assumption`` file covered EVERY gap — then it is ``conditional`` and the attempt says
+    which file, and which gaps it priced. ``complete`` costs are ``exact`` only when no assumption
+    and no assumed participant type was needed; either one keeps the number ``conditional``, never
+    ``complete``. A payout cap the sources do not state does not stop the number: the payouts are
+    paid as the other terms allow and the statistic is an ``upper_bound``.
     """
     reasons: list[str] = []
     if not payouts_modeled:
         reasons.append("the ruleset declares no payout rule, so no withdrawal is modeled")
-    if fees_incomplete is not None:
-        reasons.append(fees_incomplete)
-    if not costs_available:
-        reasons.append("the attempt's cost is not exact, so the net cash is not a number")
-        return "unavailable", tuple(reasons)
-    if cost_assumption is not None:
+    if cost_status == "unavailable":
+        if fees_incomplete is not None:
+            reasons.append(fees_incomplete)
+        if cost_assumption is None:
+            reasons.append("the attempt's cost is not known, so the net cash is not a number")
+            return "unavailable", tuple(reasons)
+        reasons.append(
+            f"cost assumption {cost_assumption!r} covered every cost gap, so the net cash is that "
+            "assumption's number"
+        )
+    elif cost_assumption is not None:
         reasons.append(f"cost assumption {cost_assumption!r} was used")
+    if cost_status != "unavailable" and participant_type is not None:
+        reasons.append(f"participant type assumed: {participant_type}")
     if payout_cap_unknown:
         reasons.append(PAYOUT_CAP_UNKNOWN)
         return "upper_bound", tuple(reasons)
-    return ("conditional" if cost_assumption is not None else "exact"), tuple(reasons)
+    conditional = cost_status == "conditional" or cost_assumption is not None
+    return ("conditional" if conditional else "exact"), tuple(reasons)
 
 
 def practical_eligibility(ruleset: PropRuleset, execution_mode: ExecutionMode) -> str:
@@ -525,8 +526,9 @@ def simulate_attempt(
     execution_mode: ExecutionMode,
     news_events: Sequence[NewsEvent] | None = None,
     news_coverage: Coverage | None = None,
-    exchange_fees: ExchangeFeeSource | None = None,
-    cost_assumption: str | None = None,
+    fee_source: ComponentFeeSource | None = None,
+    cost_assumption: CostAssumption | None = None,
+    participant_type: str | None = None,
     resets_purchased: int = 0,
     scenario_id: str = "primary",
 ) -> AttemptResult:
@@ -550,11 +552,13 @@ def simulate_attempt(
     ``news_events``/``news_coverage`` are the economic calendar's rows and the covered periods;
     a news rule whose event types the calendar does not carry is ``not_modeled`` for this attempt
     (reported), and every window the calendar does carry is still enforced.
-    ``exchange_fees`` is the ``ExchangeFeeSource`` a commission that EXCLUDES the exchange and
-    regulatory fees is added to; without it that cost is a named gap and the cash statistic is
-    ``unavailable`` (or ``conditional`` under a ``cost_assumption``). Its per-side amount is
-    resolved at ``start_trade_date``; a fee change inside the attempt's window is reported in
-    ``warnings``, never applied silently.
+    ``fee_source`` is the ``ComponentFeeSource`` the components the firm charges ON TOP of the
+    commission are priced from, for ``participant_type`` (a run parameter, because the ruleset never
+    states one; it is refused when a component is excluded and it is missing). Without a source, an
+    uncovered row or an ``unknown`` component, that cost is a named gap and the cash statistic is
+    ``unavailable`` — or ``conditional`` when ``cost_assumption`` prices every remaining gap. The
+    amounts are resolved at ``start_trade_date``; a fee change inside the attempt's window is
+    reported in ``warnings``, never applied silently.
     """
     if max_horizon_days < 1:
         msg = f"max_horizon_days must be >= 1, got {max_horizon_days}"
@@ -603,19 +607,16 @@ def simulate_attempt(
     coverage = rule_coverage(
         ruleset, news_covered=news_covered, news_unmodeled=news_unmodeled or None
     )
-    (
-        commission_schedule,
-        commission,
-        cost_stats_available,
-        fees_incomplete,
-    ) = _commissions_for(
+    commission_schedule, commission = _commissions_for(
         ruleset,
         costs,
         spec.root,
         cost_assumption,
-        exchange_fees=exchange_fees,
+        fee_source=fee_source,
+        participant_type=participant_type,
         when=start_trade_date,
     )
+    cost_status = commission.cost_status
     payout_cap_unknown = any(
         rule.kind == "payout" and rule.unknown_cap
         for phase in ruleset.phases
@@ -763,12 +764,19 @@ def simulate_attempt(
         )
     change = (
         None
-        if not isinstance(exchange_fees, ExchangeFeeTable)
-        else exchange_fees.change_within(spec.root, start_trade_date, data_last)
+        if not isinstance(fee_source, ComponentFeeTable)
+        else next(
+            (
+                row.effective_from
+                for row in sorted(fee_source.rows, key=lambda row: row.effective_from)
+                if row.root == spec.root and start_trade_date < row.effective_from <= data_last
+            ),
+            None,
+        )
     )
     if change is not None:
         warnings.append(
-            f"the exchange fee for {spec.root} changes on {change} inside the attempt, and the "
+            f"a per-side fee for {spec.root} changes on {change} inside the attempt, and the "
             f"schedule of {start_trade_date} is charged for the whole window"
         )
     payouts_usd = sum((record.net_usd for record in payouts), Decimal(0))
@@ -784,19 +792,21 @@ def simulate_attempt(
         coverage=coverage,
         verified=ruleset.verified,
         commissions_known=commission.status == "known",
-        cost_assumption=cost_assumption,
+        cost_assumption=None if cost_assumption is None else cost_assumption.name,
         news_covered=news_covered,
         news_coverage_gaps=news_coverage_gaps,
         session_calendar_gaps=schedule_gaps,
-        fees_incomplete=fees_incomplete,
+        fees_incomplete=commission.fees_incomplete,
         payout_cap_unknown=payout_cap_unknown,
+        participant_type=participant_type if commission.priced_from_dataset else None,
     )
     cash_status, cash_reasons = cash_estimate(
         payouts_modeled=_payout_modeled(ruleset),
         payout_cap_unknown=payout_cap_unknown,
-        costs_available=cost_stats_available,
-        cost_assumption=cost_assumption,
-        fees_incomplete=fees_incomplete,
+        cost_status=cost_status,
+        cost_assumption=None if cost_assumption is None else cost_assumption.name,
+        participant_type=participant_type if commission.priced_from_dataset else None,
+        fees_incomplete=commission.fees_incomplete,
     )
     return AttemptResult(
         outcome=outcome,

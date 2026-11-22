@@ -34,6 +34,23 @@ from crucible.execution.futures_sim import CostSchedule
 from crucible.prop.attempt import simulate_attempt
 from crucible.prop.ruleset import Attribution, PropRuleset
 
+_COMPONENTS_ALL_IN = {
+    name: {"status": "included", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four cost components are all inside it (synthetic, all-in)."""
+_COMPONENTS_EXCLUDED = {
+    name: {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission that excludes every component: each is charged on top (synthetic)."""
+_COMPONENTS_UNKNOWN = {
+    name: {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four components the source does not state (synthetic)."""
+
+
 NS = 1_000_000_000
 DAY = dt.date(2024, 6, 12)
 CALENDAR = SessionCalendar(cme_session_table(), "ES")
@@ -69,7 +86,7 @@ def _ruleset(evaluated: str) -> PropRuleset:
             "reset": {"time": "17:00:00", "tz": "America/Chicago"},
             "commissions": {
                 "status": "known",
-                "includes_exchange_and_regulatory_fees": True,
+                "components": _COMPONENTS_ALL_IN,
                 "per_side_usd": {"ES": "2.00"},
                 "platform": None,
                 "source": source,

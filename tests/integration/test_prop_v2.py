@@ -43,6 +43,23 @@ from crucible.prop.ruleset import (
 )
 from crucible.prop.scenarios import scenarios
 
+_COMPONENTS_ALL_IN = {
+    name: {"status": "included", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four cost components are all inside it (synthetic, all-in)."""
+_COMPONENTS_EXCLUDED = {
+    name: {"status": "excluded", "evidence": "official_quote", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission that excludes every component: each is charged on top (synthetic)."""
+_COMPONENTS_UNKNOWN = {
+    name: {"status": "unknown", "evidence": "not_stated", "text": "SYNTHETIC TEST VALUE"}
+    for name in ("exchange", "clearing", "nfa", "other")
+}
+"""A commission whose four components the source does not state (synthetic)."""
+
+
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "prop"
 TICK = 12_500_000
 _NS = 1_000_000_000
@@ -164,7 +181,7 @@ def _ruleset(
         "commissions": commissions
         or {
             "status": "known",
-            "includes_exchange_and_regulatory_fees": True,
+            "components": _COMPONENTS_ALL_IN,
             "per_side_usd": {"ES": "2.00"},
             "platform": None,
             "source": source,
@@ -759,7 +776,7 @@ def test_estimate_status_unknown_commissions_unless_a_cost_assumption_is_named()
         [],
         commissions={
             "status": "unknown",
-            "includes_exchange_and_regulatory_fees": "unknown",
+            "components": _COMPONENTS_UNKNOWN,
             "platform": None,
             "source": _source().model_dump(mode="json"),
         },
@@ -974,7 +991,9 @@ def test_the_index_lists_every_ruleset_file_and_is_append_only() -> None:
     try:
         previous = json.loads(
             subprocess.run(
-                ["git", "show", "HEAD:rulesets/prop/INDEX.json"],
+                # the RELEASED lock: what is merged to main is immutable, whatever its verification
+                # status; a branch may still correct its own unmerged files in place
+                ["git", "show", "origin/main:rulesets/prop/INDEX.json"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -985,9 +1004,15 @@ def test_the_index_lists_every_ruleset_file_and_is_append_only() -> None:
         previous = None
     if previous is not None:
         for entry in previous["entries"]:
+            # a version never disappears from the lock
             current = by_path.get(entry["path"])
+            assert current is not None
+            assert (current["ruleset_id"], current["version"]) == (
+                entry.get("ruleset_id"),
+                entry.get("version"),
+            )
+            # a released version is immutable data, verified or not: a correction is a new version
             if "ruleset_sha256" in entry:
-                assert current is not None
                 assert current["ruleset_sha256"] == entry["ruleset_sha256"]
 
 
@@ -1001,7 +1026,7 @@ def test_a_payout_group_pays_at_most_once_per_close_and_takes_the_largest_net() 
         [],
         commissions={
             "status": "known",
-            "includes_exchange_and_regulatory_fees": True,
+            "components": _COMPONENTS_ALL_IN,
             "per_side_usd": {"ES": "2.00"},
             "platform": None,
             "source": _source().model_dump(mode="json"),

@@ -50,7 +50,23 @@ reset:
   tz: America/Chicago
 commissions:
   status: known
-  includes_exchange_and_regulatory_fees: true
+  components:
+    exchange:
+      status: included
+      evidence: official_quote
+      text: 'synthetic test value: the per-side commission is all-in for this component'
+    clearing:
+      status: included
+      evidence: official_quote
+      text: 'synthetic test value: the per-side commission is all-in for this component'
+    nfa:
+      status: included
+      evidence: official_quote
+      text: 'synthetic test value: the per-side commission is all-in for this component'
+    other:
+      status: included
+      evidence: official_quote
+      text: 'synthetic test value: the per-side commission is all-in for this component'
   per_side_usd:
     ES: '2.00'
   platform: null

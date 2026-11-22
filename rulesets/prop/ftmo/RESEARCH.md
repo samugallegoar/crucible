@@ -32,7 +32,7 @@ validates; each file's `ruleset_sha256` changed, and the hashes in section 11 ar
 
 | Round-2 addition | Applied? | What changed, and why |
 |---|---|---|
-| `commissions.includes_exchange_and_regulatory_fees` (now REQUIRED) | **yes: `false`** | FTMO states the total cost is three parts (exchange fees, NFA fees, "Our commission"), so its own $0.50/$0.20 per side is **not** all-in. The commissions source quote now spans the amounts *and* the exclusion sentence. The material `not_modeled:exchange_and_nfa_fees_not_published` entry was **removed**: the declaration carries it, and the engine now adds the fees from an `ExchangeFeeSource` or reports `exchange fees unknown: ...` and leaves the cash statistic `unavailable`. Section 5. |
+| `commissions.components` (REQUIRED, all four keys) | **yes** | FTMO states the total cost is three parts (exchange fees, NFA fees, "Our commission"), so its own $0.50/$0.20 per side is **not** all-in: `exchange` and `nfa` are `excluded`, `clearing` and `other` are `unknown`. The commissions source quote now spans the amounts *and* the exclusion sentence. The material `not_modeled:exchange_and_nfa_fees_not_published` entry was **removed**: the declaration carries it, and the engine now adds the components from a `ComponentFeeSource` or reports each one as a gap and leaves the cash statistic `unavailable`. Section 5. |
 | `payout.max_usd` (and `max_usd_by_payout`) accepting `unknown` | **no** | every Sim-Funded payout cap is printed per size ($2,500 / $3,000 / $4,000 Growth, $5,000 / $6,000 / $8,000 Pro). No cap on these six files is `unknown`, none is `unlimited`, and no sentinel number is used (`PropRuleset._refuse_numeric_sentinels` would refuse one). |
 | `trailing_drawdown.lock.on` as a LIST | **yes: `[hwm]`** | shape only. The lock still fires on the high-water mark at `at_offset_usd` = the drawdown amount and freezes the threshold at the initial capital (`locked_offset_usd: '0'`), which is the page's "locks permanently at that figure" wording. No second trigger fits FTMO: nothing says a payout moves the limit. |
 | `payout.threshold_after_payout: set_threshold` + `set_threshold_to` | **no** | the funded trailing drawdown is unchanged by a payout (`threshold_after_payout: unchanged`), and no page states a post-payout level. The Live Funded "Safety Net" (a buffer cleared once, then daily uncapped payouts) belongs to a stage that stays `not_modeled`. |
@@ -201,7 +201,7 @@ commissions and fees?":
   ES 0.50, NQ 0.50, YM 0.50, RTY 0.50, NKD 0.50, MES 0.20, MNQ 0.20, MYM 0.20, M2K 0.20 USD per side.
   Minis and micros are the only split FTMO publishes; there is no per-root table, so every mini
   root carries the mini figure and every micro root the micro figure.
-- **`commissions.includes_exchange_and_regulatory_fees: false`, on all six files.** The same answer
+- **`commissions.components: false`, on all six files.** The same answer
   says the total cost has three parts - exchange fees, NFA fees and FTMO's commission - and that
   exchange and NFA fees "are set by the exchanges and regulators, not by FTMO"; it then recommends
   "adding our fixed commission on top". So $0.50/$0.20 per side is the firm's own commission and
@@ -210,13 +210,55 @@ commissions and fees?":
   attribution supports both the amounts and the exclusion; the three-part sentence immediately before
   it is the page's own wording for the same fact.
 - What happens at attempt time: with the flag `false` the engine adds the per-side amount of the run's
-  `ExchangeFeeSource` (an `ExchangeFeeTable`, or the stored `exchange_fees_v1` dataset through
-  `store_exchange_fees`) to each fill's commission. The stored dataset today holds **no exchange
-  rows** (the NFA rows only, `docs/data/cme-exchange-fees.md`), so `fee_table_as_of` refuses, the
+  `ComponentFeeSource` (an `ComponentFeeTable`, or the stored `exchange_fees_v1` dataset through
+  `store_component_fees`) to each fill's commission, for the run's `fee_participant_type`. The stored
+  dataset today holds **no exchange or clearing rows** (the NFA rows only,
+  `docs/data/cme-exchange-fees.md`), so the lookup returns no amount for them, the
   attempt reports `exchange fees unknown: ...`, and the cash statistic is **unavailable** rather
   than too low. That is why the old `not_modeled:exchange_and_nfa_fees_not_published` entry is gone:
   the gap is now declared in the right place and reported by name, instead of being a silent
   understatement with a materiality label. An owner-supplied CSV of CME rates is what closes it.
+
+**The commissions-and-fees page, re-read on 2026-11-22 for the cost-component fix.** The page the
+commissions quotation comes from — `https://ftmo.com/en/futures/faq/which-instruments-can-i-trade-
+with-ftmo-futures` — was fetched again in a browser session (public page only: no login, no forms)
+and snapshotted:
+
+- `D:/proyectos/crucible-notes/internal/prop_snapshots/ftmo/20261122_ftmo_faq_which_instruments.html`,
+  319,375 bytes,
+  sha256 `8046bf17e6531f4e33f3fcd09eb9b8ad3ffd21bb3ce3323b18c73be994b7901c`, retrieved
+  2026-11-22 (the same UTC day as the first capture). The page's visible text is identical to
+  `20261122_ftmo_faq_instruments.html` (sha256
+  `e96ed87290cc5aff5cbc2bf2bb4af0c5bd5ec3028b4b09d02f8c5346c6d716a8`), which is why every quotation
+  below is unchanged; only per-request bytes differ.
+
+What the page states, verbatim:
+
+> "How much does it cost to trade? What are the commissions and fees?"
+>
+> "The total trading cost per contract is made up of three parts: Exchange fees NFA fees Our
+> commission - $0.50 per side for minis and $0.20 per side for micros Exchange and NFA fees are set
+> by the exchanges and regulators, not by FTMO. They are publicly available and can be verified
+> directly on the relevant exchange's website - for example, CME clearing fees are published here .
+> Because exchanges may update their fees from time to time, we don't charge any markup on their
+> fees - you pay exactly what the exchange charges."
+
+Three things follow, and nothing else is inferred:
+
+1. **The commission is FTMO's own** ("Our commission - $0.50 per side for minis and $0.20 per side
+   for micros"), so `exchange` and `nfa` are `excluded`: the page says in as many words that those
+   two fees are "set by the exchanges and regulators, not by FTMO".
+2. **No markup**: "we don't charge any markup on their fees - you pay exactly what the exchange
+   charges". That is evidence for the component split (the exchange's own amount is what the
+   customer pays), not for an amount.
+3. **The page names no clearing fee, and no fourth charge.** "Three parts: Exchange fees NFA fees
+   Our commission" is the whole list, so `clearing` and `other` are `unknown`: the page neither
+   excludes them nor includes them, and absence from a three-part sentence is not a zero.
+
+The instruments themselves are the same page's instrument tables ("Which instruments can I trade
+with FTMO Futures?"), which is why the rulesets' `instruments` list is read from it (minis ES, NQ,
+YM, RTY, NKD and micros MES, MNQ, MYM, M2K). The page states no per-instrument commission beyond the
+mini/micro split.
 
 **Fees, modeled as `fee` rules** (attempt cost accounting, never the trading ledger):
 
@@ -318,7 +360,7 @@ mechanical account):
 | removed id | what models it now | why it is no longer a gap |
 |---|---|---|
 | `min_new_profit_50_pct_of_request` | `funded_payout.min_new_profit_share_of_request: '0.5'` | the payout kind now has the new-profit-share gate the page describes ("at least 50% of the requested amount must represent new profit generated during the current payout cycle"), so a request is bounded by twice the new profit since the last payout. No assumption and no approximation: the field is the rule. |
-| `exchange_and_nfa_fees_not_published` | `commissions.includes_exchange_and_regulatory_fees: false` + the run's `ExchangeFeeSource` | the commissions block now declares that the per-side amounts exclude the exchange and NFA fees, so the engine adds them or refuses to compute cash. The gap stopped being a silent understatement with a materiality label and became a named, reported one (`exchange fees unknown: ...`, cash `unavailable`). The FTMO sentence and the CME dataset's empty exchange-fee coverage are recorded in section 5 and in `docs/data/cme-exchange-fees.md`. |
+| `exchange_and_nfa_fees_not_published` | `commissions.components` (`exchange`/`nfa` `excluded`) + the run's `ComponentFeeSource` and `fee_participant_type` | the commissions block now declares that the per-side amounts exclude the exchange and NFA fees, so the engine adds them or reports each unpriced component as a gap. The gap stopped being a silent understatement with a materiality label and became a named, reported one (`exchange: the commission excludes it and the fee dataset has no exchange row ...`, cash `unavailable`). The FTMO sentence and the CME dataset's empty exchange and clearing coverage are recorded in section 5 and in `docs/data/cme-exchange-fees.md`. |
 
 Owner-flagged items that FTMO does **not** state, and which are therefore not declared at all:
 there is no minimum holding time and no micro-scalping ban anywhere on FTMO's pages (the overview
@@ -577,7 +619,7 @@ Every hash changed in round 2; these are the current ones.
   does not enumerate, so `jurisdiction` stays null rather than guessing.
 - **Scaling in the evaluation**: none; the contract limit is fixed for the whole evaluation.
 - **Exchange and NFA fees**: deliberately not published (section 5), which is why the commissions
-  block declares `includes_exchange_and_regulatory_fees: false`: the cost of those fees has to come
+  block declares `commissions.components (exchange/NFA excluded)`: the cost of those fees has to come
   from the exchange-fee dataset, and until it holds exchange rows the attempt reports the gap
   (`exchange fees unknown: ...`) and leaves the cash statistic unavailable. This is a reported gap
   now, not a `not_modeled` entry.
@@ -597,7 +639,7 @@ Modeled exactly (each of these was a `not_modeled` entry or a workaround in the 
 the `inactivity` kind with `unit: calendar_days`; `window: since_last_payout` with
 `min_profitable_days` and `min_day_profit_usd`; `compliance` rules with `applies_to_execution` and
 `materiality`; and, new in round 2, `payout.min_new_profit_share_of_request` (the last material
-payout gap) and `commissions.includes_exchange_and_regulatory_fees` (which turns the unpublished
+payout gap) and `commissions.components` (which turns the unpublished
 exchange and NFA fees into a declared, reported gap instead of a silently low cost). The
 session-relative `flat_by` is now used, so the holiday early close comes from the CME calendar:
 these files never carried a per-file holiday entry, and with an absolute 16:10 ET clock an early
@@ -620,7 +662,26 @@ evaluation-vs-funded mismatch, simulation artefacts, HFT detection, concurrent a
 
 ## 14. Open questions for the owner
 
-1. **The CME exchange fees.** With `includes_exchange_and_regulatory_fees: false` the attempt now
+### Per-component costs (C7b fix, 2026-11-22)
+
+`commissions.includes_exchange_and_regulatory_fees` is gone. The ruleset now declares, for each of the four components, whether the firm's per-side commission CONTAINS it (`included`), EXCLUDES it (`excluded`, so the run adds the dataset's amount for its participant type) or does not say (`unknown`, which is never a zero cost). All four keys are required, and no component may be inferred from another firm's page, another product or another participant type (ADR-0107 section 10 as amended).
+
+| Component | Status in the files | Evidence kind | Evidence |
+|---|---|---|---|
+| `exchange` | `excluded` | `official_quote` | "Exchange and NFA fees are set by the exchanges and regulators, not by FTMO." |
+| `clearing` | `unknown` | `not_stated` | the page names exchange fees, NFA fees and its own commission as the three parts of the trading cost, and no clearing fee |
+| `nfa` | `excluded` | `official_quote` | the same sentence |
+| `other` | `unknown` | `not_stated` | the page names three parts of the trading cost and no other per-side charge |
+
+An `excluded` component needs a participant type at RUN time (`--fee-participant-type`): the ruleset never states one, and using it makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
+
+Owner questions, one per component the files declare `unknown`:
+
+1. **clearing**: Does the per-side commission already contain the clearing fee, or is the clearing fee charged on top of it?
+2. **other**: Is there any other per-side charge beside the commission, the exchange fee, the clearing fee and the NFA assessment?
+
+
+1. **The CME exchange fees.** With `commissions.components (exchange/NFA excluded)` the attempt now
    needs an `exchange_fees_v1` table that holds CME exchange rows, and the stored dataset has none
    (`docs/data/cme-exchange-fees.md`: CME Group refuses automated access and its schedule names no
    root ticker, so only an owner-supplied CSV can price it, class `non_member_customer`). Until it

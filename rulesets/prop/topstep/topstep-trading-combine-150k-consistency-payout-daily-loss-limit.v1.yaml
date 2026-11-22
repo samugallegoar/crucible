@@ -42,7 +42,23 @@ reset:
   tz: America/Chicago
 commissions:
   status: known
-  includes_exchange_and_regulatory_fees: true
+  components:
+    exchange:
+      status: included
+      evidence: official_quote
+      text: 'NFA & Regulatory Fees $0.02 $0.02 Exchange Fee $2.76 $0.70 Commissions $1.00 $0.50 Total $3.78 $1.22'
+    clearing:
+      status: unknown
+      evidence: not_stated
+      text: 'the cost breakdown itemizes NFA & regulatory fees, the exchange fee and the commission only; no clearing fee is named'
+    nfa:
+      status: included
+      evidence: official_quote
+      text: 'NFA & Regulatory Fees $0.02 $0.02 Exchange Fee $2.76 $0.70 Commissions $1.00 $0.50 Total $3.78 $1.22'
+    other:
+      status: unknown
+      evidence: not_stated
+      text: 'the breakdown names three components (NFA & regulatory fees, exchange fee, commission) and no other per-side charge'
   per_side_usd:
     ES: '1.89'
     NQ: '1.89'

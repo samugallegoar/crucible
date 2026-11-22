@@ -5,9 +5,9 @@ models, ``ruleset`` the ruleset, the content hash and the verification sidecar, 
 sensitivity scenarios of a conflict, ``rules`` one evaluator per kind, ``overlay`` the
 ``AccountOverlay`` the futures simulation calls inside each bar, ``lifecycle`` the account state
 machine, ``news`` the scheduled-event rows, ``attempt`` one attempt from one start trade date,
-``coverage`` the rule coverage and the evaluation status, ``costs`` the exchange and regulatory
-fees a commission may exclude, ``confirm`` the owner's TTY-only verification and ``index`` the
-generated append-only hash lock.
+``coverage`` the rule coverage and the evaluation status, ``costs`` the per-component execution
+costs (the fee dataset, and the unverified cost-assumption files that price a gap), ``confirm`` the
+owner's TTY-only verification and ``index`` the generated append-only hash lock.
 """
 
 from __future__ import annotations
@@ -25,12 +25,19 @@ from crucible.prop.attempt import (
     simulate_attempt,
 )
 from crucible.prop.costs import (
-    ExchangeFeeRow,
-    ExchangeFeeSource,
-    ExchangeFeeTable,
-    StoreExchangeFees,
-    store_exchange_fees,
-    stored_fee_row,
+    COMPONENTS_WITH_COMMISSION,
+    AssumptionAmount,
+    ComponentCharge,
+    ComponentFeeRow,
+    ComponentFeeSource,
+    ComponentFeeTable,
+    CostAssumption,
+    CostPricing,
+    FeeRow,
+    StoreComponentFees,
+    load_cost_assumption,
+    price_components,
+    store_component_fees,
 )
 from crucible.prop.coverage import (
     RuleCoverageRow,
@@ -73,20 +80,26 @@ from crucible.prop.validate import (
 )
 
 __all__ = [
+    "COMPONENTS_WITH_COMMISSION",
     "EOD_ORDER",
     "PAYOUT_CAP_UNKNOWN",
     "AccountState",
+    "AssumptionAmount",
     "AttemptResult",
     "Attribution",
     "CommissionApplication",
     "Commissions",
+    "ComponentCharge",
+    "ComponentFeeRow",
+    "ComponentFeeSource",
+    "ComponentFeeTable",
     "Conflict",
     "ConflictAlternative",
+    "CostAssumption",
+    "CostPricing",
     "Coverage",
-    "ExchangeFeeRow",
-    "ExchangeFeeSource",
-    "ExchangeFeeTable",
     "FeeBreakdown",
+    "FeeRow",
     "Lifecycle",
     "NewsEvent",
     "NotModeled",
@@ -98,7 +111,7 @@ __all__ = [
     "PropRuleset",
     "RuleCoverageRow",
     "RulesetScenario",
-    "StoreExchangeFees",
+    "StoreComponentFees",
     "Transition",
     "Verification",
     "VerificationRecord",
@@ -112,10 +125,12 @@ __all__ = [
     "evaluation_status",
     "is_pass_condition",
     "list_document",
+    "load_cost_assumption",
     "load_registry",
     "load_ruleset",
     "material_unmodeled",
     "practical_eligibility",
+    "price_components",
     "read_verification_sidecar",
     "render_index",
     "rule_coverage",
@@ -126,8 +141,7 @@ __all__ = [
     "schema_document",
     "sidecar_path",
     "simulate_attempt",
-    "store_exchange_fees",
-    "stored_fee_row",
+    "store_component_fees",
     "validate_ruleset_document",
     "write_verification_sidecar",
 ]

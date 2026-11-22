@@ -42,7 +42,7 @@ None of this is in `crucible/`; the rulesets are data.
 The files were written against the first cut of schema version 2, which did not yet require or
 express everything the vocabulary does now. This pass (same retrieval set, no new page fetched):
 
-1. **`commissions.includes_exchange_and_regulatory_fees: true`** in all 26 files. It is now REQUIRED
+1. **`commissions.components` (exchange and NFA `included`, clearing and other `unknown`)** in all 26 files. It is now REQUIRED
    with no default, and Topstep states it: the commission page's round-turn breakdown is "NFA &
    Regulatory Fees $0.02 + Exchange Fee $2.76 + Commissions $1.00 = Total $3.78" for ES, so the
    per-side figure each file carries is the true cost per side and no exchange-fee table is added.
@@ -714,6 +714,25 @@ news/compliance, assumptions, conflicts.
 - **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
 
 ## 14. Open questions for the owner
+
+### Per-component costs (C7b fix, 2026-11-22)
+
+`commissions.includes_exchange_and_regulatory_fees` is gone. The ruleset now declares, for each of the four components, whether the firm's per-side commission CONTAINS it (`included`), EXCLUDES it (`excluded`, so the run adds the dataset's amount for its participant type) or does not say (`unknown`, which is never a zero cost). All four keys are required, and no component may be inferred from another firm's page, another product or another participant type (ADR-0107 section 10 as amended).
+
+| Component | Status in the files | Evidence kind | Evidence |
+|---|---|---|---|
+| `exchange` | `included` | `official_quote` | "NFA & Regulatory Fees $0.02 $0.02 Exchange Fee $2.76 $0.70 Commissions $1.00 $0.50 Total $3.78 $1.22" |
+| `clearing` | `unknown` | `not_stated` | the breakdown itemizes NFA & regulatory fees, the exchange fee and the commission only; no clearing fee is named |
+| `nfa` | `included` | `official_quote` | the same breakdown ("NFA & Regulatory Fees $0.02") |
+| `other` | `unknown` | `not_stated` | the breakdown names three components and no other per-side charge |
+
+An `excluded` component needs a participant type at RUN time (`--fee-participant-type`): the ruleset never states one, and using it makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
+
+Owner questions, one per component the files declare `unknown`:
+
+1. **clearing**: Does the per-side commission already contain the clearing fee, or is the clearing fee charged on top of it?
+2. **other**: Is there any other per-side charge beside the commission, the exchange fee, the clearing fee and the NFA assessment?
+
 
 1. **The doubled payout cap on the twelve `addons: [daily_loss_limit]` files.** Two pages agree that
    a Combine bought with a DLL at checkout has doubled per-request caps, so those files use $4,000 / $6,000 /

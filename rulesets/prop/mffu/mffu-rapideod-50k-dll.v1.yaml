@@ -40,11 +40,24 @@ reset:
   tz: America/New_York
 commissions:
   status: known
-  # The firm publishes no commission-only figure and splits nothing out: its instrument list's
-  # "Total Cost Round Trip" column is the whole cost of one round trip and the list's own subtitle
-  # says it "Includes Contract Specifications, Commissions, and Trading Fees", so the per-side
-  # number below is all-in and no exchange or NFA fee may be added on top of it (ADR-0107 s10).
-  includes_exchange_and_regulatory_fees: true
+  # The firm names "Commissions, and Trading Fees" in the list's subtitle and publishes a Total Cost Round Trip column, neither of which splits exchange, clearing, NFA or other fees out: every component is unknown, never zero.
+  components:
+    exchange:
+      status: unknown
+      evidence: not_stated
+      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+    clearing:
+      status: unknown
+      evidence: not_stated
+      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+    nfa:
+      status: unknown
+      evidence: not_stated
+      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+    other:
+      status: unknown
+      evidence: not_stated
+      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
   per_side_usd:
     ES: '2.34'
     NQ: '2.34'
@@ -90,8 +103,7 @@ commissions:
     retrieved_at: '2026-11-22T01:59:33Z'
     section: 'Futures Instrument List, Total Cost Round Trip column: ES/NQ/RTY $4.68, YM $5.76, NKD $6.22,
       MES/MNQ/MYM/M2K $1.90 per contract for one round trip. Per side = that figure / 2. The column is
-      the firm''s all-in cost (commission plus exchange and NFA fees), which is why
-      commissions.includes_exchange_and_regulatory_fees is true: the list''s subtitle reads "Includes
+      the firm''s all-in cost (commission plus exchange and NFA fees), and the subtitle names only Commissions and Trading Fees as a group: the list''s subtitle reads "Includes
       Contract Specifications, Commissions, and Trading Fees" and no MFFU page publishes a
       commission-only number; MFFU publishes no platform-specific schedule either, so the all-in cost
       is what a round trip costs and it is the same on every platform.'

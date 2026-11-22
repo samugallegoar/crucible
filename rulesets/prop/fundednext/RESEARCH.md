@@ -166,11 +166,11 @@ gives one worked example:
   field names three platforms, which a single per-side table cannot separate. Reading the
   Tradovate/NinjaTrader/TradingView pricing pages per platform is an open owner decision
   (section 9, item 2), not a value guessed here.
-- **`includes_exchange_and_regulatory_fees: true`** (round 2, `Commissions` now REQUIRES the field).
+- **all four components `included`** (round 2, `Commissions` now REQUIRES the field).
   The article's own definition is the evidence: the all-in rate "includes the broker commission,
   exchange & NFA fees, and the clearing fee", the three components it then lists. So the 2.88 USD
   per side is a complete per-side cost: an attempt charges the ruleset's commission and adds no
-  `ExchangeFeeSource`, and the cost statistics are `exact` on NQ (still `unavailable` on a root
+  `ComponentFeeSource`, and the cost statistics are `exact` on NQ (still `unavailable` on a root
   with no published rate). The `commissions.source` attribution's quote is the "What makes up the
   all-in rate?" passage read through the worked NQ example, so one verbatim quote carries both the
   flag and the amount; the section label is that passage's heading.
@@ -185,7 +185,7 @@ field and the switched ruleset re-validates).
 
 **Now required, added or fixed in every file:**
 
-- `commissions.includes_exchange_and_regulatory_fees: true` (section 5), sourced from the article's
+- `commissions.components: every component `included`` (section 5), sourced from the article's
   own definition of the all-in rate.
 - `lock.on` is a LIST (`on: [hwm]`); the schema refuses a bare `on: hwm`. Every conflict's
   `selected_value` and every alternative `value` were rewritten the same way, because a scenario
@@ -323,6 +323,24 @@ must not read as "practically valid" for a strategy that grids, scalps sub-minut
 
 ## 9. Open questions for the owner
 
+### Per-component costs (C7b fix, 2026-11-22)
+
+`commissions.includes_exchange_and_regulatory_fees` is gone. The ruleset now declares, for each of the four components, whether the firm's per-side commission CONTAINS it (`included`), EXCLUDES it (`excluded`, so the run adds the dataset's amount for its participant type) or does not say (`unknown`, which is never a zero cost). All four keys are required, and no component may be inferred from another firm's page, another product or another participant type (ADR-0107 section 10 as amended).
+
+| Component | Status in the files | Evidence kind | Evidence |
+|---|---|---|---|
+| `exchange` | `included` | `official_quote` | "The all-in rate has three components: Commission — the fee charged by the broker for executing the trade. Exchange & NFA Fee — charged by the exchange and the National Futures Association. ... Clearing Fee — charged by the clearing firm (also known as an FCM)." |
+| `clearing` | `included` | `official_quote` | the same sentence ("Clearing Fee — charged by the clearing firm") |
+| `nfa` | `included` | `official_quote` | the same sentence ("Exchange & NFA Fee — charged by the exchange and the National Futures Association") |
+| `other` | `unknown` | `not_stated` | the article names three components and no other per-side charge |
+
+An `excluded` component needs a participant type at RUN time (`--fee-participant-type`): the ruleset never states one, and using it makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
+
+Owner questions, one per component the files declare `unknown`:
+
+1. **other**: Is there any other per-side charge beside the commission, the exchange fee, the clearing fee and the NFA assessment?
+
+
 1. **The first-withdrawal MLL reset is now enforced (Flex, Direct).** The trailing rule declares
    `lock.on: [hwm, first_payout]`, so the first withdrawal freezes the floor at the lock point
    (initial + $100) whether or not the high-water mark had reached it; the payout rule's
@@ -448,7 +466,7 @@ JS-only widget. One page was fetched for this migration (the commission article,
 
 - account: 100000 USD (100K), program `Futures Direct`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `fundednext_account` (funded, start 100000 USD)
@@ -502,7 +520,7 @@ payouts:
 fees and commissions:
 
 - [ ] `account_purchase_fee` (fundednext_account): `fee_kind=evaluation`, `amount_usd=584.99`, `when=at_start`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -514,7 +532,7 @@ news, compliance and conduct:
 
 - account: 150000 USD (150K), program `Futures Direct`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `fundednext_account` (funded, start 150000 USD)
@@ -568,7 +586,7 @@ payouts:
 fees and commissions:
 
 - [ ] `account_purchase_fee` (fundednext_account): `fee_kind=evaluation`, `amount_usd=754.99`, `when=at_start`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -580,7 +598,7 @@ news, compliance and conduct:
 
 - account: 50000 USD (50K), program `Futures Direct`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `fundednext_account` (funded, start 50000 USD)
@@ -634,7 +652,7 @@ payouts:
 fees and commissions:
 
 - [ ] `account_purchase_fee` (fundednext_account): `fee_kind=evaluation`, `amount_usd=284.99`, `when=at_start`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -646,7 +664,7 @@ news, compliance and conduct:
 
 - account: 100000 USD (100K), program `Futures Flex`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 100000 USD)
@@ -737,7 +755,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=273.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=157.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -760,7 +778,7 @@ conflicts:
 
 - account: 150000 USD (150K), program `Futures Flex`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 150000 USD)
@@ -851,7 +869,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=490.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=284.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -874,7 +892,7 @@ conflicts:
 
 - account: 50000 USD (50K), program `Futures Flex`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 50000 USD)
@@ -965,7 +983,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=141.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=82.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -988,7 +1006,7 @@ conflicts:
 
 - account: 100000 USD (100K), program `Futures Rapid Daily`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 100000 USD)
@@ -1081,7 +1099,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=483.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=287.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -1104,7 +1122,7 @@ conflicts:
 
 - account: 25000 USD (25K), program `Futures Rapid Daily`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 25000 USD)
@@ -1197,7 +1215,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=125.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=72.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -1220,7 +1238,7 @@ conflicts:
 
 - account: 50000 USD (50K), program `Futures Rapid Daily`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 50000 USD)
@@ -1313,7 +1331,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=299.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=177.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -1336,7 +1354,7 @@ conflicts:
 
 - account: 100000 USD (100K), program `Futures Rapid Pro + DLL add-on`, platform Tradovate / NinjaTrader / TradingView, addons ['daily_loss_limit'], as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 100000 USD)
@@ -1431,7 +1449,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=433.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=237.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -1454,7 +1472,7 @@ conflicts:
 
 - account: 100000 USD (100K), program `Futures Rapid Pro`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 100000 USD)
@@ -1545,7 +1563,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=483.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=287.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -1568,7 +1586,7 @@ conflicts:
 
 - account: 25000 USD (25K), program `Futures Rapid Pro + DLL add-on`, platform Tradovate / NinjaTrader / TradingView, addons ['daily_loss_limit'], as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 25000 USD)
@@ -1663,7 +1681,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=105.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=52.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -1686,7 +1704,7 @@ conflicts:
 
 - account: 25000 USD (25K), program `Futures Rapid Pro`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 25000 USD)
@@ -1777,7 +1795,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=125.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=72.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -1800,7 +1818,7 @@ conflicts:
 
 - account: 50000 USD (50K), program `Futures Rapid Pro + DLL add-on`, platform Tradovate / NinjaTrader / TradingView, addons ['daily_loss_limit'], as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 50000 USD)
@@ -1895,7 +1913,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=259.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=132.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 
@@ -1918,7 +1936,7 @@ conflicts:
 
 - account: 50000 USD (50K), program `Futures Rapid Pro`, platform Tradovate / NinjaTrader / TradingView, addons none, as_of 2026-11-22, effective_from 2026-11-22.
 - instruments: ES (weight 1), NQ (weight 1), MES (weight 0.1), MNQ (weight 0.1).
-- commissions: status `known`, `includes_exchange_and_regulatory_fees: true`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
+- commissions: status `known`, all four components `included`; NQ 2.88 USD per side; not published: ES, MES, MNQ (see section 5).
 - reset clock (rule-day boundary): 17:00:00 America/Chicago.
 
 #### phase `challenge` (evaluation, start 50000 USD)
@@ -2009,7 +2027,7 @@ fees and commissions:
 
 - [ ] `challenge_entry_fee` (challenge): `fee_kind=evaluation`, `amount_usd=299.99`, `when=at_start`, `comparison=>=`, `action=charge`
 - [ ] `challenge_reset_fee` (challenge): `fee_kind=reset`, `amount_usd=172.99`, `when=on_reset`, `comparison=>=`, `action=charge`
-- [ ] commissions: NQ 2.88 per side, all-in (includes_exchange_and_regulatory_fees: true) — confirm before any cost-dependent statistic is reported
+- [ ] commissions: NQ 2.88 per side, all-in (commissions.components: every component `included`) — confirm before any cost-dependent statistic is reported
 
 news, compliance and conduct:
 

@@ -28,7 +28,14 @@ kind of change is recorded).
   - Conflicts keep both sources and generate sensitivity scenarios.
   - Day units are explicit. `unlimited`, `unknown` and `not_modeled` are distinct, and numeric
     sentinels are refused.
-  - Commissions per root are declared, along with whether they include exchange and NFA fees.
+  - Commissions per root are declared, and each cost component (exchange, clearing, NFA, other)
+    is declared separately as `included`, `excluded` or `unknown`, with its evidence. Cost
+    statistics are `complete` only when no component is unknown or unpriced.
+  - An unpriced gap is priced only by an explicit cost-assumption file (unverified, hashed, per
+    root and component, added to the cost). The result is then `conditional`.
+  - Owner-provided CME fee files record the source URL, effective dates, root, participant type
+    and the components each amount covers. Lookups are historical and per root, with no
+    extrapolation across contracts.
   - Compliance rules feed practical eligibility (for example, a critical automation ban).
   - The account lifecycle is a state machine (payout cycles, post-payout effects).
 - **New vocabulary.**

@@ -9,12 +9,14 @@
   - `Assumption {name, rationale}` and the per-rule `evidence` field:
     `official_quote | owner_provided | assumption | conflict_resolution`; a rule with
     `evidence: assumption` must carry its named assumption.
-  - `Commissions {status: known|unknown, includes_exchange_and_regulatory_fees: true|false|unknown,
-    per_side_usd: {ROOT: Decimal}, platform, source}`. Unknown is never zero; a sentinel
-    (>= 1,000,000 USD) is refused. The `includes_exchange_and_regulatory_fees` flag has **no
-    default**: whether the commission is all-in is a cost, and a file that does not say is refused
-    (ADR-0107 section 8). `unknown` is a declaration (the sources are silent), never an omission, and
-    it leaves the cost statistics conditional or unavailable.
+  - `Commissions {status: known|unknown, components: {exchange, clearing, nfa, other each
+    {status: included|excluded|unknown, evidence: official_quote|owner_provided|not_stated, text}},
+    per_side_usd: {ROOT: Decimal}, platform, evidence, source}`. Unknown is never zero; a sentinel
+    (>= 1,000,000 USD) is refused. All four `components` keys are **required, with no default**: an
+    `included` or `excluded` component needs a quotation that says so, and `unknown` needs
+    `evidence: not_stated` plus a note naming what was checked. A missing key is refused, and so is
+    the old `includes_exchange_and_regulatory_fees` flag, by name (ADR-0107 section 8 and its
+    2026-11-22 amendment).
   - `Conflict {conflict_id, rule_id, field, selected_value, alternatives [{value, source}],
     selected_source, rationale, applicability_checked: true}`.
   - `Verification` (a fact about a hash, never part of it) and `ResetClock {time, tz}` with **no
@@ -76,16 +78,24 @@
   economic-calendar dataset doc under `docs/data/`).
 - **`scenarios.py`**: `scenarios(ruleset) -> list[RulesetScenario]` (the primary plus one per
   conflict alternative, deterministic order) and `scenario(ruleset, id)`.
-- **`costs.py`**: `ExchangeFeeRow {root, per_side_usd, effective_from, effective_to}` (one amount
-  per root per side: the exchange fee plus any regulatory assessment, NOT a split the engine would
-  invent), `ExchangeFeeTable {rows, source_sha256}` (rows for one root may not overlap; the hash of
-  the document they were read from is required) and the `ExchangeFeeSource` Protocol: one method,
-  `per_side(root, when) -> ExchangeFeeRow | None`, where `None` is a reported gap and never a zero
-  fee. `store_exchange_fees(store)` returns the `StoreExchangeFees` adapter over the stored
-  `exchange_fees_v1` dataset, whose every read goes through
-  `crucible.data.exchange_fees.fee_table_as_of`: when the store cannot price a root (no exchange
-  row, no covering row, two rows claiming one date) that refusal comes out as
-  ``exchange fees unknown: ...``, a named gap, never a zero charge.
+- **`costs.py`**: the per-COMPONENT execution cost. `FeeRow {component, per_side_usd,
+  record_sha256}`, `ComponentFeeRow {root, fee_type, participant_type, covers, per_side_usd,
+  effective_from, effective_to}` (one row prices exactly its root, participant type and dates, and
+  a row that covers several components is charged once), `ComponentFeeTable {rows, source_sha256}`
+  (rows for one key may not overlap) and the `ComponentFeeSource` Protocol: `rows_for(root, when,
+  participant_type=..., components=[...])` returns only the components it can price — an absent
+  component is a reported gap and never a zero fee. `store_component_fees(store)` returns the
+  `StoreComponentFees` adapter over the stored `exchange_fees_v1` dataset, whose every read goes
+  through `crucible.data.exchange_fees.fee_rows_as_of` (per root, per participant type, per
+  component; an owner file that prices ES alone is usable).
+  `CostPricing`/`ComponentCharge` are the result: one charge per component (`included`,
+  `excluded_priced`, `excluded_unpriced`, `unknown`, `assumption`, and `known`/`unknown` for the
+  commission), the charged USD, the gaps, and the cost status `complete | conditional |
+  unavailable`. `CostAssumption` + `load_cost_assumption(path)` read the unverified, owner-provided
+  YAML file (`name`, `description`, `provided_by`, `status: unverified`, `evidence`, `amounts` per
+  root) that prices exactly the gaps it names; its SHA-256 is recorded. `price_components(...)` is
+  the one function that applies the order: commission, then each component by its declared status,
+  then the assumption.
 - **`attempt.py`**: `simulate_attempt(...) -> AttemptResult`, one attempt from one start trade
   date: phases in order, each a fresh `PropAccountOverlay` inside `simulate_futures`; outcome
   `pass`/`fail`/`timeout`/`censored`, `PhaseOutcome` per phase, `min_buffer_usd` with where it
@@ -219,14 +229,30 @@ into evaluation, activation, monthly (per started calendar month of the attempt)
 net and `exact`/`upper_bound` label.
 
 The ruleset's commissions replace the run's fee schedule (spread and slippage still come from the
-run's cost schedule). Unknown commissions are never treated as zero: the cost-dependent statistics
-are `unavailable` unless an explicit named `cost_assumption` is given, and the result says which.
-`commissions.includes_exchange_and_regulatory_fees` decides the fee shape: `true` means the
-commission is all-in; `false` means the per-side amount of the `exchange_fees` `ExchangeFeeSource`
-is added (charged as the schedule's exchange fee); `unknown` is the same gap as an unknown
-commission. The flag is REQUIRED, so a file cannot omit it. The per-side amount is resolved at the
-attempt's `start_trade_date`, and a fee change an `ExchangeFeeTable` states inside the attempt's
-window is reported in `warnings` (one schedule per attempt, never a silent mid-window change).
+run's cost schedule). Unknown costs are never treated as zero. `commissions.components` declares,
+for each of the four components (`exchange`, `clearing`, `nfa`, `other`), whether the firm's
+per-side commission contains it (`included`), excludes it (`excluded`: the amount is added from the
+`ComponentFeeSource` for the run's participant type) or does not say (`unknown`). All four keys are
+REQUIRED and there is no `all_in` shortcut: an `included` or `excluded` declaration needs a
+quotation that says so, and `commissions.evidence` records whether the commission figures themselves
+are `official_quote` or `owner_provided`. The old
+`commissions.includes_exchange_and_regulatory_fees` flag is REFUSED by name, with a message naming
+this block.
+
+Every gap — an `unknown` component, an `excluded` one the dataset cannot price, an unknown
+commission — makes `cash_estimate_status` `unavailable`. The only way to a number is a
+`cost_assumption` FILE the run passes explicitly (`--cost-assumption`, MCP `cost_assumption`): it
+prices exactly the root and components it lists, it may not override a component the ruleset
+includes or the dataset already priced, an `unknown` component it prices is ADDED (worse for the
+strategy), and the recorded SHA-256 names the file. Because it is a user's statement and not a firm
+value, the resulting estimate is `conditional`, never `exact`.
+
+The participant type a component is priced for is a REQUIRED run parameter as soon as a component
+is `excluded` (`--fee-participant-type`, MCP `fee_participant_type`): the ruleset never states one,
+and a member rate is not a customer rate. Using it makes the estimate `conditional` with the reason
+`participant type assumed: <x>`. The per-side amounts are resolved at the attempt's
+`start_trade_date`, and a fee change the table states inside the attempt's window is reported in
+`warnings` (one schedule per attempt, never a silent mid-window change).
 
 `cash_estimate_status` is the label on the money: `exact`, `conditional` (a named cost assumption
 was used), `upper_bound` (a payout cap the sources do not state: the simulation pays what the
@@ -269,15 +295,16 @@ assertions of `tests/integration/test_futures_prop.py`.
   record; it imports the calendar dataset only through those values. A news rule whose declared
   event types the calendar does not carry is `not_modeled` for that attempt (material, reported by
   rule and by type in `warnings`), while every window the calendar does carry stays enforced.
-- `crucible.prop.costs.ExchangeFeeSource` (Protocol) with `ExchangeFeeTable`/`ExchangeFeeRow`: the
-  per-root, per-side exchange and regulatory fees a commission that excludes them is added to.
-  `simulate_attempt(exchange_fees=...)` takes one; `store_exchange_fees(store)` is the adapter over
-  the stored `exchange_fees_v1` dataset (imported lazily inside `costs.py`, so `crucible.prop`
-  itself never needs the data layer to import).
-- `crucible.prop.costs.ExchangeFeeSource`'s implementations take the dataset NAME
-  (`store_exchange_fees(store, dataset="exchange_fees_v1")`, `StoreExchangeFees(dataset=None)`,
-  `stored_fee_row(..., dataset=...)`), so a consumer that pinned a version reads that version and
-  the content hash it cites is the table it priced with.
+- `crucible.prop.costs.ComponentFeeSource` (Protocol) with `ComponentFeeTable`/`ComponentFeeRow`
+  and `StoreComponentFees`: the per-root, per-side amounts of the components a commission charges
+  on top of itself. `simulate_attempt(fee_source=..., participant_type=...)` takes one;
+  `store_component_fees(store)` is the adapter over the stored `exchange_fees_v1` dataset
+  (imported lazily inside `costs.py`, so `crucible.prop` itself never needs the data layer to
+  import).
+- `crucible.prop.costs.ComponentFeeSource`'s stored implementation takes the dataset NAME
+  (`store_component_fees(store, dataset="exchange_fees_v1")`, `StoreComponentFees(dataset=None)`),
+  so a consumer that pinned a version reads that version and the content hash it cites is the table
+  it priced with.
 - Entry points: `crucible prop validate|list|confirm`, `crucible futures prop` (the evaluation),
   `crucible schema --kind prop-ruleset|prop-attempt|prop-evaluation`; the MCP tools
   `crucible_prop_validate`, `crucible_prop_list`, `crucible_prop_schema` and
@@ -297,9 +324,13 @@ assertions of `tests/integration/test_futures_prop.py`.
 
 - The contract limit is enforced at admission and on every candidate target; it is not re-checked
   as an invariant after a fill that must reduce exposure (a stop or a liquidation only reduces).
-- The exchange-fee schedule is resolved once, at the attempt's `start_trade_date`: a fee change
-  inside a long attempt is reported in `warnings` but the start date's row is charged throughout
-  (a per-date schedule would need the simulator to price each fill on its own date).
+- The per-side fee schedule is resolved once, at the attempt's `start_trade_date`, for one
+  participant type: a fee change inside a long attempt is reported in `warnings` but the start
+  date's row is charged throughout (a per-date schedule would need the simulator to price each fill
+  on its own date), and a row of another participant type never prices it.
+- A row that covers several components is charged once, under the first component in report order:
+  the amount is one cell the owner reported, and splitting it across the components it covers
+  would be a number no source states.
 - A `flat_by` relative to a session end trusts the CME session table, and that table's unsourced
   windows are reported as a coverage gap rather than repaired: 2023-11-24 still closes at the 16:00
   Chicago regime close because the 2023 Thanksgiving schedule was never archived (see the

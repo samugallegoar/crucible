@@ -36,7 +36,23 @@ reset:
   tz: America/New_York
 commissions:
   status: known
-  includes_exchange_and_regulatory_fees: false
+  components:
+    exchange:
+      status: excluded
+      evidence: official_quote
+      text: 'Exchange and NFA fees are set by the exchanges and regulators, not by FTMO.'
+    clearing:
+      status: unknown
+      evidence: not_stated
+      text: 'the page names exchange fees, NFA fees and its own commission as the three parts of the trading cost, and no clearing fee'
+    nfa:
+      status: excluded
+      evidence: official_quote
+      text: 'Exchange and NFA fees are set by the exchanges and regulators, not by FTMO.'
+    other:
+      status: unknown
+      evidence: not_stated
+      text: 'the page names three parts of the trading cost and no other per-side charge'
   per_side_usd:
     ES: '0.50'
     NQ: '0.50'

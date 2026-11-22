@@ -13,7 +13,7 @@ The schema-v2 migration:
 
 Vocabulary round 2 (the count of files it touched is in each bullet):
 
-- `commissions.includes_exchange_and_regulatory_fees: true` in all 20 files: the instrument list's own subtitle says it "Includes Contract Specifications, Commissions, and Trading Fees" and its column is the *Total Cost* Round Trip, so the per-side figure is all-in and no exchange or NFA fee is added on top (section 2).
+- `commissions.components`: every component is **`unknown`** in all 20 files. The instrument list's own subtitle says it "Includes Contract Specifications, Commissions, and Trading Fees" and its column is the *Total Cost* Round Trip, but neither names exchange, clearing, NFA or other fees separately, so no component can be assigned to it (section 2). The per-side figure is still the whole figure the firm publishes; what changed is that the engine no longer reads it as all-in.
 - `news_restriction.effect: block` in the 12 files that carry a news rule, and `FOMC_MINUTES` added to their `event_types`: all four T1 types the firm names are now in the economic calendar (section 3).
 - `lock.on` is a list everywhere (`['hwm']`, `['first_payout']`), including the conflict values that override a lock, because a bare `on: hwm` is refused by schema version 2.
 - `payout.max_usd: unknown` in the 4 Rapid intraday files: the ceiling is unpublished, and `unknown` is never `unlimited`. The `unspecified_rapid_per_request_payout_ceiling_is_unlimited` assumption and the `payout_ceiling_not_published` entry are gone; the payout and the cash statistics report `upper_bound` instead (section 8).
@@ -67,7 +67,7 @@ Every file below is the raw HTTP response, saved unchanged under `D:\proyectos\c
 
 ## 2. Commissions
 
-MFFU publishes **no commission-only schedule and no platform-specific commission page**. What it does publish, on the official futures instrument list, is a **Total Cost Round Trip** column per contract, and the article's own subtitle describes the list as one that "Includes Contract Specifications, Commissions, and Trading Fees". That column is the firm's own all-in trading cost, so `commissions.includes_exchange_and_regulatory_fees` is **true** in every file: adding the exchange fee and the NFA assessment of an `ExchangeFeeSource` on top of it would double-count. One round trip is two sides, so `per_side_usd` is that figure divided by two:
+MFFU publishes **no commission-only schedule and no platform-specific commission page**. What it does publish, on the official futures instrument list, is a **Total Cost Round Trip** column per contract, and the article's own subtitle describes the list as one that "Includes Contract Specifications, Commissions, and Trading Fees". That column is the firm's own all-in trading cost, so every file now declares all four components `unknown`: the subtitle names "Commissions, and Trading Fees" as a group and never exchange, clearing, NFA or other, and a component the sources do not name is `unknown`, never zero (ADR-0107 section 10). One round trip is two sides, so `per_side_usd` is that figure divided by two:
 
 | root | Total Cost Round Trip | per side (USD) |
 |---|---|---|
@@ -281,7 +281,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=282.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.funded_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=payout, window=since_last_payout, numerator_window=since_last_payout, denominator_window=current_cycle, comparison <= -> block_payout [official_quote]
@@ -331,7 +331,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=398.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.funded_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=payout, window=since_last_payout, numerator_window=since_last_payout, denominator_window=current_cycle, comparison <= -> block_payout [official_quote]
@@ -381,7 +381,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=105.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.funded_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=payout, window=since_last_payout, numerator_window=since_last_payout, denominator_window=current_cycle, comparison <= -> block_payout [official_quote]
@@ -432,7 +432,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=125.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.funded_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=payout, window=since_last_payout, numerator_window=since_last_payout, denominator_window=current_cycle, comparison <= -> block_payout [official_quote]
@@ -483,7 +483,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=153.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.funded_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=payout, window=since_last_payout, numerator_window=since_last_payout, denominator_window=current_cycle, comparison <= -> block_payout [official_quote]
@@ -533,7 +533,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=401.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -585,7 +585,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=557.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -637,7 +637,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=265.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.payout` (payout): min_days_since_last=0, min_profitable_days=0, min_traded_days=0, min_day_profit_usd=0, window=all_time, buffer_usd=2100, split=0.8, min_usd=1000, max_usd=100000, max_payouts=None, min_profit_since_last_usd=0, first_payout_after_calendar_days=14, threshold_after_payout=lock_on_first_payout, comparison >= -> withdraw [official_quote]
@@ -688,7 +688,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=265.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -740,7 +740,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=356.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -793,7 +793,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=463.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -846,7 +846,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=145.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -899,7 +899,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=209.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.5, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -955,7 +955,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=162.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.3, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -1008,7 +1008,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=162.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.3, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -1062,7 +1062,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=275.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.3, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -1115,7 +1115,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=275.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `evaluation.eval_consistency` (consistency): max_day_share=0.3, measure=best_day_profit/total_profit, applies_to=pass, window=all_time, comparison <= -> promote_phase [official_quote]
@@ -1165,7 +1165,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=140.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.funded_daily_profit_cap` (daily_profit_cap): amount_usd=5000, basis=balance, evaluated=eod, comparison >= -> forfeit_excess [official_quote]
@@ -1212,7 +1212,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=280.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.funded_daily_profit_cap` (daily_profit_cap): amount_usd=10000, basis=balance, evaluated=eod, comparison >= -> forfeit_excess [official_quote]
@@ -1259,7 +1259,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 **fees / commissions**
 - `evaluation.evaluation_fee` (fee): fee_kind=evaluation, amount_usd=75.00, when=at_start, comparison >= -> charge [official_quote]
 - `evaluation.activation_fee` (fee): fee_kind=activation, amount_usd=0, when=at_start, comparison >= -> charge [official_quote]
-- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; includes_exchange_and_regulatory_fees: true)
+- commissions per side USD: ES 2.34, NQ 2.34, YM 2.88, RTY 2.34, NKD 3.11, MES 0.95, MNQ 0.95, MYM 0.95, M2K 0.95 (the instrument list's Total Cost Round Trip / 2; every cost component unknown)
 
 **payouts**
 - `funded.funded_daily_profit_cap` (daily_profit_cap): amount_usd=2500, basis=balance, evaluated=eod, comparison >= -> forfeit_excess [official_quote]
@@ -1283,6 +1283,27 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 
 ## 11. Legacy products and open questions for the owner
 
+### Per-component costs (C7b fix, 2026-11-22)
+
+`commissions.includes_exchange_and_regulatory_fees` is gone. The ruleset now declares, for each of the four components, whether the firm's per-side commission CONTAINS it (`included`), EXCLUDES it (`excluded`, so the run adds the dataset's amount for its participant type) or does not say (`unknown`, which is never a zero cost). All four keys are required, and no component may be inferred from another firm's page, another product or another participant type (ADR-0107 section 10 as amended).
+
+| Component | Status in the files | Evidence kind | Evidence |
+|---|---|---|---|
+| `exchange` | `unknown` | `not_stated` | the subtitle "Includes Contract Specifications, Commissions, and Trading Fees" and the Total Cost Round Trip column name no component separately |
+| `clearing` | `unknown` | `not_stated` | the same |
+| `nfa` | `unknown` | `not_stated` | the same |
+| `other` | `unknown` | `not_stated` | the same |
+
+An `excluded` component needs a participant type at RUN time (`--fee-participant-type`): the ruleset never states one, and using it makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
+
+Owner questions, one per component the files declare `unknown`:
+
+1. **exchange**: Does the per-side commission already contain the exchange fee, or is the exchange fee charged on top of it?
+2. **clearing**: Does the per-side commission already contain the clearing fee, or is the clearing fee charged on top of it?
+3. **nfa**: Does the per-side commission already contain the NFA assessment, or is it charged on top of it?
+4. **other**: Is there any other per-side charge beside the commission, the exchange fee, the clearing fee and the NFA assessment?
+
+
 - **Legacy, not drafted**: Flex ($25K/$50K, filed under Legacy Plans, `/plans/flex` returns the site's 404), Builder 25K Legacy No DLL, Legacy Pro, MyFunded Perps (a separate company). No page dates any current rule set, so `effective_from` is the retrieval date in every file.
 - **Pro 50K One Day add-on**: its own article sits in "Pro Legacy Plans" and calls the offer limited, while the current redesigned Pro table still carries the One Day column with a $4,000 target, no consistency rule and a 1-day minimum. Drafted, still unverified: is it sold?
 - **Rapid intraday per-request payout ceiling**: no page states a maximum and none denies one (the Pro table states $100,000 per user, the Rapid EOD pages say "There is no cap"). Modeled as `max_usd: unknown` in round 2, so the payout and the cash statistics are `upper_bound`; confirm whether a ceiling exists so they can become exact.
@@ -1291,7 +1312,7 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - **Builder 150K payout cap**: $3,500 (plan page and the guide's own example) vs $4,500 (guide table). The stricter value is selected.
 - **EOD drawdown test timing**: modeled intraday on equity (the firm's EOD article says open equity losses are taken into consideration). If MFFU tests only at the close, our failure rate is too high.
 - **Trading-day definition**: a trade date with at least one executed trade (ADR-0107 section 7 default). No MFFU page defines it, for the 2-day (Rapid/Pro), 4-day (Rapid EOD) or 1-day (Builder) minimum or for Builder's "2 qualifying days".
-- **Total Cost Round Trip is all-in**: `includes_exchange_and_regulatory_fees: true` rests on the column name, the article subtitle ("Includes Contract Specifications, Commissions, and Trading Fees") and the absence of any commission-only figure, not on a sentence that says "all-in". Confirm before a fee-driven result is relied on; if the firm says its commission excludes exchange and NFA fees, the flag flips to `false` and the cost statistics become conditional on the exchange-fee dataset.
+- **Is Total Cost Round Trip all-in?** Every component is `unknown`: the column name and the article subtitle ("Includes Contract Specifications, Commissions, and Trading Fees") suggest an all-in figure, but no sentence names exchange, clearing, NFA or other fees, so the cost statistics stay `unavailable` (or `conditional` under a cost-assumption file). For each component, confirm with a source whether it is `included` or `excluded`.
 - **Half-day close**: the firm does not liquidate at a half-day close, the trader must; `flat_by` liquidates. Declared as `holiday_early_close_is_the_traders_job`. Model it as `action: fail` if the firm's position (holding past the deadline breaches the account) is the one to enforce.
 - **Builder consistency attribution**: the five Builder files source the 50% from the firm-wide consistency article, which names the Rapid EOD, Rapid Intraday and Pro plans rather than Builder, while each Builder plan article states the 50%, the cycle and the reset itself. Round 2 declared the cycle windows; re-sourcing to each plan article would make them quote-sourced per file.
 - **No phase time limit**: no MFFU page states an access period or a deadline to pass, so no `time_limit` rule is declared in any file.

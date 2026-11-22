@@ -39,7 +39,24 @@ reset:
   tz: America/New_York
 commissions:
   status: known
-  includes_exchange_and_regulatory_fees: unknown
+  evidence: owner_provided
+  components:
+    exchange:
+      status: unknown
+      evidence: not_stated
+      text: 'per-side table provided by the owner, pending independent verification; not stated to be all-in'
+    clearing:
+      status: unknown
+      evidence: not_stated
+      text: 'per-side table provided by the owner, pending independent verification; not stated to be all-in'
+    nfa:
+      status: unknown
+      evidence: not_stated
+      text: 'per-side table provided by the owner, pending independent verification; not stated to be all-in'
+    other:
+      status: unknown
+      evidence: not_stated
+      text: 'per-side table provided by the owner, pending independent verification; not stated to be all-in'
   per_side_usd:
     ES: '1.75'
     MES: '0.50'

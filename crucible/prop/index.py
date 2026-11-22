@@ -7,8 +7,11 @@ this engine now REQUIRES is missing, which is the state a firm file is in until 
 reaches it), is listed as ``pending_migration`` so the committed index stays stable while the
 migration finishes. The index never invents a hash for such a file.
 
-Append-only means an entry that already exists may not change its hash and may not disappear. The
-test compares the index with the copy in git history; this module only builds the document.
+Append-only means an entry that already exists may not disappear and may not reuse a version
+number, and a ``verified`` ruleset's hash may never change (the owner's confirmation is what makes
+a version immutable data). An ``unverified`` file may still be corrected in place while the firm's
+migration is unmerged, which is why its hash may change with it. The test compares the index with
+the copy in git history; this module only builds the document.
 """
 
 from __future__ import annotations

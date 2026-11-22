@@ -20,6 +20,7 @@ from crucible.prop.coverage import (
     material_unmodeled,
     rule_coverage,
 )
+from crucible.prop.rules_schema import COST_COMPONENTS
 from crucible.prop.ruleset import Attribution, PropRuleset, Verification, load_ruleset
 from crucible.prop.scenarios import scenarios
 
@@ -79,11 +80,19 @@ def ruleset_document(ruleset: PropRuleset) -> dict[str, object]:
         "reset": {"time": ruleset.reset.time.isoformat(), "tz": ruleset.reset.tz},
         "commissions": {
             "status": ruleset.commissions.status,
-            "includes_exchange_and_regulatory_fees": (
-                "unknown"
-                if not isinstance(ruleset.commissions.includes_exchange_and_regulatory_fees, bool)
-                else str(ruleset.commissions.includes_exchange_and_regulatory_fees).lower()
-            ),
+            "evidence": ruleset.commissions.evidence,
+            "components": {
+                name: {
+                    "status": declaration.status,
+                    "evidence": declaration.evidence,
+                    "text": declaration.text,
+                }
+                for name in COST_COMPONENTS
+                for declaration in (ruleset.commissions.components.declaration(name),)
+            },
+            "all_in": ruleset.commissions.all_in,
+            "excluded_components": list(ruleset.commissions.excluded_components),
+            "unknown_components": list(ruleset.commissions.unknown_components),
             "per_side_usd": {
                 root: str(value) for root, value in ruleset.commissions.per_side_usd.items()
             },

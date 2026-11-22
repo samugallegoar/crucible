@@ -1,16 +1,29 @@
-# Exchange and NFA fees: per side, per contract (regulatory fee sourced; exchange fee pending)
+# Execution fees: per component, per side, per contract (owner-sourced; exchange and clearing pending)
 
 Dataset `exchange_fees_v1`. The per-side, per-contract USD amounts a retail customer of a prop
-firm's clearing chain pays **on top of a commission that excludes them**: the CME Group exchange
-fee and the NFA assessment fee, for ES, NQ, YM, RTY, NKD, MES, MNQ, MYM and M2K.
+firm's clearing chain pays **on top of a commission that excludes them**, split into the components
+a firm's commission may or may not contain:
+
+| `fee_type` | Component | Who states it |
+|---|---|---|
+| `exchange` | the exchange's own trading fee | only an owner file: CME Group publishes product buckets, not root tickers |
+| `clearing` | the clearing fee | only an owner file |
+| `nfa` | the NFA assessment fee | the official bylaw page, fetched and parsed |
+| `other` | any other per-side charge the source states | only an owner file |
 
 Built by `crucible/data/exchange_fees.py`. This page records one uncomfortable fact first: the
-dataset holds **the NFA fee only**. No CME exchange fee is stored, because CME Group refuses
-automated access and its published schedule does not name a root ticker, so a per-root rate
-cannot be read off it without guessing. `fee_table_as_of` therefore **refuses** instead of
-pricing an unknown fee at zero, and an exchange fee enters the dataset only from a file the
-owner supplies (below). The decision, and the alternatives considered, are recorded in the
-task's report; nothing here was fetched from `cmegroup.com` or copied from an archive of it.
+dataset holds **the NFA fee only**. No exchange, clearing or other row is stored, because CME Group
+refuses automated access and its published schedule does not name a root ticker, so a per-root rate
+cannot be read off it without guessing. `fee_rows_as_of` therefore prices **only the root and the
+components it has rows for** and returns nothing for the rest — an unpriced component is a gap the
+caller reports, never a zero. The decision, and the alternatives considered, are recorded in
+`docs/adr/0107-firm-rulesets-and-attempt-statistics.md` (section 10 and its amendment); nothing here
+was fetched from `cmegroup.com` or copied from an archive of it.
+
+**No universal fee, and no extrapolation.** A row prices exactly its `root`, `participant_type` and
+date range, and it states which components its amount covers (`covers`). There is no product-bucket
+to root mapping anywhere in this repository, and no fee is carried across roots, products or
+participant types: the engine never invents one.
 
 ## Sources
 
@@ -33,19 +46,22 @@ The row's evidence is the bylaw's own sentence, quoted verbatim in `quote`:
 > each commodity futures contract traded on or entered into subject to the rules of a contract
 > market (other than an option contract) on a round-turn basis;
 
-Two conversions, both stated by the text and neither inferred:
+Three things the row states, and nothing inferred:
 
-- **Per side = half the round-turn amount.** The bylaw assesses a *round turn* ($.02), so a side
-  is $0.01 through 2027-06-30 and $0.02 from 2027-07-01. Both rows are written: the sentence
-  states the second amount and its start, so the later rate is a fact, not a projection.
-- **The FCM member pays it, the customer sees it passed through.** `fee_class` is
-  `fcm_member_assessment` for NFA rows: the bylaw assesses the *FCM member* per contract. It is a
-  fee a customer pays through the FCM, which is why the prop-firm fee table adds it to the
-  exchange fee rather than treating it differently.
+- **Per side = half the round-turn amount.** The bylaw assesses a *round turn* ($.02), so a side is
+  $0.01 through 2027-06-30 and $0.02 from 2027-07-01. Both rows are written: the sentence states the
+  second amount and its start.
+- **`covers = nfa`.** The assessment is the regulatory component and nothing else.
+- **`participant_type = fcm_member_assessment`.** The bylaw assesses the *FCM member* per contract;
+  a customer sees it passed through. It is therefore not a customer rate class, and
+  `fee_rows_as_of` prices an `nfa` row for **any requested participant type** (that is the one
+  stated exception to the exact-match rule, and it is why a run's `--fee-participant-type
+  non_member_customer` can price the NFA component while a member row cannot price a customer's
+  exchange fee).
 
-### CME Group exchange fee — **not sourced, on purpose**
+### CME Group exchange and clearing fees — **not sourced, on purpose**
 
-Two independent blockers, both of which would have to be lifted to store a CME rate:
+Two independent blockers, both of which the owner file below removes:
 
 1. **`cmegroup.com` refuses automated access from the machine this was built on.** Every text URL
    — including `/robots.txt` — answers HTTP 403 with:
@@ -56,7 +72,8 @@ Two independent blockers, both of which would have to be lifted to store a CME r
 
    The project does not work around a publisher's refusal: no archived copy of a CME Group file is
    fetched, kept or read as a substitute, and nothing from one is stored in this dataset or its
-   raw folder. (The raw folder holds exactly one file: the NFA page.)
+   raw folder. (The raw folder holds exactly one file: the NFA page.) **Automated retrieval stays
+   refused.**
 2. **Even with the document in hand, the fee is not attributable to a root.** CME's schedule names
    product *buckets* — "Equity Index", "Nikkei/TOPIX", "E-mini Equity Index", "Micro E-mini
    Index", "E-nano Index" — never a ticker such as `ES`, `MES` or `NKD`, and the column geometry
@@ -65,89 +82,157 @@ Two independent blockers, both of which would have to be lifted to store a CME r
    the value rows). Which column is ES and which is MES would be an inference, and inferring a
    money amount is the one thing this dataset may not do (AGENTS.md §1.2, §1.5).
 
-The observable consequence is deliberate and tested (`test_fee_table_refuses_while_the_exchange_fee_is_unknown`):
-`build_exchange_fees` writes **zero** `fee_type = exchange` rows, `BuildReport.exchange_roots_missing`
-names all nine roots, and `fee_table_as_of(store, date)` raises until they are priced.
+The two pages the **owner** downloads, by hand, in a browser:
+
+- current fees: <https://www.cmegroup.com/company/clearing-fees.html>
+- historical fees: <https://www.cmegroup.com/company/clearing-fees/historical-fees.html>
+
+**The historical page is required for pre-2025 data.** Market data stays strictly before
+2025-01-01 (ADR-0105), so a backtest of a 2023 or 2024 attempt needs the fee that was in force
+*then*, and the current schedule states today's rate. A row carries its own `effective_from` and
+`effective_to`, and a date picks its own row: the historical rows are data, not a single current
+rate.
+
+The observable consequence is deliberate and tested
+(`test_build_writes_the_contract_and_prices_no_exchange_component`): `build_exchange_fees` writes
+**zero** `exchange`, `clearing` or `other` rows, `BuildReport.unpriced_components` names all three,
+and `fee_rows_as_of` returns no amount for them.
 
 ### Owner-provided fee file — how the CME rows get in
 
 A person who holds the exchange fee schedule supplies a CSV; the loader records who supplied it,
 the file's own SHA-256, and the exact cell text as the row's evidence. That is the only route an
-exchange fee has into this dataset. Header (order is free, extra columns are refused):
+exchange or clearing fee has into this dataset. Header (order is free, extra columns are refused):
 
 ```csv
-root,fee_type,fee_class,per_side_usd,effective_from,effective_to,venue,quote,source_url
-ES,exchange,non_member_customer,0.00,2026-01-01,,CME,"<the exact cell text, e.g. the product row and the Non-Members column>",<document name>
+root,fee_type,participant_type,covers,per_side_usd,effective_from,source_url,quote,venue,effective_to
+ES,exchange,non_member_customer,exchange;clearing,0.00,2026-01-01,https://www.cmegroup.com/company/clearing-fees/historical-fees.html,"SYNTHETIC EXAMPLE: the exact cell text for ES, e.g. the product row and the Non-Members column",CME,
+MES,nfa,non_member_customer,nfa,0.00,2026-01-01,https://www.nfa.futures.org/rulebooksql/rules.aspx?Section=3&SubSection=13,"SYNTHETIC EXAMPLE: the bylaw sentence",CME,
 ```
+
+Every value above is an **obviously synthetic placeholder**: `0.00` and the words
+`SYNTHETIC EXAMPLE` mark a cell a person must fill from the document they downloaded. No real CME
+rate appears anywhere in this repository (a test enforces it).
 
 | Column | Meaning |
 |---|---|
 | `root` | one of ES, NQ, YM, RTY, NKD, MES, MNQ, MYM, M2K |
-| `fee_type` | `exchange` (an owner file may also state `nfa`, e.g. for an earlier period) |
-| `fee_class` | the rate class the source states; **`non_member_customer`** is the class a prop firm's customer accounts are assumed to be in — see "Assumptions" |
-| `per_side_usd` | USD per contract per side, a decimal string (parsed as `Decimal`, never a float); the `0.00` above is a placeholder, no rate is implied |
+| `fee_type` | `exchange`, `clearing`, `nfa` or `other`: the component the amount is typed as. **It must appear in `covers`** |
+| `participant_type` | who the rate is for: `non_member_customer`, `member`, `fcm_member_assessment`, … No extrapolation: a row prices its own type only |
+| `covers` | **mandatory**: the components the amount covers, `;`-separated. A CME "Exchange Fees for Clearing & Trading" cell is `fee_type=exchange`, `covers=exchange;clearing`, and it is charged ONCE for both |
+| `per_side_usd` | USD per contract per side, a decimal string (parsed as `Decimal`, never a float) |
 | `effective_from` | `YYYY-MM-DD`, the first date the rate applies |
-| `effective_to` | `YYYY-MM-DD`, the last date; empty = open-ended |
+| `effective_to` | optional, `YYYY-MM-DD`, the last date; empty = open-ended |
 | `venue` | optional; defaults from `VENUE_OF[root]` and must agree with it (ES/NQ/RTY/NKD/MES/MNQ/M2K = CME, YM/MYM = CBOT) |
+| `source_url` | **mandatory**: the document the cell came from — one of the two CME pages above, or the NFA bylaw page |
 | `quote` | **mandatory**: the exact text the rate was read from (the cell, the row, the sentence) |
-| `source_url` | optional: the document the cell came from |
 
-Refusals, each with a message that says what to fix: an empty `quote` (a rate nobody can point at),
-a missing supplier, an unknown or misspelled column, a root outside `ROOTS`, a `venue` that
-disagrees with `VENUE_OF`, a non-numeric or negative amount, `effective_to` before
-`effective_from`, two rows starting on the same date for one `(root, fee_type)`, and two rows that
-overlap in time (a date must map to one rate, never to a row order).
+Refusals, each with a message that says what to fix:
+
+- an empty `quote` (a rate nobody can point at), a missing `source_url`, a missing supplier, an
+  unknown or misspelled column, a root outside `ROOTS`, a `venue` that disagrees with `VENUE_OF`,
+  a non-numeric or negative amount, `effective_to` before `effective_from`;
+- **a `covers` list that does not contain the row's own `fee_type`** (a row prices the component it
+  is typed as), an empty `covers`, or a `covers` name that is not a component;
+- **two rows that start on the same date for one `(root, participant_type, component)`**, and
+- **overlapping rows for the same `(root, participant_type, component)`** — a component covered
+  twice on one date by different rows, including one row that covers `exchange;clearing` and
+  another that covers `clearing` alone. A date must map to one amount per component, never to a
+  row order.
 
 ## Schema
 
-`crucible/data/exchange_fees.py::EXCHANGE_FEE_SCHEMA`, stored sort order `root`, `fee_type`,
-`effective_from` (columns in `docs/SCHEMAS.md` §1.7).
+`crucible/data/exchange_fees.py::EXCHANGE_FEE_SCHEMA`, stored sort order `root`, `participant_type`,
+`fee_type`, `effective_from`, `covers` (columns in `docs/SCHEMAS.md` §1.7).
+
+## Lookup
+
+```python
+fee_rows_as_of(store, "ES", dt.date(2024, 7, 1),
+               participant_type="non_member_customer",
+               components=("exchange", "clearing", "nfa", "other"))
+# -> {"exchange": (Decimal("0.77"), "<record sha256>"), "clearing": (...), "nfa": (Decimal("0.01"), ...)}
+```
+
+- **Only the root asked for is priced.** An owner file that prices ES alone is usable; the nine
+  roots are no longer demanded at once.
+- A component with no covering row is **absent** from the result: the caller reports it as a gap,
+  never as zero.
+- A row that covers several components is charged once (the attempt's pricing groups the components
+  by the row's record hash, and the first component in report order carries the amount while the
+  others say they are inside it).
+- `participant_type` matches exactly — with the one stated exception of `nfa` rows, which are the
+  FCM member's pass-through assessment and price any requested type.
+- Two rows covering one component on one date raise, by name: no amount is chosen from a
+  contradiction.
+- A root outside `ROOTS` raises. The engine never maps a CME product bucket to a root.
 
 ## Assumptions
 
-- **`fee_class`.** CME's schedule does not say which class a prop firm's customer accounts fall
-  into. Exchange rows must carry an explicit class; the class this dataset assumes and documents is
-  `non_member_customer` — the rate a retail customer of an FCM pays, not a member, lessee or
-  clearing-member rate. **Confirm this against the firm's clearing agreement** before a fee-driven
-  result is relied on; an owner file that states another class wins, because it says so in
-  `fee_class` and in `quote`.
-- **Per side.** Both fee types are stored per side (`per_side_usd`): a round trip is
+- **`participant_type`.** CME's schedule does not say which class a prop firm's customer accounts
+  fall into, and a ruleset never states one either. The run passes the participant type
+  (`--fee-participant-type`, MCP `fee_participant_type`) and the estimate becomes `conditional`
+  with the reason `participant type assumed: <x>`. `non_member_customer` is the class the exchange
+  rows of an owner file normally carry — **confirm it against the firm's clearing agreement**
+  before a fee-driven result is relied on; an owner file that states another class wins, because it
+  says so in `participant_type`.
+- **Per side.** Every component is stored per side (`per_side_usd`): a round trip is
   `2 × per_side_usd`. The NFA figure is halved from the bylaw's round-turn amount for exactly this
-  reason, and the halving is stated in the module docstring of `parse_nfa_assessment`.
+  reason.
 - **`available_at = event_time = 00:00 UTC of effective_from`.** Neither source states when its
   rate became public (NFA names the last amendment date of the bylaw, not of the rate), so the row
   records the weaker, provable claim: the rate is visible only from the day it applies. A
-  backtest's point-in-time read can therefore never see a future rate, and cannot see a rate on the
-  day it was published but not yet effective.
+  point-in-time read can therefore never see a future rate.
 
 ## Coverage (rows in this build)
 
-| Fee | Roots | effective_from | effective_to | per side |
+| Component | Roots | effective_from | effective_to | per side |
 |---|---|---|---|---|
-| NFA assessment | all nine | 2026-07-01 | 2027-06-30 | $0.01 |
-| NFA assessment | all nine | 2027-07-01 | — (open) | $0.02 |
-| exchange | — | — | — | **none stored** |
+| `nfa` | all nine | 2026-07-01 | 2027-06-30 | $0.01 |
+| `nfa` | all nine | 2027-07-01 | — (open) | $0.02 |
+| `exchange` | — | — | — | **none stored** |
+| `clearing` | — | — | — | **none stored** |
+| `other` | — | — | — | **none stored** |
 
-This build: 18 rows (2 per root), content hash `90282b6d8ce6f7c7…`, 1 snapshot,
-`rows_by_type = {exchange: 0, nfa: 18}`, `rows_by_source = {official_page: 18, owner_provided: 0}`,
-`exchange_roots_missing = (ES, NQ, YM, RTY, NKD, MES, MNQ, MYM, M2K)`.
+This build: 18 rows (2 per root), 1 snapshot,
+`rows_by_type = {exchange: 0, clearing: 0, nfa: 18, other: 0}`,
+`rows_by_source = {official_page: 18, owner_provided: 0}`,
+`unpriced_components = (exchange, clearing, other)`.
+
+## Unverified owner references
+
+The owner's own working figure, recorded here **as documentation only**. It is not a fee, it is not
+in the dataset, and the engine never reads it: no ruleset, module or fixture carries it, and it
+enters a run only through a cost-assumption FILE the user passes explicitly (see
+`docs/modules/prop.md`, `CostAssumption`).
+
+| Field | Value |
+|---|---|
+| Estimated fee per side | **$1.38** |
+| Source | the owner, **2026-11-22** |
+| Composition (exchange / clearing / NFA / other) | **unknown**: the owner's note does not split it |
+| Product | **unknown**: no root is named |
+| Participant type | **unknown**: no rate class is named |
+| Status | unverified owner reference, not a dataset row |
+
+Because three of those fields are unknown, the figure cannot be stored as a row: a row must state
+its root, its participant type and the components it covers, and inventing any of the three is
+exactly what this dataset refuses to do. A user who wants an attempt to price with it writes a
+cost-assumption file naming the root and the components, and the attempt records that file's
+SHA-256 and reports the estimate as `conditional`.
 
 ## Gaps
 
-- **Every exchange fee is missing** (all nine roots, all dates). The consequence is a refusal, not a
-  zero: `fee_table_as_of` raises for every date, so any attempt that excluded exchange fees stays
-  conditional/unavailable until an owner file is supplied.
+- **Every exchange, clearing and other fee is missing** (all nine roots, all dates). The consequence
+  is a gap on each such component, never a zero: a ruleset that says those components are charged on
+  top stays `unavailable` until an owner file (or a cost-assumption file) prices them.
 - **Dates before 2026-07-01 have no NFA row.** The bylaw page states the current rate and the
   amendment dates of Bylaw 1301, but not the rate each amendment set; reconstructing earlier rates
-  would be a guess (their own archived copies would be needed, and the earlier period is not what
-  this dataset was asked for). A fee table for 2025-08 dates therefore also refuses.
+  would be a guess. A 2025-08 attempt therefore has an `nfa` gap as well.
 - **The NFA row says nothing about options.** The bylaw's option clause (`(B)`, per trade) is a
-  different instrument; this dataset covers futures only. `M2K`, `MES`, `MNQ` and `MYM` rows refer
-  to the futures contracts.
-- **No commission, no exchange regulatory fee, no clearing fee, no market-data fee.** Only the two
-  fees named above; a commission that already includes the exchange fee must not also add these.
-- **The `fee_class` assumption is unconfirmed** (above). It is an assumption the coordinator must
-  confirm with the firm, not a fact read from a source.
+  different instrument; this dataset covers futures only.
+- **No commission, no market-data fee.** Only the components above; a commission that already
+  includes them must not also add these, which is exactly what `commissions.components` declares.
 
 ## Rebuild
 
@@ -163,12 +248,13 @@ uv run python -c "from pathlib import Path; from crucible.data.exchange_fees imp
     Path('D:/proyectos/databases/exchange_fees/raw'), \
     Path('D:/proyectos/crucible/data/processed')); print(r)"
 
-# 3. read it as the fee table a run would use
+# 3. read the components one root has for one date
 uv run python -c "import datetime as dt; from pathlib import Path; \
     from crucible.data.store import ParquetDataStore; from crucible.data.exchange_fees import \
-    fee_table_as_of; fee_table_as_of(ParquetDataStore( \
-    Path('D:/proyectos/crucible/data/processed')), dt.date(2026, 11, 21))"
+    fee_rows_as_of; print(fee_rows_as_of(ParquetDataStore( \
+    Path('D:/proyectos/crucible/data/processed')), 'ES', dt.date(2026, 11, 21), \
+    participant_type='non_member_customer', components=('exchange', 'nfa')))"
 ```
 
-Step 3 raising `ConfigurationError` is the expected state of this build; it names each unpriced
-root and points at the owner file.
+Step 3 prints only `nfa` for this build: the exchange component is absent, and the caller reports it
+as a gap.

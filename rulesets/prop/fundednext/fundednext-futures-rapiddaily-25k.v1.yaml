@@ -24,7 +24,23 @@ reset:
   tz: America/Chicago
 commissions:
   status: known
-  includes_exchange_and_regulatory_fees: true
+  components:
+    exchange:
+      status: included
+      evidence: official_quote
+      text: 'The all-in rate has three components: Commission — the fee charged by the broker for executing the trade. Exchange & NFA Fee — charged by the exchange and the National Futures Association. This fee doesn''t vary between brokerage firms, but does vary between different futures contracts . Clearing Fee — charged by the clearing firm (also known as an FCM).'
+    clearing:
+      status: included
+      evidence: official_quote
+      text: 'The all-in rate has three components: Commission — the fee charged by the broker for executing the trade. Exchange & NFA Fee — charged by the exchange and the National Futures Association. This fee doesn''t vary between brokerage firms, but does vary between different futures contracts . Clearing Fee — charged by the clearing firm (also known as an FCM).'
+    nfa:
+      status: included
+      evidence: official_quote
+      text: 'The all-in rate has three components: Commission — the fee charged by the broker for executing the trade. Exchange & NFA Fee — charged by the exchange and the National Futures Association. This fee doesn''t vary between brokerage firms, but does vary between different futures contracts . Clearing Fee — charged by the clearing firm (also known as an FCM).'
+    other:
+      status: unknown
+      evidence: not_stated
+      text: 'the all-in rate names three components (commission, exchange & NFA fee, clearing fee) and no other per-side charge'
   per_side_usd:
     NQ: '2.88'
   platform: null
