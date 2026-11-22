@@ -806,11 +806,14 @@ def build_exchange_fees(
 # ------------------------------------------------------------------------------- the read API
 
 
-def _read(store: DataStore, as_of_ns: int) -> pl.DataFrame:
-    return store.read(DATASET, TimestampNs(as_of_ns)).collect()
+def _read(store: DataStore, as_of_ns: int, dataset: DatasetId | None = None) -> pl.DataFrame:
+    name = DATASET if dataset is None else dataset
+    return store.read(name, TimestampNs(as_of_ns)).collect()
 
 
-def fee_table_as_of(store: DataStore, date: dt.date) -> dict[str, Decimal]:
+def fee_table_as_of(
+    store: DataStore, date: dt.date, *, dataset: DatasetId | None = None
+) -> dict[str, Decimal]:
     """``{root: USD per side}`` — exchange fee plus NFA assessment — as of ``date``.
 
     The table is read at the end of ``date`` (UTC), so a rate that starts later is invisible: a
@@ -822,9 +825,11 @@ def fee_table_as_of(store: DataStore, date: dt.date) -> dict[str, Decimal]:
     — supply the owner's file (:func:`load_owner_provided_csv`) and rebuild. The message names the
     roots, the date and that route, because a missing regulatory or exchange figure silently
     priced at zero would flatter every result that used it (AGENTS.md section 1.4/1.5).
+
+    ``dataset`` reads another built version of the table instead of :data:`DATASET`.
     """
     as_of_ns = _day_ns(date + dt.timedelta(days=1)) - 1
-    frame = _read(store, as_of_ns).filter(
+    frame = _read(store, as_of_ns, dataset).filter(
         (pl.col("effective_from") <= date)
         & (pl.col("effective_to").is_null() | (pl.col("effective_to") >= date))
     )

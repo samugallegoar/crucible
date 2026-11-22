@@ -222,6 +222,28 @@ The prop-firm engine has its own set, all on synthetic data (no real market data
   below its threshold.
 - `tests/lookahead/test_prop_overlay_lookahead.py` — bars poisoned after a breach change nothing up
   to and including it.
+- `tests/integration/test_prop_pass_frequency.py` — WHEN a pass condition is tested: an
+  `evaluated: eod` target is tested only at the rule-day's last scheduled bar, so a target touched
+  intraday (+$1,496) and lost by the session's close (+$250) does NOT pass, while the same target
+  declared `evaluated: intraday` passes at the touch; the control closes the session above the
+  target and passes at that close. Plus the overlay's two buckets and `rules.pass_frequency`.
+- `tests/unit/test_prop_flat_by_entry_block.py` — the session-relative `flat_by`'s entry block on
+  the sourced 2024-11-29 early close (18:15 UTC): the flat instant is 17:15 and the reopen IS the
+  scheduled close, so no bar opening before 18:15 may enter, the bar that reaches the flat instant
+  liquidates, and a firm that states its own `reopen` clock keeps it.
+- `tests/integration/test_futures_prop.py` — the prop evaluation (C7b, hash-locked to
+  `crucible.experiments.futures_prop`) on a synthetic 16-trade-date ES store: the five outcome
+  classes with the hand-computed counts and p / p_low / p_high, the bootstrap record (seed from
+  the evaluation id, block `max(H, ceil(sqrt(n)))`, `unavailable` under two blocks), the scenarios
+  of a conflict, the three labels (verified `pass_probability`, unverified `conditional_...`, a
+  compliance blocker with `practically_valid_passes: 0`), unknown commissions and a fee table that
+  cannot price the exchange fee, a known-time news window and an unknown-time day, the vault
+  refusal before any read, byte-identical reproduction with the seal, no trial recorded, the CLI
+  and the summary's JSON Schema. Every number is written out as arithmetic.
+- `tests/bench/test_prop_real_data.py` — opt-in (`-m bench`): ES 2024-01-02..2024-12-31 (the last
+  pre-vault trade date), the shipped `examples/futures/es_sma_cross.yaml` and Topstep's real 50K
+  ruleset, H = 20: every start classified, the summary conditional, the artifact sealed. Skips
+  without `CRUCIBLE_DATA_STORE`. About 110 s.
 
 Fixtures live in `tests/fixtures/prop/`: synthetic rulesets ("SyntheticFirm A",
 `example.invalid` URLs, invented values, every attribution `synthetic: true`), a registry with two

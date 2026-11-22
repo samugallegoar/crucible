@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from crucible.core.errors import ConfigurationError
 from crucible.execution.interfaces import AccountMarks, BreachPrice
@@ -143,6 +143,22 @@ def day_counts(stats: DayStats, predicate: DayCountsIf) -> bool:
     if predicate.min_pnl_usd is not None:
         counts = counts and stats.pnl >= micro(predicate.min_pnl_usd, "min_pnl")
     return counts
+
+
+def pass_frequency(rule: object) -> Literal["intraday", "eod"]:
+    """When a pass condition is tested: at every bar's close, or only at the rule-day's end.
+
+    ADR-0106 section 3 step 8 and ADR-0107 section 9 put the pass conditions at the rule-day's
+    close, after the threshold tests. A firm that states ``evaluated: eod`` means exactly that: its
+    target is tested on the CLOSED figure of the trade date and never on an intraday close, so a
+    target touched inside a bar and lost again by the close does not pass. ``evaluated: intraday``
+    is tested at every bar's close, and a touch counts at the bar's favourable extreme. A pass
+    condition that declares no frequency (``min_trading_days``, ``consistency``) is tested at every
+    close as well: those rules read the CLOSED rule-days, so a test before a day closes simply
+    restates the previous answer. ``on_request`` has no channel in a simulation and is treated the
+    same way (it is never promoted to a rule-day-only test either).
+    """
+    return "eod" if getattr(rule, "evaluated", None) == "eod" else "intraday"
 
 
 class Evaluator:

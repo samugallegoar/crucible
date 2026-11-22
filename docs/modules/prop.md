@@ -153,12 +153,12 @@ The simulator calls the overlay at fixed points of every bar:
 |---|------|--------------|
 | 1 | `begin_bar` | the rule-day transition (the reset clock): the daily-loss reference resets, soft locks lift, the scaling plan takes the limit its last close chose, inactivity counts |
 | 2 | `begin_bar` (gap test) | equity at the bar's open with the position carried in; a threshold already crossed liquidates at the open |
-| 3 | `forced_flat` | the first bar reaching a `flat_by` instant (absolute or session-relative) or a news window that flattens liquidates at its open; no entry until the reopen time |
+| 3 | `forced_flat` | the first bar reaching a `flat_by` instant (absolute or session-relative) or a news window that flattens liquidates at its open; no entry until the reopen time — for the session-relative form that reopen IS the session's scheduled close, so the block lasts from the flat instant to the close |
 | 4 | `admit` | the target the account allows: contract limit and scaling plan by contract weight (`clip` or `reject`), a lock, a closed account, the forced-flat window, an active news window |
 | 5 | `favorable` | the bar's favourable extreme in equity terms (high for a long, low for a short) updates the high-water marks **first** |
 | 6 | `breach_prices` | each active threshold's breach price, merged with the touched lot stops, recomputed after every stop |
 | 7 | `breach_filled`, `fill` | the breach consequence (hard closes, soft locks), every fill for the day statistics and inactivity |
-| 8 | `end_bar` | the close mark; on the rule-day's last scheduled bar the EOD rules, an `activity_requirement` short of its qualifying days in a full rolling window (it closes the account **before** the pass conditions), the time limit, the daily profit cap, the payouts and the pass conditions. An EOD breach liquidates **at that close**; a pass with a position open flattens it **at that close** as `phase_flatten` |
+| 8 | `end_bar` | the close mark; on the rule-day's last scheduled bar the EOD rules, an `activity_requirement` short of its qualifying days in a full rolling window (it closes the account **before** the pass conditions), the time limit, the daily profit cap, the payouts and the pass conditions. An EOD breach liquidates **at that close**; a pass with a position open flattens it **at that close** as `phase_flatten`. The time limit is tested **before** the pass conditions, so a firm's own limit ending the phase on the same close wins (the pessimistic direction). **Pass conditions are split by their declaration** (`crucible.prop.rules.pass_frequency`): an `evaluated: eod` target is tested ONLY here, on the closed trade date, and an `evaluated: intraday` one at every bar's close (its touch counts at the bar's favourable extreme) |
 | 9 | `finish` | the end of the data: an unresolved attempt whose data ends inside a rule-day is `censored` |
 
 **Joint pessimism** (`high_before_low_conservative`): the favourable extreme and the adverse touch
@@ -175,7 +175,7 @@ threshold: the fill pays the bar's open (or close) spread and slippage plus
 
 | Kind | Parameters | Semantics |
 |---|---|---|
-| `profit_target` | `amount_usd`, `basis: balance\|equity`, `evaluated`, `require_flat` | pass: the basis reaches `starting_balance + amount` |
+| `profit_target` | `amount_usd`, `basis: balance\|equity`, `evaluated`, `require_flat` | pass: the basis reaches `starting_balance + amount`; `evaluated: eod` is tested only at the rule-day's last scheduled bar (a touch lost by the close does not pass), `evaluated: intraday` at every close |
 | `static_drawdown` | `amount_usd`, `basis`, `evaluated` (**required**) | threshold `starting_balance - amount`, never trails |
 | `trailing_drawdown` | `amount_usd`, `mode`, `evaluated`, `basis`, `hwm_basis`, `lock {on: [hwm, first_payout], ...}` | threshold `hwm - amount`; the lock freezes it at the FIRST trigger that fires. `on` is a LIST: a bare `on: hwm` is refused |
 | `daily_loss` | `amount_usd` / `pct_of_reference` / `amount_by_balance_tier` / `pct_of_peak_profit` (`non_decreasing`), `reference`, `basis`, `evaluated`, `reset {time, tz}`, `severity` | threshold `reference - amount`; soft locks, hard fails |
@@ -234,6 +234,30 @@ other terms allow, so every payout amount and cash statistic is the MOST it can 
 `unavailable`; `cash_estimate_reasons` names the gap, and `estimate_status` is at best `partial`
 when a cap is unknown. An `unknown` cap is never read as `unlimited`.
 
+## The attempt sequence (C7b, ADR-0107 section 4)
+
+`crucible.experiments.futures_prop.run_prop_evaluation` is the only caller that runs
+`simulate_attempt` in sequence: one attempt per Globex trade date of a futures run's window, over
+the run's own prepared bars, targets, rolls and raw per-contract bars, with an analyst horizon H in
+TRADING days and one ruleset per scenario (`scenarios="primary"` or every sensitivity scenario of
+its conflicts). It classifies each attempt `pass | fail | timeout | horizon | censored`, and a
+`censored` attempt is its own class: never a failure, never a pass. `classify_attempt` reads the
+EVALUATION phases only, so a funded phase's own breach or timeout is a descriptive fact about a
+start whose evaluation passed, not a different outcome class.
+
+The flat-window half of a session-relative `flat_by` is enforced by the overlay and, since C7b,
+in BOTH directions: a position is liquidated at the bar that reaches the flat instant
+(`forced_flat`) and no entry is admitted from that instant until the session's scheduled close
+(`_flat_window`), which is what `flat_by.reopen` defaults to for the session-relative form. A firm
+that states its own reopen clock keeps it (the C7a form). Hand test:
+`tests/unit/test_prop_flat_by_entry_block.py` on the sourced 2024-11-29 early close (18:15 UTC).
+
+`simulate_attempt` reports `days_to_pass_trading` / `days_to_pass_calendar` from the attempt's OWN
+first bar (the phase's bars are numbered from zero inside the simulation, so the offset is added
+before the day counts and the pass date are read), and `PhaseOutcome.first_bar`/`last_bar` are in the
+attempt's coordinates. Hand test: `tests/integration/test_prop_pass_frequency.py` and the 06-05
+assertions of `tests/integration/test_futures_prop.py`.
+
 ## Interfaces
 
 - `crucible.execution.interfaces.AccountOverlay` (Protocol) with `AccountMarks`, `BreachPrice`,
@@ -250,9 +274,14 @@ when a cap is unknown. An `unknown` cap is never read as `unlimited`.
   `simulate_attempt(exchange_fees=...)` takes one; `store_exchange_fees(store)` is the adapter over
   the stored `exchange_fees_v1` dataset (imported lazily inside `costs.py`, so `crucible.prop`
   itself never needs the data layer to import).
-- Entry points: `crucible prop validate|list|confirm`, `crucible schema --kind
-  prop-ruleset|prop-attempt`; the MCP tools `crucible_prop_validate`, `crucible_prop_list` and
-  `crucible_prop_schema` (never `confirm`).
+- `crucible.prop.costs.ExchangeFeeSource`'s implementations take the dataset NAME
+  (`store_exchange_fees(store, dataset="exchange_fees_v1")`, `StoreExchangeFees(dataset=None)`,
+  `stored_fee_row(..., dataset=...)`), so a consumer that pinned a version reads that version and
+  the content hash it cites is the table it priced with.
+- Entry points: `crucible prop validate|list|confirm`, `crucible futures prop` (the evaluation),
+  `crucible schema --kind prop-ruleset|prop-attempt|prop-evaluation`; the MCP tools
+  `crucible_prop_validate`, `crucible_prop_list`, `crucible_prop_schema` and
+  `crucible_futures_prop` (never `confirm`).
 
 ## Extension points
 
@@ -288,8 +317,11 @@ when a cap is unknown. An `unknown` cap is never read as `unlimited`.
   trading ledger and does not show it. A `daily_profit_cap` forfeit is the same kind of adjustment.
 - A session-relative `flat_by` reads the bar's scheduled session close, not a per-instrument
   holiday table; the CME calendar is the source, and an off-schedule bar has no flat instant.
+- The session-relative `flat_by`'s entry block ends at the scheduled session close (the reopen
+  the overlay uses when a firm states no clock), so an account cannot re-enter in the minutes
+  between the firm's flat time and the close. A firm that states `reopen` keeps its own clock.
 - The news calendar is ingested separately (the economic-calendar dataset doc under `docs/data/`); an uncovered period makes
   the news rule `not_modeled` and the estimate `partial`, never "no news".
-- The attempt statistics (the overlapping-attempt bootstrap, censoring as a class) and any verdict
-  are C7c-C7e; this stage reports one attempt's mechanics, estimate status and practical
-  eligibility.
+- The attempt statistics (the overlapping-attempt bootstrap, censoring as a class) live in
+  `crucible.experiments.futures_prop` (below), and any verdict is C7e: `attempt.py` reports one
+  attempt's mechanics, estimate status and practical eligibility.

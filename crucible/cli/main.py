@@ -514,6 +514,93 @@ def build_parser() -> argparse.ArgumentParser:
     _add_home(futures_trials)
     _add_json(futures_trials)
 
+    futures_prop = futures_sub.add_parser(
+        "prop",
+        help="Evaluate one firm's ruleset over a futures run's attempt sequence (C7b, ADR-0107): "
+        "the attempt classes, the pass probability with its overlapping-attempt interval and the "
+        "labels, never a verdict",
+    )
+    futures_prop.add_argument("--config", required=True, help="Path to a futures-run YAML")
+    futures_prop.add_argument(
+        "--ruleset",
+        required=True,
+        help="Path to one prop-firm ruleset YAML (schema version 2). Its exact bytes are copied "
+        "into the artifact and its content hash locks the evaluation",
+    )
+    futures_prop.add_argument(
+        "--horizon",
+        type=_positive_int,
+        required=True,
+        dest="horizon",
+        help="The analyst's horizon H in TRADING days: an attempt unresolved by then is a "
+        "horizon outcome (or censored at the data end), never a failure. Refused when it is "
+        "shorter than a phase's own time limit",
+    )
+    futures_prop.add_argument(
+        "--execution-mode",
+        choices=["automated", "manual"],
+        required=True,
+        dest="execution_mode",
+        help="How the strategy is executed: a critical compliance rule (a firm's ban on "
+        "automated trading) makes an automated strategy practically ineligible even when the "
+        "mechanical account passes",
+    )
+    futures_prop.add_argument(
+        "--payout-policy",
+        choices=["max_eligible", "none"],
+        default="max_eligible",
+        dest="payout_policy",
+        help="The trader's choice, not a firm rule: take every payout the funded phase's rule "
+        "allows (default) or none",
+    )
+    futures_prop.add_argument(
+        "--cost-assumption",
+        default=None,
+        dest="cost_assumption",
+        help="A named assumption that makes an unknown commission a number (e.g. "
+        "'owner_statement_2026'). Without one the cash statistics are unavailable, never zero",
+    )
+    futures_prop.add_argument(
+        "--scenarios",
+        choices=["primary", "all"],
+        default="primary",
+        help="'primary' evaluates the selected ruleset only; 'all' adds one sensitivity scenario "
+        "per conflict alternative, reported beside the primary and never as an official plan",
+    )
+    futures_prop.add_argument(
+        "--news-dataset",
+        default="econ_events_v2",
+        dest="news_dataset",
+        help="The versioned economic-event calendar the news restrictions read (default: "
+        "econ_events_v2); its coverage gaps are reported, never treated as no news",
+    )
+    futures_prop.add_argument(
+        "--exchange-fees-dataset",
+        default="exchange_fees_v1",
+        dest="exchange_fees_dataset",
+        help="The versioned exchange/regulatory fee table a commission that excludes those fees "
+        "is added to (default: exchange_fees_v1)",
+    )
+    futures_prop.add_argument(
+        "--store",
+        default=None,
+        help="Data store root holding the run's four datasets and the two auxiliary datasets "
+        "(default: the --home's data folder when --home is given; required otherwise)",
+    )
+    futures_prop.add_argument(
+        "--artifacts",
+        default=None,
+        help="Artifact store root (default: experiments/, or the --home's experiments folder)",
+    )
+    _add_home(futures_prop)
+    futures_prop.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Re-run an evaluation whose directory already exists (a reproduction keeps the same "
+        "artifact id)",
+    )
+    _add_json(futures_prop)
+
     schema = subparsers.add_parser(
         "schema",
         help="Print a JSON Schema: the experiment config (default), a strategy spec, or an "
@@ -533,12 +620,14 @@ def build_parser() -> argparse.ArgumentParser:
             "vault-registration",
             "prop-ruleset",
             "prop-attempt",
+            "prop-evaluation",
             *OUTPUT_SCHEMAS,
         ],
         default="experiment",
         help="which schema: the experiment config, the no-code strategy spec (ADR-0067), the "
         "futures-run config (ADR-0095), the futures-batch file (C5a), the futures-walkforward "
-        "file (C5b), the holdout vault's declaration and registration (C6c, ADR-0105), or an "
+        "file (C5b), the holdout vault's declaration and registration (C6c, ADR-0105), a prop "
+        "ruleset, attempt or evaluation summary (C7b, ADR-0107), or an "
         "output document: run, verification, error, manifest (ADR-0084), "
         "futures-run-document (the document a sealed futures run prints, ADR-0097), "
         "futures-compare (cross_run.json, C5c)",
@@ -1571,6 +1660,8 @@ def _cmd_futures(args: argparse.Namespace) -> int:
         return _cmd_futures_compare(args)
     if args.futures_command == "trials":
         return _cmd_futures_trials(args)
+    if args.futures_command == "prop":
+        return _cmd_futures_prop(args)
     config = load_futures_config(Path(args.config))
     if args.futures_command == "check":
         config_hash = futures_config_hash(config)
@@ -1918,6 +2009,105 @@ def _cmd_futures_trials(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_futures_prop(args: argparse.Namespace) -> int:
+    """``crucible futures prop``: one ruleset over a run's attempt sequence (C7b, ADR-0107).
+
+    ``--json`` prints ``summary.json`` itself (``<artifacts>/<PRP-ID>/summary.json``), so the CLI
+    and the file cannot drift. The text rendering lists, per scenario, the attempt classes, the
+    pass probability under the name the estimate earned, its interval and its bounds, and the
+    practical eligibility; it never prints a threshold and never a verdict.
+    """
+    from crucible.experiments.futures_config import load_futures_config
+    from crucible.experiments.futures_prop import run_prop_evaluation
+
+    config = load_futures_config(Path(args.config))
+    result = run_prop_evaluation(
+        config,
+        ruleset_path=Path(args.ruleset),
+        horizon_trading_days=args.horizon,
+        execution_mode=args.execution_mode,
+        payout_policy=args.payout_policy,
+        cost_assumption=args.cost_assumption,
+        scenarios=args.scenarios,
+        news_dataset=args.news_dataset,
+        exchange_fees_dataset=args.exchange_fees_dataset,
+        store_root=_store_root(args),
+        artifacts_root=_artifacts_root(args),
+        home=None if args.home is None else Path(args.home),
+        overwrite=args.overwrite,
+    )
+    if args.json:
+        machine.emit(result.summary)
+        return 0
+    summary = result.summary
+    ruleset_entry = summary["ruleset"]
+    assert isinstance(ruleset_entry, dict)
+    start_dates = summary["start_dates"]
+    assert isinstance(start_dates, dict)
+    lines = [
+        f"evaluation:   {result.evaluation_id}",
+        f"artifact:     {result.artifact_id}",
+        f"ruleset:      {ruleset_entry['ruleset_id']} v{ruleset_entry['version']} "
+        f"({ruleset_entry['verification_status']})",
+        f"candidate:    {summary['candidate_id']} (family {summary['trial_family']})",
+        f"window:       {config.window.start} .. {config.window.end}, "
+        f"H = {summary['horizon_trading_days']} trading days, {start_dates['count']} start date(s)",
+        f"execution:    {summary['execution_mode']}, payout policy {summary['payout_policy']}",
+    ]
+    scenarios = summary["scenarios"]
+    assert isinstance(scenarios, list)
+    for entry in scenarios:
+        assert isinstance(entry, dict)
+        lines.extend(_prop_scenario_lines(entry))
+    lines.append(FUTURES_VERDICT_LINE)
+    lines.append(f"evaluation dir: {result.evaluation_dir}")
+    sys.stdout.write(chr(10).join(lines) + chr(10))
+    return 0
+
+
+def _prop_scenario_lines(entry: dict[str, object]) -> list[str]:
+    """One scenario of ``futures prop``'s text rendering (counts, probability, labels)."""
+    counts = entry["counts"]
+    probability = entry["probability"]
+    cash = entry["cash"]
+    eligibility = entry["practical_eligibility"]
+    assert isinstance(counts, dict)
+    assert isinstance(probability, dict)
+    assert isinstance(cash, dict)
+    assert isinstance(eligibility, dict)
+    bounds = probability["bounds"]
+    interval = probability["interval"]
+    cash_interval = cash["interval"]
+    assert isinstance(bounds, dict)
+    assert isinstance(interval, dict)
+    assert isinstance(cash_interval, dict)
+    value = "-" if probability["value"] is None else str(probability["value"])
+    span = (
+        f"{interval['low']} .. {interval['high']}"
+        if interval["status"] == "available"
+        else f"unavailable ({interval['reason']})"
+    )
+    reasons = probability["reasons"]
+    assert isinstance(reasons, list)
+    lines = [
+        f"scenario {entry['scenario_id']} ({entry['scenario_label']}: {entry['starts']} start(s), "
+        f"{entry['complete_starts']} complete)",
+        f"  outcomes:   pass {counts['pass']}, fail {counts['fail']}, "
+        f"timeout {counts['timeout']}, horizon {counts['horizon']}, censored {counts['censored']}",
+        f"  {probability['field']}: {value}  [all-start bounds "
+        f"{bounds['low']} .. {bounds['high']}]",
+        f"  interval:   {span}",
+        f"  net cash:   {cash['mean_net_cash_usd'] or '-'} USD per attempt "
+        f"({cash['status']}), interval {cash_interval['status']}",
+        f"  eligible:   {eligibility['status']}, practically valid passes "
+        f"{eligibility['practically_valid_passes']}",
+        f"  estimate:   {entry['estimate_status']}",
+    ]
+    for reason in reasons:
+        lines.append(f"    reason:   {reason}")
+    return lines
+
+
 _CRUCIBLE_VALUE_MISSING = "-"
 """The text rendering's placeholder for a value the document does not carry."""
 
@@ -2197,6 +2387,10 @@ def _cmd_schema(args: argparse.Namespace) -> int:
         from crucible.prop.validate import schema_document
 
         schema = schema_document(args.kind)
+    elif args.kind == "prop-evaluation":
+        from crucible.experiments.futures_prop import prop_evaluation_json_schema
+
+        schema = prop_evaluation_json_schema()
     elif args.kind in OUTPUT_SCHEMAS:
         schema = output_json_schema(args.kind)
     else:

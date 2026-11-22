@@ -423,6 +423,16 @@ def _interval(samples: NDArray[np.float64], confidence: float) -> tuple[float, f
     return low, high
 
 
+def percentile_interval(samples: NDArray[np.float64], confidence: float) -> tuple[float, float]:
+    """The 100*``confidence`` percentile interval of a bootstrap sample (``_interval``, public).
+
+    One definition for every interval this layer reports: the prop evaluation
+    (``crucible.experiments.futures_prop``) resamples attempt sequences with the same seeded
+    circular block bootstrap and must not invent a second percentile convention.
+    """
+    return _interval(samples, confidence)
+
+
 @dataclass(frozen=True, slots=True)
 class _BootstrapRecord:
     """The manifest's ``bootstrap`` block: exactly how every interval in this report was made."""
@@ -958,5 +968,6 @@ __all__ = [
     "futures_statistics",
     "information_coefficient",
     "no_information_coefficient",
+    "percentile_interval",
     "spearman",
 ]

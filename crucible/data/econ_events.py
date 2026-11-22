@@ -1500,7 +1500,7 @@ class Coverage:
         return tuple(gap for gap in self.gaps if gap.event_type == event_type)
 
 
-def coverage(store: DataStore) -> Coverage:
+def coverage(store: DataStore, *, dataset: DatasetId | None = None) -> Coverage:
     """The covered intervals and the gaps of the built dataset, per event type.
 
     A gap is measured against the type's cadence (:data:`_CADENCE`): a monthly release (CPI, PPI,
@@ -1509,8 +1509,11 @@ def coverage(store: DataStore) -> Coverage:
     meeting is simply a month without a meeting. A ``cancelled`` row still marks its period as
     covered — the calendar *did* say something about that month, namely that the release would not
     happen. This is the "a window the calendar does not cover is ``not_modeled``" test of ADR-0107.
+
+    ``dataset`` reads another built version of the calendar instead of :data:`DATASET` (a consumer
+    that pinned a version asks for it by name); the default is the current one.
     """
-    return coverage_of(load_econ_events(store, EVENT_TYPES, 0, END_AT_OPEN))
+    return coverage_of(load_econ_events(store, EVENT_TYPES, 0, END_AT_OPEN, dataset=dataset))
 
 
 def coverage_of(frame: pl.DataFrame, event_types: Iterable[str] = EVENT_TYPES) -> Coverage:
@@ -1661,6 +1664,7 @@ def load_econ_events(
     end_ns: int = END_AT_OPEN,
     *,
     as_of: int | None = None,
+    dataset: DatasetId | None = None,
 ) -> pl.DataFrame:
     """The events of ``event_types`` whose ``event_time`` lies in ``[start_ns, end_ns)``.
 
@@ -1672,7 +1676,8 @@ def load_econ_events(
     passes ``as_of`` and sees only the rows whose ``available_at <= as_of``.
 
     Rows come in stored order (``event_time``, ``event_type``, ``event_id``) with the schema's
-    columns.
+    columns. ``dataset`` reads another built version of the calendar (``econ_events_v1`` keeps the
+    three original types) instead of :data:`DATASET`; the default is the current one.
     """
     types = list(event_types)
     unknown = sorted(set(types) - set(EVENT_TYPES))
@@ -1683,8 +1688,9 @@ def load_econ_events(
         msg = f"end_ns={end_ns} is before start_ns={start_ns}: pass a non-empty range"
         raise ConfigurationError(msg)
     read_as_of = END_AT_OPEN if as_of is None else int(as_of)
+    name = DATASET if dataset is None else dataset
     frame = (
-        store.read(DATASET, TimestampNs(read_as_of))
+        store.read(name, TimestampNs(read_as_of))
         .filter(
             pl.col("event_type").is_in(types)
             & (pl.col("event_time") >= int(start_ns))

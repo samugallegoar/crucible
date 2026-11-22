@@ -8,6 +8,7 @@ options, is listed in `docs/INVENTORY.md`: `backtest`, `results`, `simulate-path
 `validate`, `compare`, `schema`, `artifact show`, `artifact verify`, `data build`, `data continuous`,
 `data fetch`, `data check`, `data integrity`, `data catalog`, `data list`, `futures run`,
 `futures check`, `futures batch`, `futures walkforward`, `futures compare`, `futures trials`,
+`futures prop`,
 `vault declare`, `vault status`, `vault register`, `vault authorize`, `vault evaluate`,
 `vault log`, `vault set-admin`.
 Handlers are
@@ -19,8 +20,21 @@ run, `artifact verify` recomputes its id from the files; a futures run's `artifa
 futures-run document (`experiments.futures_document`, ADR-0097); `schema --kind` also serves `run`,
 `verification`, `error`, `manifest`, `futures-run-document`, `futures-batch`, `futures-walkforward`,
 `futures-compare` (the comparison document of C5c, ADR-0102), `futures-trials` (the
-effective-trials report of C6b, ADR-0104), `vault-declaration` and `vault-registration` (the
-holdout vault of C6c, ADR-0105). stdout and
+effective-trials report of C6b, ADR-0104), `prop-ruleset`, `prop-attempt` and `prop-evaluation`
+(C7a/C7b, ADR-0106/0107), `vault-declaration` and `vault-registration` (the holdout vault of C6c,
+ADR-0105).
+
+`crucible futures prop --config RUN --ruleset FILE --horizon H --execution-mode
+automated|manual [--payout-policy max_eligible|none] [--cost-assumption NAME] [--scenarios
+primary|all] [--news-dataset NAME] [--exchange-fees-dataset NAME] [--store DIR] [--artifacts DIR]
+[--home DIR] [--overwrite] [--json]` is the prop evaluation (C7b, ADR-0107 section 6). It writes
+`<artifacts>/PRP-<16 hex>/` and prints the per-scenario attempt counts, the pass probability under
+the name its estimate earned (`pass_probability` or `conditional_pass_probability`), its interval,
+its all-start bounds, the mean net cash per attempt, the practical eligibility and the verdict
+line; `--json` prints `summary.json` itself, so the command and the file cannot drift. `--horizon`
+is a positive integer in TRADING days, `--execution-mode` is required (practical eligibility
+depends on it) and `--ruleset` is one prop-firm YAML whose exact bytes are copied into the
+artifact. stdout and
 stderr are reconfigured to UTF-8 (unencodable text is replaced) so a table never raises
 `UnicodeEncodeError` on a legacy Windows code page.
 

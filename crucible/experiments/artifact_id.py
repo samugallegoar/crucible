@@ -68,7 +68,15 @@ VOLATILE_MANIFEST_KEYS = frozenset(
 """Manifest keys outside the identity (see the comments above)."""
 
 _RESULT_SUFFIXES = (".parquet",)
-_RESULT_NAMES = ("config.yaml", "metrics.json")
+_RESULT_NAMES = (
+    "config.yaml",
+    "metrics.json",
+    # a prop evaluation's two JSON/YAML results (ADR-0107 section 6): listed here so the seal
+    # covers them like every other result file. Only an artifact that WRITES one of these names is
+    # affected, so every existing artifact keeps its digest and its id.
+    "summary.json",
+    "ruleset.yaml",
+)
 
 
 def manifest_basis(manifest: Mapping[str, object]) -> str:

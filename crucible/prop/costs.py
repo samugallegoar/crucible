@@ -166,10 +166,12 @@ class StoreExchangeFees:
 
     store: DataStore
     content_hash: str
+    dataset: str | None = None
+    """The dataset name to read instead of the default ``exchange_fees_v1`` (``None``: default)."""
 
     def per_side(self, root: str, when: dt.date) -> ExchangeFeeRow | None:
         """The row in force for ``root`` on ``when``, from the stored table."""
-        return stored_fee_row(self.store, root, when)
+        return stored_fee_row(self.store, root, when, dataset=self.dataset)
 
     @property
     def source_sha256(self) -> str:
@@ -177,31 +179,36 @@ class StoreExchangeFees:
         return self.content_hash
 
 
-def stored_fee_row(store: DataStore, root: str, when: dt.date) -> ExchangeFeeRow | None:
+def stored_fee_row(
+    store: DataStore, root: str, when: dt.date, *, dataset: str | None = None
+) -> ExchangeFeeRow | None:
     """The stored table's row for ``root`` on ``when``; raises when the table cannot price it."""
+    from crucible.core.types import DatasetId
     from crucible.data.exchange_fees import fee_table_as_of
 
-    table = fee_table_as_of(store, when)
+    table = fee_table_as_of(store, when, dataset=None if dataset is None else DatasetId(dataset))
     amount = table.get(root)
     if amount is None:
         return None
     return ExchangeFeeRow(root=root, per_side_usd=amount, effective_from=when)
 
 
-def store_exchange_fees(store: DataStore) -> StoreExchangeFees:
+def store_exchange_fees(store: DataStore, *, dataset: str | None = None) -> StoreExchangeFees:
     """The ``ExchangeFeeSource`` over ``store``'s ``exchange_fees_v1``, citing its content hash.
 
     A store without the dataset is refused here, by name: an attempt that would price no exchange
-    fee must say so, not proceed with zero.
+    fee must say so, not proceed with zero. ``dataset`` reads another built version of the table.
     """
+    from crucible.core.types import DatasetId
     from crucible.data.exchange_fees import DATASET
 
+    name = DATASET if dataset is None else DatasetId(dataset)
     try:
-        manifest = store.manifest(DATASET)
+        manifest = store.manifest(name)
     except (CrucibleError, KeyError, OSError) as exc:
         msg = (
             f"cannot read dataset {DATASET} from this store: {exc}. Build it with "
             "crucible.data.exchange_fees.build_exchange_fees, or pass an ExchangeFeeSource"
         )
         raise ConfigurationError(msg) from exc
-    return StoreExchangeFees(store=store, content_hash=manifest.content_hash)
+    return StoreExchangeFees(store=store, content_hash=manifest.content_hash, dataset=dataset)

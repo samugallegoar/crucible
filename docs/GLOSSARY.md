@@ -491,6 +491,27 @@ reading). Every rule declares one, and a synthetic attribution can never be veri
 result, never presented as an official plan (ADR-0107 section 7). The primary scenario is
 `primary`, label `official`.
 
+**Attempt / start date** — one prop-firm account simulated from one Globex trade date (the
+attempt's START) under one ruleset's phases. A prop evaluation starts one attempt on every trade
+date of a futures run's window with an on-schedule bar; the attempts OVERLAP (two starts a day
+apart share most of their trade dates), which is why their statistics need a block bootstrap rather
+than an i.i.d. one (ADR-0107 section 4).
+
+**Complete start** — a start whose horizon fits in the data, `d + H <= last trade date`. Complete
+starts are never censored, so they are the denominator of the pass probability `p = passes /
+complete starts`; the bounds over ALL starts (`p_low`, `p_high`) are reported beside it
+(ADR-0107 section 5).
+
+**Horizon outcome** — `horizon`: the analyst's horizon H was reached with the attempt unresolved.
+It is not a firm's rule and not a failure: a `timeout` is a firm's own time limit ending a phase,
+and a `censored` attempt is one the data ended before `d + H`. The three are separate classes
+(ADR-0107 section 4).
+
+**Effective independent attempts** — `n / H` for `n` complete starts and horizon H trade dates: how
+many non-overlapping attempts the sequence is worth. On a one-year window with H = 20 it is about
+twelve, which is why an interval over 250 overlapping starts is not twelve times narrower than one
+over twelve independent attempts (ADR-0107 section 5).
+
 **Payout cycle** — the span between two withdrawals on a funded account. Eligibility windows that
 declare `since_last_payout` count only rule-days after the previous withdrawal; the first cycle
 starts at the phase's start (ADR-0107 section 9).

@@ -34,6 +34,7 @@
 | `crucible futures batch` | `--artifacts --batch --home --json --overwrite --store` | Run N DSL expressions on one futures base config and write the batch document (C5a) |
 | `crucible futures check` | `--config --json` | Load and validate a futures config only (no store, no run) |
 | `crucible futures compare` | `--artifacts --home --include-vault --json --min-overlap --target` | Compare a futures run or walk-forward against the artifact pool (C5c) |
+| `crucible futures prop` | `--artifacts --config --cost-assumption --exchange-fees-dataset --execution-mode --home --horizon --json --news-dataset --overwrite --payout-policy --ruleset --scenarios --store` | Evaluate one firm's ruleset over a futures run's attempt sequence (C7b, ADR-0107): the attempt classes, the pass probability with its overlapping-attempt interval and the labels, never a verdict |
 | `crucible futures run` | `--artifacts --config --home --json --overwrite --store` | Simulate a futures config and write its sealed artifact (ADR-0095) |
 | `crucible futures trials` | `--artifacts --family --home --include-vault --json --min-overlap --threshold` | Estimate the family's EFFECTIVE number of trials and read the family's daily series correlations (C6b, ADR-0104) |
 | `crucible futures walkforward` | `--artifacts --config --home --json --overwrite --store` | Train candidates per fold, select inside the training window and concatenate the out-of-sample windows (C5b) |

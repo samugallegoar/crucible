@@ -629,6 +629,7 @@ def simulate_attempt(
     buffer: tuple[int, int, int, str] | None = None
     payouts: list[PayoutRecord] = []
     passed_bar: int | None = None
+    passed_absolute: int | None = None
     blocked_target: int | None = None
     first = window_first
     last = window_last
@@ -684,7 +685,9 @@ def simulate_attempt(
                 breached_rule=overlay.breached_rule,
                 breach_time_ns=overlay.breach_time_ns,
                 first_bar=first,
-                last_bar=overlay.passed_at if overlay.passed_at is not None else last,
+                # the overlay numbers bars from the phase's first bar; the artifact reports the
+                # attempt's own coordinates, so the pass offset is added to the phase's first bar
+                last_bar=(first + overlay.passed_at if overlay.passed_at is not None else last),
                 trading_days=trading_days,
             )
         )
@@ -703,23 +706,31 @@ def simulate_attempt(
             raise DataQualityError(msg)
         # the passing phase flattened at its close: the next account starts flat and re-enters
         # only after the strategy's decided target changes (signal reset, ADR-0090)
+        passed_absolute = first + passed_bar
         if "phase_flatten" in set(phase_result.fills["kind"].to_list()):
+            # ``window_targets`` covers exactly this phase's bars, so the pass offset into the
+            # overlay's slice is the index of the target that was in force at the pass
             decided = window_targets["target"].to_list()
-            blocked_target = int(decided[passed_bar - first])
+            blocked_target = int(decided[passed_bar])
         else:
             blocked_target = None
-        first = passed_bar + 1
+        first = passed_absolute + 1
     if outcome == "running" and phase_outcomes:
         # the data ended before the phase resolved: right-censored at the data horizon, its own
         # class (never folded into a failure)
         outcome = "censored"
         phase_outcomes[-1] = replace(phase_outcomes[-1], outcome="censored")
-    if passed_bar is None:
+    if passed_absolute is None:
         days_trading, days_calendar = None, None
     else:
-        passed_date = dates[passed_bar]
+        # ``dates`` spans the attempt window from its FIRST bar, and ``passed_absolute`` is an
+        # index into it: a start later in the series must not measure its days from the data's
+        # first bar (nor read the wrong date back)
+        passed_date = dates[passed_absolute]
         assert passed_date is not None
-        days_trading = len({day for day in dates[window_first : passed_bar + 1] if day is not None})
+        days_trading = len(
+            {day for day in dates[window_first : passed_absolute + 1] if day is not None}
+        )
         days_calendar = (passed_date - start_trade_date).days
     data_first = dates[window_first] or start_trade_date
     data_last = dates[window_last] or start_trade_date

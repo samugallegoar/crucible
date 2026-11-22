@@ -175,6 +175,19 @@ class PropAccountOverlay:
                 self.payouts_rules.append(evaluator)
             elif isinstance(evaluator, rl.Consistency) and evaluator.rule.applies_to == "payout":
                 self.payout_consistency.append(evaluator)
+        # a pass condition declared ``evaluated: eod`` is tested ONLY at the rule-day's last
+        # scheduled bar (ADR-0106 section 3 step 8, ADR-0107 section 9); the intraday-declared ones
+        # are tested at every bar's close. The split is derived from the rules, never serialized.
+        self.eod_pass_conditions = [
+            evaluator
+            for evaluator in self.pass_conditions
+            if rl.pass_frequency(evaluator.rule) == "eod"
+        ]
+        self.intraday_pass_conditions = [
+            evaluator
+            for evaluator in self.pass_conditions
+            if rl.pass_frequency(evaluator.rule) == "intraday"
+        ]
 
     # ------------------------------------------------------------------ identity and state
 
@@ -346,7 +359,7 @@ class PropAccountOverlay:
         self._day_stats(marks).close_balance = marks.balance_micro
         self._track_buffer(marks)
         if not self._rule_day_ended(i, marks):
-            return self._pass_action(marks)
+            return self._pass_action(marks, at_close=False)
         breaches: list[BreachPrice] = []
         for evaluator in self.rules:
             breaches.extend(evaluator.eod(marks))
@@ -370,7 +383,7 @@ class PropAccountOverlay:
         cap_action = self._apply_profit_cap(i, marks)
         if cap_action is not None or self.closed:
             return cap_action
-        action = self._pass_action(marks)
+        action = self._pass_action(marks, at_close=True)
         if action is not None or self.closed:
             return action
         self._maybe_pay(marks)
@@ -433,9 +446,14 @@ class PropAccountOverlay:
             )
         return None
 
-    def _pass_action(self, marks: AccountMarks) -> OverlayAction | None:
-        """A pass at this bar's close: flatten the position here if one is still open (F3)."""
-        if not self._check_pass(marks):
+    def _pass_action(self, marks: AccountMarks, *, at_close: bool) -> OverlayAction | None:
+        """A pass at this bar's close: flatten the position here if one is still open (F3).
+
+        ``at_close`` says whether this bar is the rule-day's LAST scheduled bar. It decides which
+        pass conditions are due: an ``evaluated: eod`` one only there, an ``evaluated: intraday``
+        one at every close (``crucible.prop.rules.pass_frequency``).
+        """
+        if not self._check_pass(marks, at_close=at_close):
             return None
         if marks.position == 0:
             return None
@@ -647,10 +665,19 @@ class PropAccountOverlay:
                 cause=f"hard rule {rule_id} breached",
             )
 
-    def _check_pass(self, marks: AccountMarks) -> bool:
+    def _check_pass(self, marks: AccountMarks, *, at_close: bool) -> bool:
+        """Every pass condition DUE at this point holds: at the rule-day's close, all of them.
+
+        An ``evaluated: eod`` target is a test of the closed trade date, so it cannot pass on an
+        intraday close: a target touched inside a bar and lost again by the session's close leaves
+        the account unresolved (ADR-0106 section 3 step 8, ADR-0107 section 9).
+        """
         if self.closed or not self.pass_conditions:
             return False
-        if not all(evaluator.pass_ok(marks) for evaluator in self.pass_conditions):
+        due = self.pass_conditions if at_close else self.intraday_pass_conditions
+        if not due:
+            return False
+        if not all(evaluator.pass_ok(marks) for evaluator in due):
             return False
         self.outcome = "pass"
         self.passed_at = marks.bar

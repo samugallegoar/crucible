@@ -622,6 +622,57 @@ decisions are in `overlay_events`. The semantics are the conservative OHLC appro
 (`high_before_low_conservative`): a breach liquidates as a market order at its trigger price, not
 at the threshold, so a fast market can fill worse.
 
+## 14. A prop evaluation over a futures run (C7b, ADR-0107)
+
+One attempt answers what one account did. A prop evaluation answers what MANY streaks of the same
+strategy would have done: an attempt starts on every Globex trade date of a futures run's window,
+over the run's own causal signal, and the result is the attempt sequence with its statistics.
+
+```bash
+uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml     --ruleset rulesets/prop/topstep/topstep-trading-combine-50k.v1.yaml     --horizon 20 --execution-mode automated     --store data/processed --artifacts experiments
+```
+
+- `--horizon H` is the ANALYST's horizon, in TRADING days: an attempt still unresolved after H trade
+  dates is a `horizon` outcome (or `censored` when the data itself ends first). It is refused when it
+  is shorter than the ruleset's own time limit, because the firm's limit could then never fire.
+- `--execution-mode automated|manual` is required and decides `practical_eligibility`: a firm that
+  bans automated trading makes an automated strategy `blocked_by_compliance` even when the
+  mechanical account passes.
+- `--payout-policy max_eligible|none` is the trader's choice, `--cost-assumption NAME` names the
+  assumption that makes an unknown commission a number (without one the cash statistics are
+  `unavailable`), and `--scenarios primary|all` adds one sensitivity scenario per ruleset conflict.
+- `--json` prints `summary.json` itself (the text rendering says the same numbers).
+
+Reading it, in order:
+
+1. **The counts.** `pass`, `fail`, `timeout`, `horizon`, `censored` per scenario. `censored` is
+   never a failure and never a pass; `horizon` is the analyst's horizon, not a firm rule.
+2. **The probability and its name.** `p` is passes over COMPLETE starts (those whose H trade dates
+   fit in the data). The field is `pass_probability` only when nothing qualifies it; otherwise it is
+   `conditional_pass_probability` with `definitive: false` and every reason: unmodeled rules, an
+   unverified ruleset, a cost assumption, an unknown cost, a news-calendar gap, an unsourced
+   session-calendar window, the counterfactual application of a current ruleset to pre-2025 data, or
+   a compliance blocker. Read the reasons before the number.
+3. **The bounds.** `p_low` counts censored attempts as failures and `p_high` counts them as passes.
+   A wide `[p_low, p_high]` says the window is too short for the horizon, not that the strategy is
+   uncertain in the same way.
+4. **The interval.** A seeded circular block bootstrap over the complete starts in date order, with
+   blocks at least H trade dates long, because attempt sequences overlap and are NOT independent.
+   With fewer than two blocks it is `unavailable` with its reason. `effective_independent_attempts
+   ≈ n / H` says how much independent information there is; on a one-year window with H = 20 it is
+   about twelve.
+5. **The cash.** Mean net cash per attempt (payouts minus the ruleset's fees), labelled `exact`,
+   `conditional`, `upper_bound` or `unavailable`. The commissions are inside the simulated equity;
+   the fee columns are the ruleset's own fees.
+6. **The eligibility.** `eligible`, or `blocked_by_compliance` with `practically_valid_passes: 0`:
+   a mechanically successful attempt under a compliance blocker is never a practically valid pass.
+
+The artifact is `<artifacts>/PRP-<16 hex>/` with `attempts.parquet` (one row per scenario and start),
+`summary.json`, the `ruleset.yaml` that was read and `manifest.json` with the seal. It is NOT a
+submission: no trial is recorded and `submission_count`/`total_trials` do not move. There is no
+threshold and no verdict — a pass probability is not evidence of an edge, and the same data under a
+different ruleset is a different question.
+
 ## Known gaps
 
 - No Python API to *list* experiments in an artifact root; use `crucible compare <family>` or

@@ -37,6 +37,7 @@ EXPECTED_TOOLS = {
     "crucible_futures_walkforward",
     "crucible_futures_compare",
     "crucible_futures_trials",
+    "crucible_futures_prop",
     "crucible_vault_status",
     "crucible_vault_register",
     "crucible_vault_log",
@@ -253,6 +254,20 @@ def _captured_calls() -> list[list[str]]:
                 "min_overlap": 30,
                 "artifacts": "a",
             },
+            "crucible_futures_prop": {
+                "config": "c.yaml",
+                "ruleset": "r.yaml",
+                "horizon": 20,
+                "execution_mode": "automated",
+                "payout_policy": "none",
+                "cost_assumption": "owner_2026",
+                "scenarios": "all",
+                "news_dataset": "econ_events_v2",
+                "exchange_fees_dataset": "exchange_fees_v1",
+                "store": "s",
+                "artifacts": "a",
+                "overwrite": True,
+            },
             "crucible_validate": {
                 "config": "c.yaml",
                 "artifacts": "a",
@@ -371,7 +386,7 @@ def test_every_tool_builds_an_argv_the_real_parser_accepts() -> None:
     from crucible.cli.main import build_parser
 
     calls = _captured_calls()
-    assert len(calls) == 30
+    assert len(calls) == 31
     for argv in calls:
         build_parser().parse_args(argv)  # a mistyped flag would exit(2) here
 

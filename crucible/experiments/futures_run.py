@@ -600,6 +600,12 @@ def _write_parquet(frame: pl.DataFrame, path: Path) -> None:
     frame.write_parquet(path, compression="uncompressed", statistics=False)
 
 
+def write_result_parquet(frame: pl.DataFrame, path: Path) -> None:
+    """``_write_parquet`` as the one public writer: another artifact of this layer writes its
+    frames the same way, so a reproduction is byte-identical (ADR-0011)."""
+    _write_parquet(frame, path)
+
+
 def _replace(run_dir: Path, overwrite: bool) -> None:
     """Create the run directory, or replace it (keeping the previous seal for ``created_at``)."""
     if run_dir.exists():
@@ -612,6 +618,17 @@ def _replace(run_dir: Path, overwrite: bool) -> None:
             raise ConfigurationError(msg)
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
+
+
+def import_prepared_run(config: FuturesRunConfig, store_root: Path) -> _Prepared:
+    """The public spelling of ``_prepare``: what a run decides before it simulates.
+
+    A prop evaluation (``crucible.experiments.futures_prop``, ADR-0107 section 4) reuses the run's
+    prepared bars, targets, rolls and raw per-contract bars instead of building a second signal
+    pipeline: the strategy signal is causal and independent of the account, so one preparation
+    serves every attempt start. Reads only the datasets' manifests and rows; writes nothing.
+    """
+    return _prepare(config, store_root)
 
 
 def _prepare(config: FuturesRunConfig, store_root: Path) -> _Prepared:
@@ -1014,6 +1031,8 @@ __all__ = [
     "SCHEMA_VERSION",
     "FuturesRunResult",
     "futures_run_id",
+    "import_prepared_run",
     "run_futures",
     "run_id_basis",
+    "write_result_parquet",
 ]

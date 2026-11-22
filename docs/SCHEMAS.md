@@ -1628,6 +1628,80 @@ prints its JSON Schema. The fields:
 | `start_trade_date`, `data_first_trade_date`, `data_last_trade_date`, `counterfactual_application` | dates / boolean | the attempt's window and whether it precedes the ruleset |
 | `semantics`, `liquidation_assumptions` | string | `high_before_low_conservative`, and the liquidation model in one sentence |
 
+## The prop evaluation's attempt sequence (C7b, ADR-0107)
+
+`crucible futures prop` writes `<artifacts>/PRP-<16 hex>/`: `attempts.parquet` (one row per
+scenario and start, sorted by scenario then start date), `summary.json`, `ruleset.yaml` (the exact
+bytes of the ruleset that was read) and `manifest.json` with the seal. None of them is a submission:
+the manifest records `trial_recorded: false` and no trial registry row is written.
+
+<!-- BEGIN GENERATED: artifact-prop-attempts -->
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `scenario_id` | `String` | no | primary, or <conflict_id>#<index> for a sensitivity scenario |
+| `scenario_label` | `String` | no | official_primary \| alternative_sensitivity |
+| `start_trade_date` | `Date` | no | Globex trade date the attempt started at (a day label) |
+| `outcome` | `String` | no | pass \| fail \| timeout \| horizon \| censored (ADR-0107 section 4) |
+| `complete` | `Boolean` | no | true when d + H fits in the data (the start is never censored) |
+| `horizon_end_trade_date` | `Date` | yes | the H-th trade date of the horizon |
+| `horizon_trading_days` | `Int64` | no | H, the analyst's horizon in TRADING days |
+| `phase_outcomes` | `String` | no | "<phase_id>:<outcome>" per phase, joined by ';' |
+| `breached_rule` | `String` | yes | the rule id of the first hard breach |
+| `breach_time_ns` | `Int64` | yes | UTC ns of that breach |
+| `days_to_pass_trading` | `Int64` | yes | trading days from the start to the pass |
+| `days_to_pass_calendar` | `Int64` | yes | calendar days from the start to the pass |
+| `min_buffer_usd` | `Decimal(precision=38, scale=6)` | yes | USD, the smallest basis-minus-threshold |
+| `payouts_usd` | `Decimal(precision=38, scale=6)` | no | USD; the trader's net payouts over the attempt |
+| `payout_bound` | `String` | no | exact \| upper_bound \| exact+upper_bound \| '' (none paid) |
+| `fees_evaluation_usd` | `Decimal(precision=38, scale=6)` | no | USD; evaluation-kind fees of the attempt |
+| `fees_activation_usd` | `Decimal(precision=38, scale=6)` | no | USD; activation fees (charged only on a pass) |
+| `fees_monthly_usd` | `Decimal(precision=38, scale=6)` | no | USD; monthly fees, per started calendar month |
+| `fees_reset_usd` | `Decimal(precision=38, scale=6)` | no | USD; reset fees bought by the attempt policy |
+| `fees_usd` | `Decimal(precision=38, scale=6)` | no | USD; every fee of the attempt, the four kinds above |
+| `net_cash_usd` | `Decimal(precision=38, scale=6)` | no | USD; payouts_usd - fees_usd (see cash_estimate_status) |
+| `cash_estimate_status` | `String` | no | exact \| conditional \| upper_bound \| unavailable |
+| `coverage_gap_count` | `Int64` | no | news and session-calendar coverage gaps of the attempt |
+| `coverage_gaps` | `String` | no | the gaps themselves, joined by ';' ('' when none) |
+| `estimate_status` | `String` | no | complete \| conditional \| partial \| unavailable |
+| `estimate_reasons` | `String` | no | why the estimate is not complete, joined by ';' |
+| `practical_eligibility` | `String` | no | eligible \| blocked_by_compliance \| unknown |
+| `unverified_ruleset` | `Boolean` | no | true when the ruleset has no matching verification |
+| `counterfactual_application` | `Boolean` | no | data starts before the ruleset's effective_from |
+
+<!-- END GENERATED: artifact-prop-attempts -->
+
+`attempts.parquet` columns, in the words of the module: `outcome` is one of the five ADR-0107
+section 4 classes (`pass`, `fail`, `timeout`, `horizon`, `censored`), `complete` says whether the
+start's H trade dates fit in the data, `horizon_end_trade_date` is the trade date the H-th trading
+day falls on, `phase_outcomes` joins `"<phase_id>:<outcome>"` with `;`, `payout_bound` is the set of
+payout bounds that occurred (`exact`, `upper_bound` or both, `''` when nothing was paid), the fee
+columns are the ruleset's own fees (evaluation, activation, monthly per started calendar month,
+reset) and NOT the commissions, which are charged inside the simulated equity, and
+`coverage_gaps` lists the news and session-calendar gaps with `;`.
+
+`summary.json` (`crucible schema --kind prop-evaluation`) has one `scenarios` entry per scenario
+simulated:
+
+| Field | Meaning |
+|---|---|
+| `scenario_id`, `scenario_label`, `ruleset_scenario_label`, `conflict_id`, `rationale` | `primary` with `official_primary` and `official`, or `<conflict_id>#<index>` with `alternative_sensitivity` and `sensitivity` |
+| `starts`, `complete_starts`, `counts` | the attempt count and the per-class counts |
+| `probability` | `{field, value, interval, bounds, passes, passes_complete, complete_starts, all_starts, censored, effective_independent_attempts, evaluation_status, definitive, reasons}`: `field` is `pass_probability` only when `definitive`; `value = passes_complete / complete_starts`; `bounds = {low: passes / all_starts, high: (passes + censored) / all_starts}`; `interval` is the seeded circular block bootstrap's percentile interval (`{status, low, high, reason}`) with blocks of `max(H, ceil(sqrt(n)))` trade dates; `effective_independent_attempts = n / H` |
+| `cash` | `{status, mean_net_cash_usd, interval, reasons}`: payouts minus the attempt's fees per complete start, labelled `exact`, `conditional`, `upper_bound` or `unavailable` (and then bounded/null, never both) |
+| `funded` | `{passing_starts, no_funded_phase, survived, breached, unresolved, payouts_made, payout_total_usd, payout_gross_usd, fees_usd, mean_net_cash_usd}`: the funded phase, DESCRIPTIVELY, over the starts whose evaluation passed |
+| `bootstrap` | `{pass_probability, mean_net_cash_usd}`: each statistic's `{rng, seed, block_length_policy, block_length, resamples, confidence, observations}` |
+| `coverage_gap_starts`, `estimate_status`, `estimate_reasons`, `warnings` | how many starts hit a coverage gap, the worst attempt estimate status and every distinct reason |
+| `practical_eligibility` | `{execution_mode, status, mechanical_passes, practically_valid_passes, reason}`: under `blocked_by_compliance` the valid passes are 0 |
+
+The top level carries `evaluation_id`, `run_id` (the futures run the attempts replay), `candidate_id`,
+`trial_family`, `root`, `window`, `horizon_trading_days`, `execution_mode`, `payout_policy`,
+`cost_assumption`, `scenarios_requested`, `start_dates`, `ruleset` (id, version, content hash,
+verification status, effective dates), `news` (dataset, content hash, event types, events in the
+window, the events whose release time is unknown, the covered intervals and the declared gaps),
+`exchange_fees` (dataset and content hash, or null when no commission excludes the fees),
+`not_a_submission` and a `source_note` that says in words that no number there is a verdict.
+
 ## Known gaps
 
 - The Polars schemas describe the dtypes but not value domains (`side` in `{buy, sell}`,
