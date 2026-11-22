@@ -1,0 +1,642 @@
+schema_version: 2
+ruleset_id: fundednext-futures-flex-100k
+version: 1
+firm: FundedNext
+program: Futures Flex
+account_size_usd: '100000'
+platform: Tradovate / NinjaTrader / TradingView
+addons: []
+jurisdiction: null
+as_of: '2026-11-22'
+effective_from: '2026-11-22'
+effective_to: null
+instruments:
+- root: ES
+  contract_weight: '1'
+- root: NQ
+  contract_weight: '1'
+- root: MES
+  contract_weight: '0.1'
+- root: MNQ
+  contract_weight: '0.1'
+reset:
+  time: '17:00:00'
+  tz: America/Chicago
+commissions:
+  status: known
+  includes_exchange_and_regulatory_fees: true
+  per_side_usd:
+    NQ: '2.88'
+  platform: null
+  source:
+    url: https://helpfutures.fundednext.com/en/articles/17230203-how-do-commissions-work-in-futures-trading
+    quote: 'The all-in rate has three components: Commission — the fee charged by the broker for
+      executing the trade. Exchange & NFA Fee — charged by the exchange and the National Futures
+      Association. This fee doesn''t vary between brokerage firms, but does vary between
+      different futures contracts . Clearing Fee — charged by the clearing firm (also known as
+      an FCM). This can vary between brokerage firms , but doesn''t vary between futures
+      contracts. You can look up the fees and commissions for a specific instrument on your
+      platform''s pricing page — simply search for the instrument to view its associated
+      "Commission/Fees." For example, NinjaTrader''s rates are available on the NinjaTrader
+      Commissions page . How do I calculate the commission per trade? Because every trade has
+      two sides — an entry (open) and an exit (close) — commissions and fees are charged twice .
+      So always double the per-side rate to get your full cost: Commission per trade = Number of
+      Contracts × All-in Rate × 2 Example You place a Buy trade of 3 contracts on the E-mini
+      Nasdaq-100 (NQ), where the all-in rate is $2.88 per contract: 3 contracts × $2.88 × 2 =
+      $17.28 So your total commission for opening and closing this trade would be $17.28 .'
+    snapshot_sha256: d3243eb03af444670f9475e44d99c4c3ef36dd85cbca4be7cfdd30c3cca71a02
+    retrieved_at: '2026-11-22T03:55:08Z'
+    section: What makes up the all-in rate?
+    synthetic: false
+conflicts:
+- conflict_id: mll_lock_point_challenge
+  rule_id: challenge_max_loss_limit
+  field: lock
+  selected_value:
+    'on':
+    - hwm
+    at_offset_usd: '2600'
+    locked_offset_usd: '100'
+  alternatives:
+  - value:
+      'on':
+      - hwm
+      at_offset_usd: '100'
+      locked_threshold_usd: '97600'
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229829-fundednext-futures-flex-challenge-all-rules
+      quote: It stops trailing and locks once your balance reaches the lock point for your size ($50,100
+        / $100,100 / $150,100).
+      snapshot_sha256: 784711ff195997ed92dce058b7eea2dd50e41b30b24549c904b3af90b1bdfa89
+      retrieved_at: '2026-11-22T01:40:47Z'
+      section: Important notes
+      synthetic: false
+  selected_source:
+    url: https://helpfutures.fundednext.com/en/articles/17229829-fundednext-futures-flex-challenge-all-rules
+    quote: The Maximum Loss Limit (MLL) is the total amount you can lose before your account is permanently
+      breached . It follows a Trailing End-of-Day (EOD) system, updating once per day based on your highest
+      balance that day. Account Size Maximum Loss Limit MLL Locks At $50,000 $1,500 $50,100 $100,000 $2,500
+      $100,100
+    snapshot_sha256: 784711ff195997ed92dce058b7eea2dd50e41b30b24549c904b3af90b1bdfa89
+    retrieved_at: '2026-11-22T01:40:47Z'
+    synthetic: false
+    section: What is the Maximum Loss Limit in the Flex Challenge?
+  rationale: The table column 'MLL Locks At' gives the level the Maximum Loss Limit freezes at ($100,100),
+    which is the reading the firm-wide loss-limit article states (it locks at the initial balance plus
+    $100) and the one the first-withdrawal reset repeats; the same page's note says the lock happens when
+    the BALANCE reaches $100,100, which would freeze the floor at $97,600. Both passages cover the same
+    firm, plan, size and phase, so they are a genuine conflict; the higher, trader-restrictive floor is
+    selected and the other reading is a sensitivity scenario.
+  applicability_checked: true
+- conflict_id: mll_lock_point_funded
+  rule_id: funded_max_loss_limit
+  field: lock
+  selected_value:
+    'on':
+    - hwm
+    - first_payout
+    at_offset_usd: '2600'
+    locked_offset_usd: '100'
+  alternatives:
+  - value:
+      'on':
+      - hwm
+      - first_payout
+      at_offset_usd: '100'
+      locked_threshold_usd: '97600'
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
+      quote: It stops trailing and locks once your balance reaches the lock point for your size ($50,100
+        / $100,100 / $150,100).
+      snapshot_sha256: 387b6e0b8dd7b1e2e7a72ed8c61c3ccf2eafccffbc94044fd61ef0309a61ffc9
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Important notes
+      synthetic: false
+  selected_source:
+    url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
+    quote: 'The Maximum Loss Limit (MLL) continues to apply on your funded account, using the same Trailing
+      End-of-Day (EOD) system as the Challenge: Account Size Maximum Loss Limit MLL Locks At $50,000 $1,500
+      $50,100'
+    snapshot_sha256: 387b6e0b8dd7b1e2e7a72ed8c61c3ccf2eafccffbc94044fd61ef0309a61ffc9
+    retrieved_at: '2026-11-22T01:40:48Z'
+    section: What is the Maximum Loss Limit on the Flex FundedNext Account?
+    synthetic: false
+  rationale: The table column 'MLL Locks At' gives the level the Maximum Loss Limit freezes at ($100,100),
+    which is the reading the firm-wide loss-limit article states (it locks at the initial balance plus
+    $100) and the one the first-withdrawal reset repeats; the same page's note says the lock happens when
+    the BALANCE reaches $100,100, which would freeze the floor at $97,600. Both passages cover the same
+    firm, plan, size and phase, so they are a genuine conflict; the higher, trader-restrictive floor is
+    selected and the other reading is a sensitivity scenario.
+  applicability_checked: true
+verification:
+  status: unverified
+phases:
+- phase_id: challenge
+  kind: evaluation
+  starting_balance_usd: '100000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: challenge_max_loss_limit
+    description: Trailing end-of-day Maximum Loss Limit of $2,500 marked on the highest end-of-day balance
+      and tested against equity at any point intrabar (a floating loss breaches instantly). The threshold
+      freezes at the initial balance plus $100 ($100,100) once the trailing level reaches it, i.e. once
+      the end-of-day balance reaches $102,600.
+    amount_usd: '2500'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      at_offset_usd: '2600'
+      locked_offset_usd: '100'
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229829-fundednext-futures-flex-challenge-all-rules
+      quote: The Maximum Loss Limit (MLL) is the total amount you can lose before your account is permanently
+        breached . It follows a Trailing End-of-Day (EOD) system, updating once per day based on your
+        highest balance that day. Account Size Maximum Loss Limit MLL Locks At $50,000 $1,500 $50,100
+        $100,000 $2,500 $100,100
+      snapshot_sha256: 784711ff195997ed92dce058b7eea2dd50e41b30b24549c904b3af90b1bdfa89
+      retrieved_at: '2026-11-22T01:40:47Z'
+      synthetic: false
+      section: What is the Maximum Loss Limit in the Flex Challenge?
+    evidence: conflict_resolution
+  - kind: max_contracts
+    rule_id: challenge_contract_limit
+    description: 5 e-mini or 50 micro e-mini contracts, fixed at account creation, with the firm's 1:10
+      e-mini to micro ratio; an order above the limit is clipped at admission.
+    limit: '5'
+    comparison: <=
+    action: clip
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229829-fundednext-futures-flex-challenge-all-rules
+      quote: Your contract limit is the maximum number of contracts you can hold at once. It's fixed at
+        account creation and does not increase with profit. Flex applies the same limits across the Challenge
+        Account and the FundedNext Account. Account Size Maximum Contracts $50,000 3 e-mini / 30 micro
+        e-mini $100,000 5 e-mini / 50 micro e-mini
+      snapshot_sha256: 784711ff195997ed92dce058b7eea2dd50e41b30b24549c904b3af90b1bdfa89
+      retrieved_at: '2026-11-22T01:40:47Z'
+      synthetic: false
+      section: What are the contract limits in the Flex Challenge?
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: challenge_flat_by
+    description: Flat by 15:10 America/Chicago, when the system closes open positions automatically; the
+      session reopens at 17:00 CT.
+    time: '15:10:00'
+    tz: America/Chicago
+    reopen: '17:00:00'
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://fundednext.com/general-rules/futures/trading-platforms
+      quote: Trading runs every day from ⁦5:00⁩ PM CT to ⁦3:10⁩ PM CT the following day. The market stays
+        closed from ⁦3:10⁩ PM CT to ⁦5:00⁩ PM CT. Any open positions at ⁦3:10⁩ PM CT are closed automatically
+        by the system.
+      snapshot_sha256: 79415d4a3efa3d7b2b11cac3b727501a4605e1e528d750c5a0e3a4d9ae90c6ee
+      retrieved_at: '2026-11-22T01:40:25Z'
+      synthetic: false
+      section: 2 Market Hours
+    evidence: official_quote
+  - kind: compliance
+    rule_id: challenge_compliance_copy_and_group_trading
+    description: Unauthorized copying and coordinated group trading are prohibited in both phases; copying
+      between accounts all registered to the trader is the stated exception, which a single simulated
+      account cannot use. A strategy that copies or joins a group is not practically eligible.
+    restriction: copy_and_group_trading
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://fundednext.com/general-rules/futures/what-is-forbidden
+      quote: 'Copy & Group Trading Unauthorized copying or coordinated group trading. Exception: copying
+        between accounts all registered to you.'
+      snapshot_sha256: f14ea4e53aae821953713acd2d5abc9f37a3493aaaa6e534ae2518c5147e5853
+      retrieved_at: '2026-11-22T01:39:32Z'
+      section: 1 Prohibited Strategies
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: challenge_compliance_account_sharing
+    description: Letting another person trade the account, or trading someone else's, is prohibited; a
+      mechanical single-account attempt cannot do it, so it changes no result and is recorded so the surface
+      is complete.
+    restriction: account_sharing
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: immaterial
+    comparison: '>='
+    action: block
+    source:
+      url: https://fundednext.com/general-rules/futures/what-is-forbidden
+      quote: Account Sharing Letting another person trade your account, or trading someone else's.
+      snapshot_sha256: f14ea4e53aae821953713acd2d5abc9f37a3493aaaa6e534ae2518c5147e5853
+      retrieved_at: '2026-11-22T01:39:32Z'
+      section: 1 Prohibited Strategies
+      synthetic: false
+    evidence: official_quote
+  - kind: inactivity
+    rule_id: challenge_inactivity
+    description: 30 consecutive calendar days without a trade breach and deactivate the account; the count
+      runs from the purchase and resets with every trade. The page counts the day at 16:01 CT and this
+      rule observes the rule-day close, which is the nearest declared observation point.
+    max_gap: 30
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>='
+    action: fail
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17228935-is-there-any-inactivity-period-in-fundednext-futures
+      quote: 'Challenge Accounts: Marked as breached and deactivated after 30 consecutive calendar days
+        of no trades.'
+      snapshot_sha256: 116be1418da5d4d2d3a27793abd32e5c38bcc4b4b4bd36916442d52273302c8f
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: How is the inactivity counted?
+      synthetic: false
+    evidence: official_quote
+  pass_conditions:
+  - kind: profit_target
+    rule_id: challenge_profit_target
+    description: Reach $5,000 of profit, tested at the rule-day close on the closed balance. The pages
+      define the target on closed-position P&L but not when it is tested; a pass condition is evaluated
+      at the end of the trade date, so the trader passes no earlier than the close and a later same-day
+      breach still counts. No page requires a flat book at the pass.
+    amount_usd: '5000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: promote_phase
+    require_flat: false
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229829-fundednext-futures-flex-challenge-all-rules
+      quote: 'The Profit Target and Maximum Loss Limit for each are: Account Size Profit Target Maximum
+        Loss Limit MLL Locks At $50,000 $2,500 $1,500 $50,100 $100,000 $5,000 $2,500'
+      snapshot_sha256: 784711ff195997ed92dce058b7eea2dd50e41b30b24549c904b3af90b1bdfa89
+      retrieved_at: '2026-11-22T01:40:47Z'
+      synthetic: false
+      section: What are the available account sizes in the Flex Challenge?
+    evidence: assumption
+    assumption:
+      name: unspecified_target_frequency_is_eod
+      rationale: The profit target is quoted on closed-position P&L, but no page says when it is tested.
+        The intraday default belongs to failure thresholds, where it makes enforcement stricter; for a
+        pass condition the conservative reading is the end of the trade date on the closed balance, because
+        the trader then passes no earlier than the close and a later same-day breach still counts against
+        the attempt. The same silence covers require_flat, which stays false because the target is defined
+        on closed positions.
+  - kind: consistency
+    rule_id: challenge_consistency
+    description: No single rule-day's profit may exceed 40% of the profit target, and a day above it raises
+      the required total profit to highest day / 40%; with the profit target as a separate pass condition
+      this is exactly the same test.
+    max_day_share: '0.4'
+    measure: best_day_profit/total_profit
+    applies_to: pass
+    window: all_time
+    comparison: <=
+    action: promote_phase
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229829-fundednext-futures-flex-challenge-all-rules
+      quote: 'The Consistency Rule applies throughout the Challenge Phase . Your profit on any single
+        day cannot exceed 40% of your total profit target . Formula: 40% × Profit Target = Daily Profit
+        Threshold If your profit on any single day exceeds this threshold, the total profit required to
+        pass is recalculated : Required Total Profit = Highest Daily Profit ÷ 40%'
+      snapshot_sha256: 784711ff195997ed92dce058b7eea2dd50e41b30b24549c904b3af90b1bdfa89
+      retrieved_at: '2026-11-22T01:40:47Z'
+      section: Is there a Consistency Rule in the Flex Challenge?
+      synthetic: false
+    evidence: official_quote
+  max_calendar_days: null
+  max_trading_days: null
+  fees:
+  - kind: fee
+    rule_id: challenge_entry_fee
+    description: One-time $273.99 Challenge fee for the Flex 100K account, charged at start.
+    fee_kind: evaluation
+    amount_usd: '273.99'
+    when: at_start
+    comparison: '>='
+    action: charge
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17228852-what-are-the-reset-conditions-and-fees-at-fundednext-futures
+      quote: Reset Fees for FundedNext Futures Challenge Reset fees vary by Challenge type and size. Model
+        Current Price Reset Price Flex 50K $141.99 $82.99 Flex 100K $273.99 $157.99
+      snapshot_sha256: ca596516c69b9006049a476fbb45526fbff36c169c8eb5ab42291ef7000f2d97
+      retrieved_at: '2026-11-22T01:42:18Z'
+      synthetic: false
+      section: Reset Fees for FundedNext Futures Challenge
+    evidence: official_quote
+  - kind: fee
+    rule_id: challenge_reset_fee
+    description: Resetting the Challenge costs 157.99 USD and restarts the account from the initial balance;
+      charged per reset purchased, never inside the trading ledger.
+    fee_kind: reset
+    amount_usd: '157.99'
+    when: on_reset
+    comparison: '>='
+    action: charge
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17228852-what-are-the-reset-conditions-and-fees-at-fundednext-futures
+      quote: 'Reset fees vary by Challenge type and size. What happens when I reset my account? When you
+        reset your Challenge, you will receive a new Challenge with everything starting from the beginning
+        , as if you are beginning fresh: Your balance returns to the initial amount. Your trading metrics
+        are reset. Your loss limit is refreshed. Note: If you had your previous Challenge connected to
+        a trade copier or trading journal, that connection will no longer be active. You will need to
+        reconnect using your New Account Name before you resume trading. This applies to any third-party
+        platform or tool that references your Tradovate Account Name. Reset Fees for FundedNext Futures
+        Challenge Reset fees vary by Challenge type and size. Model Current Price Reset Price Flex 50K
+        $141.99 $82.99 Flex 100K $273.99 $157.99'
+      snapshot_sha256: ca596516c69b9006049a476fbb45526fbff36c169c8eb5ab42291ef7000f2d97
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: Reset Fees for FundedNext Futures Challenge
+      synthetic: false
+    evidence: official_quote
+- phase_id: fundednext_account
+  kind: funded
+  starting_balance_usd: '100000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: funded_max_loss_limit
+    description: Trailing end-of-day Maximum Loss Limit of $2,500 marked on the highest end-of-day balance
+      and tested against equity at any point intrabar (a floating loss breaches instantly). The threshold
+      freezes at the initial balance plus $100 ($100,100) once the trailing level reaches it, i.e. once
+      the end-of-day balance reaches $102,600, or at the first withdrawal, whichever fires first.
+    amount_usd: '2500'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      - first_payout
+      at_offset_usd: '2600'
+      locked_offset_usd: '100'
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
+      quote: 'The Maximum Loss Limit (MLL) continues to apply on your funded account, using the same Trailing
+        End-of-Day (EOD) system as the Challenge: Account Size Maximum Loss Limit MLL Locks At $50,000
+        $1,500 $50,100'
+      snapshot_sha256: 387b6e0b8dd7b1e2e7a72ed8c61c3ccf2eafccffbc94044fd61ef0309a61ffc9
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: What is the Maximum Loss Limit on the Flex FundedNext Account?
+      synthetic: false
+    evidence: conflict_resolution
+  - kind: max_contracts
+    rule_id: funded_contract_limit
+    description: 5 e-mini or 50 micro e-mini contracts, fixed at account creation, with the firm's 1:10
+      e-mini to micro ratio; an order above the limit is clipped at admission.
+    limit: '5'
+    comparison: <=
+    action: clip
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
+      quote: 'Flex applies the same limits on the FundedNext Account as during the Challenge: Account
+        Size Maximum Contracts $50,000 3 e-mini / 30 micro e-mini $100,000 5 e-mini / 50 micro e-mini'
+      snapshot_sha256: 387b6e0b8dd7b1e2e7a72ed8c61c3ccf2eafccffbc94044fd61ef0309a61ffc9
+      retrieved_at: '2026-11-22T01:40:48Z'
+      synthetic: false
+      section: What are the contract limits on the Flex FundedNext Account?
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: funded_flat_by
+    description: Flat by 15:10 America/Chicago, when the system closes open positions automatically; the
+      session reopens at 17:00 CT.
+    time: '15:10:00'
+    tz: America/Chicago
+    reopen: '17:00:00'
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://fundednext.com/general-rules/futures/trading-platforms
+      quote: Trading runs every day from ⁦5:00⁩ PM CT to ⁦3:10⁩ PM CT the following day. The market stays
+        closed from ⁦3:10⁩ PM CT to ⁦5:00⁩ PM CT. Any open positions at ⁦3:10⁩ PM CT are closed automatically
+        by the system.
+      snapshot_sha256: 79415d4a3efa3d7b2b11cac3b727501a4605e1e528d750c5a0e3a4d9ae90c6ee
+      retrieved_at: '2026-11-22T01:40:25Z'
+      synthetic: false
+      section: 2 Market Hours
+    evidence: official_quote
+  - kind: payout
+    rule_id: funded_performance_reward
+    description: A Performance Reward needs 5 Benchmark Days of at least $200 and $500 of profit since
+      the last withdrawal, and pays up to $2,500; the payout is at most 50% of the accumulated profit,
+      has a $250 minimum at a 95% reward share, and after the fifth reward the account concludes. The
+      first withdrawal fires the trailing threshold's lock at the initial balance plus $100.
+    min_days_since_last: 0
+    min_profitable_days: 5
+    min_traded_days: 0
+    min_day_profit_usd: '200'
+    window: since_last_payout
+    buffer_usd: '0'
+    split: '0.95'
+    min_usd: '250'
+    max_usd: '2500'
+    max_share_of_withdrawable: '0.5'
+    min_profit_since_last_usd: '500'
+    max_payouts: 5
+    comparison: '>='
+    action: withdraw
+    threshold_after_payout: lock_on_first_payout
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
+      quote: 'Before each withdrawal, you must meet the criteria for your account size: Criteria $50K
+        Account $100K Account $150K Account Benchmark Days 5 days of $200 5 days of $200 5 days of $250
+        Minimum Profit (current cycle) $500 $500 $500 Minimum Withdrawal $250 $250 $250 Maximum Withdrawal
+        Up to 50% (max $1,500) Up to 50% (max $2,500) Up to 50% (max $4,000) Reward Share 95% 95% 95%
+        A Benchmark Day is a trading day where your profit meets the benchmark amount for your size (
+        $200 for $50K and $100K; $250 for $150K). You need at least 5 Benchmark Days before every withdrawal.
+        🔗 See: What are Benchmark Days at FundedNext Futures? How much can I withdraw, and how often,
+        from the Flex FundedNext Account? You can withdraw up to 50% of your accumulated profit per cycle,
+        capped by size ( $1,500 / $2,500 / $4,000 ), with a $250 minimum and at least $500 profit in the
+        current cycle. Withdrawals are requested per cycle, after meeting your 5 Benchmark Days. What
+        is my Reward Share from the Flex FundedNext Account? You receive a 95% Reward Share of the requested
+        Performance Reward — one of the highest reward shares among all models. 🔗 See: What will be my
+        Reward Share from the Futures FundedNext Account? What is the Flex FundedNext Account withdrawal
+        journey? Trade and accumulate at least 5 Benchmark Days and $500 profit in the cycle. Request
+        a withdrawal (minimum $250 , up to 50% of profit capped by size), receiving a 95% Reward Share
+        . Your first withdrawal resets the MLL to your account initial balance + $100.'
+      snapshot_sha256: 387b6e0b8dd7b1e2e7a72ed8c61c3ccf2eafccffbc94044fd61ef0309a61ffc9
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: What are the Performance Reward eligibility criteria for the Flex FundedNext Account?
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: funded_compliance_copy_and_group_trading
+    description: Unauthorized copying and coordinated group trading are prohibited in both phases; copying
+      between accounts all registered to the trader is the stated exception, which a single simulated
+      account cannot use. A strategy that copies or joins a group is not practically eligible.
+    restriction: copy_and_group_trading
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://fundednext.com/general-rules/futures/what-is-forbidden
+      quote: 'Copy & Group Trading Unauthorized copying or coordinated group trading. Exception: copying
+        between accounts all registered to you.'
+      snapshot_sha256: f14ea4e53aae821953713acd2d5abc9f37a3493aaaa6e534ae2518c5147e5853
+      retrieved_at: '2026-11-22T01:39:32Z'
+      section: 1 Prohibited Strategies
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: funded_compliance_account_sharing
+    description: Letting another person trade the account, or trading someone else's, is prohibited; a
+      mechanical single-account attempt cannot do it, so it changes no result and is recorded so the surface
+      is complete.
+    restriction: account_sharing
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: immaterial
+    comparison: '>='
+    action: block
+    source:
+      url: https://fundednext.com/general-rules/futures/what-is-forbidden
+      quote: Account Sharing Letting another person trade your account, or trading someone else's.
+      snapshot_sha256: f14ea4e53aae821953713acd2d5abc9f37a3493aaaa6e534ae2518c5147e5853
+      retrieved_at: '2026-11-22T01:39:32Z'
+      section: 1 Prohibited Strategies
+      synthetic: false
+    evidence: official_quote
+  - kind: inactivity
+    rule_id: funded_inactivity
+    description: 30 consecutive calendar days without a trade breach and deactivate the account; the count
+      runs from the purchase and resets with every trade. The page counts the day at 16:01 CT and this
+      rule observes the rule-day close, which is the nearest declared observation point.
+    max_gap: 30
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>='
+    action: fail
+    source:
+      url: https://helpfutures.fundednext.com/en/articles/17228935-is-there-any-inactivity-period-in-fundednext-futures
+      quote: 'FundedNext Accounts: Marked as inactive and deactivated after 30 consecutive calendar days
+        of no trades.'
+      snapshot_sha256: 116be1418da5d4d2d3a27793abd32e5c38bcc4b4b4bd36916442d52273302c8f
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: How is the inactivity counted?
+      synthetic: false
+    evidence: official_quote
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
+not_modeled:
+- rule: cme_price_limit_2pct_entry_ban
+  description: No new position may be opened within 2% of the CME daily price limit; there is no entry-distance
+    rule kind and the ruleset carries no price-limit series, so an entry in that band is filled here.
+  materiality: material
+  source:
+    url: https://fundednext.com/general-rules/futures/what-is-forbidden
+    quote: Price Limit Trading Opening trades when price is within ⁦2%⁩ of the CME daily limit.
+    snapshot_sha256: f14ea4e53aae821953713acd2d5abc9f37a3493aaaa6e534ae2518c5147e5853
+    retrieved_at: '2026-11-22T01:39:32Z'
+    section: 1 Prohibited Strategies
+    synthetic: false
+- rule: commission_table_not_published_per_root
+  description: 'The firm publishes one all-in rate as an example (NQ, 2.88 USD per side) and defers every
+    other instrument to each platform''s own pricing page, so ES, MES and MNQ have no known per-side commission
+    and the firm''s platform list (Tradovate, NinjaTrader, TradingView) is not separated into per-platform
+    tables. A run on an unpublished root has no known commission: its cost-dependent statistics stay unavailable
+    unless a named cost assumption is supplied.'
+  materiality: material
+  source:
+    url: https://helpfutures.fundednext.com/en/articles/17230203-how-do-commissions-work-in-futures-trading
+    quote: You can look up the fees and commissions for a specific instrument on your platform's pricing
+      page — simply search for the instrument to view its associated "Commission/Fees." For example, NinjaTrader's
+      rates are available on the NinjaTrader Commissions page .
+    snapshot_sha256: d3243eb03af444670f9475e44d99c4c3ef36dd85cbca4be7cfdd30c3cca71a02
+    retrieved_at: '2026-11-22T03:55:08Z'
+    section: What makes up the all-in rate?
+    synthetic: false
+- rule: cross_account_hedging
+  description: Reverse hedges between accounts and hedging across highly correlated instruments are prohibited
+    in both phases. A single simulated account cannot show a cross-account or a correlated hedge, and
+    no rule kind screens for one, so a hedged strategy is reported as practically eligible when the firm
+    would refuse it.
+  materiality: material
+  source:
+    url: https://fundednext.com/general-rules/futures/what-is-forbidden
+    quote: Reverse Hedge Opposite positions across accounts to guarantee a win. Hedging with Correlated
+      Instruments Hedging across highly correlated instruments to artificially reduce risk.
+    snapshot_sha256: f14ea4e53aae821953713acd2d5abc9f37a3493aaaa6e534ae2518c5147e5853
+    retrieved_at: '2026-11-22T01:39:32Z'
+    section: 1 Prohibited Strategies
+    synthetic: false
+- rule: prohibited_strategy_clauses
+  description: Exploiting platform errors, account rolling and flipping, multi-order spam, slow-feed or
+    latency advantage, spoofing, order-book layering, bracket, grid and wash strategies and trading gapped
+    or illiquid markets are prohibited in both phases. These clauses are qualitative; a single simulated
+    account cannot be screened for them, so a strategy that uses one is still reported as practically
+    eligible.
+  materiality: material
+  source:
+    url: https://fundednext.com/general-rules/futures/what-is-forbidden
+    quote: Any practice that exploits simulated conditions, threatens platform stability, or undermines
+      fair evaluation. Applies in both Challenge and FundedNext Account Phases.
+    snapshot_sha256: f14ea4e53aae821953713acd2d5abc9f37a3493aaaa6e534ae2518c5147e5853
+    retrieved_at: '2026-11-22T01:39:32Z'
+    section: 1 Prohibited Strategies
+    synthetic: false
+- rule: sub_minute_holding_and_micro_scalping
+  description: 'Trades closed within 10 seconds are measured as a share of the cycle''s recorded profit:
+    30% draws a warning, and at 40% a Challenge holds advancement while a funded account deducts that
+    share of the profit. No rule kind measures a trade''s holding time, so a sub-minute strategy is neither
+    held nor deducted here and can pass that the firm would penalise.'
+  materiality: material
+  source:
+    url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
+    quote: 'Micro-scalping is opening and closing trades within 10 seconds to capture small, rapid price
+      movements. FundedNext Futures monitors a Micro-Scalping threshold across all account types. On your
+      FundedNext Account : The Micro-Scalping percentage is the share of your total recorded profit from
+      trades closed within 10 seconds, evaluated per cycle . Only profitable trades count — you can close
+      losing trades any time without affecting this rule. At 30% , you receive a compliance warning (no
+      deduction). At 40% or above , the Micro-Scalping portion of your profit for that cycle is deducted
+      in full . Your account is never terminated for micro-scalping, and future micro-scalping profit
+      is subject to the same ongoing deduction.'
+    snapshot_sha256: 387b6e0b8dd7b1e2e7a72ed8c61c3ccf2eafccffbc94044fd61ef0309a61ffc9
+    retrieved_at: '2026-11-22T01:40:48Z'
+    section: What is the Micro-Scalping policy for the Flex FundedNext Account?
+    synthetic: false
+- rule: excess_contract_penalty
+  description: 'Above the contract limit only the excess contracts are violations: their profit is deducted
+    while their losses still count; max_contracts clips the order at admission instead, which keeps the
+    excess contracts out of the book entirely.'
+  materiality: immaterial
+  source:
+    url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
+    quote: 'If you exceed the limit, only the excess contracts are violations: profit from them is deducted
+      , and losses still count.'
+    snapshot_sha256: 387b6e0b8dd7b1e2e7a72ed8c61c3ccf2eafccffbc94044fd61ef0309a61ffc9
+    retrieved_at: '2026-11-22T01:40:48Z'
+    section: Contract limits
+    synthetic: false
+- rule: reward_request_same_day_trade_rule
+  description: A trade placed on the same day removes the transfer-to-wallet option for that day, so a
+    request must be made on a day with no new trade; the payout rule evaluates at every rule-day close
+    regardless of that day's trading, so a payout can be taken a day earlier than the firm would allow.
+  materiality: immaterial
+  source:
+    url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
+    quote: 'Please note: placing a trade on the same day removes the transfer-to-wallet option for that
+      day. So if you intend to request your Performance Reward, do it on a day when you haven''t opened
+      a new trade — otherwise you''ll need to wait until the next eligible day to transfer.'
+    snapshot_sha256: 387b6e0b8dd7b1e2e7a72ed8c61c3ccf2eafccffbc94044fd61ef0309a61ffc9
+    retrieved_at: '2026-11-22T01:40:48Z'
+    section: How do I request my Performance Reward?
+    synthetic: false

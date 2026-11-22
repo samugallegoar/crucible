@@ -1,0 +1,652 @@
+# Apex Trader Funding / EOD Drawdown Evaluation (Rithmic) -> EOD Performance Account - 5-pack (per-account cost): schema version 2, generated from the
+# sourced values in rulesets/prop/apex/RESEARCH.md (one official page snapshot and
+# sha256 per attribution). verification.status is unverified: only the owner can
+# confirm a ruleset.
+schema_version: 2
+ruleset_id: apex-eod-25k-no-activation-fee-5pack
+version: 1
+firm: Apex Trader Funding
+program: EOD Drawdown Evaluation (Rithmic) -> EOD Performance Account - 5-pack (per-account cost)
+account_size_usd: '25000'
+platform: Rithmic
+addons: []
+jurisdiction: null
+as_of: '2026-11-22'
+effective_from: '2026-11-22'
+effective_to: null
+instruments:
+- root: ES
+  contract_weight: '1'
+- root: NQ
+  contract_weight: '1'
+- root: YM
+  contract_weight: '1'
+- root: RTY
+  contract_weight: '1'
+- root: NKD
+  contract_weight: '1'
+- root: MES
+  contract_weight: '0.1'
+- root: MNQ
+  contract_weight: '0.1'
+- root: MYM
+  contract_weight: '0.1'
+- root: M2K
+  contract_weight: '0.1'
+reset:
+  time: '18:00:00'
+  tz: America/New_York
+commissions:
+  status: known
+  includes_exchange_and_regulatory_fees: unknown
+  per_side_usd:
+    ES: '1.99'
+    NQ: '1.99'
+    YM: '1.99'
+    RTY: '1.99'
+    NKD: '1.99'
+    MES: '0.51'
+    MNQ: '0.51'
+    MYM: '0.51'
+    M2K: '0.51'
+  platform: Rithmic
+  source:
+    url: https://apextraderfunding.com/help-center/rithmic/rithmic-commissions-instruments
+    quote: Equity Futures E-mini S&P 500 (ES) ES CME 1.99 3.98 Nikkei NKD (NKD) NKD CME 1.99 3.98 E-mini
+      NASDAQ 100 (NQ) NQ CME 1.99 3.98 Mini-DOW (YM) YM CBOT 1.99 3.98 E-mini Midcap 400 (EMD) EMD CME
+      1.99 3.98 Russell 2000 (RTY) RTY CME 1.99 3.98 Currency Futures Australian Dollar (6A) 6A CME 2.36
+      4.72 British Pound (6B) 6B CME 2.36 4.72 Canadian Dollar (6C) 6C CME 2.36 4.72 Euro FX (6E) 6E CME
+      2.36 4.72 Japanese Yen (6J) 6J CME 2.36 4.72 Swiss Franc (6S) 6S CME 2.36 4.72 New Zealand Dollar
+      (6N) 6N CME 2.36 4.72 Agricultural Futures Lean Hogs (HE) HE CME 2.79 5.58 Live Cattle (LE) LE CME
+      2.79 5.58 Feeder Cattle (GF) GF CME 2.79 5.58 Corn (ZC) ZC CBOT 2.79 5.58 Wheat (ZW) ZW CBOT 2.79
+      5.58 Soybeans (ZS) ZS CBOT 2.79 5.58 Soybean Meal (ZM) ZM CBOT 2.79 5.58 Soybean Oil (ZL) ZL CBOT
+      2.79 5.58 Energy Futures Crude Oil (CL) CL NYMEX 1.98 3.96 Mini Crude Oil (QM) QM NYMEX 1.96 3.92
+      Mini Crude Oil (MCL) MCL NYMEX 0.51 1.02 Natural Gas (NG) NG NYMEX 1.98 3.96 E-mini Natural Gas
+      (QG) QG NYMEX 1.26 2.52 Heating Oil (HO) HO NYMEX 1.98 3.96 New York Harbor (RB) RB NYMEX 1.98 3.96
+      Metal Futures Gold (GC) GC COMEX 2.31 4.62 Silver (SI) SI COMEX 2.31 4.62 Copper (HG) HG COMEX 2.31
+      4.62 Platinum (PL) PL NYMEX 2.31 4.62 Palladium (PA) PA NYMEX 2.31 4.62 Micro Futures Micro E-Mini
+      S&P 500 (MES) MES CME 0.51 1.02 Micro E-Mini Dow Jones (MYM) MYM CME 0.51 1.02 Micro E-Mini Nasdaq-100
+      (MNQ) MNQ CME 0.51 1.02 Micro E-Mini Russell 2000 (M2K) M2K CME 0.51 1.02
+    snapshot_sha256: 311ecf4b57d21610730d7464f02d5ef5d8f70a9f6320ea161aaf134916eb515a
+    retrieved_at: '2026-11-22T03:53:52Z'
+    section: Current Commission Schedule, Equity Futures rows through the Micro Futures rows (per side,
+      USD); the page states no exchange or NFA fee
+    synthetic: false
+conflicts:
+- conflict_id: evaluation_consistency
+  rule_id: consistency_eval
+  field: max_day_share
+  selected_value: '0.3'
+  alternatives:
+  - value: absent
+    source:
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-evaluations/
+      quote: Consistency Not Applied Not Applied Not Applied Not Applied
+      snapshot_sha256: b66748ac193d77d668067c2177676f65f43eb7b8b684613311bdb7cb721cd829
+      retrieved_at: '2026-11-22T01:36:04Z'
+      section: Account Parameters table, Consistency row
+      synthetic: false
+  selected_source:
+    url: https://apextraderfunding.com/
+    quote: '"consistency_rule_percentage":30'
+    snapshot_sha256: 3545df973d7ecc638f674d009a85b351d8da0e32bd224882810617fe16f7be7d
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: productPickerV3Config, consistency_rule_percentage of every 2026 evaluation record
+    synthetic: false
+  rationale: Same firm, plan, size, phase (evaluation), platform and retrieval date. The rendered account-parameter
+    tables say 'Consistency Not Applied' to both evaluation types, while the product record of every 2026
+    evaluation carries consistency_rule_percentage = 30 and max_eval_daily_profit_percent = 30. The selected
+    value applies the 30% best-day share because a constraint is more restrictive than none; the alternative
+    is `absent`, the reading in which the rule does not exist at all, which is exactly what the rendered
+    table says, and it is the sensitivity scenario evaluation_consistency#0 (that scenario carries no
+    consistency pass condition). Reported as unverified either way.
+  applicability_checked: true
+verification:
+  status: unverified
+phases:
+- phase_id: evaluation
+  kind: evaluation
+  starting_balance_usd: '25000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: eod_drawdown
+    description: '$1,000 EOD drawdown: recalculated once per trading day at 4:59:59 PM ET from the closing
+      balance, always trailing the highest EOD balance and never moving down, enforced in real time during
+      the next session. basis is equity because an intraday-evaluated threshold is only tested intrabar
+      on equity; the mark (mode eod, hwm_basis balance) moves from the closing balance. The threshold
+      stops trailing at the profit-target balance ($26,500), which happens once the highest EOD balance
+      closes above $27,500. That lock is unreachable before the pass at $26,500.'
+    amount_usd: '1000'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      at_balance_usd: '27500'
+      locked_threshold_usd: '26500'
+    source:
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-drawdown-explained/
+      quote: Evaluations Rithmic and Wealthcharts EOD Threshold stops trailing and becomes fixed when
+        it reaches an amount equal to the Target Profit balance.
+      snapshot_sha256: 4b1a18d8c402becb8835243b7f288050f586dcaa60d3b715506fa12811f8c22b
+      retrieved_at: '2026-11-22T01:36:03Z'
+      section: When EOD Drawdown Stops Trailing - Evaluations Rithmic and Wealthcharts
+      synthetic: false
+    evidence: official_quote
+  - kind: daily_loss
+    rule_id: daily_loss_limit
+    description: $500 Daily Loss Limit, fixed for the evaluation at the selected account size and not
+      rising with profits, measured on total account equity including unrealized P&L and monitored in
+      real time. Reaching it liquidates and pauses trading for the rest of the session without failing
+      the account; it resets with the trading day at 6:00 PM ET.
+    amount_usd: '500'
+    reference: day_start_balance
+    basis: equity
+    evaluated: intraday
+    comparison: <=
+    action: soft_lock_until_reset
+    reset:
+      time: '18:00:00'
+      tz: America/New_York
+    source:
+      url: https://apextraderfunding.com/help-center/additional-helpful-items/daily-loss-limit-explained/
+      quote: EOD Drawdown Evaluations Only 25K 50K 100K 150K Daily Loss Limit $500 $1,000 $1,500 $2,000
+      snapshot_sha256: 24548f42f5042c97c70063ceafb6b3460f947a83ab7576294b728565f4a4242d
+      retrieved_at: '2026-11-22T01:36:41Z'
+      section: DLL During Evaluation, EOD Drawdown Evaluations Only table
+      synthetic: false
+    evidence: official_quote
+  - kind: max_contracts
+    rule_id: max_contracts
+    description: 4 contracts at one time across all instruments and all open positions combined, with
+      ten micros counting as one contract; an order that would exceed it is rejected and is not a rule
+      violation. The limit is fixed for the whole evaluation.
+    limit: '4'
+    comparison: <=
+    action: reject
+    source:
+      url: https://apextraderfunding.com/help-center/additional-helpful-items/position-sizing-evaluation/
+      quote: Evaluation Account Sizes 25K 50K 100K 150K Max Contracts 4 6 8 12
+      snapshot_sha256: 2986d80b60c57f7dbbedbd078dd2ddc7c1d30eeacc250842cb501ac3af57479a
+      retrieved_at: '2026-11-22T01:36:42Z'
+      section: Position sizing at a Glance, Max Contracts table
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: flat_before_session_end
+    description: 'Every position must be closed before the market close; a position still open when the
+      scheduled session is about to end is a prohibited activity (holding through the market close) that
+      forfeits the account, so the consequence is a fail rather than an automatic liquidation: Apex states
+      it does not flatten for you. The deadline is declared relative to the CME session''s scheduled close
+      (minutes_before_session_end: 1, because 4:59 PM ET is one minute before the 5:00 PM ET end of a
+      regular session), so a holiday early close moves it with the calendar instead of a guessed fixed
+      clock. The daily 5-6 PM ET maintenance break leaves no bar to trade before the 6:00 PM ET reopen,
+      so no reopen clock is declared (a session-relative close has no clock time zone to place one in).
+      A session the CME table cannot source is reported by the engine as a coverage gap, never treated
+      as a regular day.'
+    minutes_before_session_end: 1
+    comparison: '>='
+    action: fail
+    source:
+      url: https://apextraderfunding.com/help-center/getting-started/futures-trading-times/
+      quote: All trades must be closed before 4:59 PM ET. It is your responsibility to ensure that your
+        account is flat before 4:59 PM ET.
+      snapshot_sha256: 639a215e3dc30105ff3c783d0c4df1a6fab04783f3bc5d668ae9bb32f29d7aef
+      retrieved_at: '2026-11-22T01:39:28Z'
+      section: Trading Times
+      synthetic: false
+    evidence: official_quote
+  - kind: time_limit
+    rule_id: access_period
+    description: 30 consecutive calendar days of access from the date of purchase, running through weekends
+      and holidays, expiring automatically at 6:00 PM ET on day 30; no extensions and no resets.
+    max_calendar_days: 30
+    unit: calendar_days
+    comparison: '>='
+    action: timeout
+    source:
+      url: https://apextraderfunding.com/help-center/billing/evaluation-plan-fees-and-access-explained/
+      quote: When you purchase an Evaluation, you receive 30 consecutive calendar days of access. The
+        30 calendar days run continuously, including weekends and holidays, and they are not based on
+        trading days.
+      snapshot_sha256: 0c38152a6a4d57b54fe4e9d0999b870aa5337776e2a3a4bc0133928d1d1d9410
+      retrieved_at: '2026-11-22T01:36:43Z'
+      section: The 30 calendar days of access
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_automation
+    description: 'Critical. Apex prohibits automated systems outright (''No Automation or Algorithm Usage
+      allowed''), so a systematically traded account is not an eligible Apex participant. This rule never
+      touches the mechanical account: it makes a mechanically successful attempt blocked_by_compliance
+      for execution_mode automated. The page is firm-wide and names no plan or platform, so it applies
+      to every product in this directory.'
+    restriction: 'No automation or algorithm usage: automated systems executing preprogrammed logic are
+      prohibited'
+    applies_to_execution:
+    - automated
+    materiality: critical
+    comparison: '>='
+    action: block
+    source:
+      url: https://apextraderfunding.com/help-center/getting-started/prohibited-activities
+      quote: 'No Automation or Algorithm Usage allowed: Rewards are intended to recognize human traders
+        actively participating in the learning process, not to reward automated systems executing preprogrammed
+        logic.'
+      snapshot_sha256: 494fd6da079ceaec93f14a5f8ea97299fb7cd9b212bf6fc5e62f00ba6d170c9c
+      retrieved_at: '2026-11-22T01:36:46Z'
+      section: Prohibited Activities
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_trade_copying
+    description: Material. Trade copying and account/resource sharing with other traders are forbidden
+      and close the account. It does not distinguish a manual from an automated trader and a single simulated
+      account cannot copy another, so it is recorded with materiality material and never blocks practical
+      eligibility by itself.
+    restriction: Trade copying and account or resource sharing with other traders is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://apextraderfunding.com/help-center/getting-started/prohibited-activities
+      quote: 'Account and Resource Sharing: Sharing MAC addresses, computers, IPs, credit cards, or trade
+        copying with other traders is strictly forbidden.'
+      snapshot_sha256: 494fd6da079ceaec93f14a5f8ea97299fb7cd9b212bf6fc5e62f00ba6d170c9c
+      retrieved_at: '2026-11-22T01:36:46Z'
+      section: Prohibited Activities
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_high_risk_strategy
+    description: Material. Strategies with small profit targets and disproportionately large risk are
+      prohibited (the page's example is a five-tick target with a 150-tick stop), which a scalping configuration
+      can fall foul of. Not mechanically decidable from the ruleset, so it is recorded with materiality
+      material.
+    restriction: 'High-risk strategies: small profit targets with disproportionately large risk are prohibited'
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://apextraderfunding.com/help-center/getting-started/prohibited-activities
+      quote: 'High-Risk Strategies: Strategies that involve small profit targets while risking disproportionately
+        large amounts are not allowed.'
+      snapshot_sha256: 494fd6da079ceaec93f14a5f8ea97299fb7cd9b212bf6fc5e62f00ba6d170c9c
+      retrieved_at: '2026-11-22T01:36:46Z'
+      section: Prohibited Activities
+      synthetic: false
+    evidence: official_quote
+  pass_conditions:
+  - kind: profit_target
+    rule_id: profit_target
+    description: $1,500 profit on the $25,000 starting balance ($26,500 closed balance), reviewed at market
+      close (4:59:59 PM ET); there is no minimum number of trading days, so the evaluation can pass in
+      one trading day.
+    amount_usd: '1500'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: promote_phase
+    require_flat: false
+    source:
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-evaluations/
+      quote: 25K 50K 100K 150K Profit Target $1,500 $3,000 $6,000 $9,000 Max Drawdown (EOD) $1,000 $2,000
+        $3,000 $4,000
+      snapshot_sha256: b66748ac193d77d668067c2177676f65f43eb7b8b684613311bdb7cb721cd829
+      retrieved_at: '2026-11-22T01:36:04Z'
+      section: Account Parameters table, Profit Target and Max Drawdown (EOD) rows
+      synthetic: false
+    evidence: official_quote
+  - kind: consistency
+    rule_id: consistency_eval
+    description: 'The rendered account-parameter tables say ''Consistency Not Applied'' to every evaluation,
+      while the store configuration of every 2026 evaluation product carries consistency_rule_percentage
+      30. Both sources are official, refer to the same firm, plan, size, phase, platform and retrieval
+      date, so it is a genuine conflict: the selected value is the more restrictive one, a 30% best-day
+      share that must hold for the phase to pass. The measure and the window are the payout consistency
+      rule''s (largest profitable day / total net profit, since inception because an evaluation has no
+      payout), so the two windows are the same and only `window` is declared. The alternative reading
+      is that the rule does not exist at all (`value: absent`), which is exactly what ''Consistency Not
+      Applied'' says, and it is the sensitivity scenario evaluation_consistency#0.'
+    max_day_share: '0.3'
+    measure: best_day_profit/total_profit
+    applies_to: pass
+    window: all_time
+    comparison: <=
+    action: promote_phase
+    source:
+      url: https://apextraderfunding.com/
+      quote: '"consistency_rule_percentage":30'
+      snapshot_sha256: 3545df973d7ecc638f674d009a85b351d8da0e32bd224882810617fe16f7be7d
+      retrieved_at: '2026-11-22T01:35:38Z'
+      section: productPickerV3Config, consistency_rule_percentage of every 2026 evaluation record
+      synthetic: false
+    evidence: conflict_resolution
+  max_calendar_days: null
+  max_trading_days: null
+  fees:
+  - kind: fee
+    rule_id: evaluation_fee
+    description: One-time evaluation fee, not a subscription and it does not renew; the package price
+      $4,450 is divided by the 5 accounts it buys, so this is the per-account cost. The price is published
+      in the site's product configuration, not as rendered text.
+    fee_kind: evaluation
+    amount_usd: '890.00'
+    when: at_start
+    comparison: '>='
+    action: charge
+    source:
+      url: https://apextraderfunding.com/
+      quote: '"price":4450,"pack_quantity":5'
+      snapshot_sha256: 3545df973d7ecc638f674d009a85b351d8da0e32bd224882810617fe16f7be7d
+      retrieved_at: '2026-11-22T01:35:38Z'
+      section: productPickerV3Config, id 3148 "25k Rithmic No Activation Fee EOD Trail - 5 Pack", price
+        / pack_quantity
+      synthetic: false
+    evidence: official_quote
+- phase_id: funded
+  kind: funded
+  starting_balance_usd: '25000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: eod_drawdown
+    description: The Performance Account keeps the $1,000 EOD drawdown, recalculated at 4:59:59 PM ET
+      from the closing balance, trailing the highest EOD balance and never moving down; touching the threshold
+      liquidates and permanently closes the PA. The threshold stops rising at $25,100 (starting balance
+      + $100), which happens once the highest EOD balance reaches $26,100.
+    amount_usd: '1000'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      at_balance_usd: '26100'
+      locked_threshold_usd: '25100'
+    source:
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-drawdown-explained/
+      quote: Once the EOD Threshold reaches Starting Balance + $100, it stops increasing.
+      snapshot_sha256: 4b1a18d8c402becb8835243b7f288050f586dcaa60d3b715506fa12811f8c22b
+      retrieved_at: '2026-11-22T01:36:03Z'
+      section: When EOD Drawdown Stops Trailing - Performance Accounts
+      synthetic: false
+    evidence: official_quote
+  - kind: daily_loss
+    rule_id: daily_loss_limit
+    description: 'Tier-based Daily Loss Limit: the amount is chosen at the start of each rule-day from
+      the tier the previous close''s balance falls in ($25,000 -> $500; $26,000 -> $500; $27,000 -> $1,250),
+      and it never drops below Level 1. Measured on total account equity including unrealized P&L; reaching
+      it liquidates and pauses trading for the rest of the session without closing the account; it resets
+      with the trading day at 6:00 PM ET.'
+    amount_by_balance_tier:
+    - min_balance_usd: '25000'
+      amount_usd: '500'
+    - min_balance_usd: '26000'
+      amount_usd: '500'
+    - min_balance_usd: '27000'
+      amount_usd: '1250'
+    reference: day_start_balance
+    basis: equity
+    evaluated: intraday
+    comparison: <=
+    action: soft_lock_until_reset
+    reset:
+      time: '18:00:00'
+      tz: America/New_York
+    source:
+      url: https://apextraderfunding.com/help-center/additional-helpful-items/daily-loss-limit-explained/
+      quote: $0 – $999 1 Contract $500 DLL Level 1 $1,000 – $1,999 2 Contracts $500 DLL Level 2 $2,000
+        & Up 2 Contracts $1,250 DLL Level 3
+      snapshot_sha256: 24548f42f5042c97c70063ceafb6b3460f947a83ab7576294b728565f4a4242d
+      retrieved_at: '2026-11-22T01:36:41Z'
+      section: Tier Levels by Account Size, $25K Performance Account
+      synthetic: false
+    evidence: official_quote
+  - kind: scaling_plan
+    rule_id: scaling_levels
+    description: 'Tier-based scaling chosen before each session from the previous close''s balance: profit
+      $0 -> 1 contract; profit $1,000 -> 2 contracts; profit $2,000 -> 2 contracts. An order that would
+      exceed the tier''s maximum exposure is automatically rejected rather than clipped, and a rejected
+      order is not a rule violation.'
+    steps:
+    - min_profit_usd: '0'
+      max_contracts: '1'
+    - min_profit_usd: '1000'
+      max_contracts: '2'
+    - min_profit_usd: '2000'
+      max_contracts: '2'
+    evaluated: eod
+    basis: balance
+    comparison: <=
+    action: reject
+    source:
+      url: https://apextraderfunding.com/help-center/additional-helpful-items/scaling-levels-pa-explained/
+      quote: Tier Levels are updated once per trading day before the trading session begins, and are based
+        on your ending account balance at market close (4:59:59 PM ET) of the prior full trading session.
+      snapshot_sha256: 384413b44ab91db82239544686edfd61760ea23a61547ceb18a4e73084eb0a4a
+      retrieved_at: '2026-11-22T01:36:42Z'
+      section: How Tier Levels Are Updated
+      synthetic: false
+    evidence: official_quote
+  - kind: consistency
+    rule_id: consistency_payout
+    description: 'Payout condition: no single profitable trading day may account for 50% or more of the
+      net profit earned since the last approved payout (since inception before the first one); if it does,
+      the payout option is unavailable until the share falls below 50%. The pages say ''less than 50%''
+      while the engine''s evaluator accepts a share equal to the limit, which differs only at exactly
+      50.000% (immaterial).'
+    max_day_share: '0.5'
+    measure: best_day_profit/total_profit
+    applies_to: payout
+    window: since_last_payout
+    comparison: <=
+    action: block_payout
+    source:
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-payouts/
+      quote: No single profitable trading day may account for 50% or more of total profit earned since
+        your last approved payout.
+      snapshot_sha256: 88b18494991d08a793b56c071c59a257da6c75438f530bdcc78a4a90ff61724c
+      retrieved_at: '2026-11-22T01:36:04Z'
+      section: 50% Consistency Requirement
+      synthetic: false
+    evidence: official_quote
+  - kind: payout
+    rule_id: payout
+    description: 'A payout needs 5 qualifying trading days of at least $100 net profit each (not consecutive,
+      and counted since the last approved payout, which is when the consistency and eligibility profit
+      measures restart), a balance above the Safety Net of $26,100 (drawdown + $100, modeled as a buffer
+      of $1,100 above the starting balance), at least $500 per request, a maximum of 6 payouts and a 100%
+      split. The per-request cap is a ladder by payout number: payout 1 $1,000, payout 2 $1,000, payout
+      3 $1,000, payout 4 $1,000, payout 5 $1,000, payout 6 $1,000; max_usd is the largest rung $1,000
+      because the ladder binds first.'
+    min_days_since_last: 0
+    min_profitable_days: 5
+    min_day_profit_usd: '100'
+    window: since_last_payout
+    buffer_usd: '1100'
+    split: '1.0'
+    min_usd: '500'
+    max_usd: '1000'
+    max_usd_by_payout:
+    - '1000'
+    - '1000'
+    - '1000'
+    - '1000'
+    - '1000'
+    - '1000'
+    max_payouts: 6
+    comparison: '>='
+    action: withdraw
+    threshold_after_payout: unchanged
+    source:
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-payouts/
+      quote: 25K 5 $100 $26,100 $26,600 6
+      snapshot_sha256: 88b18494991d08a793b56c071c59a257da6c75438f530bdcc78a4a90ff61724c
+      retrieved_at: '2026-11-22T01:36:04Z'
+      section: Payout Requirements table (Min Trade Days / Min Daily Profit / Safety Net / Min Balance
+        to Request / Max Payouts)
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: flat_before_session_end
+    description: 'Every position must be closed before the market close; a position still open when the
+      scheduled session is about to end is a prohibited activity (holding through the market close) that
+      forfeits the account, so the consequence is a fail rather than an automatic liquidation: Apex states
+      it does not flatten for you. The deadline is declared relative to the CME session''s scheduled close
+      (minutes_before_session_end: 1, because 4:59 PM ET is one minute before the 5:00 PM ET end of a
+      regular session), so a holiday early close moves it with the calendar instead of a guessed fixed
+      clock. The daily 5-6 PM ET maintenance break leaves no bar to trade before the 6:00 PM ET reopen,
+      so no reopen clock is declared (a session-relative close has no clock time zone to place one in).
+      A session the CME table cannot source is reported by the engine as a coverage gap, never treated
+      as a regular day.'
+    minutes_before_session_end: 1
+    comparison: '>='
+    action: fail
+    source:
+      url: https://apextraderfunding.com/help-center/getting-started/futures-trading-times/
+      quote: All trades must be closed before 4:59 PM ET. It is your responsibility to ensure that your
+        account is flat before 4:59 PM ET.
+      snapshot_sha256: 639a215e3dc30105ff3c783d0c4df1a6fab04783f3bc5d668ae9bb32f29d7aef
+      retrieved_at: '2026-11-22T01:39:28Z'
+      section: Trading Times
+      synthetic: false
+    evidence: official_quote
+  - kind: activity_requirement
+    rule_id: pa_activity_requirement
+    description: 'The PA must record at least 2 trading days with $50 or more of net profit within EVERY
+      rolling 30 calendar days; the system checks the most recent 30-day lookback each day and closes
+      the account, forfeiting payout eligibility, when the check fails. A qualifying day is one whose
+      trading session ends with at least $50 of net profit (a breakeven day does not count), and it is
+      assigned to the date its session ends. The engine tests every full rolling 30-calendar-day window
+      ending at a rule-day close, starting from the PA''s first day: a window is judged only once it is
+      full, and it is a close of the account before the pass conditions. Apex''s own phrasing (''the earlier
+      of your 2 most recent qualifying days'') is the same condition: that day falls outside the lookback
+      exactly when the count is short.'
+    days: 2
+    window: 30
+    unit: calendar_days
+    qualifies_if:
+      min_pnl_usd: '50'
+    observed: eod
+    comparison: '>='
+    action: close_account
+    source:
+      url: https://apextraderfunding.com/help-center/billing/inactivity-policy-on-performance-accounts-pa
+      quote: For Performance Accounts (PAs) to remain active, you must record at least 2 trading days
+        with $50 or more in net profit within every rolling 30-day period.
+      snapshot_sha256: 5b7d69544e047a3e851a95b02074d7ff3d2c896cfb34cc4a8153e5e3efbe5d44
+      retrieved_at: '2026-11-22T01:36:44Z'
+      section: Inactivity Policy
+      synthetic: false
+    evidence: official_quote
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
+not_modeled:
+- rule: sub_minute_holding_and_high_frequency_trading
+  description: Material. Apex prohibits exploitation of the simulation environment including high frequency
+    trading, and its high-risk-strategy rule targets tick-sized targets. The simulator reads OHLC bars,
+    so a holding time shorter than the bar or a micro-scalping pattern cannot be detected or enforced;
+    a sub-minute rule can fail an account the bar model keeps.
+  materiality: material
+  source:
+    url: https://apextraderfunding.com/help-center/getting-started/prohibited-activities
+    quote: 'Manipulation of the simulated trading environment: Apex Trader Funding strictly prohibits
+      manipulation or exploitation of the simulation environment in any way, including High Frequency
+      Trading (HFT) or any other exploitative strategies.'
+    snapshot_sha256: 494fd6da079ceaec93f14a5f8ea97299fb7cd9b212bf6fc5e62f00ba6d170c9c
+    retrieved_at: '2026-11-22T01:36:46Z'
+    section: Prohibited Activities
+    synthetic: false
+- rule: within_account_hedging_of_correlated_instruments
+  description: Material. Holding long and short positions simultaneously on the same or a correlated instrument
+    is prohibited and closes the account. A single simulated account holds one net position per instrument,
+    so it cannot hold both sides of the same root, but a long NQ against a short ES is representable and
+    the engine has no correlated-instrument logic.
+  materiality: material
+  source:
+    url: https://apextraderfunding.com/help-center/getting-started/prohibited-activities
+    quote: No Hedging of Any Kind – Directional Trading only . Holding both long and short positions simultaneously
+      on the same or correlated instrument is strictly prohibited.
+    snapshot_sha256: 494fd6da079ceaec93f14a5f8ea97299fb7cd9b212bf6fc5e62f00ba6d170c9c
+    retrieved_at: '2026-11-22T01:36:46Z'
+    section: Prohibited Activities
+    synthetic: false
+- rule: news_trading_restriction_is_discretionary
+  description: Material. Apex allows news trading for a normal strategy but prohibits news strategies
+    that chase the market or place orders on both sides to gamble the outcome. The page names no event
+    type (no FOMC, CPI or NFP), no restricted instrument, no pre- or post-window and no scope, so there
+    is nothing to model as a news_restriction; it is judged by Apex, not by a calendar window.
+  materiality: material
+  source:
+    url: https://apextraderfunding.com/help-center/getting-started/prohibited-activities
+    quote: 'NEWS TRADING: Trading during news is allowed for your normal trading strategy. Using “news
+      trading” strategies that “chase the market” or place orders on both sides but to be lucky or gamble
+      the outcome of news is not allowed.'
+    snapshot_sha256: 494fd6da079ceaec93f14a5f8ea97299fb7cd9b212bf6fc5e62f00ba6d170c9c
+    retrieved_at: '2026-11-22T01:36:46Z'
+    section: Prohibited Activities
+    synthetic: false
+- rule: hedging_between_evaluation_accounts
+  description: Immaterial. Evaluations may not be passed by hedging one account against another; a single
+    simulated account cannot express a cross-account hedge.
+  materiality: immaterial
+  source:
+    url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-evaluations/
+    quote: You may not pass Evaluation Accounts by hedging them against each other.
+    snapshot_sha256: b66748ac193d77d668067c2177676f65f43eb7b8b684613311bdb7cb721cd829
+    retrieved_at: '2026-11-22T01:36:04Z'
+    section: Trading Rules, 2. No Prohibited Trading Activity
+    synthetic: false
+- rule: evaluation_daily_profit_percent_field
+  description: Immaterial, declared so it is not silently ignored. The product record also carries max_eval_daily_profit_percent
+    = 30, the same number as its consistency_rule_percentage; no rendered page explains the field, and
+    it is most likely the same 30% consistency expressed a second time, so it is not modeled separately
+    (doing so would double count it).
+  materiality: immaterial
+  source:
+    url: https://apextraderfunding.com/
+    quote: '"max_eval_daily_profit_percent":30'
+    snapshot_sha256: 3545df973d7ecc638f674d009a85b351d8da0e32bd224882810617fe16f7be7d
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: productPickerV3Config, id 3048 "25k Rithmic No Activation Fee EOD Trail", max_eval_daily_profit_percent
+    synthetic: false
+- rule: five_pack_is_five_separate_accounts
+  description: Immaterial for one account's trading outcome. The pack buys five identical accounts at
+    one price; this ruleset models a single account at one fifth of the pack price, so a bundle purchase
+    in which fewer than five accounts are ever funded has a different net cash.
+  materiality: immaterial
+  source:
+    url: https://apextraderfunding.com/
+    quote: '"price":4450,"pack_quantity":5'
+    snapshot_sha256: 3545df973d7ecc638f674d009a85b351d8da0e32bd224882810617fe16f7be7d
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: productPickerV3Config, id 3148 "25k Rithmic No Activation Fee EOD Trail - 5 Pack", price
+      / pack_quantity
+    synthetic: false
+- rule: activation_fee_waiver
+  description: Immaterial. This purchase path waives the PA activation fee (the store configuration marks
+    it free_activation), so the activation fee rule is omitted. No rendered page states the waived amount
+    for this variant.
+  materiality: immaterial
+  source:
+    url: https://apextraderfunding.com/
+    quote: '"free_activation":true'
+    snapshot_sha256: 3545df973d7ecc638f674d009a85b351d8da0e32bd224882810617fe16f7be7d
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: productPickerV3Config, id 3048 "25k Rithmic No Activation Fee EOD Trail", free_activation
+    synthetic: false

@@ -1,0 +1,714 @@
+# MyFundedFutures / Rapid EOD / $50,000 - schema version 2,
+# migrated from the v1 drafts against the saved official pages (ADR-0107 sections 7-13).
+# verification.status is unverified: only the owner confirms a ruleset (ADR-0106).
+# Every value carries its official URL, the verbatim quotation and the snapshot hash, or is
+# a named assumption / a not_modeled entry; the sourcing notes live in RESEARCH.md.
+schema_version: 2
+ruleset_id: mffu-rapideod-50k
+version: 1
+firm: MyFundedFutures
+program: Rapid EOD
+account_size_usd: '50000'
+platform: NinjaTrader, Hyperprop, Tradovate, TradingView, Quantower, Volumetrica, ATAS, DeepChart
+addons: []
+jurisdiction: null
+as_of: '2026-11-22'
+effective_from: '2026-11-22'
+effective_to: null
+instruments:
+- root: ES
+  contract_weight: '1'
+- root: NQ
+  contract_weight: '1'
+- root: YM
+  contract_weight: '1'
+- root: RTY
+  contract_weight: '1'
+- root: NKD
+  contract_weight: '1'
+- root: MES
+  contract_weight: '0.1'
+- root: MNQ
+  contract_weight: '0.1'
+- root: MYM
+  contract_weight: '0.1'
+- root: M2K
+  contract_weight: '0.1'
+reset:
+  time: '18:00:00'
+  tz: America/New_York
+commissions:
+  status: known
+  # The firm publishes no commission-only figure and splits nothing out: its instrument list's
+  # "Total Cost Round Trip" column is the whole cost of one round trip and the list's own subtitle
+  # says it "Includes Contract Specifications, Commissions, and Trading Fees", so the per-side
+  # number below is all-in and no exchange or NFA fee may be added on top of it (ADR-0107 s10).
+  includes_exchange_and_regulatory_fees: true
+  per_side_usd:
+    ES: '2.34'
+    NQ: '2.34'
+    YM: '2.88'
+    RTY: '2.34'
+    NKD: '3.11'
+    MES: '0.95'
+    MNQ: '0.95'
+    MYM: '0.95'
+    M2K: '0.95'
+  platform: null
+  source:
+    url: https://help.myfundedfutures.com/en/articles/9735811-futures-instrument-list
+    quote: 'E-mini NASDAQ 100 NQ Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.25 $5
+      $4.68 E-mini Russell 2000 RTY Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.10
+      $5.00 $4.68 E-mini S&P 500 ES Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.25
+      $12.50 $4.68 Euro FX 6E Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.00005 $6.25
+      $5.12 Japanese Yen 6J Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.0000005 $6.25
+      $5.12 Lean Hog HE Monday - Friday 08:30 - 13:05 CT 0.00025 $10.00 $6.12 Live Cattle LE Monday -
+      Friday 08:30 - 13:05 CT 0.00025 $10.00 $6.12 Micro AUD/USD M6A Sunday - Friday 17:00 - 16:00 CT
+      Daily Break: 16:00 - 17:00 CT 0.0001 $1.00 $1.44 Micro Bitcoin MBT Sunday - Friday 17:00 - 16:00
+      CT Daily Break: 16:00 - 17:00 CT 5.00 $0.50 $3.50 Micro E-mini Nasdaq-100 MNQ Sunday - Friday 17:00
+      - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.25 $0.50 $1.90 Micro E-mini Russell 2000 M2K Sunday -
+      Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.10 $0.50 $1.90 Micro E-mini S&P 500 MES
+      Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.25 $1.25 $1.90 Micro EUR/USD M6E
+      Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.0001 $1.25 $1.44 Micro Ethereum
+      MET Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.50 $0.05 $1.16 New Zealand
+      Dollar 6N Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.00005 $5.00 $5.12 Nikkei/USD
+      NKD Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 5.00 $25.00 $6.22 Swiss Franc
+      6S Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.00005 $6.25 $5.12 COMEX Instrument
+      Name Code Trading Hours Tick Size Tick Value Total Cost Round Trip Copper HG Sunday - Friday 17:00
+      - 16:00 CT Daily Break: 16:00 - 17:00 CT 0.0005 $12.50 $5.12 Gold GC Sunday - Friday 17:00 - 16:00
+      CT Daily Break: 16:00 - 17:00 CT 0.10 $10.00 $5.12 Micro Gold MGC Sunday - Friday 17:00 - 16:00
+      CT Daily Break: 16:00 - 17:00 CT 0.10 $1.00 $2.20 Platinum PL Sunday - Friday 17:00 - 16:00 CT Daily
+      Break: 16:00 - 17:00 CT 0.10 $10.00 $4.12 Silver SI Sunday - Friday 17:00 - 16:00 CT Daily Break:
+      16:00 - 17:00 CT 0.005 $25.00 $5.12 Micro Silver SIL Sunday - Friday 17:00 - 16:00 CT Daily Break:
+      16:00 - 17:00 CT 0.005 $5.00 $2.84 CBOT Instrument Name Code Trading Hours Tick Size Tick Value
+      Total Cost Round Trip Corn ZC Sunday - Friday 19:00 - 07:45 CT Monday - Friday 08:30 - 13:20 CT
+      0.0025 $12.50 $6.12 E-mini Dow Jones YM Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00
+      CT 1.00 $5.00 $5.76 Micro E-mini dow Jones MYM Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00
+      - 17:00 CT 1.00 $0.50 $1.90'
+    snapshot_sha256: 61a15116c3e36c1daead0587c59d2a558f34a74f42172f40728eac85aae60901
+    retrieved_at: '2026-11-22T01:59:33Z'
+    section: 'Futures Instrument List, Total Cost Round Trip column: ES/NQ/RTY $4.68, YM $5.76, NKD $6.22,
+      MES/MNQ/MYM/M2K $1.90 per contract for one round trip. Per side = that figure / 2. The column is
+      the firm''s all-in cost (commission plus exchange and NFA fees), which is why
+      commissions.includes_exchange_and_regulatory_fees is true: the list''s subtitle reads "Includes
+      Contract Specifications, Commissions, and Trading Fees" and no MFFU page publishes a
+      commission-only number; MFFU publishes no platform-specific schedule either, so the all-in cost
+      is what a round trip costs and it is the same on every platform.'
+    synthetic: false
+conflicts: []
+verification:
+  status: unverified
+phases:
+- phase_id: evaluation
+  kind: evaluation
+  starting_balance_usd: '50000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: eval_eod_trailing_drawdown
+    description: '$2000 trailing drawdown with an end-of-day mark: the page names the EOD model, so the
+      threshold trails the highest closing balance and never moves down, while it is tested continuously
+      against equity because the firm''s EOD drawdown article states that open equity losses are taken
+      into consideration. It locks at $100 above the starting balance.'
+    amount_usd: '2000'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      at_offset_usd: '2100'
+      locked_offset_usd: '100'
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16158363-rapid-eod-50k-a-comprehensive-look
+      quote: Rapid EOD Plan Evaluation Stage Account Parameters Parameters Rapid EOD - $50,000 Profit
+        Target $3,000 Maximum Loss Limit (EOD) $2,000 Daily Loss Limit None Max Contract 3 mini / 30 micro
+        Consistency 30% (Eval Only) Minimum Trading Days 4 Days
+      snapshot_sha256: 15a07710881f58bb6bc2ebf3057ca9e516ce26286c3203bce7e7e8b622e521f6
+      retrieved_at: '2026-11-22T01:55:14Z'
+      section: Rapid EOD Plan Evaluation Stage Account Parameters
+      synthetic: false
+    evidence: official_quote
+  - kind: max_contracts
+    rule_id: eval_max_contracts
+    description: 3 minis or 30 micros in total, weighted 1 per mini and 0.1 per micro; a larger target
+      is clipped.
+    limit: '3'
+    comparison: <=
+    action: clip
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16158363-rapid-eod-50k-a-comprehensive-look
+      quote: Rapid EOD Plan Evaluation Stage Account Parameters Parameters Rapid EOD - $50,000 Profit
+        Target $3,000 Maximum Loss Limit (EOD) $2,000 Daily Loss Limit None Max Contract 3 mini / 30 micro
+        Consistency 30% (Eval Only) Minimum Trading Days 4 Days
+      snapshot_sha256: 15a07710881f58bb6bc2ebf3057ca9e516ce26286c3203bce7e7e8b622e521f6
+      retrieved_at: '2026-11-22T01:55:14Z'
+      section: Rapid EOD Plan Evaluation Stage Account Parameters
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: eval_flat_by_ny_close
+    description: Every position is closed 50 minutes before the scheduled session close. The firm states
+      its trading day as the 6:00 PM EST Globex open to "the New York session closes at 4:10 PM EST" and
+      the CME session this engine reads closes at 5:00 PM ET, so 4:10 PM ET is 50 minutes before the
+      session end. Declared session-relative so the clock moves with the calendar, so on a half day whose
+      close is 13:15 ET the flat is 12:25 ET instead of a 4:10 PM clock that the session has already
+      passed. The page writes EST; modeled as US Eastern time (DST included).
+    minutes_before_session_end: 50
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
+      quote: Trades may be placed beginning at 6:00 PM EST when the Globex session opens and can remain
+        open until the New York session closes at 4:10 PM EST.
+      snapshot_sha256: 7a945cf52a94820af413c95e6fcdb381fe51b4e8039bae4f7d46e63bc13e2b98
+      retrieved_at: '2026-11-22T01:38:12Z'
+      section: Permitted Times to Trade
+      synthetic: false
+    evidence: official_quote
+  - kind: inactivity
+    rule_id: eval_inactivity_7_calendar_days
+    description: An account with no trade for 7 consecutive calendar days may be closed, and on a Sim
+      Funded account the breach forfeits all profits. Counted in calendar days in a rolling window from
+      the last trading day.
+    max_gap: 7
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>='
+    action: fail
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16596524-inactivity-rule-one-time-payment-model
+      quote: If a trader does not place a trade for 7 consecutive calendar days , the account could be
+        closed. This includes simulated funded accounts.
+      snapshot_sha256: c6d23e74eb62033bfdd8cd6508458aac8b5c9a8ae771e27318fdb6e881f91598
+      retrieved_at: '2026-11-22T01:38:13Z'
+      section: Inactivity Rule Changes (Effective August 25th)
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_high_frequency_trading
+    description: 'Material. High-frequency trading is prohibited outright. It is not decidable from OHLC
+      bars, so it never touches the mechanical account: it is recorded as a conduct restriction that a
+      real submission of this strategy would have to survive.'
+    restriction: High-frequency trading is not allowed
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+      quote: High-frequency Trading is not allowed on our plans.
+      snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+      retrieved_at: '2026-11-22T01:36:50Z'
+      section: 'Section 1: Automated Trading Protocols'
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_automation_must_not_exploit_simulated_fills
+    description: Material. Automated trading is PERMITTED at MFFU (unlike Apex), but only for the trader's
+      own settings and never to exploit the favourable fills of the simulated environment. Because automation
+      is allowed and this restriction is not critical, an automated attempt stays practically eligible;
+      the rule records what a real submission must not do.
+    restriction: Automated strategies are allowed only where they do not aim to exploit the favourable
+      fills offered in the simulated environment
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+      quote: Traders may make use of automated trading strategies tailored to their own specific settings
+        so long as these automated tools do not aim to exploit the favorable fills offered in the Simulated
+        Environment.
+      snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+      retrieved_at: '2026-11-22T01:36:50Z'
+      section: 'Section 1: Automated Trading Protocols'
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_fill_or_quote_exploitation
+    description: Material. Order stacking at one price to manipulate fills, harvesting isolated stale
+      or unrealistic fills in illiquid or back-month contracts, and exploiting the absence of slippage
+      with tight brackets are prohibited. None of them is decidable from bar data; the simulator's own
+      pessimistic fills are the engine's answer to the fill-exploitation items.
+    restriction: Manipulating fills (stacked limit orders, stale or illiquid fills, slippage and bracket
+      exploitation) is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+      quote: Profiting from isolated, stale or unrealistic fills in low-liquidity contracts (including
+        back-month contracts) or during low-volume hours is not allowed, regardless of how long the position
+        is held.
+      snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+      retrieved_at: '2026-11-22T01:36:50Z'
+      section: 'Section 2: Order Management and Market Conduct'
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_copy_trading_or_account_sharing
+    description: Material. Copy trading between traders, using another trader's device and collaborating
+      across unconnected accounts to run identical or opposite strategies are prohibited. A single simulated
+      attempt is one trader on one account, so this cannot change its mechanics; it decides practical
+      eligibility for a submission that is a copy of someone else's trades.
+    restriction: Copy trading another trader, sharing a device or collaborating across unconnected accounts
+      is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+      quote: Traders are not permitted to copy trade one another by entering, exiting or cancelling trade
+        positions.
+      snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+      retrieved_at: '2026-11-22T01:36:50Z'
+      section: 'Section 4: Device Sharing & Copy-Trading other Traders'
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: compliance_no_hedging
+    description: 'Material. Hedging is prohibited: holding buy and sell exposure on the same underlying
+      at the same time (a mini against its own micro counts). The simulator keeps one net position per
+      root, so a same-root hedge cannot be represented and the ban does not change a simulated outcome;
+      the cross-account half of the CME Rule 534 ban is declared in not_modeled.'
+    restriction: Hedging of any kind is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/12011241-hedging-what-you-should-know
+      quote: MyFunded Futures prohibits hedging of any kind.
+      snapshot_sha256: 671a46f7f3849afe15ae3a98179acb2234a804da88b0838a1225c6fb6d851139
+      retrieved_at: '2026-11-22T01:38:58Z'
+      section: Hedging - What You Should Know
+      synthetic: false
+    evidence: official_quote
+  pass_conditions:
+  - kind: profit_target
+    rule_id: profit_target
+    description: Profit target of $3000 on the phase's starting balance. No MFFU page states when the
+      target is judged, so it is tested at the rule-day close on the closed balance (the assumption unspecified_target_frequency_is_eod,
+      the stricter reading).
+    amount_usd: '3000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: promote_phase
+    require_flat: false
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16158363-rapid-eod-50k-a-comprehensive-look
+      quote: Rapid EOD Plan Evaluation Stage Account Parameters Parameters Rapid EOD - $50,000 Profit
+        Target $3,000 Maximum Loss Limit (EOD) $2,000 Daily Loss Limit None Max Contract 3 mini / 30 micro
+        Consistency 30% (Eval Only) Minimum Trading Days 4 Days
+      snapshot_sha256: 15a07710881f58bb6bc2ebf3057ca9e516ce26286c3203bce7e7e8b622e521f6
+      retrieved_at: '2026-11-22T01:55:14Z'
+      section: Rapid EOD Plan Evaluation Stage Account Parameters
+      synthetic: false
+    evidence: assumption
+    assumption:
+      name: unspecified_target_frequency_is_eod
+      rationale: 'No MFFU page states when the profit target is judged. Recorded default for a pass condition
+        whose frequency the firm does not state: tested at the rule-day close on the closed balance, so
+        the trader passes no earlier than the end of the trade date and a same-day breach after the target
+        was touched still counts. The intraday alternative would pass the phase the moment equity touched
+        the target and would hide that later breach.'
+  - kind: min_trading_days
+    rule_id: min_trading_days
+    description: At least 4 trading days before the phase can pass. No page defines a trading day, so
+      it is a trade date with at least one executed trade (the assumption trading_day_is_a_trade_date_with_at_least_one_trade);
+      a rule-day with no fill does not count.
+    days: 4
+    unit: trading_days
+    day_counts_if:
+      min_trades: 1
+    comparison: '>='
+    action: promote_phase
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16158363-rapid-eod-50k-a-comprehensive-look
+      quote: Rapid EOD Plan Evaluation Stage Account Parameters Parameters Rapid EOD - $50,000 Profit
+        Target $3,000 Maximum Loss Limit (EOD) $2,000 Daily Loss Limit None Max Contract 3 mini / 30 micro
+        Consistency 30% (Eval Only) Minimum Trading Days 4 Days
+      snapshot_sha256: 15a07710881f58bb6bc2ebf3057ca9e516ce26286c3203bce7e7e8b622e521f6
+      retrieved_at: '2026-11-22T01:55:14Z'
+      section: Rapid EOD Plan Evaluation Stage Account Parameters
+      synthetic: false
+    evidence: assumption
+    assumption:
+      name: trading_day_is_a_trade_date_with_at_least_one_trade
+      rationale: 'No MFFU page defines a trading day. ADR-0107 section 7 default: a trading day is a trade
+        date with at least one executed trade, so a rule-day with no fill does not count toward the minimum.'
+  - kind: consistency
+    rule_id: eval_consistency
+    description: 'The best single day''s profit may be at most 0.3 of the total profit: a best_day_profit/total_profit
+      measure. Applied to the phase pass, over the whole evaluation (which has no payout, so all_time
+      is the only window).'
+    max_day_share: '0.3'
+    measure: best_day_profit/total_profit
+    applies_to: pass
+    window: all_time
+    comparison: <=
+    action: promote_phase
+    source:
+      url: https://help.myfundedfutures.com/en/articles/11994562-consistency-rule-at-my-fundedfutures
+      quote: The consistency rule at MyFundedFutures is 30% on our Rapid EOD plans and 50% for Rapid Intraday
+        and Pro plans.
+      snapshot_sha256: 50d6e06b972c6766aeb0814d41e488c30c6fca6132b49957bf8a4ee48eca6d40
+      retrieved_at: '2026-11-22T01:35:59Z'
+      section: Consistency Rule at My Funded Futures
+      synthetic: false
+    evidence: official_quote
+  max_calendar_days: null
+  max_trading_days: null
+  fees:
+  - kind: fee
+    rule_id: evaluation_fee
+    description: One-time evaluation fee of $275.00, not a subscription. The amount is the list price
+      in the site's product configuration or the plan page; a coupon code is a campaign and never a product
+      value.
+    fee_kind: evaluation
+    amount_usd: '275.00'
+    when: at_start
+    comparison: '>='
+    action: charge
+    source:
+      url: https://myfundedfutures.com/plans/rapid-eod
+      quote: '"name":"My Funded Futures Rapid EOD Plan 50,000 Account","price":"275.00"'
+      snapshot_sha256: 4461f54888ee4a59bd1e9fbafed780412531d2b77fb3709e12c30451bbb0173b
+      retrieved_at: '2026-11-22T01:55:05Z'
+      section: Rapid EOD plan page, product price
+      synthetic: false
+    evidence: official_quote
+  - kind: fee
+    rule_id: activation_fee
+    description: 'Zero activation fee: the firm states every plan carries none, so the funded stage starts
+      at no cost.'
+    fee_kind: activation
+    amount_usd: '0'
+    when: at_start
+    comparison: '>='
+    action: charge
+    source:
+      url: https://help.myfundedfutures.com/en/articles/12398151-does-myfundedfutures-charge-activation-fees
+      quote: all MFFU plans, regardless of account size, come with $0 activation fee.
+      snapshot_sha256: 7fa012bd73c93736c5440c3fe57720d168dc8efb8a07c7c698f9e03e82ca1263
+      retrieved_at: '2026-11-22T01:36:54Z'
+      section: Does MyFundedFutures charge activation fees
+      synthetic: false
+    evidence: official_quote
+- phase_id: funded
+  kind: funded
+  starting_balance_usd: '0'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: funded_eod_trailing_drawdown
+    description: '$2,000 end-of-day trailing drawdown on the Sim Funded account: the threshold trails
+      the new end-of-day high and moves only at the close ("It does not move intraday"), is tested continuously
+      on equity because the firm counts open equity losses, and locks at $100 above the starting balance.
+      A balance below the locked threshold breaches the account.'
+    amount_usd: '2000'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      at_offset_usd: '2100'
+      locked_offset_usd: '100'
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16158363-rapid-eod-50k-a-comprehensive-look
+      quote: Rapid EOD Plan Sim Funded Stage Account Parameters Parameters Rapid EOD - $50,000 Initial
+        Balance $0 Maximum Drawdown (MLL) $2,000 Drawdown Type End-of-Day (EOD) Trailing Daily Loss Limit
+        None Max Contract 3 mini / 30 micro T1 News Trading No
+      snapshot_sha256: 15a07710881f58bb6bc2ebf3057ca9e516ce26286c3203bce7e7e8b622e521f6
+      retrieved_at: '2026-11-22T01:55:14Z'
+      section: Rapid EOD Plan Sim Funded Stage Account Parameters
+      synthetic: false
+    evidence: official_quote
+  - kind: max_contracts
+    rule_id: funded_max_contracts
+    description: 3 minis or 30 micros in total, weighted 1 per mini and 0.1 per micro; a larger target
+      is clipped.
+    limit: '3'
+    comparison: <=
+    action: clip
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16158363-rapid-eod-50k-a-comprehensive-look
+      quote: Rapid EOD Plan Sim Funded Stage Account Parameters Parameters Rapid EOD - $50,000 Initial
+        Balance $0 Maximum Drawdown (MLL) $2,000 Drawdown Type End-of-Day (EOD) Trailing Daily Loss Limit
+        None Max Contract 3 mini / 30 micro T1 News Trading No
+      snapshot_sha256: 15a07710881f58bb6bc2ebf3057ca9e516ce26286c3203bce7e7e8b622e521f6
+      retrieved_at: '2026-11-22T01:55:14Z'
+      section: Rapid EOD Plan Sim Funded Stage Account Parameters
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: funded_flat_by_ny_close
+    description: Every position is closed 50 minutes before the scheduled session close. The firm states
+      its trading day as the 6:00 PM EST Globex open to "the New York session closes at 4:10 PM EST" and
+      the CME session this engine reads closes at 5:00 PM ET, so 4:10 PM ET is 50 minutes before the
+      session end. Declared session-relative so the clock moves with the calendar, so on a half day whose
+      close is 13:15 ET the flat is 12:25 ET instead of a 4:10 PM clock that the session has already
+      passed. The page writes EST; modeled as US Eastern time (DST included).
+    minutes_before_session_end: 50
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
+      quote: Trades may be placed beginning at 6:00 PM EST when the Globex session opens and can remain
+        open until the New York session closes at 4:10 PM EST.
+      snapshot_sha256: 7a945cf52a94820af413c95e6fcdb381fe51b4e8039bae4f7d46e63bc13e2b98
+      retrieved_at: '2026-11-22T01:38:12Z'
+      section: Permitted Times to Trade
+      synthetic: false
+    evidence: official_quote
+  - kind: inactivity
+    rule_id: funded_inactivity_7_calendar_days
+    description: An account with no trade for 7 consecutive calendar days may be closed, and on a Sim
+      Funded account the breach forfeits all profits. Counted in calendar days in a rolling window from
+      the last trading day.
+    max_gap: 7
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>='
+    action: fail
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16596524-inactivity-rule-one-time-payment-model
+      quote: If a trader does not place a trade for 7 consecutive calendar days , the account could be
+        closed. This includes simulated funded accounts.
+      snapshot_sha256: c6d23e74eb62033bfdd8cd6508458aac8b5c9a8ae771e27318fdb6e881f91598
+      retrieved_at: '2026-11-22T01:38:13Z'
+      section: Inactivity Rule Changes (Effective August 25th)
+      synthetic: false
+    evidence: official_quote
+  - kind: daily_profit_cap
+    rule_id: funded_daily_profit_cap_10000
+    description: A single trading session that produces $10,000 in net profit triggers an automatic transition
+      to a live account and "any profit exceeding $10,000 for that trading day is forfeited". Modeled
+      as a $10,000 per-rule-day cap whose excess is forfeited; the transition itself (the sim stage ending)
+      is declared in not_modeled because no rule kind ends a phase on a milestone.
+    amount_usd: '10000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: forfeit_excess
+    source:
+      url: https://help.myfundedfutures.com/en/articles/13134718-understanding-rapid-live
+      quote: Automatic Live transition occurs when you generate $10,000 in net profit within a single
+        trading session. Upon meeting this criterion, immediate transition to Live account status is initiated,
+        and any profit exceeding $10,000 for that trading day is forfeited.
+      snapshot_sha256: cef8f971f85772d14fdffd25f505f3a79d4e0b620b4d60b7b3c332b230e1ef2b
+      retrieved_at: '2026-11-22T01:38:58Z'
+      section: 2. Live Account Transition Criteria
+      synthetic: false
+    evidence: official_quote
+  - kind: news_restriction
+    rule_id: funded_t1_news_blackout
+    description: 'Tier 1 news blackout on the Rapid EOD Sim Funded account: no position or order may be
+      open from 2 minutes before to 2 minutes after a Tier 1 release, so every position is flattened at
+      least two minutes before it and entries are blocked for the window. The policy names the restricted
+      accounts ("Trading on T1 News events is prohibited for the following: Rapid Sim Funded Pro Sim Funded")
+      and every plan page repeats it ("T1 News Trading No"); evaluations and Builder plans are exempt.
+      All four T1 event types the firm names (FOMC Meetings = FOMC_STATEMENT, FOMC_MINUTES,
+      the Employment Report = NFP, CPI) are in the economic calendar, so all four are enforced; the
+      energy and agricultural windows are declared in not_modeled because this instrument set cannot
+      trade them.'
+    event_types:
+    - FOMC_STATEMENT
+    - FOMC_MINUTES
+    - CPI
+    - NFP
+    pre_minutes: 2
+    post_minutes: 2
+    scope: all_trading
+    flatten: before_window
+    effect: block
+    comparison: '>='
+    action: flatten_and_block
+    source:
+      url: https://help.myfundedfutures.com/en/articles/8230009-news-trading-policy
+      quote: No positions or orders (including limit orders) can be open 2 minutes before and after the
+        release.
+      snapshot_sha256: 661236c1900074748970098a9bf681db14d0e5dc4e31119a6e54ca32f091ee4c
+      retrieved_at: '2026-11-22T01:36:49Z'
+      section: 'Tier 1 Data: Special Considerations'
+      synthetic: false
+    evidence: official_quote
+  - kind: payout
+    rule_id: payout
+    description: Daily payouts with no per-cycle ceiling ("There is no cap on how much you can request
+      per payout cycle"). The buffer is the realized profit the firm requires before the first payout
+      ($2,100), so withdrawable = balance - buffer; after the buffer clears each further payout unlocks
+      once net profit since the last payout reaches $500 (min_profit_since_last_usd, window since_last_payout).
+      Minimum request $500, 90/10 split, first payout available 24 hours after the first trade, at most
+      one payout per rule-day.
+    min_days_since_last: 1
+    min_profitable_days: 0
+    min_traded_days: 0
+    min_day_profit_usd: '0'
+    window: since_last_payout
+    buffer_usd: '2100'
+    split: '0.9'
+    min_usd: '500'
+    max_usd: unlimited
+    max_payouts: null
+    min_profit_since_last_usd: '500'
+    first_payout_after_calendar_days: 1
+    threshold_after_payout: unchanged
+    source:
+      url: https://help.myfundedfutures.com/en/articles/16158363-rapid-eod-50k-a-comprehensive-look
+      quote: 'Timing & frequency Payout Frequency: Daily There is no cap on how much you can request per
+        payout cycle. Amounts & split Minimum Payout Request: $500 Profit Split: 90% to the trader 10%
+        to MyFundedFutures'
+      snapshot_sha256: 15a07710881f58bb6bc2ebf3057ca9e516ce26286c3203bce7e7e8b622e521f6
+      retrieved_at: '2026-11-22T01:55:14Z'
+      section: 2. Payouts on Sim Funded (Rapid EOD)
+      synthetic: false
+    evidence: official_quote
+    comparison: '>='
+    action: withdraw
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
+not_modeled:
+- rule: sub_minute_holding_and_micro_scalping
+  description: 'Material. MFFU prohibits high-frequency trading and any exploitation of the simulated
+    fill engine, which targets holdings shorter than a bar. The simulator reads OHLC bars, so a holding
+    time below the bar cannot be measured and a micro-scalping pattern is invisible: the model can keep
+    an account whose real holding-time would be refused, and it cannot fail a sub-minute rule the firm
+    would enforce.'
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/8444599-fair-play-and-prohibited-trading-practices
+    quote: High-frequency Trading is not allowed on our plans.
+    snapshot_sha256: 29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9
+    retrieved_at: '2026-11-22T01:36:50Z'
+    section: 'Section 1: Automated Trading Protocols'
+    synthetic: false
+- rule: price_limit_2pct_prohibition
+  description: Material. Trading is prohibited while a product trades within 2% of its CME price limit,
+    on Sim Funded and Live accounts (the firm says equity index price limits are suspended for it in that
+    band). The ruleset holds no price-limit bands, so a bar in a limit move stays tradable here and a
+    strategy that trades a limit day would differ.
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/9698984-2-price-limit-rule
+    quote: we enforce strict guidelines to prevent trading when a product is within 2% of a CME price
+      limit .
+    snapshot_sha256: 57a9706131ad161e9d151fbf10dd2012292d1c64960349dbb742e60593363370
+    retrieved_at: '2026-11-22T01:40:10Z'
+    section: 2% Price Limit Rule
+    synthetic: false
+- rule: cross_account_hedging
+  description: Immaterial. The firm's hedging ban extends to the CME Rule 534 guideline against hedging
+    across accounts. One simulated attempt is one account, so a cross-account hedge cannot exist inside
+    it and the ban cannot change a simulated outcome.
+  materiality: immaterial
+  source:
+    url: https://help.myfundedfutures.com/en/articles/12011241-hedging-what-you-should-know
+    quote: 'Note: All traders must abide by the CME guidelines on hedging.'
+    snapshot_sha256: 671a46f7f3849afe15ae3a98179acb2234a804da88b0838a1225c6fb6d851139
+    retrieved_at: '2026-11-22T01:38:58Z'
+    section: Hedging - What You Should Know
+    synthetic: false
+- rule: holiday_early_close_is_the_traders_job
+  description: Material. The flat clock now follows the CME calendar's own early close, but the firm does
+    not liquidate anyone at the half-day close - the trader is responsible for being flat and holding past
+    it breaches the account - while flat_by liquidates for the trader. So where a real account that held
+    into a half-day close would be breached, this model closes the position 50 minutes before it and the
+    attempt can survive.
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
+    quote: During holiday trading hours, auto-liquidation will not occur at the half-time market close,
+      and the trader is responsible for closing the positions.
+    snapshot_sha256: 7a945cf52a94820af413c95e6fcdb381fe51b4e8039bae4f7d46e63bc13e2b98
+    retrieved_at: '2026-11-22T01:38:12Z'
+    section: Permitted Times to Trade
+    synthetic: false
+- rule: discretionary_news_trading_practices
+  description: 'Material. Beyond the Tier 1 windows, the firm prohibits news strategies as such: straddles
+    or strangles around an immediate news burst, and masking a news trade as a standard strategy, "for
+    all news releases" on every account. That is a judgement about intent and cannot be decided from OHLC
+    bars or from a calendar window, so it is declared here and never enforced mechanically.'
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/8230009-news-trading-policy
+    quote: Utilizing strategies that exploit immediate news bursts, such as straddles or strangles. Masking
+      news trades as standard strategies. These prohibitions are in effect for all news releases.
+    snapshot_sha256: 661236c1900074748970098a9bf681db14d0e5dc4e31119a6e54ca32f091ee4c
+    retrieved_at: '2026-11-22T01:36:49Z'
+    section: Prohibited News Trading Activities
+    synthetic: false
+- rule: energy_and_agricultural_report_news_types
+  description: Immaterial. The firm's Tier 1 list names FOMC Meetings, FOMC Minutes, the Employment Report
+    and CPI for every trader, plus EIA (energy traders) and Agricultural Reports (agricultural traders).
+    The four types for every trader are in the economic calendar and are enforced; EIA and the agricultural
+    reports are not, and they cannot apply here because this ruleset's instrument set is equity index only.
+  materiality: immaterial
+  source:
+    url: https://help.myfundedfutures.com/en/articles/8230009-news-trading-policy
+    quote: 'For All Traders : FOMC Meetings, FOMC Minutes, Employment Report, CPI For Energy Traders :
+      EIA For Agricultural Traders : Agricultural Reports'
+    snapshot_sha256: 661236c1900074748970098a9bf681db14d0e5dc4e31119a6e54ca32f091ee4c
+    retrieved_at: '2026-11-22T01:36:49Z'
+    section: Tier 1 News Includes
+    synthetic: false
+- rule: active_account_count_limit
+  description: Immaterial. At most three active Sim Funded accounts per trader. A single simulated attempt
+    is one account, so the cap cannot change its outcome.
+  materiality: immaterial
+  source:
+    url: https://help.myfundedfutures.com/en/articles/16158363-rapid-eod-50k-a-comprehensive-look
+    quote: 'Max # of Funded Accounts Three (3)'
+    snapshot_sha256: 15a07710881f58bb6bc2ebf3057ca9e516ce26286c3203bce7e7e8b622e521f6
+    retrieved_at: '2026-11-22T01:55:14Z'
+    section: Rapid EOD Sim Funded Stage parameters
+    synthetic: false
+- rule: reset_fee_amount
+  description: Immaterial. A breached Rapid EOD evaluation can be reset for a fee the official pages never
+    quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt
+    bought with a reset.
+  materiality: immaterial
+  source:
+    url: https://myfundedfutures.com/plans/rapid
+    quote: On a Rapid Evaluation, breaching the max drawdown fails that evaluation, but you can reset
+      it for a specific fee and start trading again.
+    snapshot_sha256: 27ba198fe6b350e4929b8bc471cf3661315ae9324ddc7698c514451c6229f569
+    retrieved_at: '2026-11-22T01:35:54Z'
+    section: Rapid plan page, resets
+    synthetic: false
+- rule: live_transition_on_10k_session
+  description: Immaterial. The $10,000 single-session result also moves the account to a live seat, which
+    ends the simulated stage (the Rapid EOD article says it follows the standard Rapid live rules). The
+    per-day cap is modeled; the milestone transition has no rule kind.
+  materiality: immaterial
+  source:
+    url: https://help.myfundedfutures.com/en/articles/13134718-understanding-rapid-live
+    quote: '1. Live Stage at a Glance Transition Triggers: $10,000 net profit achieved in a single trading
+      day (automatic transition), or Consistent payout performance reviewed and approved by our Risk Management
+      Team.'
+    snapshot_sha256: cef8f971f85772d14fdffd25f505f3a79d4e0b620b4d60b7b3c332b230e1ef2b
+    retrieved_at: '2026-11-22T01:38:58Z'
+    section: 1. Live Stage at a Glance
+    synthetic: false

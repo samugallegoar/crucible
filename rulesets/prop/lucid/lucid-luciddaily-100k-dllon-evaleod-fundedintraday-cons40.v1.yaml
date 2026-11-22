@@ -1,0 +1,628 @@
+schema_version: 2
+ruleset_id: lucid-luciddaily-100k-dllon-evaleod-fundedintraday-cons40
+version: 1
+firm: Lucid Trading
+program: LucidDaily
+account_size_usd: '100000'
+platform: NinjaTrader, Tradovate, TradingView, Quantower, Tradesea, MotiveWave, Sierra Chart, Jigsaw,
+  Bookmap, ATAS, R|Trader Pro, MultiCharts
+addons:
+- consistency_40
+- daily_loss_limit_on
+- eval_drawdown_eod
+- funded_drawdown_intraday
+jurisdiction: null
+as_of: '2026-11-22'
+effective_from: '2026-11-22'
+effective_to: null
+instruments:
+- root: ES
+  contract_weight: '1'
+- root: MES
+  contract_weight: '0.1'
+- root: MNQ
+  contract_weight: '0.1'
+- root: M2K
+  contract_weight: '0.1'
+- root: MYM
+  contract_weight: '0.1'
+- root: NKD
+  contract_weight: '1'
+- root: NQ
+  contract_weight: '1'
+- root: RTY
+  contract_weight: '1'
+- root: YM
+  contract_weight: '1'
+reset:
+  time: '18:00:00'
+  tz: America/New_York
+commissions:
+  status: known
+  includes_exchange_and_regulatory_fees: unknown
+  per_side_usd:
+    ES: '1.75'
+    MES: '0.50'
+    NQ: '1.75'
+    MNQ: '0.50'
+    RTY: '1.75'
+    M2K: '0.50'
+    NKD: '1.75'
+    YM: '1.75'
+    MYM: '0.50'
+  platform: null
+  source:
+    url: https://support.lucidtrading.com/en/articles/11508978-approved-products-and-commissions
+    quote: ES E-mini S&P 500 Futures 1.75 CME MES Micro E-mini S&P 500 Index Futures 0.50 CME NQ E-mini
+      Nasdaq-100 Futures 1.75 CME MNQ Micro E-mini Nasdaq-100 Index Futures 0.50 CME RTY E-mini Russell
+      2000 Index Futures 1.75 CME M2K Micro E-mini Russell 2000 Index Futures 0.50 CME NKD Nikkei/USD
+      Futures 1.75 CME YM E-mini Dow ($5) Futures 1.75 CBOT MYM Micro E-mini Dow Jones Industrial Average
+      Index Futures 0.50 CBOT
+    snapshot_sha256: 9d718a1af98a3ec955ac99b662501e2c59cb687108f68221227b7659b8306220
+    retrieved_at: '2026-11-22T01:59:34Z'
+    section: Approved Products and Commissions
+conflicts:
+- conflict_id: daily_eval_consistency_tier
+  rule_id: eval_consistency
+  field: max_day_share
+  selected_value: '0.40'
+  alternatives:
+  - value: '0.5'
+    source:
+      url: https://support.lucidtrading.com/en/articles/15998336-luciddaily-consistency
+      quote: In LucidDaily evaluation accounts you must have Consistency Percentage of 50% or less to
+        be eligible to upgrade to a LucidDaily funded account.
+      snapshot_sha256: 145993af3a0343f3b2b35d2794d3f720d0ea8aa1f5632cee48691ba4064feb6c
+      retrieved_at: '2026-11-22T01:57:56Z'
+      section: The Calculation
+  selected_source:
+    url: https://support.lucidtrading.com/en/articles/16033858-luciddaily-customization
+    quote: '40% (standard): your largest day must be 40% or less of your evaluation profit.'
+    snapshot_sha256: 7519176da938e518fbe0d624ffab76c5bb1b754c26ba19292868582d285ba08b
+    retrieved_at: '2026-11-22T01:57:57Z'
+    section: Consistency
+  rationale: The customization page sells the 40% tier for this configuration, while the evaluation page's
+    table and the consistency page state one 50% requirement for every LucidDaily evaluation. Both sources
+    describe the same firm, plan, account size and phase, so they contradict. The selected share is the
+    smaller (stricter) one for the trader; the 50% reading is carried as a sensitivity scenario, never
+    as the plan.
+  applicability_checked: true
+verification:
+  status: unverified
+phases:
+- phase_id: evaluation
+  kind: evaluation
+  starting_balance_usd: '100000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: eval_trailing_drawdown
+    description: Trailing max loss of $3,000 on the rule-day close high-water mark of the balance. It
+      locks at the initial balance plus $100 once the mark reaches the Initial Trail Balance at +$3,100,
+      so the locked floor is the starting balance plus $100. The page says the mark is the highest closing
+      balance and that the account is breached when the balance reaches the MLL, but never says whether
+      open equity is tested between closes; the test is therefore taken on equity intrabar, the harder
+      reading.
+    source:
+      url: https://support.lucidtrading.com/en/articles/15998425-luciddaily-drawdown
+      quote: $100,000 $3,000 $103,100 $100,100
+      snapshot_sha256: 9fea57dbbf2c235c67165cc53c5d91e5a8f5c45ca12028e8bd82536023a3e417
+      retrieved_at: '2026-11-22T01:57:57Z'
+      section: Drawdown Type
+    evidence: assumption
+    assumption:
+      name: unspecified_failure_frequency_is_intraday
+      rationale: The firm states the max-loss amount and the mark it trails from, and never says whether
+        open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified
+        observation frequency of a failure threshold as intraday, which is the stricter reading.
+    amount_usd: '3000'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      at_offset_usd: '3100'
+      locked_offset_usd: '100'
+  - kind: daily_loss
+    rule_id: eval_fixed_dll
+    description: 'Fixed daily loss limit of $1,800 on the day''s starting balance, a soft breach: reaching
+      it locks new entries until the rule-day''s reset at 18:00 America/New_York and the account survives
+      unless the max-loss limit is also reached. The page gives the amount and the soft-breach treatment
+      only; the reset instant is derived from the firm''s session reopen (assumption) and the intraday
+      equity test is the stricter reading of an unstated frequency. The page notes the limit stays fixed
+      and does not trail with the max-loss limit, which becomes the stricter threshold once it trails
+      above the DLL.'
+    source:
+      url: https://support.lucidtrading.com/en/articles/16085900-luciddaily-daily-loss-limit
+      quote: $100,000 $1,800
+      snapshot_sha256: 5d4dbb92ecf31c975b7221b4d785133c2c18a5c647aba209a07d4ac57e8a70d1
+      retrieved_at: '2026-11-22T01:57:58Z'
+      section: LucidDaily Evaluation Account DLL
+    evidence: assumption
+    assumption:
+      name: dll_reset_at_6pm_et_session_reopen
+      rationale: The DLL page says trading is restricted 'until the next trading session' and never gives
+        the reset instant. Allowed Trading Times states 'Trading resumes at 6:00 PM EST, Sunday through
+        Thursday', so the rule-day boundary is 18:00 America/New_York (ADR-0107 section 7 reads EST as
+        US Eastern time with DST).
+    amount_usd: '1800'
+    reference: day_start_balance
+    basis: equity
+    evaluated: intraday
+    comparison: <=
+    action: soft_lock_until_reset
+    reset:
+      time: '18:00:00'
+      tz: America/New_York
+  - kind: max_contracts
+    rule_id: eval_max_contracts
+    description: 'At most 6 mini contracts or 60 micros at any time, measured by contract weight (one
+      mini weighs 1, one micro 0.1). An over-size target is clipped to the limit, not rejected: the page
+      states a maximum size, not a breach consequence. '
+    source:
+      url: https://support.lucidtrading.com/en/articles/15996664-luciddaily-evaluation
+      quote: $100,000 $6,000 $3,000 50% 6 mini or 60 micros
+      snapshot_sha256: 744098659f05516488a7416c46e41d65406c779ccd0e192ec63b1a445ad30e35
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidDaily Evaluation Account Overview
+    evidence: official_quote
+    limit: '6'
+    comparison: <=
+    action: clip
+  - kind: flat_by
+    rule_id: eval_flat_by_close
+    description: Every position is closed by the firm at 4:45 PM ET; holding past the cutoff does not
+      fail the account, and no entry is admitted until the 6:00 PM ET session reopen. The page writes
+      'EST'; it is modelled as America/New_York so the cutoff stays 4:45 PM local under daylight saving.
+      The fixed clock is kept because only that form can carry the 6:00 PM ET reopen; the earlier
+      close of a holiday session is the separate session-relative rule eval_flat_by_close_early_close.
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: All positions must be closed by 4:45 PM EST, Monday through Friday
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    evidence: assumption
+    assumption:
+      name: session_close_taken_from_firm_wide_page
+      rationale: 'taken from Allowed Trading Times (section ''LucidPro, LucidFlex and LucidDirect Accounts'')
+        for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET
+        reopen is the only session clock the firm publishes.'
+    time: '16:45:00'
+    tz: America/New_York
+    reopen: '18:00:00'
+    comparison: <=
+    action: auto_liquidate
+  - kind: flat_by
+    rule_id: eval_flat_by_close_early_close
+    description: On a market holiday with an altered close every position must be flat before the
+      market closes, whatever the usual 4:45 PM ET cutoff. The rule is declared relative to the
+      scheduled session end, so the close comes from the CME session calendar instead of a guessed
+      clock time, and 4:45 PM ET is the firm's own fifteen minutes before the scheduled 5:00 PM ET
+      (16:00 Chicago) equity-index close, and the same fifteen minutes is taken before an earlier
+      holiday close. A session the calendar cannot source (the 2023 holidays other than Labor Day,
+      Christmas and New Year, and MLK 2024) is reported by the engine as a session-calendar gap at
+      attempt time, never repaired here.
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: On market holidays with altered closing times, all positions must be closed before the
+        market closes, regardless of the usual 4:45 PM cutoff
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: Allowed Trading Times
+    evidence: official_quote
+    minutes_before_session_end: 15
+    comparison: <=
+    action: auto_liquidate
+  pass_conditions:
+  - kind: profit_target
+    rule_id: eval_profit_target
+    description: 'Pass condition: $6,000 of profit above the starting balance. The firm states the target
+      and no minimum trading day; it never says when the target is measured, so it is tested at the rule-day
+      close on closed balance (assumption), the conservative reading: the trader passes no earlier, and
+      a later same-day breach still fails the account.'
+    source:
+      url: https://support.lucidtrading.com/en/articles/15996664-luciddaily-evaluation
+      quote: $100,000 $6,000 $3,000 50% 6 mini or 60 micros
+      snapshot_sha256: 744098659f05516488a7416c46e41d65406c779ccd0e192ec63b1a445ad30e35
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidDaily Evaluation Account Overview
+    evidence: assumption
+    assumption:
+      name: unspecified_target_frequency_is_eod
+      rationale: 'The firm states the profit target amount and never says when it is measured. A target
+        tested no earlier than the end of the trade date on closed balance is the conservative reading:
+        the trader passes no earlier, and a later same-day breach still counts.'
+    amount_usd: '6000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: promote_phase
+    require_flat: false
+  - kind: consistency
+    rule_id: eval_consistency
+    description: The largest single day's profit may be at most 40% of the evaluation profit; a larger
+      day means the trader keeps trading until the largest day is back inside the limit. The evaluation
+      table states a flat 50%, which is the conflict recorded beside this rule; the smaller share is carried.
+    source:
+      url: https://support.lucidtrading.com/en/articles/16033858-luciddaily-customization
+      quote: '40% (standard): your largest day must be 40% or less of your evaluation profit.'
+      snapshot_sha256: 7519176da938e518fbe0d624ffab76c5bb1b754c26ba19292868582d285ba08b
+      retrieved_at: '2026-11-22T01:57:57Z'
+      section: Consistency
+    evidence: conflict_resolution
+    max_day_share: '0.40'
+    measure: best_day_profit/total_profit
+    applies_to: pass
+    window: all_time
+    comparison: <=
+    action: promote_phase
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
+- phase_id: funded
+  kind: funded
+  starting_balance_usd: '100000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: funded_trailing_drawdown
+    description: Trailing max loss of $3,000 on the intraday high-water mark of the equity. It locks at
+      the initial balance plus $100 once the mark reaches the Initial Trail Balance at +$3,100, so the
+      locked floor is the starting balance plus $100. The page states that intraday drawdown follows real-time
+      P&L including unrealized profit and loss, so the mark and the test are both equity.
+    source:
+      url: https://support.lucidtrading.com/en/articles/15998425-luciddaily-drawdown
+      quote: $100,000 $3,000 $103,100 $100,100
+      snapshot_sha256: 9fea57dbbf2c235c67165cc53c5d91e5a8f5c45ca12028e8bd82536023a3e417
+      retrieved_at: '2026-11-22T01:57:57Z'
+      section: Drawdown Type
+    evidence: official_quote
+    amount_usd: '3000'
+    mode: intraday
+    evaluated: intraday
+    basis: equity
+    hwm_basis: equity
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      at_offset_usd: '3100'
+      locked_offset_usd: '100'
+  - kind: daily_loss
+    rule_id: funded_fixed_dll
+    description: 'Fixed daily loss limit of $1,800 on the day''s starting balance, a soft breach: reaching
+      it locks new entries until the rule-day''s reset at 18:00 America/New_York and the account survives
+      unless the max-loss limit is also reached. The page gives the amount and the soft-breach treatment
+      only; the reset instant is derived from the firm''s session reopen (assumption) and the intraday
+      equity test is the stricter reading of an unstated frequency. The funded stage uses the same fixed
+      limit as the evaluation.'
+    source:
+      url: https://support.lucidtrading.com/en/articles/16085900-luciddaily-daily-loss-limit
+      quote: $100,000 $1,800
+      snapshot_sha256: 5d4dbb92ecf31c975b7221b4d785133c2c18a5c647aba209a07d4ac57e8a70d1
+      retrieved_at: '2026-11-22T01:57:58Z'
+      section: LucidDaily Funded Account DLL
+    evidence: assumption
+    assumption:
+      name: dll_reset_at_6pm_et_session_reopen
+      rationale: The DLL page says trading is restricted 'until the next trading session' and never gives
+        the reset instant. Allowed Trading Times states 'Trading resumes at 6:00 PM EST, Sunday through
+        Thursday', so the rule-day boundary is 18:00 America/New_York (ADR-0107 section 7 reads EST as
+        US Eastern time with DST).
+    amount_usd: '1800'
+    reference: day_start_balance
+    basis: equity
+    evaluated: intraday
+    comparison: <=
+    action: soft_lock_until_reset
+    reset:
+      time: '18:00:00'
+      tz: America/New_York
+  - kind: max_contracts
+    rule_id: funded_max_contracts
+    description: 'At most 6 mini contracts or 60 micros at any time, measured by contract weight (one
+      mini weighs 1, one micro 0.1). An over-size target is clipped to the limit, not rejected: the page
+      states a maximum size, not a breach consequence. '
+    source:
+      url: https://support.lucidtrading.com/en/articles/15997244-luciddaily-funded-account
+      quote: $100,000 $3,000 Yes Intraday / EOD 6 mini or 60 micros
+      snapshot_sha256: c5729e820b33ead241204020c4489e2687ea1f90e0418692e3c0a3874946ea77
+      retrieved_at: '2026-11-22T01:57:55Z'
+      section: LucidDaily Funded Account Overview
+    evidence: official_quote
+    limit: '6'
+    comparison: <=
+    action: clip
+  - kind: flat_by
+    rule_id: funded_flat_by_close
+    description: Every position is closed by the firm at 4:45 PM ET; holding past the cutoff does not
+      fail the account, and no entry is admitted until the 6:00 PM ET session reopen. The page writes
+      'EST'; it is modelled as America/New_York so the cutoff stays 4:45 PM local under daylight saving.
+      The fixed clock is kept because only that form can carry the 6:00 PM ET reopen; the earlier
+      close of a holiday session is the separate session-relative rule funded_flat_by_close_early_close.
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: All positions must be closed by 4:45 PM EST, Monday through Friday
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    evidence: assumption
+    assumption:
+      name: session_close_taken_from_firm_wide_page
+      rationale: 'taken from Allowed Trading Times (section ''LucidPro, LucidFlex and LucidDirect Accounts'')
+        for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET
+        reopen is the only session clock the firm publishes.'
+    time: '16:45:00'
+    tz: America/New_York
+    reopen: '18:00:00'
+    comparison: <=
+    action: auto_liquidate
+  - kind: flat_by
+    rule_id: funded_flat_by_close_early_close
+    description: On a market holiday with an altered close every position must be flat before the
+      market closes, whatever the usual 4:45 PM ET cutoff. The rule is declared relative to the
+      scheduled session end, so the close comes from the CME session calendar instead of a guessed
+      clock time, and 4:45 PM ET is the firm's own fifteen minutes before the scheduled 5:00 PM ET
+      (16:00 Chicago) equity-index close, and the same fifteen minutes is taken before an earlier
+      holiday close. A session the calendar cannot source (the 2023 holidays other than Labor Day,
+      Christmas and New Year, and MLK 2024) is reported by the engine as a session-calendar gap at
+      attempt time, never repaired here.
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: On market holidays with altered closing times, all positions must be closed before the
+        market closes, regardless of the usual 4:45 PM cutoff
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: Allowed Trading Times
+    evidence: official_quote
+    minutes_before_session_end: 15
+    comparison: <=
+    action: auto_liquidate
+  - kind: payout
+    rule_id: funded_payout
+    description: Buffer of the initial max loss plus $100 ($3,100), minimum request $500, 90/10 split,
+      and positive net profit since the last payout. The per-request maximum is the whole profit built
+      above the buffer, so no numeric cap is carried ('unlimited' because the page states the cap is the
+      withdrawable profit itself); no maximum number of payouts is stated and no consistency rule applies
+      to the funded stage.
+    source:
+      url: https://support.lucidtrading.com/en/articles/15997266-luciddaily-payouts
+      quote: Payout maximum is the amount of sim profits built above the buffer
+      snapshot_sha256: 5c75969610a4287cf3a42d93985abb421c59d60369cafb04e0687d9d54ec460a
+      retrieved_at: '2026-11-22T01:57:55Z'
+      section: Payout Minimums and Maximums
+    evidence: official_quote
+    min_days_since_last: 0
+    min_profitable_days: 0
+    min_traded_days: 0
+    min_day_profit_usd: '0'
+    window: since_last_payout
+    buffer_usd: '3100'
+    split: '0.9'
+    min_usd: '500'
+    max_usd: unlimited
+    max_usd_by_payout: null
+    max_pct_of_balance: null
+    max_share_of_withdrawable: null
+    min_profit_since_last_usd: '1'
+    cycle_goal_usd: null
+    first_payout_after_calendar_days: null
+    payout_group: null
+    max_payouts: null
+    comparison: '>='
+    action: withdraw
+    threshold_after_payout: unchanged
+  - kind: news_restriction
+    rule_id: funded_news_restriction
+    description: 'LucidDaily funded accounts may not trade U.S. high-impact (''red folder'') news: the
+      account must be flat from one minute before through one minute after the event, may not hold or
+      open a position inside that window, and a violation is a hard breach. The effect is block, never a
+      size cap, so an entry is refused and a position is flattened before the window. The firm names no
+      release type, so the rule carries every U.S. high-impact type the economic calendar holds (FOMC
+      statements, press conferences and minutes, CPI, NFP and PPI), the reading that restricts the
+      strategy most; a U.S. high-impact release outside that set stays declared as unmodelled, and a
+      press-conference or minutes date whose release hour no source states is reported by the engine as
+      an uncovered event, never as no news.'
+    source:
+      url: https://support.lucidtrading.com/en/articles/15997244-luciddaily-funded-account
+      quote: You must be flat from 1 minute before through 1 minute after the news event.
+      snapshot_sha256: c5729e820b33ead241204020c4489e2687ea1f90e0418692e3c0a3874946ea77
+      retrieved_at: '2026-11-22T01:57:55Z'
+      section: LucidDaily Funded Account Benefits
+    evidence: official_quote
+    event_types:
+    - FOMC_MINUTES
+    - FOMC_PRESS_CONFERENCE
+    - FOMC_STATEMENT
+    - CPI
+    - NFP
+    - PPI
+    instruments: []
+    pre_minutes: 1
+    post_minutes: 1
+    scope: all_trading
+    flatten: before_window
+    effect: block
+    comparison: <=
+    action: fail
+  - kind: daily_profit_cap
+    rule_id: funded_daily_profit_cap
+    description: 'A per-rule-day ceiling of $10,000 of simulated profit: meeting or exceeding it moves
+      the trader to live automatically. It is tested at the rule-day close on closed balance (the conservative
+      reading of an unstated frequency) and ends the funded stage rather than forfeiting profit.'
+    source:
+      url: https://support.lucidtrading.com/en/articles/15997266-luciddaily-payouts
+      quote: If you meet or exceed the daily amount you are automatically moved live.
+      snapshot_sha256: 5c75969610a4287cf3a42d93985abb421c59d60369cafb04e0687d9d54ec460a
+      retrieved_at: '2026-11-22T01:57:55Z'
+      section: Maximum Daily Profit
+    evidence: assumption
+    assumption:
+      name: unspecified_target_frequency_is_eod
+      rationale: 'The firm states the profit target amount and never says when it is measured. A target
+        tested no earlier than the end of the trade date on closed balance is the conservative reading:
+        the trader passes no earlier, and a later same-day breach still counts.'
+    amount_usd: '10000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: promote_phase
+  - kind: compliance
+    rule_id: compliance_automation_permitted
+    description: 'Automation is allowed on Lucid accounts, so an automated strategy is not blocked by
+      compliance on this plan. It is recorded because other firms in the registry ban it: the absence
+      of a rule must be a sourced statement, not a missing page.'
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404728-other-trading-activities
+      quote: Automated trading systems and trade copiers are permitted
+      snapshot_sha256: 0b74ad221771340e8bff61f4cee4d19f31817119f8955bc83780ea60d7bb6da1
+      retrieved_at: '2026-11-22T01:59:34Z'
+      section: Automated Strategies
+    evidence: official_quote
+    restriction: Automated trading systems and trade copiers are permitted, on every Lucid account type;
+      all automated activity must obey the other rules and the trader is responsible for software errors.
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: immaterial
+    comparison: <=
+    action: none
+  - kind: compliance
+    rule_id: compliance_hft_prohibited
+    description: An automated strategy that trades at HFT intensity is outside the firm's rules; the page
+      gives no quantitative order-rate threshold, so the restriction can only gate practical eligibility
+      for automated execution, never the mechanical account.
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404736-prohibited-high-frequency-trading
+      quote: To maintain a reliable and equitable trading environment, HFT is strictly prohibited.
+      snapshot_sha256: 97975ebd4ce16a45017109ef62991d56e54e761a43dcae0b6d53d8c072efabfb
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: Why Is It Prohibited?
+    evidence: official_quote
+    restriction: 'High-frequency trading (a high volume of orders submitted and executed within extremely
+      short time frames) is prohibited: a first offence is a written warning, repeated offences remove
+      all HFT profits, close the account and bar the trader.'
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: <=
+    action: block
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
+not_modeled:
+- rule: microscalping_ban
+  description: More than 50% of profits earned from trades held 5 seconds or less is prohibited and the
+    profits are forfeited after a warning; a holding-time distribution cannot be evaluated on OHLC bars,
+    and a sub-minute holding rule is outside the rule vocabulary (ADR-0107 section 13).
+  materiality: material
+  source:
+    url: https://support.lucidtrading.com/en/articles/11404742-prohibited-microscalping
+    quote: More than 50% of your profits are generated from trades held for 5 seconds or less
+    snapshot_sha256: 67a479eb7f408bae97e9172cee821ecb5db55455a68c3adb999298493f723b17
+    retrieved_at: '2026-11-22T01:53:35Z'
+    section: What Happens If I Microscalp?
+- rule: cross_account_hedging
+  description: 'Opposing positions on the same contract in separate accounts, and opposing positions on
+    correlated contracts across accounts, are prohibited: the accounts are reset to a prior day''s balance,
+    lose on-demand payout eligibility, and repeat offences breach every account. The attempt model simulates
+    one account with a one-sided book, so a cross-account hedge can neither arise nor be detected (ADR-0107
+    section 13).'
+  materiality: material
+  source:
+    url: https://support.lucidtrading.com/en/articles/11404734-prohibited-hedging
+    quote: Lucid Trading strictly prohibits all forms of hedging
+    snapshot_sha256: 46dd94de490cde87dee27d344d3ae55294407ded3c038faa38a3cfe91b818bd4
+    retrieved_at: '2026-11-22T01:53:35Z'
+    section: Prohibited Forms of Hedging
+- rule: evaluation_and_reset_fees
+  description: 'The evaluation is bought for a one-time fee with no subscription and no automatic rebilling,
+    and a failed evaluation can be restarted only by buying a reset; no readable official page publishes
+    either amount (the price list sits on the Cloudflare-blocked lucidtrading.com). The ruleset therefore
+    carries no fee rule: the attempt''s cost side and its net cash are understated by the evaluation price
+    plus any resets, so any cost-dependent statistic is conditional at best.'
+  materiality: material
+  source:
+    url: https://support.lucidtrading.com/en/articles/11404620-simulated-account-fees
+    quote: LucidPro Evaluation and LucidDirect accounts are purchased by paying a one-time fee.
+    snapshot_sha256: c89f021ecbe4ce2286f8bca70eb26667f1963a9799cc55524534fb49face75f3
+    retrieved_at: '2026-11-22T01:53:35Z'
+    section: One-Time Fee
+- rule: discretionary_prohibited_strategies
+  description: 'A conduct list with no quantitative trigger: exploiting system errors, update delays or
+    simulated price discrepancies, and tactics that do not reflect real-world conditions. Not decidable
+    from bar data; the whole account can be reviewed and profits removed.'
+  materiality: immaterial
+  source:
+    url: https://support.lucidtrading.com/en/articles/11404732-trade-with-integrity
+    quote: Lucid Trading strictly prohibits the use of strategies that exploit platform mechanics or simulated
+      market conditions.
+    snapshot_sha256: 82b064e5656b16d32997479017dcfabbf274504abb9480e992b409450aefff2e
+    retrieved_at: '2026-11-22T01:53:35Z'
+    section: What We Prohibit
+- rule: live_transition_discretionary
+  description: The ruleset stops at the funded phase. The move to live is discretionary and reviewed by
+    the risk team (after the final payout, a large lifetime payout, the maximum daily profit, or exceptional
+    performance), and the live account has its own drawdown, contract limits and monthly bonus.
+  materiality: immaterial
+  source:
+    url: https://support.lucidtrading.com/en/articles/16558826-new-live-structure
+    quote: All live transitions occur at the discretion of the Lucid risk team.
+    snapshot_sha256: 2889425cbfb62513b05c1925131b0b75a61dadffe8dbe3c592f68f3c645930f3
+    retrieved_at: '2026-11-22T01:53:35Z'
+    section: Being Evaluated for Live
+- rule: max_accounts_per_household
+  description: At most 10 accounts in total across evaluation and funded accounts, of which at most 5
+    are funded and up to 5 evaluation accounts may be held in reserve. This is a portfolio limit across
+    accounts; the attempt model simulates one account at a time.
+  materiality: immaterial
+  source:
+    url: https://support.lucidtrading.com/en/articles/11404617-maximum-number-of-accounts
+    quote: Traders may hold a maximum of 10 accounts in total across evaluation accounts and funded accounts.
+    snapshot_sha256: 34c143e8ff1d96874afb91c5a20c5c15f53b9e6cadf48cc7e34a8882151f9d3f
+    retrieved_at: '2026-11-22T01:53:35Z'
+    section: Maximum Number of Accounts
+- rule: other_us_high_impact_events
+  description: The funded news rule bans trading every U.S. high-impact ('red folder') release, and the
+    firm names no event type. The economic calendar carries six U.S. high-impact types (FOMC statements,
+    press conferences and minutes, CPI, NFP and PPI) and the news rule enforces every one of them; any
+    other U.S. high-impact release (retail sales, GDP, ISM and the like) is outside the modelled window,
+    so the attempt stays conditional on those not landing inside it.
+  materiality: material
+  source:
+    url: https://support.lucidtrading.com/en/articles/15997244-luciddaily-funded-account
+    quote: Trading U.S high impact red folder news in a LucidDaily funded account is not permitted and
+      is a hard breach.
+    snapshot_sha256: c5729e820b33ead241204020c4489e2687ea1f90e0418692e3c0a3874946ea77
+    retrieved_at: '2026-11-22T01:57:55Z'
+    section: LucidDaily Funded Account Benefits
+- rule: daily_consistency_tiers
+  description: LucidDaily is sold with three consistency tiers (30% add-on for the all-EOD configuration,
+    40% standard, 50% add-on for the intraday configurations) and two drawdown types; this file is one
+    of the documented configurations and the others are separate files.
+  materiality: immaterial
+  source:
+    url: https://support.lucidtrading.com/en/articles/16033858-luciddaily-customization
+    quote: These settings create unique LucidDaily account configurations to suit the trader.
+    snapshot_sha256: 7519176da938e518fbe0d624ffab76c5bb1b754c26ba19292868582d285ba08b
+    retrieved_at: '2026-11-22T01:57:57Z'
+    section: Overview
+- rule: on_demand_intraday_payouts
+  description: With the Daily Loss Limit on, a payout may be requested inside the trading session (from
+    the session's own profit, 6:00 PM to 3:45 PM ET) and trading pauses until the end of the trading day
+    after an intraday payout; a news or hedging violation suspends that eligibility. The payout kind is
+    evaluated only at the rule-day close, and the pause and the 3:45 PM window are outside the vocabulary,
+    so on-demand payouts are not modelled.
+  materiality: immaterial
+  source:
+    url: https://support.lucidtrading.com/en/articles/16033858-luciddaily-customization
+    quote: you can request payouts from your funded LucidDaily account during the trading session as soon
+      as your dashboard shows all payout objectives are complete
+    snapshot_sha256: 7519176da938e518fbe0d624ffab76c5bb1b754c26ba19292868582d285ba08b
+    retrieved_at: '2026-11-22T01:57:57Z'
+    section: On Demand Payouts

@@ -498,10 +498,12 @@ class FlatBy(Evaluator):
             reopen = day_instant_ns(day, rule.reopen, rule.tz)
             if reopen <= flat:
                 reopen += 24 * 60 * 60 * _NS_PER_S
+        elif rule.minutes_before_session_end is not None:
+            # a session-relative close: no entry from the flat instant until the scheduled
+            # session close (the next session's open is after it), so a strategy cannot re-enter
+            # in the minutes between the firm's flat time and the session end
+            reopen = int(session_close_ns)
         else:
-            # a session-relative close has no clock time zone to place a reopen clock in: the
-            # forced-flat window is the bar that reaches the flat instant (a firm that states a
-            # reopen also states a fixed clock)
             reopen = flat
         return flat, reopen
 

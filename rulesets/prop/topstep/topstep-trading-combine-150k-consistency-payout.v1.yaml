@@ -1,0 +1,702 @@
+# Topstep / Trading Combine (Standard path, 150K) -> Express Funded Account (Consistency payout path)
+# Schema version 2 from the sourced values in rulesets/prop/topstep/RESEARCH.md (raw
+# page snapshots + sha256 per attribution).
+# C7b round 2: the required commission fee flag, every lock trigger as a list (hwm,
+# and first_payout on a funded account), the news rule's effect and the per-window
+# micro contract cap, PPI and the FOMC press conference among the event types.
+# verification.status is unverified: only the owner can confirm a ruleset.
+schema_version: 2
+ruleset_id: topstep-trading-combine-150k-consistency-payout
+version: 1
+firm: Topstep
+program: Trading Combine (Standard path, 150K) -> Express Funded Account (Consistency payout path)
+account_size_usd: '150000'
+platform: TopstepX
+addons: []
+jurisdiction: null
+as_of: '2026-11-22'
+effective_from: '2026-11-22'
+effective_to: null
+instruments:
+- root: ES
+  contract_weight: '1'
+- root: NQ
+  contract_weight: '1'
+- root: YM
+  contract_weight: '1'
+- root: RTY
+  contract_weight: '1'
+- root: NKD
+  contract_weight: '1'
+- root: MES
+  contract_weight: '0.1'
+- root: MNQ
+  contract_weight: '0.1'
+- root: MYM
+  contract_weight: '0.1'
+- root: M2K
+  contract_weight: '0.1'
+reset:
+  time: '17:00:00'
+  tz: America/Chicago
+commissions:
+  status: known
+  includes_exchange_and_regulatory_fees: true
+  per_side_usd:
+    ES: '1.89'
+    NQ: '1.89'
+    YM: '1.89'
+    RTY: '1.89'
+    NKD: '2.66'
+    MES: '0.61'
+    MNQ: '0.61'
+    MYM: '0.61'
+    M2K: '0.61'
+  platform: TopstepX
+  source:
+    url: https://help.topstep.com/en/articles/8284213-what-are-the-commissions-and-fees-in-the-trading-combine-and-express-funded-account
+    snapshot_sha256: eb810a535fa0abe221c6ee2ab610521bde316882d3dd24917cd64cfb8d1478c1
+    retrieved_at: '2026-11-22T03:54:40Z'
+    quote: NFA & Regulatory Fees $0.02 $0.02 Exchange Fee $2.76 $0.70 Commissions $1.00 $0.50 Total $3.78
+      $1.22
+    section: Round-Turn Cost Breakdown and the 'Example using ES & MES' table (Total = NFA regulatory
+      fee + exchange fee + commission); every per-side value is that product's round-turn total / 2
+    synthetic: false
+conflicts: []
+verification:
+  status: unverified
+phases:
+- phase_id: evaluation
+  kind: evaluation
+  starting_balance_usd: '150000'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: maximum_loss_limit
+    description: 'Maximum Loss Limit $4,500 below the $150,000 starting balance. It trails up with the
+      end-of-day balance, never moves down, and locks permanently once the threshold reaches the starting
+      balance, i.e. once the end-of-day balance reaches $154,500 (locked at $150,000). The mark is the
+      end-of-day balance (hwm_basis balance) while the threshold is tested intrabar on equity, realized
+      and unrealized P&L together (evaluated intraday, basis equity). lock.on is a one-element list: only
+      the high-water mark can fire it, since an evaluation phase pays nothing out.'
+    amount_usd: '4500'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      at_balance_usd: '154500'
+      locked_threshold_usd: '150000'
+    source:
+      url: https://help.topstep.com/en/articles/8284197-trading-combine-parameters
+      snapshot_sha256: d1a55343b8d97e05866c1e9e7b1ba476dd94dfb3c3e449199974710ec1f12143
+      retrieved_at: '2026-11-22T01:36:12Z'
+      quote: Maximum Loss Limit $2,000 $3,000 $4,500
+      section: Maximum Loss Limit row (50K / 100K / 150K columns)
+      synthetic: false
+    evidence: official_quote
+  - kind: max_contracts
+    rule_id: maximum_position_size
+    description: 15 contracts at one time, minis and micros sharing the limit at 10:1 (15 minis or 150
+      micros). The platform caps the position rather than failing the account, so an excess target is
+      clipped.
+    limit: '15'
+    comparison: '>'
+    action: clip
+    source:
+      url: https://help.topstep.com/en/articles/8284197-trading-combine-parameters
+      snapshot_sha256: d1a55343b8d97e05866c1e9e7b1ba476dd94dfb3c3e449199974710ec1f12143
+      retrieved_at: '2026-11-22T01:36:12Z'
+      quote: Maximum Position Size 5 mini / 50 micro 10 mini / 100 micro 15 mini / 150 micro
+      section: Maximum Position Size (50K / 100K / 150K row)
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: flat_by_1510_ct
+    description: 'Day-trading program: every position must be closed by 3:10 PM CT, five days a week,
+      and no entry may be opened before the 5:00 PM CT reopen. The clock is a fixed Central time (tz America/Chicago),
+      not a session-relative offset.'
+    time: '15:10:00'
+    tz: America/Chicago
+    reopen: '17:00:00'
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://help.topstep.com/en/articles/8284206-when-and-what-products-can-i-trade
+      snapshot_sha256: 9e4331b99755e8feceb5bbfde851c7d7f081fa7a5e09c50eec8f464aecb90b24
+      retrieved_at: '2026-11-22T01:36:35Z'
+      quote: All positions must be closed by 3:10 PM CT every weekday. You can resume trading at 5:00
+        PM CT. No swing trading. No Forex.
+      section: Trading Hours
+      synthetic: false
+    evidence: official_quote
+  - kind: news_restriction
+    rule_id: tier1_news_equity_index_minis
+    description: 'Tier 1 news window: for the five minutes before and the five minutes after a Tier 1
+      release no new opening transaction is permitted in the equity index minis (ES, NQ, RTY, YM, NKD),
+      which is effect block. The page''s Tier 1 table names five events and their 5-minute windows: CPI
+      7:30 AM CT, the FOMC rate decision 1:00 PM CT, the FOMC press conference 1:30 PM CT, NFP 7:30 AM
+      CT and PPI 7:30 AM CT; every one of them is in the economic calendar this engine ingests. Positions
+      opened before the window may be kept and managed through it, so nothing is flattened. The same table
+      also blocks the metals minis (GC, SI, HG, PL), which are not in this ruleset''s instrument set,
+      and the micros are not blocked but capped (the separate tier1_news_micro_contract_caps rule). The
+      FOMC press conference is the one Tier 1 event whose release hour no Topstep or Federal Reserve HTML
+      page states, so an event with no stated time is a coverage gap for that trade date: the news rules
+      are not modeled for that day, the estimate is partial and the event ids are reported, never an invented
+      whole-day blackout. A whole-day block is an owner-chosen sensitivity scenario, not what is simulated.'
+    event_types:
+    - CPI
+    - FOMC_STATEMENT
+    - FOMC_PRESS_CONFERENCE
+    - NFP
+    - PPI
+    instruments:
+    - ES
+    - NQ
+    - RTY
+    - YM
+    - NKD
+    pre_minutes: 5
+    post_minutes: 5
+    scope: new_entries
+    flatten: none
+    effect: block
+    comparison: '>='
+    action: block_entries
+    source:
+      url: https://help.topstep.com/en/articles/13613539-risk-adjustments-high-risk-high-volatility
+      snapshot_sha256: 8b56d11af75c1e8cc26ba265357ce5ff9d085b6c163ef5985c65c2314a10b2fc
+      retrieved_at: '2026-11-22T01:37:25Z'
+      quote: 'Minis (ES, RTY, YM, NQ, NKD, GC, SI, HG, PL): No new opening transactions permitted during
+        the 10-minute window surrounding the release (5 minutes before, 5 minutes after).'
+      section: Tier 1 News Events Restrictions
+      synthetic: false
+    evidence: official_quote
+  - kind: news_restriction
+    rule_id: tier1_news_micro_contract_caps
+    description: Inside a Tier 1 news window the micros (MES, MNQ, MYM, M2K) are not blocked but capped
+      at 9 contracts for a $150,000 account, which the weighted cap declares as cap_contracts 0.9 at a
+      micro's 0.1 weight. The cap applies inside the window only; outside it the account's own position
+      limit applies. The page also caps MGC with the micros and MHG/SIL at 1, 2, 5, 7, 12 contracts by
+      account size, metals micros that are not in this ruleset's instrument set, and its Express Funded
+      Account table caps the same micro count above a $4,500 balance.
+    event_types:
+    - CPI
+    - FOMC_STATEMENT
+    - FOMC_PRESS_CONFERENCE
+    - NFP
+    - PPI
+    instruments:
+    - MES
+    - MNQ
+    - MYM
+    - M2K
+    pre_minutes: 5
+    post_minutes: 5
+    scope: new_entries
+    flatten: none
+    effect: contract_cap
+    cap_contracts: '0.9'
+    comparison: '>='
+    action: block_entries
+    source:
+      url: https://help.topstep.com/en/articles/13613539-risk-adjustments-high-risk-high-volatility
+      snapshot_sha256: 8b56d11af75c1e8cc26ba265357ce5ff9d085b6c163ef5985c65c2314a10b2fc
+      retrieved_at: '2026-11-22T01:37:25Z'
+      quote: 'Micros (MES, M2K, MYM, MNQ, MGC): Opening transactions limited to 1, 3, 6, 9, and 15 contracts
+        for the $25K, $50K, $100K, $150K, and $250K account sizes, respectively, during the window (see
+        table below)'
+      section: Tier 1 News Events Restrictions (micros, with the per-size table below it)
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: unfair_technology
+    description: Topstep does not ban automated trading as such, but prohibits software or AI used to
+      gain an unfair advantage. An automated strategy is judged case by case, so this restriction is declared
+      for automated execution and does not block eligibility by itself.
+    restriction: Using software, AI, ultra-high speed systems or mass data entry to gain an unfair advantage
+      is prohibited
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: none
+    source:
+      url: https://help.topstep.com/en/articles/10296582-prohibited-conduct
+      snapshot_sha256: e40fa8e3c14e7137540bbe0eb2ae384d1bbb9c0410bf72ed8bac2f2edf0b15c7
+      retrieved_at: '2026-11-22T01:37:22Z'
+      quote: Unfair technology — using software, AI, ultra-high speed systems, or mass data entry to gain
+        an unfair advantage
+      section: What Is Prohibited Conduct?
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: sim_fill_exploitation
+    description: Using the simulator to obtain fills a live market would not give is prohibited. It is
+      a conduct judgement, not a numeric threshold, so it never alters the mechanical account.
+    restriction: Scalping algorithms designed to exploit unrealistic SIM fills are prohibited
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: none
+    source:
+      url: https://help.topstep.com/en/articles/10305426-prohibited-trading-strategies-at-topstep
+      snapshot_sha256: 04b662b2c733165c448a92ffafdad79232a7a3c1b8777e699098fd9f4ea19be2
+      retrieved_at: '2026-11-22T01:37:23Z'
+      quote: Running scalping algorithms designed to exploit unrealistic SIM fills
+      section: The Do's and Don'ts of SIM Fills
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: trade_outside_best_bid_offer
+    description: Orders priced outside the current best bid or offer are prohibited. The simulator routes
+      limit orders from the bar, so an out-of-market limit is a compliance question, not a fill the engine
+      can rule out.
+    restriction: Placing orders at prices outside the current best bid or offer is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: none
+    source:
+      url: https://help.topstep.com/en/articles/10305426-prohibited-trading-strategies-at-topstep
+      snapshot_sha256: 04b662b2c733165c448a92ffafdad79232a7a3c1b8777e699098fd9f4ea19be2
+      retrieved_at: '2026-11-22T01:37:23Z'
+      quote: Trading Outside the Best Bid or Offer
+      section: Prohibited Trading Strategies
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: coordinated_and_copy_trading
+    description: Copying or coordinating trades across accounts is prohibited. A single simulated account
+      trading on its own signal is unaffected; a copy-trading deployment is not.
+    restriction: Coordinated trading with others, including copy trading of the same or opposite strategy,
+      is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: none
+    source:
+      url: https://help.topstep.com/en/articles/10296582-prohibited-conduct
+      snapshot_sha256: e40fa8e3c14e7137540bbe0eb2ae384d1bbb9c0410bf72ed8bac2f2edf0b15c7
+      retrieved_at: '2026-11-22T01:37:22Z'
+      quote: Coordinated trading — performing trades in concert with others (including unconnected accounts
+        or third parties) to pool risk, hedge aggregate positions, or trade the same or opposite strategy
+        simultaneously
+      section: What Is Prohibited Conduct?
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: account_stacking
+    description: Account stacking is prohibited. The overlapping-attempt statistics of a prop evaluation
+      describe the same strategy restarted on many dates; a trader may not realise those attempts by cycling
+      real accounts.
+    restriction: Repeatedly hitting the Maximum Loss Limit in one account and switching to another to
+      repeat high-risk attempts is prohibited
+    applies_to_execution:
+    - automated
+    - manual
+    materiality: material
+    comparison: '>='
+    action: none
+    source:
+      url: https://help.topstep.com/en/articles/10296582-prohibited-conduct
+      snapshot_sha256: e40fa8e3c14e7137540bbe0eb2ae384d1bbb9c0410bf72ed8bac2f2edf0b15c7
+      retrieved_at: '2026-11-22T01:37:22Z'
+      quote: Account stacking — repeatedly hitting the Maximum Loss Limit in one account and switching
+        to another to repeat high-risk attempts
+      section: What Is Prohibited Conduct?
+      synthetic: false
+    evidence: official_quote
+  pass_conditions:
+  - kind: profit_target
+    rule_id: profit_target
+    description: '$9,000 net profit on the $150,000 starting balance, i.e. a $159,000 balance. The amount
+      is quoted; the pages state no observation frequency for the target, so the ADR-0107 section 7 default
+      applies and it is tested on the closed balance at the close of the rule day: a trader passes no
+      earlier than the end of the trade date, so a later same-day breach still counts.'
+    amount_usd: '9000'
+    basis: balance
+    evaluated: eod
+    comparison: '>='
+    action: promote_phase
+    require_flat: false
+    source:
+      url: https://help.topstep.com/en/articles/8284197-trading-combine-parameters
+      snapshot_sha256: d1a55343b8d97e05866c1e9e7b1ba476dd94dfb3c3e449199974710ec1f12143
+      retrieved_at: '2026-11-22T01:36:12Z'
+      quote: Profit Target $3,000 $6,000 $9,000
+      section: Profit Target row (50K / 100K / 150K)
+      synthetic: false
+    evidence: assumption
+    assumption:
+      name: unspecified_target_frequency_is_eod
+      rationale: 'The pages state the profit target amount but never its observation frequency. The conservative
+        default for a pass condition is the end of the trade date on the closed balance: the trader passes
+        no earlier than the end of the trade date, so a later same-day breach still counts.'
+  - kind: consistency
+    rule_id: consistency_target
+    description: 'Consistency Target: the single best day of profit must stay at or below 55% of the profit
+      target; exceeding it raises the target to best day / 0.55, which is the same as best day <= 55%
+      of total profit. Losses do not reset the best day, and the window is the whole evaluation.'
+    max_day_share: '0.55'
+    measure: best_day_profit/total_profit
+    applies_to: pass
+    window: all_time
+    comparison: <=
+    action: promote_phase
+    source:
+      url: https://help.topstep.com/en/articles/8284208-consistency-at-topstep
+      snapshot_sha256: c5b4685f734af577f0debe0fa98cf3ab9ee806a63c223db425c16f394b510cda
+      retrieved_at: '2026-11-22T01:36:33Z'
+      quote: Your single best day of profit must stay at or below 55% of your Profit Target. If it exceeds
+        that, your Profit Target increases. You'll need to earn more to pass.
+      section: Trading Combine - Consistency Target (55%)
+      synthetic: false
+    evidence: official_quote
+  - kind: min_trading_days
+    rule_id: minimum_trading_days
+    description: Two trading days. The count is quoted; what makes a day count is not defined on any official
+      page, so the ADR-0107 section 7 default applies and a day counts when its trade date carries at
+      least one executed trade.
+    days: 2
+    unit: trading_days
+    day_counts_if:
+      min_trades: 1
+    comparison: '>='
+    action: promote_phase
+    source:
+      url: https://help.topstep.com/en/articles/8284208-consistency-at-topstep
+      snapshot_sha256: c5b4685f734af577f0debe0fa98cf3ab9ee806a63c223db425c16f394b510cda
+      retrieved_at: '2026-11-22T01:36:33Z'
+      quote: You can pass in as few as 2 days, as long as no single day exceeds 55% of your total profit
+        and your Profit Target is met.
+      section: Trading Combine - Consistency Target (55%)
+      synthetic: false
+    evidence: assumption
+    assumption:
+      name: trading_day_is_a_trade_date_with_at_least_one_trade
+      rationale: 'The pages state a two-day minimum but never define a qualifying day. ADR-0107 section
+        7 default: a trading day is a trade date with at least one executed trade.'
+  max_calendar_days: null
+  max_trading_days: null
+  fees:
+  - kind: fee
+    rule_id: combine_subscription
+    description: The Trading Combine is a monthly subscription billed per started calendar month of the
+      attempt ($199/month, standard path); there is no time limit to pass.
+    fee_kind: evaluation
+    amount_usd: '199'
+    when: per_month
+    comparison: '>='
+    action: charge
+    source:
+      url: https://help.topstep.com/en/articles/14289835-topstep-pricing-and-payment-questions
+      snapshot_sha256: b6dc3bb6d4d7c27078d5324e05e6e22090ce8c8be67eced31e7d654eb8d9fbd9
+      retrieved_at: '2026-11-22T01:37:21Z'
+      quote: 150K $199/month $229/month
+      section: Trading Combine table (Standard Path / No Activation Fee Path)
+      synthetic: false
+    evidence: official_quote
+- phase_id: funded
+  kind: funded
+  starting_balance_usd: '0'
+  rules:
+  - kind: trailing_drawdown
+    rule_id: maximum_loss_limit
+    description: 'Express Funded Account balance starts at $0 and its Maximum Loss Limit starts at -$4,500,
+      trailing up with the end-of-day balance and locking at $0 permanently once the end-of-day balance
+      reaches $4,500; from then on the balance can never fall below $0. The mark is the end-of-day balance
+      (hwm_basis balance), the threshold is tested intrabar on equity (evaluated intraday, basis equity).
+      The firm states a second trigger: ''After each Payout: Your Maximum Loss Limit (MLL) resets to $0
+      permanently'' (and, on the payout policy page, ''Your MLL is set to $0 after your first Payout.
+      If it''s already at $0, it stays there.''). lock.on lists both triggers, so the threshold freezes
+      at $0 at whichever fires first.'
+    amount_usd: '4500'
+    mode: eod
+    evaluated: intraday
+    basis: equity
+    hwm_basis: balance
+    comparison: <=
+    action: fail
+    lock:
+      'on':
+      - hwm
+      - first_payout
+      at_balance_usd: '4500'
+      locked_threshold_usd: '0'
+    source:
+      url: https://help.topstep.com/en/articles/8284204-what-is-the-maximum-loss-limit
+      snapshot_sha256: 572b4fdded98cacc5c791cdf0dc905b82e6f06401de92f8919d240751b3695f1
+      retrieved_at: '2026-11-22T01:36:14Z'
+      quote: $50K XFA -$2,000
+      section: Account Size / Starting MLL (Trailing XFA) table
+      synthetic: false
+    evidence: official_quote
+  - kind: consistency
+    rule_id: consistency_payout
+    description: 'Consistency payout path objective: the largest single day of profit may not exceed 40%
+      of total net profit, and the calculation resets after every payout. Days lock in at 4:00 PM CT.'
+    max_day_share: '0.4'
+    measure: best_day_profit/total_profit
+    applies_to: payout
+    window: since_last_payout
+    comparison: <=
+    action: block_payout
+    source:
+      url: https://help.topstep.com/en/articles/8284233-topstep-payout-policy
+      snapshot_sha256: 22aa745f92b0aa44947e8f0521ad7b7a55bdb7a2175c525e78fc5b2e9d0ad1f6
+      retrieved_at: '2026-11-22T01:36:32Z'
+      quote: Stay at or below the 40% Consistency Objective. Your largest single day cannot exceed 40%
+        of your total net profit.
+      section: Express Funded Account Consistency
+      synthetic: false
+    evidence: official_quote
+  - kind: payout
+    rule_id: payout_consistency
+    description: 'Consistency payout path: at least three days with at least one trade each and a best
+      day within 40% of total profit, counted since the last payout, a $6000 per-request cap, at most
+      50% of the account balance, a $125 minimum and a 90/10 split.'
+    min_days_since_last: 0
+    min_profitable_days: 0
+    min_traded_days: 3
+    min_day_profit_usd: '0'
+    window: since_last_payout
+    buffer_usd: '0'
+    split: '0.9'
+    min_usd: '125'
+    max_usd: '6000'
+    max_pct_of_balance: '50'
+    max_payouts: null
+    threshold_after_payout: unchanged
+    comparison: '>='
+    action: withdraw
+    source:
+      url: https://help.topstep.com/en/articles/8284233-topstep-payout-policy
+      snapshot_sha256: 22aa745f92b0aa44947e8f0521ad7b7a55bdb7a2175c525e78fc5b2e9d0ad1f6
+      retrieved_at: '2026-11-22T01:36:32Z'
+      quote: $150K $5,000 $6,000
+      section: 'Payout caps table (this account size: current cap, cap with a DLL)'
+      synthetic: false
+    evidence: official_quote
+  - kind: flat_by
+    rule_id: flat_by_1510_ct
+    description: 'Day-trading program: every position must be closed by 3:10 PM CT, five days a week,
+      and no entry may be opened before the 5:00 PM CT reopen. The clock is a fixed Central time (tz America/Chicago),
+      not a session-relative offset.'
+    time: '15:10:00'
+    tz: America/Chicago
+    reopen: '17:00:00'
+    comparison: '>='
+    action: auto_liquidate
+    source:
+      url: https://help.topstep.com/en/articles/8284206-when-and-what-products-can-i-trade
+      snapshot_sha256: 9e4331b99755e8feceb5bbfde851c7d7f081fa7a5e09c50eec8f464aecb90b24
+      retrieved_at: '2026-11-22T01:36:35Z'
+      quote: All positions must be closed by 3:10 PM CT every weekday. You can resume trading at 5:00
+        PM CT. No swing trading. No Forex.
+      section: Trading Hours
+      synthetic: false
+    evidence: official_quote
+  - kind: news_restriction
+    rule_id: tier1_news_equity_index_minis
+    description: 'Tier 1 news window: for the five minutes before and the five minutes after a Tier 1
+      release no new opening transaction is permitted in the equity index minis (ES, NQ, RTY, YM, NKD),
+      which is effect block. The page''s Tier 1 table names five events and their 5-minute windows: CPI
+      7:30 AM CT, the FOMC rate decision 1:00 PM CT, the FOMC press conference 1:30 PM CT, NFP 7:30 AM
+      CT and PPI 7:30 AM CT; every one of them is in the economic calendar this engine ingests. Positions
+      opened before the window may be kept and managed through it, so nothing is flattened. The same table
+      also blocks the metals minis (GC, SI, HG, PL), which are not in this ruleset''s instrument set,
+      and the micros are not blocked but capped (the separate tier1_news_micro_contract_caps rule). The
+      FOMC press conference is the one Tier 1 event whose release hour no Topstep or Federal Reserve HTML
+      page states, so an event with no stated time is a coverage gap for that trade date: the news rules
+      are not modeled for that day, the estimate is partial and the event ids are reported, never an invented
+      whole-day blackout. A whole-day block is an owner-chosen sensitivity scenario, not what is simulated.'
+    event_types:
+    - CPI
+    - FOMC_STATEMENT
+    - FOMC_PRESS_CONFERENCE
+    - NFP
+    - PPI
+    instruments:
+    - ES
+    - NQ
+    - RTY
+    - YM
+    - NKD
+    pre_minutes: 5
+    post_minutes: 5
+    scope: new_entries
+    flatten: none
+    effect: block
+    comparison: '>='
+    action: block_entries
+    source:
+      url: https://help.topstep.com/en/articles/13613539-risk-adjustments-high-risk-high-volatility
+      snapshot_sha256: 8b56d11af75c1e8cc26ba265357ce5ff9d085b6c163ef5985c65c2314a10b2fc
+      retrieved_at: '2026-11-22T01:37:25Z'
+      quote: 'Minis (ES, RTY, YM, NQ, NKD, GC, SI, HG, PL): No new opening transactions permitted during
+        the 10-minute window surrounding the release (5 minutes before, 5 minutes after).'
+      section: Tier 1 News Events Restrictions
+      synthetic: false
+    evidence: official_quote
+  - kind: news_restriction
+    rule_id: tier1_news_micro_contract_caps
+    description: Inside a Tier 1 news window the micros (MES, MNQ, MYM, M2K) are not blocked but capped
+      at 9 contracts for a $150,000 account, which the weighted cap declares as cap_contracts 0.9 at a
+      micro's 0.1 weight. The cap applies inside the window only; outside it the account's own position
+      limit applies. The page also caps MGC with the micros and MHG/SIL at 1, 2, 5, 7, 12 contracts by
+      account size, metals micros that are not in this ruleset's instrument set, and its Express Funded
+      Account table caps the same micro count above a $4,500 balance.
+    event_types:
+    - CPI
+    - FOMC_STATEMENT
+    - FOMC_PRESS_CONFERENCE
+    - NFP
+    - PPI
+    instruments:
+    - MES
+    - MNQ
+    - MYM
+    - M2K
+    pre_minutes: 5
+    post_minutes: 5
+    scope: new_entries
+    flatten: none
+    effect: contract_cap
+    cap_contracts: '0.9'
+    comparison: '>='
+    action: block_entries
+    source:
+      url: https://help.topstep.com/en/articles/13613539-risk-adjustments-high-risk-high-volatility
+      snapshot_sha256: 8b56d11af75c1e8cc26ba265357ce5ff9d085b6c163ef5985c65c2314a10b2fc
+      retrieved_at: '2026-11-22T01:37:25Z'
+      quote: 'Micros (MES, M2K, MYM, MNQ, MGC): Opening transactions limited to 1, 3, 6, 9, and 15 contracts
+        for the $25K, $50K, $100K, $150K, and $250K account sizes, respectively, during the window (see
+        table below)'
+      section: Tier 1 News Events Restrictions (micros, with the per-size table below it)
+      synthetic: false
+    evidence: official_quote
+  - kind: inactivity
+    rule_id: xfa_inactivity
+    description: 'An Express Funded Account with no trading activity for more than 30 calendar days may
+      be closed. Modeled as a hard fail on the thirty-first inactive day: the account cannot be counted
+      as surviving a month of silence.'
+    max_gap: 30
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>'
+    action: fail
+    source:
+      url: https://help.topstep.com/en/articles/8284215-express-funded-account-parameters
+      snapshot_sha256: 147e7624b6b96fdfba83cc3a20e79ad394c7857a289610b0632b7af62989ba79
+      retrieved_at: '2026-11-22T01:36:31Z'
+      quote: XFAs with no trading activity for more than 30 days may be closed.
+      section: Express Funded Account FAQs
+      synthetic: false
+    evidence: official_quote
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees:
+  - kind: fee
+    rule_id: activation_fee
+    description: One-time $149 Activation Fee charged once per Express Funded Account earned on the Standard
+      path; the No Activation Fee path does not charge it.
+    fee_kind: activation
+    amount_usd: '149'
+    when: at_pass
+    comparison: '>='
+    action: charge
+    source:
+      url: https://help.topstep.com/en/articles/14289835-topstep-pricing-and-payment-questions
+      snapshot_sha256: b6dc3bb6d4d7c27078d5324e05e6e22090ce8c8be67eced31e7d654eb8d9fbd9
+      retrieved_at: '2026-11-22T01:37:21Z'
+      quote: $149 Activation Fee charged once per Express Funded Account (XFA) earned.
+      section: Express Funded Account Activation & Reactivation
+      synthetic: false
+    evidence: official_quote
+not_modeled:
+- rule: xfa_scaling_plan_ladder
+  description: Material. The Express Funded Account's maximum position size follows a Scaling Plan ladder
+    of balance -> max contracts. The ladder is published only as images, so no contract number for a funded
+    account can be quoted from the saved bytes. The funded phase therefore declares no contract limit,
+    which overstates the size a real XFA may hold and gives a funded account credit the firm's Scaling
+    Plan would cap.
+  materiality: material
+  source:
+    url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
+    snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
+    retrieved_at: '2026-11-22T01:36:34Z'
+    quote: As your balance grows, so does your buying power
+    section: How It Works
+    synthetic: false
+- rule: news_full_position_size_prohibited
+  description: Material. Purposefully trading the full Maximum Position Size directly into a scheduled
+    major news event is prohibited. It is a discretionary judgement with no numeric threshold, so no rule
+    can decide it; the simulator will happily trade the window with full size.
+  materiality: material
+  source:
+    url: https://help.topstep.com/en/articles/10305426-prohibited-trading-strategies-at-topstep
+    snapshot_sha256: 04b662b2c733165c448a92ffafdad79232a7a3c1b8777e699098fd9f4ea19be2
+    retrieved_at: '2026-11-22T01:37:23Z'
+    quote: Purposefully trading your full Maximum Position Size directly into a scheduled major news event.
+    section: Prohibited Trading Strategies
+    synthetic: false
+- rule: sub_minute_holding_and_micro_scalping
+  description: Material. Topstep treats hundreds of trades a day with average durations measured in seconds
+    as systematic SIM abuse. The simulator works on one-minute bars, so it cannot see intra-bar holding
+    time and cannot fail an account for holding seconds.
+  materiality: material
+  source:
+    url: https://help.topstep.com/en/articles/10305426-prohibited-trading-strategies-at-topstep
+    snapshot_sha256: 04b662b2c733165c448a92ffafdad79232a7a3c1b8777e699098fd9f4ea19be2
+    retrieved_at: '2026-11-22T01:37:23Z'
+    quote: Running scalping algorithms designed to exploit unrealistic SIM fills
+    section: The Do's and Don'ts of SIM Fills
+    synthetic: false
+- rule: cross_account_hedging
+  description: Immaterial for one simulated account. Holding opposite positions across multiple accounts
+    simultaneously is prohibited; a single account cannot hedge itself, so the rule constrains how many
+    accounts a person runs, not how one account trades.
+  materiality: immaterial
+  source:
+    url: https://help.topstep.com/en/articles/10296582-prohibited-conduct
+    snapshot_sha256: e40fa8e3c14e7137540bbe0eb2ae384d1bbb9c0410bf72ed8bac2f2edf0b15c7
+    retrieved_at: '2026-11-22T01:37:22Z'
+    quote: Cross-account hedging (single-user) — holding opposite positions across multiple accounts simultaneously
+    section: What Is Prohibited Conduct?
+    synthetic: false
+- rule: two_percent_price_limit_restriction
+  description: Immaterial for this instrument set. Holding a position within 2% of a product's price lock
+    limit is prohibited. The engine carries no CME price-limit band, and the equity index products' limit
+    bands sit far outside any one-minute bar the simulator sees, so the restriction cannot bind on this
+    data.
+  materiality: immaterial
+  source:
+    url: https://help.topstep.com/en/articles/10296582-prohibited-conduct
+    snapshot_sha256: e40fa8e3c14e7137540bbe0eb2ae384d1bbb9c0410bf72ed8bac2f2edf0b15c7
+    retrieved_at: '2026-11-22T01:37:22Z'
+    quote: Holding a position within 2% of a product
+    section: What Is Prohibited Conduct?
+    synthetic: false
+- rule: volatility_position_limit_tightening
+  description: Immaterial for this instrument set. Topstep may temporarily tighten position limits during
+    extreme volatility, but the published restrictions cover energies, metals and Micro Bitcoin only;
+    ES, NQ, YM, RTY, NKD and their micros are not restricted.
+  materiality: immaterial
+  source:
+    url: https://help.topstep.com/en/articles/13613539-risk-adjustments-high-risk-high-volatility
+    snapshot_sha256: 8b56d11af75c1e8cc26ba265357ce5ff9d085b6c163ef5985c65c2314a10b2fc
+    retrieved_at: '2026-11-22T01:37:25Z'
+    quote: During extreme volatility, we may temporarily tighten position limits on affected products.
+    section: Position Limit Adjustments
+    synthetic: false

@@ -1,0 +1,811 @@
+# Lucid Trading (firm_slug `lucid`) — sourced research, schema version 2
+
+Status: **unverified**. Only the owner can flip `verification.status` (`crucible prop confirm`,
+a TTY step). Nothing in this file is a confirmed firm rule until that sidecar exists.
+
+- **44 rulesets** under `rulesets/prop/lucid/`, all on schema version 2, version 1: LucidPro 8,
+  LucidFlex 16, LucidDaily 16, LucidDirect 4.
+- **Retrieval**: 2026-11-22, 01:35Z-02:00Z UTC, `curl` with a desktop user agent. Raw bytes in
+  `D:\proyectos\crucible-notes\internal\prop_snapshots\lucid\` (59 files); every quotation below
+  names its snapshot hash, and the self-check in section 12 re-verifies all of them.
+- `as_of` and `effective_from` are 2026-11-22 in every file: no page states a general effective
+  date. The one dated rule change is the LucidPro funded consistency (35% -> 40% for accounts
+  purchased or reset on or after 11/28/2025, 3:00 PM EST); section 9.
+- Only public pages were read: no login, no form, no purchase, no account. The ruleset carries
+  `jurisdiction: null`: the restricted-country list is a purchase-eligibility list, not a trading
+  rule of the account.
+
+## 1. What changed from the v1 drafts
+
+The drafts were rewritten in place as schema version 2, and then again for the schema's round-2
+fields (the next section records that pass). The ruleset version stays 1 and the file
+name stays `<ruleset_id>.v1.yaml`, because the numbering is the ruleset version, not the schema
+version, and nothing was committed yet.
+
+Every rule now declares `evidence`, every listing has explicit day units, `commissions` are
+carried per side and per root, and the new vocabulary replaced several `not_modeled` entries:
+
+| Was `not_modeled` | Now modelled as |
+|---|---|
+| `direct_payout_profit_goal` | `payout.cycle_goal_usd` (first-cycle goal, stricter) |
+| `direct_payout_cap_schedule`, `payout_cap_schedule` | `payout.max_usd_by_payout` |
+| `daily_maximum_daily_profit` | `daily_profit_cap` with `action: promote_phase` |
+| `daily_news_trading_ban_funded` | `news_restriction` (FOMC statements, CPI, NFP) |
+| `flex_mll_locks_on_first_payout` | `payout.threshold_after_payout: lock_on_first_payout` |
+| `flex_payout_half_of_profit` | `payout.max_share_of_withdrawable` + `max_pct_of_balance` |
+| `inactivity_30_calendar_days` | `inactivity` (30 calendar days, rolling) |
+| `hft` conduct ban (inside the v1 `discretionary_prohibited_strategies`) | `compliance` rule with materiality |
+| LucidDaily payout `max_usd: 1000000` sentinel | `max_usd: unlimited` (the page states the cap) |
+
+Corrected values (the v1 drafts were wrong or incomplete):
+
+- **LucidPro payouts** carry a per-size minimum profit goal per cycle ($250/$500/$750/$1,000)
+  and a maximum by payout number ($1,000/$1,500 for the $25,000 size up to $3,000/$3,500 for
+  $150,000). The v1 drafts had neither.
+- **LucidFlex** payouts need 5 profitable days per cycle at a per-size minimum daily profit
+  ($100-$250) and a positive net profit in the cycle; v1 carried none of those gates.
+- **LucidPro $25,000, DLL on**: the funded page states a $600 fixed limit and the DLL page
+  states `None` for the same size and phase. The stricter $600 is carried (section 7).
+- **LucidDirect $100,000/$150,000** max loss is $3,500/$5,000 (EOD trail to $103,600/$155,100),
+  not the $3,000/$4,500 pattern of the other programmes.
+- **LucidDaily evaluation consistency is 40%** (30% for the all-EOD configuration), not the
+  blanket 50% the evaluation table states; the contradiction is a recorded conflict (section 7).
+- **Commissions are known**: the help centre publishes the per-contract table (section 6). The
+  v1 drafts carried no commission at all.
+- **The five-payout ceiling** (`max_payouts: 5`) for LucidPro, LucidFlex and LucidDirect comes
+  from the live-structure page ('Payout 5 represents the maximum payout level, not a guaranteed
+  minimum for live eligibility. This maximum payout level applies to Flex, Pro, and Direct
+  plans.'), not from each programme's payout page; the LucidFlex payout page states the same
+  ('up to 5 payouts from each LucidFlex account after which they will be moved live').
+
+## Round 2 changes (the C7b round-2 vocabulary)
+
+This section was added when the schema's round-2 fields became required. Nothing was inferred: every
+change below is either a now-required declaration, a rule the sources already stated and the earlier
+vocabulary could not express, or a removal of a `not_modeled` entry that a round-2 field now covers.
+
+| Required / now expressible | What was done | Files |
+|---|---|---|
+| `commissions.includes_exchange_and_regulatory_fees` (no default) | `unknown` in every file: no page says whether the per-side commission includes the exchange and NFA fees (section 6). Source is the commissions page (which states the amounts and no fee basis). | 44 |
+| `trailing_drawdown.lock.on` is a LIST | `on: [hwm]` (was the bare string `hwm`). | 84 rules |
+| `news_restriction.effect` (no default) | `block`, with the new event types and a description that says why (a cap is not what the page states) | 16 |
+| `news_restriction` event types now in the calendar | `PPI`, `FOMC_PRESS_CONFERENCE` and `FOMC_MINUTES` added beside `FOMC_STATEMENT`, `CPI` and `NFP` (section 10) | 16 |
+| trailing lock with several triggers | LucidFlex **funded** `lock.on: [hwm, first_payout]`: the drawdown page states both triggers (the trail, and a payout request), and `on_first_payout` is only reached when the trigger is declared. Before, the payout-side lock lived only in `payout.threshold_after_payout: lock_on_first_payout`, which the engine does not use to freeze a threshold | 16 |
+| `consistency` with separate numerator/denominator windows | LucidPro and LucidDirect funded consistency: `numerator_window: since_last_payout`, `denominator_window: current_cycle`, because each page states the ratio's two sides and the reset separately | 12 |
+| conflict alternative `absent` | `pro_25k_funded_dll_alternative` moved from `not_modeled` to `conflicts`, the alternative being `absent` (the daily-loss page's `None` = the rule does not exist), which yields a real sensitivity scenario | 1 |
+| `flat_by` relative to the scheduled session end | every phase keeps the fixed 4:45 PM ET clock with the 6:00 PM ET reopen AND adds `*_flat_by_close_early_close` (`minutes_before_session_end: 15`) for the holiday sentence; the per-file `holiday_early_close` `not_modeled` entry is gone (section 4, section 15 question 11) | 84 rules, 44 entries |
+
+Considered and **not** used, because a Lucid page does not state the rule exactly:
+
+- `payout.max_usd: unknown` — every `unlimited` here is sourced: the Pro and Direct funded pages
+  state "No simulated payout caps" and the Daily payout page states "Payout maximum is the amount of
+  sim profits built above the buffer", which is exactly the engine's `withdrawable` term with
+  `buffer_usd`. No `unlimited` is an assumption of no cap, so no cap was made `unknown`.
+- `payout.set_threshold_to` — no page states a level the max loss is set to after a payout; LucidFlex
+  locks at the locked balance (a lock trigger, not a set level), the other plans leave it unchanged.
+- `payout.min_new_profit_share_of_request` — the pages state a minimum profit goal per cycle and
+  "positive net profit (even just $1)", never a share of the request.
+- `activity_requirement` — the Active Status Policy page states "You are not required to trade daily
+  or weekly"; the only activity gate is the 30-calendar-day abandonment rule, already carried as
+  `inactivity`. Writing an `activity_requirement` would invent a rule the firm denies.
+- `news_restriction.effect: contract_cap` / `cap_contracts` — LucidDaily forbids holding and opening
+  inside the window and says "Your funded account will be breached"; nothing is merely capped.
+- `daily_loss.pct_of_peak_profit` for the LucidScale ratchet — one `daily_loss` rule takes one amount
+  source, and the ratchet only replaces the fixed limit above the trail, which no rule field can
+  gate; it stays `lucidscale_dll_ratchet` (immaterial).
+
+## 2. Programme matrix (generated from the 44 files)
+
+`DD` is the max-loss trailing mode, `DLL` the daily loss limit, `cons` the consistency rule,
+`nm` the count of `not_modeled` entries and `cf` the count of conflicts.
+
+| file | program | size | target | eval DD | eval DLL | funded DD | funded DLL | max size | cons | payout | nm | cf |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lucid-lucidpro-100k-dll-off | LucidPro | 100K | $6,000 | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | none | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | none | 6 mini | 40% payout | no lifetime cap, per-request caps by payout number | 6 | 0 |
+| lucid-lucidpro-100k-dll-on | LucidPro | 100K | $6,000 | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | $1,800 soft | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | $1,800 soft | 6 mini | 40% payout | no lifetime cap, per-request caps by payout number | 8 | 0 |
+| lucid-lucidpro-150k-dll-off | LucidPro | 150K | $9,000 | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | none | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | none | 10 mini | 40% payout | no lifetime cap, per-request caps by payout number | 6 | 0 |
+| lucid-lucidpro-150k-dll-on | LucidPro | 150K | $9,000 | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | $2,700 soft | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | $2,700 soft | 10 mini | 40% payout | no lifetime cap, per-request caps by payout number | 8 | 0 |
+| lucid-lucidpro-25k-dll-off | LucidPro | 25K | $1,250 | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | 2 mini | 40% payout | no lifetime cap, per-request caps by payout number | 6 | 0 |
+| lucid-lucidpro-25k-dll-on | LucidPro | 25K | $1,250 | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | $600 soft | 2 mini | 40% payout | no lifetime cap, per-request caps by payout number | 8 | 1 |
+| lucid-lucidpro-50k-dll-off | LucidPro | 50K | $3,000 | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | none | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | none | 4 mini | 40% payout | no lifetime cap, per-request caps by payout number | 6 | 0 |
+| lucid-lucidpro-50k-dll-on | LucidPro | 50K | $3,000 | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | $1,200 soft | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | $1,200 soft | 4 mini | 40% payout | no lifetime cap, per-request caps by payout number | 8 | 0 |
+| lucid-lucidflex-100k-dll-off-cons40 | LucidFlex | 100K | $6,000 | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | none | $3,000 EOD trail, locks at +$3,100 (floor start+$100, or at the first payout) | none | scaling 3/4/5/6 | 40% pass | $2,500 per request, no lifetime cap | 7 | 0 |
+| lucid-lucidflex-100k-dll-off-cons50 | LucidFlex | 100K | $6,000 | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | none | $3,000 EOD trail, locks at +$3,100 (floor start+$100, or at the first payout) | none | scaling 3/4/5/6 | 50% pass | $2,500 per request, no lifetime cap | 7 | 0 |
+| lucid-lucidflex-100k-dll-on-cons40 | LucidFlex | 100K | $6,000 | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | none | $3,000 EOD trail, locks at +$3,100 (floor start+$100, or at the first payout) | none | scaling 3/4/5/6 | 40% pass | $2,500 per request, no lifetime cap | 9 | 0 |
+| lucid-lucidflex-100k-dll-on-cons50 | LucidFlex | 100K | $6,000 | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | none | $3,000 EOD trail, locks at +$3,100 (floor start+$100, or at the first payout) | none | scaling 3/4/5/6 | 50% pass | $2,500 per request, no lifetime cap | 9 | 0 |
+| lucid-lucidflex-150k-dll-off-cons40 | LucidFlex | 150K | $9,000 | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | none | $4,500 EOD trail, locks at +$4,600 (floor start+$100, or at the first payout) | none | scaling 4/5/6/8/10 | 40% pass | $3,000 per request, no lifetime cap | 7 | 0 |
+| lucid-lucidflex-150k-dll-off-cons50 | LucidFlex | 150K | $9,000 | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | none | $4,500 EOD trail, locks at +$4,600 (floor start+$100, or at the first payout) | none | scaling 4/5/6/8/10 | 50% pass | $3,000 per request, no lifetime cap | 7 | 0 |
+| lucid-lucidflex-150k-dll-on-cons40 | LucidFlex | 150K | $9,000 | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | none | $4,500 EOD trail, locks at +$4,600 (floor start+$100, or at the first payout) | none | scaling 4/5/6/8/10 | 40% pass | $3,000 per request, no lifetime cap | 9 | 0 |
+| lucid-lucidflex-150k-dll-on-cons50 | LucidFlex | 150K | $9,000 | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | none | $4,500 EOD trail, locks at +$4,600 (floor start+$100, or at the first payout) | none | scaling 4/5/6/8/10 | 50% pass | $3,000 per request, no lifetime cap | 9 | 0 |
+| lucid-lucidflex-25k-dll-off-cons40 | LucidFlex | 25K | $1,250 | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | $1,000 EOD trail, locks at +$1,100 (floor start+$100, or at the first payout) | none | scaling 1/2 | 40% pass | $1,000 per request, no lifetime cap | 7 | 0 |
+| lucid-lucidflex-25k-dll-off-cons50 | LucidFlex | 25K | $1,250 | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | $1,000 EOD trail, locks at +$1,100 (floor start+$100, or at the first payout) | none | scaling 1/2 | 50% pass | $1,000 per request, no lifetime cap | 7 | 0 |
+| lucid-lucidflex-25k-dll-on-cons40 | LucidFlex | 25K | $1,250 | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | $1,000 EOD trail, locks at +$1,100 (floor start+$100, or at the first payout) | none | scaling 1/2 | 40% pass | $1,000 per request, no lifetime cap | 9 | 0 |
+| lucid-lucidflex-25k-dll-on-cons50 | LucidFlex | 25K | $1,250 | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | $1,000 EOD trail, locks at +$1,100 (floor start+$100, or at the first payout) | none | scaling 1/2 | 50% pass | $1,000 per request, no lifetime cap | 9 | 0 |
+| lucid-lucidflex-50k-dll-off-cons40 | LucidFlex | 50K | $3,000 | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | none | $2,000 EOD trail, locks at +$2,100 (floor start+$100, or at the first payout) | none | scaling 2/3/4 | 40% pass | $2,000 per request, no lifetime cap | 7 | 0 |
+| lucid-lucidflex-50k-dll-off-cons50 | LucidFlex | 50K | $3,000 | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | none | $2,000 EOD trail, locks at +$2,100 (floor start+$100, or at the first payout) | none | scaling 2/3/4 | 50% pass | $2,000 per request, no lifetime cap | 7 | 0 |
+| lucid-lucidflex-50k-dll-on-cons40 | LucidFlex | 50K | $3,000 | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | none | $2,000 EOD trail, locks at +$2,100 (floor start+$100, or at the first payout) | none | scaling 2/3/4 | 40% pass | $2,000 per request, no lifetime cap | 9 | 0 |
+| lucid-lucidflex-50k-dll-on-cons50 | LucidFlex | 50K | $3,000 | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | none | $2,000 EOD trail, locks at +$2,100 (floor start+$100, or at the first payout) | none | scaling 2/3/4 | 50% pass | $2,000 per request, no lifetime cap | 9 | 0 |
+| lucid-luciddaily-100k-dlloff-evaleod-fundedeod-cons30 | LucidDaily | 100K | $6,000 | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | none | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | none | 6 mini | 30% pass | uncapped (the withdrawable profit is the cap) | 8 | 1 |
+| lucid-luciddaily-100k-dlloff-evalintraday-cons40 | LucidDaily | 100K | $6,000 | $3,000 intraday trail, locks at +$3,100 (floor start+$100) | none | $3,000 intraday trail, locks at +$3,100 (floor start+$100) | none | 6 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 8 | 1 |
+| lucid-luciddaily-100k-dllon-evaleod-fundedintraday-cons40 | LucidDaily | 100K | $6,000 | $3,000 EOD trail, locks at +$3,100 (floor start+$100) | $1,800 soft | $3,000 intraday trail, locks at +$3,100 (floor start+$100) | $1,800 soft | 6 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 9 | 1 |
+| lucid-luciddaily-100k-dllon-evalintraday-cons40 | LucidDaily | 100K | $6,000 | $3,000 intraday trail, locks at +$3,100 (floor start+$100) | $1,800 soft | $3,000 intraday trail, locks at +$3,100 (floor start+$100) | $1,800 soft | 6 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 9 | 1 |
+| lucid-luciddaily-150k-dlloff-evaleod-fundedeod-cons30 | LucidDaily | 150K | $9,000 | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | none | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | none | 10 mini | 30% pass | uncapped (the withdrawable profit is the cap) | 8 | 1 |
+| lucid-luciddaily-150k-dlloff-evalintraday-cons40 | LucidDaily | 150K | $9,000 | $4,500 intraday trail, locks at +$4,600 (floor start+$100) | none | $4,500 intraday trail, locks at +$4,600 (floor start+$100) | none | 10 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 8 | 1 |
+| lucid-luciddaily-150k-dllon-evaleod-fundedintraday-cons40 | LucidDaily | 150K | $9,000 | $4,500 EOD trail, locks at +$4,600 (floor start+$100) | $2,700 soft | $4,500 intraday trail, locks at +$4,600 (floor start+$100) | $2,700 soft | 10 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 9 | 1 |
+| lucid-luciddaily-150k-dllon-evalintraday-cons40 | LucidDaily | 150K | $9,000 | $4,500 intraday trail, locks at +$4,600 (floor start+$100) | $2,700 soft | $4,500 intraday trail, locks at +$4,600 (floor start+$100) | $2,700 soft | 10 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 9 | 1 |
+| lucid-luciddaily-25k-dlloff-evaleod-fundedeod-cons30 | LucidDaily | 25K | $1,250 | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | 2 mini | 30% pass | uncapped (the withdrawable profit is the cap) | 8 | 1 |
+| lucid-luciddaily-25k-dlloff-evalintraday-cons40 | LucidDaily | 25K | $1,250 | $1,000 intraday trail, locks at +$1,100 (floor start+$100) | none | $1,000 intraday trail, locks at +$1,100 (floor start+$100) | none | 2 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 8 | 1 |
+| lucid-luciddaily-25k-dllon-evaleod-fundedintraday-cons40 | LucidDaily | 25K | $1,250 | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | $600 soft | $1,000 intraday trail, locks at +$1,100 (floor start+$100) | $600 soft | 2 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 9 | 1 |
+| lucid-luciddaily-25k-dllon-evalintraday-cons40 | LucidDaily | 25K | $1,250 | $1,000 intraday trail, locks at +$1,100 (floor start+$100) | $600 soft | $1,000 intraday trail, locks at +$1,100 (floor start+$100) | $600 soft | 2 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 9 | 1 |
+| lucid-luciddaily-50k-dlloff-evaleod-fundedeod-cons30 | LucidDaily | 50K | $3,000 | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | none | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | none | 4 mini | 30% pass | uncapped (the withdrawable profit is the cap) | 8 | 1 |
+| lucid-luciddaily-50k-dlloff-evalintraday-cons40 | LucidDaily | 50K | $3,000 | $2,000 intraday trail, locks at +$2,100 (floor start+$100) | none | $2,000 intraday trail, locks at +$2,100 (floor start+$100) | none | 4 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 8 | 1 |
+| lucid-luciddaily-50k-dllon-evaleod-fundedintraday-cons40 | LucidDaily | 50K | $3,000 | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | $1,200 soft | $2,000 intraday trail, locks at +$2,100 (floor start+$100) | $1,200 soft | 4 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 9 | 1 |
+| lucid-luciddaily-50k-dllon-evalintraday-cons40 | LucidDaily | 50K | $3,000 | $2,000 intraday trail, locks at +$2,100 (floor start+$100) | $1,200 soft | $2,000 intraday trail, locks at +$2,100 (floor start+$100) | $1,200 soft | 4 mini | 40% pass | uncapped (the withdrawable profit is the cap) | 9 | 1 |
+| lucid-luciddirect-100k | LucidDirect | 100K | - | - | none | $3,500 EOD trail, locks at +$3,600 (floor start+$100) | $2,100 soft | 6 mini | 20% payout | no lifetime cap, per-request caps by payout number | 9 | 0 |
+| lucid-luciddirect-150k | LucidDirect | 150K | - | - | none | $5,000 EOD trail, locks at +$5,100 (floor start+$100) | $3,000 soft | 10 mini | 20% payout | no lifetime cap, per-request caps by payout number | 9 | 0 |
+| lucid-luciddirect-25k | LucidDirect | 25K | - | - | none | $1,000 EOD trail, locks at +$1,100 (floor start+$100) | none | 2 mini | 20% payout | no lifetime cap, per-request caps by payout number | 8 | 0 |
+| lucid-luciddirect-50k | LucidDirect | 50K | - | - | none | $2,000 EOD trail, locks at +$2,100 (floor start+$100) | $1,200 soft | 4 mini | 20% payout | no lifetime cap, per-request caps by payout number | 9 | 0 |
+
+## 3. Files and what each one is
+
+- **LucidPro**, 8 files = 4 sizes x daily loss limit on/off. The DLL exists or not, in the
+  evaluation and the funded account; DLL on also gets on-demand payouts. EOD trailing max loss in
+  both phases, no scaling plan, funded consistency 40% per payout cycle.
+- **LucidFlex**, 16 files = 4 sizes x DLL on/off x evaluation consistency 40/50. The DLL amount is
+  unpublished (so the DLL-on files carry no `daily_loss` rule) and the evaluation consistency
+  tier changes. Funded: scaling plan, no consistency rule, 5 profitable days per payout cycle.
+- **LucidDaily**, 16 files = 4 sizes x the four checkout options: DLL on/intraday-eval,
+  DLL on/EOD-eval/funded-intraday, DLL off/intraday, DLL off/EOD both with the 30% tier. Funded
+  news ban and a maximum daily profit that ends the stage.
+- **LucidDirect**, 4 files = 4 sizes. Straight to funded; the max loss and the DLL are set by size.
+
+## 4. Assumptions (ADR-0107 section 7 defaults, named on the rule)
+
+Every assumption below is a value the firm is silent on, recorded as `evidence: assumption` with
+its name and rationale. No other gap was filled.
+
+| assumption | rules | rationale |
+|---|---|---|
+| `unspecified_failure_frequency_is_intraday` | 64 | The firm states the max-loss amount and the mark it trails from, and never says whether open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified observation frequency of a failure threshold as intraday, which is the stricter reading. |
+| `unspecified_target_frequency_is_eod` | 56 | The firm states the profit target amount and never says when it is measured. A target tested no earlier than the end of the trade date on closed balance is the conservative reading: the trader passes no earlier, and a later same-day breach still counts. |
+| `est_means_america_new_york` | 52 | The page writes the cutoff in 'EST'. ADR-0107 section 7 reads a bare US Eastern label as America/New_York including daylight saving, which keeps the 4:45 PM ET close at 4:45 PM local all year; a literal UTC-5 clock would shift the cutoff an hour in summer. |
+| `session_close_taken_from_firm_wide_page` | 32 | taken from Allowed Trading Times (section 'LucidPro, LucidFlex and LucidDirect Accounts') for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET reopen is the only session clock the firm publishes. |
+| `dll_reset_at_6pm_et_session_reopen` | 26 | The DLL page says trading is restricted 'until the next trading session' and never gives the reset instant. Allowed Trading Times states 'Trading resumes at 6:00 PM EST, Sunday through Thursday', so the rule-day boundary is 18:00 America/New_York (ADR-0107 section 7 reads EST as US Eastern time with DST). |
+
+The ruleset-level rule-day boundary (`reset: 18:00 America/New_York`) has no attribution field in
+the schema; it is the same derivation as `dll_reset_at_6pm_et_session_reopen`: the firm states
+trading resumes at 6:00 PM EST and never states its own rule-day clock, so the session reopen is
+the boundary. `trading_day_is_a_trade_date_with_one_trade` is **not** applied: it only matters for
+a minimum-trading-day or payout-day condition stated in trade dates, and every day gate here
+counts *profitable* days with a stated dollar floor.
+
+The round-2 session-relative flat (`**/*_flat_by_close_early_close`, `minutes_before_session_end:
+15`) adds **no** assumption: the firm states its 4:45 PM ET cutoff as a year-round clock and states
+that on an altered-close holiday all positions must be closed before the market closes, and the
+scheduled close (5:00 PM ET / 16:00 Chicago in the current regime) is the CME calendar's, not
+ours. The fifteen minutes is the firm's own offset between its cutoff and that close, applied to
+the altered close; the owner is asked to confirm it below. The engine closes the other half too:
+`FlatBy.flat_and_reopen` reopens a session-relative clock at the scheduled session close, so no
+entry is admitted between the flat instant and that close, on a half session as on a full one.
+
+## 5. `not_modeled`, by materiality
+
+- **critical**: none
+- **material**: `cross_account_hedging` (44 files), `evaluation_and_reset_fees` (44 files), `flex_dll_amount` (8 files), `microscalping_ban` (44 files), `other_us_high_impact_events` (16 files)
+- **immaterial**: `daily_consistency_tiers` (16 files), `direct_25k_no_dll` (1 files), `discretionary_prohibited_strategies` (44 files), `flex_consistency_tiers` (16 files), `live_transition_discretionary` (44 files), `lucidscale_dll_ratchet` (7 files), `max_accounts_per_household` (44 files), `on_demand_intraday_payouts` (23 files), `payout_profit_goal_by_cycle` (4 files)
+
+Owner-mandated entries that stay unmodelled: sub-minute holding / micro-scalping
+(`microscalping_ban`), cross-account hedging (`cross_account_hedging`). The 2% price-limit
+restriction is **not** carried: no Lucid page states it (the backed-out snapshot set was searched
+for `price limit` and `2%`), so adding it would be an invented rule.
+
+`flex_dll_amount` is the material gap that makes the LucidFlex DLL-on files optimistic: the option
+is sold and enforced, but no page gives an amount per size, so no `daily_loss` rule is carried.
+
+## 6. Commissions (ADR-0107 section 10)
+
+Source: the official help centre page **Approved Products and Commissions**,
+`https://support.lucidtrading.com/en/articles/11508978-approved-products-and-commissions`,
+snapshot `20261122_art_products_b.html`,
+sha256 `9d718a1af98a3ec955ac99b662501e2c59cb687108f68221227b7659b8306220`, read
+2026-11-22T01:59:34Z, section 'Approved Products and Commissions'. The table is titled
+'Commission (Per Side)' in USD; the quotation carried in every file is the nine-row block for the
+roots the rulesets trade.
+
+| root | contract | per side (USD) |
+|---|---|---|
+| ES | E-mini S&P 500 | 1.75 |
+| MES | Micro E-mini S&P 500 | 0.50 |
+| NQ | E-mini Nasdaq-100 | 1.75 |
+| MNQ | Micro E-mini Nasdaq-100 | 0.50 |
+| RTY | E-mini Russell 2000 | 1.75 |
+| M2K | Micro E-mini Russell 2000 | 0.50 |
+| NKD | Nikkei/USD | 1.75 |
+| YM | E-mini Dow ($5) | 1.75 |
+| MYM | Micro E-mini Dow | 0.50 |
+
+The owner also supplied the same table as pasted text
+(`D:\proyectos\crucible-notes\internal\prop_snapshots\lucid\20261122_owner_provided_commissions.txt`,
+sha256 `3b916be88679db0d0d3820be9667e6337cf2feae30aaee007fd600038a702ea0`). It agrees line for line
+with the official page, so the attribution uses the readable official page rather than the
+owner-provided copy; the two hashes are both recorded here so the agreement is auditable.
+
+Commissions do **not** vary by platform (the page gives one rate per contract), so
+`commissions.platform` is null. Evaluation and reset fees stay unknown -> section 5.
+
+**All-in or ex-fees: `unknown` (required field, round 2).** The commissions page states a
+"Commission (Per Side)" per contract and a venue column (CME/CBOT). It never says whether the amount
+includes the exchange and NFA assessment fees or excludes them: the whole snapshot set was searched
+for `all-in`, `all in`, `exchange fee`, `NFA` and `regulatory`, and no page answers the question.
+Every file therefore declares `includes_exchange_and_regulatory_fees: unknown`, which is what the
+schema makes mandatory and refuses to default (ADR-0107 section 8). The consequence is deliberate:
+the cash statistics of every Lucid attempt stay conditional (or unavailable) until the owner says
+whether the commission is all-in, and the engine never charges (or waives) a fee on a guess.
+
+## 7. Conflicts (both sources kept, ADR-0107 section 7)
+
+`daily_eval_consistency_tier` — 16 LucidDaily files, rule `eval_consistency`, field
+`max_day_share`:
+
+- Selected (stricter): the customization page's tier for the configuration
+  (`20261122_art_daily_custom.html`, sha256
+  `7519176da938e518fbe0d624ffab76c5bb1b754c26ba19292868582d285ba08b`): 40% standard (30% for
+  the all-EOD option).
+- Alternative: 50%, stated by the evaluation table (`20261122_art_daily_eval.html`, sha256
+  `744098659f05516488a7416c46e41d65406c779ccd0e192ec63b1a445ad30e35`) and by the consistency
+  page (`20261122_art_daily_cons.html`, sha256
+  `145993af3a0343f3b2b35d2794d3f720d0ea8aa1f5632cee48691ba4064feb6c`).
+- Applicability checked: same firm, plan, account size, phase and period; the customization page
+  enumerates exactly these configurations, so the two statements describe one requirement.
+- Each alternative is a sensitivity scenario (`daily_eval_consistency_tier#0`, `#1` on the 30%
+  files), never an official plan.
+
+`pro_25k_funded_dll_alternative` — 1 file (`lucid-lucidpro-25k-dll-on`), now a **conflict** with an
+`absent` alternative (round 2): the funded account page states a $600 fixed daily loss limit for the
+$25,000 size (`20261122_art_pro_funded.html`, sha256
+`92b78b95368d1da19883aa12163933349ecff1c18969c09127656ec181b2b269`) and the daily-loss page's
+funded table states `None` (`20261122_art_pro_dll.html`, sha256
+`b39ee2a32d422a3201e012329a83f7351d834017c983ab0b3b0b00f87b1cb3e4`). Both describe the same firm,
+plan, account size and phase, so they contradict; the stricter $600 is selected. The `daily_loss`
+kind cannot say "no limit", but the round-2 `value: absent` alternative can: the scenario built
+from it drops the rule instead of switching its amount, so a former `not_modeled` entry is now a
+real sensitivity scenario (`pro_25k_funded_dll_alternative#0`).
+
+### Checked and found **not** contradictory (the applicability test)
+
+- **'No simulated payout caps' vs the payout tables** (LucidPro, LucidDirect): both hold. The
+  page means no cap on the lifetime total; the tables cap each request by payout number, which is
+  what `max_usd_by_payout` carries next to `max_usd: unlimited`.
+- **LucidFlex '50% of their account balance' vs '50% of Profit up to $1,000'**: both are caps and
+  both are carried (`max_pct_of_balance: 50` and `max_share_of_withdrawable: 0.5`); the engine
+  applies the smaller, so the restrictive reading is what binds and no sensitivity is needed.
+- **4:45 PM forced flat vs the 3:45 PM intraday payout window**: different rules (a trading
+  restriction vs a payout window), not two values for one field. The payout window is declared
+  unmodelled (`on_demand_intraday_payouts`).
+- **LucidPro consistency 35% vs 40%**: different effective periods (accounts bought or reset
+  before/after 11/28/2025, 3:00 PM EST), so they are not one requirement. This file describes an
+  account bought after the change.
+- **LucidFlex MLL 'locks once the trail is reached' vs 'adjusts when a payout is requested'**:
+  two triggers for the same locked level (starting balance plus $100), and both are modelled in the
+  funded trailing rule (`lock.on: [hwm, first_payout]`, the first one to fire wins); the payout rule
+  keeps `threshold_after_payout: lock_on_first_payout` as well.
+- **LucidDirect $25,000 'Initial Trail Balance None' on the DLL page vs $26,100 on the drawdown
+  page**: the DLL page's column says when the DLL changes, and for this size there is no DLL to
+  change; the drawdown page's trail governs the max loss and is what the file uses.
+- **LucidPro/Flex/Direct evaluation pages vs the drawdown pages on the max loss**: identical
+  tables.
+
+## 8. Fees and the cost side
+
+Evaluation and reset fees are genuinely unpublished: the help centre says 'one-time fee' and
+'resets are not automatic or free' and never an amount, and the price list is on the
+Cloudflare-blocked `lucidtrading.com`. No `fee` rule is carried, so `fees_usd` is zero and any
+cost-dependent statistic is conditional. The fees page does state, for LucidPro, that there is
+**no activation fee** and **no subscription or automatic rebilling**; those are modelled by the
+absence of a charge, and the owner is asked below whether a zero-amount `fee` rule should be
+written for them anyway.
+
+## 9. Dated changes
+
+- **LucidPro funded consistency 35% -> 40%**, for accounts purchased or reset on or after
+  11/28/2025 at 3:00 PM EST (`20261122_art_pro_consistency.html`). The files carry 40%.
+- **LucidDirect payout maximums** now have a `Payouts 4-5` tier; the v1 draft only had one cap.
+- **LucidDaily** is a newer product (pages updated August 2026) and is not named in Allowed
+  Trading Times, which is why its `flat_by` rule is an assumption (section 4).
+
+## 10. News rules
+
+- **LucidDaily funded**: no trading of U.S. high-impact ('red folder') news. Modelled as
+  `news_restriction` with `effect: block`, no instrument filter, `pre_minutes: 1`, `post_minutes: 1`,
+  `scope: all_trading` (the page forbids holding *and* opening inside the window),
+  `flatten: before_window`, `action: fail` (a hard breach). The firm names no event type, so from
+  round 2 the rule carries **every** U.S. high-impact type the calendar holds (`FOMC_STATEMENT`,
+  `FOMC_PRESS_CONFERENCE`, `FOMC_MINUTES`, `CPI`, `NFP`, `PPI`): the direction of the rule is a
+  restriction, so covering more types restricts the strategy more, and the alternative (carrying
+  three types) would silently leave releases the firm bans unenforced. A press-conference or minutes
+  date whose release hour no source states is reported by the engine as an uncovered event for that
+  day (never as "no news"), which makes such an attempt's estimate `partial`. A U.S. high-impact
+  release outside those six types (retail sales, GDP, ISM, ...) stays `other_us_high_impact_events`
+  (material). The 16 LucidDaily files each carry it in the funded phase only, which is the phase the
+  page names.
+- **LucidPro, LucidFlex, LucidDirect**: 'Traders may enter or exit positions around scheduled or
+  unscheduled news events on these plans without it being a breach', so no `news_restriction`
+  rule is written. The absence is sourced (`20261122_art_other_b.html`), not silent.
+- A news-trading violation also suspends on-demand payouts for 30 calendar days; that
+  consequence lives in `on_demand_intraday_payouts` because on-demand payouts are unmodelled.
+
+## 11. Compliance and execution
+
+- **Automated trading and trade copiers are permitted** on every Lucid account type, so an
+  automated strategy is *not* blocked by compliance here (unlike Apex). Recorded as a
+  `compliance` rule with `action: none` so the absence of a ban is a sourced statement.
+- **High-frequency trading is prohibited** with no quantitative threshold: `compliance` with
+  `applies_to_execution: [automated]`, `materiality: material`, `action: block`. It gates
+  practical eligibility for an HFT-like strategy, not the mechanical account.
+- **Scaling into trades, DCA, genuine scalping and flipping are explicitly allowed**; recorded
+  here rather than as rules, because a permission with no constraint models nothing.
+
+## 12. How every quotation was verified
+
+`uv run python` over all 44 files: for every attribution in the file (rules, pass conditions,
+fees, `not_modeled`, conflicts, commissions) the snapshot named by `snapshot_sha256` is located
+in the private snapshot directory, its sha256 recomputed and compared, and the quote searched
+for in the file's bytes after (a) replacing every HTML tag with a space, (b) unescaping HTML
+entities and (c) collapsing whitespace. Result at handback: see section 14.
+
+## 13. Owner review checklist, per file
+
+Grouped by what the owner must confirm. `assumptions` lists the ADR-0107 defaults the file
+relies on; `conflicts` names the sensitivity scenarios.
+
+### `lucid-lucidpro-100k-dll-off.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); eval DLL none; max 6 mini / 60 micro; funded max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); funded DLL none; max 6 mini / 60 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $3,100; min request $500; profit goal $750 since the last payout; no numeric per-request cap; caps by payout $2,500/$3,000; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 40% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidpro-100k-dll-on.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); eval DLL $1,800 soft; max 6 mini / 60 micro; funded max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); funded DLL $1,800 soft; max 6 mini / 60 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $3,100; min request $500; profit goal $750 since the last payout; no numeric per-request cap; caps by payout $2,500/$3,000; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 40% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidpro-150k-dll-off.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); eval DLL none; max 10 mini / 100 micro; funded max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); funded DLL none; max 10 mini / 100 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $4,600; min request $500; profit goal $1,000 since the last payout; no numeric per-request cap; caps by payout $3,000/$3,500; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 40% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidpro-150k-dll-on.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); eval DLL $2,700 soft; max 10 mini / 100 micro; funded max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); funded DLL $2,700 soft; max 10 mini / 100 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $4,600; min request $500; profit goal $1,000 since the last payout; no numeric per-request cap; caps by payout $3,000/$3,500; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 40% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidpro-25k-dll-off.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); eval DLL none; max 2 mini / 20 micro; funded max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); funded DLL none; max 2 mini / 20 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $1,100; min request $500; profit goal $250 since the last payout; no numeric per-request cap; caps by payout $1,000/$1,500; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 40% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidpro-25k-dll-on.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); eval DLL none; max 2 mini / 20 micro; funded max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); funded DLL $600 soft; max 2 mini / 20 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $1,100; min request $500; profit goal $250 since the last payout; no numeric per-request cap; caps by payout $1,000/$1,500; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 40% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `pro_25k_funded_dll_alternative` selects `600` USD on `funded_fixed_dll` with one alternative, `absent` (the daily-loss page's funded table shows `None` for this size): the sensitivity scenario drops the daily loss rule entirely, so confirm which page governs this size.
+
+### `lucid-lucidpro-50k-dll-off.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); eval DLL none; max 4 mini / 40 micro; funded max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); funded DLL none; max 4 mini / 40 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $2,100; min request $500; profit goal $500 since the last payout; no numeric per-request cap; caps by payout $2,000/$2,500; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 40% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidpro-50k-dll-on.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); eval DLL $1,200 soft; max 4 mini / 40 micro; funded max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); funded DLL $1,200 soft; max 4 mini / 40 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $2,100; min request $500; profit goal $500 since the last payout; no numeric per-request cap; caps by payout $2,000/$2,500; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 40% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-100k-dll-off-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); eval DLL none; max 6 mini / 60 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 3 mini, $1,000+ -> 4 mini, $2,000+ -> 5 mini, $3,000+ -> 6 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $200; per-request max $2,500; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-100k-dll-off-cons50.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); eval DLL none; max 6 mini / 60 micro; eval consistency 50% of total profit, gates the pass, window all time; funded max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 3 mini, $1,000+ -> 4 mini, $2,000+ -> 5 mini, $3,000+ -> 6 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $200; per-request max $2,500; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-100k-dll-on-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); eval DLL none; max 6 mini / 60 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 3 mini, $1,000+ -> 4 mini, $2,000+ -> 5 mini, $3,000+ -> 6 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $200; per-request max $2,500; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-100k-dll-on-cons50.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); eval DLL none; max 6 mini / 60 micro; eval consistency 50% of total profit, gates the pass, window all time; funded max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 3 mini, $1,000+ -> 4 mini, $2,000+ -> 5 mini, $3,000+ -> 6 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $200; per-request max $2,500; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-150k-dll-off-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); eval DLL none; max 10 mini / 100 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 4 mini, $1,000+ -> 5 mini, $2,000+ -> 6 mini, $3,000+ -> 8 mini, $4,500+ -> 10 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $250; per-request max $3,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-150k-dll-off-cons50.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); eval DLL none; max 10 mini / 100 micro; eval consistency 50% of total profit, gates the pass, window all time; funded max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 4 mini, $1,000+ -> 5 mini, $2,000+ -> 6 mini, $3,000+ -> 8 mini, $4,500+ -> 10 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $250; per-request max $3,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-150k-dll-on-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); eval DLL none; max 10 mini / 100 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 4 mini, $1,000+ -> 5 mini, $2,000+ -> 6 mini, $3,000+ -> 8 mini, $4,500+ -> 10 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $250; per-request max $3,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-150k-dll-on-cons50.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); eval DLL none; max 10 mini / 100 micro; eval consistency 50% of total profit, gates the pass, window all time; funded max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 4 mini, $1,000+ -> 5 mini, $2,000+ -> 6 mini, $3,000+ -> 8 mini, $4,500+ -> 10 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $250; per-request max $3,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-25k-dll-off-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); eval DLL none; max 2 mini / 20 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 1 mini, $1,000+ -> 2 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $100; per-request max $1,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-25k-dll-off-cons50.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); eval DLL none; max 2 mini / 20 micro; eval consistency 50% of total profit, gates the pass, window all time; funded max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 1 mini, $1,000+ -> 2 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $100; per-request max $1,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-25k-dll-on-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); eval DLL none; max 2 mini / 20 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 1 mini, $1,000+ -> 2 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $100; per-request max $1,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-25k-dll-on-cons50.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); eval DLL none; max 2 mini / 20 micro; eval consistency 50% of total profit, gates the pass, window all time; funded max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 1 mini, $1,000+ -> 2 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $100; per-request max $1,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-50k-dll-off-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); eval DLL none; max 4 mini / 40 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 2 mini, $1,000+ -> 3 mini, $2,000+ -> 4 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $150; per-request max $2,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-50k-dll-off-cons50.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); eval DLL none; max 4 mini / 40 micro; eval consistency 50% of total profit, gates the pass, window all time; funded max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 2 mini, $1,000+ -> 3 mini, $2,000+ -> 4 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $150; per-request max $2,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-50k-dll-on-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); eval DLL none; max 4 mini / 40 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 2 mini, $1,000+ -> 3 mini, $2,000+ -> 4 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $150; per-request max $2,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-lucidflex-50k-dll-on-cons50.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); eval DLL none; max 4 mini / 40 micro; eval consistency 50% of total profit, gates the pass, window all time; funded max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100; the lock fires at the trail or at the first payout, whichever comes first); funded DLL none; funded scaling $0+ -> 2 mini, $1,000+ -> 3 mini, $2,000+ -> 4 mini; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; profit goal $1 since the last payout; 5 profitable days of at least $150; per-request max $2,000; at most 50% of the balance; at most 50% of the withdrawable profit; split 0.9; at most 5 payouts; threshold after a payout: lock_on_first_payout.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-luciddaily-100k-dlloff-evaleod-fundedeod-cons30.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); eval DLL none; max 6 mini / 60 micro; eval consistency 30% of total profit, gates the pass, window all time; funded max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); funded DLL none; max 6 mini / 60 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $10,000 -> moved live.
+- **Payouts:** buffer $3,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `session_close_taken_from_firm_wide_page`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.30` on `max_day_share` with 2 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-100k-dlloff-evalintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 intraday trail, locks at +$3,100 (floor start+$100); eval DLL none; max 6 mini / 60 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $3,000 intraday trail, locks at +$3,100 (floor start+$100); funded DLL none; max 6 mini / 60 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $10,000 -> moved live.
+- **Payouts:** buffer $3,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `session_close_taken_from_firm_wide_page`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-100k-dllon-evaleod-fundedintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 EOD trail, locks at +$3,100 (floor start+$100); eval DLL $1,800 soft; max 6 mini / 60 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $3,000 intraday trail, locks at +$3,100 (floor start+$100); funded DLL $1,800 soft; max 6 mini / 60 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $10,000 -> moved live.
+- **Payouts:** buffer $3,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `session_close_taken_from_firm_wide_page`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-100k-dllon-evalintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $6,000; eval max loss $3,000 intraday trail, locks at +$3,100 (floor start+$100); eval DLL $1,800 soft; max 6 mini / 60 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $3,000 intraday trail, locks at +$3,100 (floor start+$100); funded DLL $1,800 soft; max 6 mini / 60 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $10,000 -> moved live.
+- **Payouts:** buffer $3,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `session_close_taken_from_firm_wide_page`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-150k-dlloff-evaleod-fundedeod-cons30.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); eval DLL none; max 10 mini / 100 micro; eval consistency 30% of total profit, gates the pass, window all time; funded max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); funded DLL none; max 10 mini / 100 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $12,000 -> moved live.
+- **Payouts:** buffer $4,600; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `session_close_taken_from_firm_wide_page`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.30` on `max_day_share` with 2 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-150k-dlloff-evalintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 intraday trail, locks at +$4,600 (floor start+$100); eval DLL none; max 10 mini / 100 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $4,500 intraday trail, locks at +$4,600 (floor start+$100); funded DLL none; max 10 mini / 100 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $12,000 -> moved live.
+- **Payouts:** buffer $4,600; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `session_close_taken_from_firm_wide_page`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-150k-dllon-evaleod-fundedintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 EOD trail, locks at +$4,600 (floor start+$100); eval DLL $2,700 soft; max 10 mini / 100 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $4,500 intraday trail, locks at +$4,600 (floor start+$100); funded DLL $2,700 soft; max 10 mini / 100 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $12,000 -> moved live.
+- **Payouts:** buffer $4,600; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `session_close_taken_from_firm_wide_page`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-150k-dllon-evalintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $9,000; eval max loss $4,500 intraday trail, locks at +$4,600 (floor start+$100); eval DLL $2,700 soft; max 10 mini / 100 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $4,500 intraday trail, locks at +$4,600 (floor start+$100); funded DLL $2,700 soft; max 10 mini / 100 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $12,000 -> moved live.
+- **Payouts:** buffer $4,600; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `session_close_taken_from_firm_wide_page`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-25k-dlloff-evaleod-fundedeod-cons30.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); eval DLL none; max 2 mini / 20 micro; eval consistency 30% of total profit, gates the pass, window all time; funded max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); funded DLL none; max 2 mini / 20 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $6,000 -> moved live.
+- **Payouts:** buffer $1,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `session_close_taken_from_firm_wide_page`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.30` on `max_day_share` with 2 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-25k-dlloff-evalintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 intraday trail, locks at +$1,100 (floor start+$100); eval DLL none; max 2 mini / 20 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $1,000 intraday trail, locks at +$1,100 (floor start+$100); funded DLL none; max 2 mini / 20 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $6,000 -> moved live.
+- **Payouts:** buffer $1,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `session_close_taken_from_firm_wide_page`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-25k-dllon-evaleod-fundedintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); eval DLL $600 soft; max 2 mini / 20 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $1,000 intraday trail, locks at +$1,100 (floor start+$100); funded DLL $600 soft; max 2 mini / 20 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $6,000 -> moved live.
+- **Payouts:** buffer $1,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `session_close_taken_from_firm_wide_page`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-25k-dllon-evalintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $1,250; eval max loss $1,000 intraday trail, locks at +$1,100 (floor start+$100); eval DLL $600 soft; max 2 mini / 20 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $1,000 intraday trail, locks at +$1,100 (floor start+$100); funded DLL $600 soft; max 2 mini / 20 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $6,000 -> moved live.
+- **Payouts:** buffer $1,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `session_close_taken_from_firm_wide_page`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-50k-dlloff-evaleod-fundedeod-cons30.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); eval DLL none; max 4 mini / 40 micro; eval consistency 30% of total profit, gates the pass, window all time; funded max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); funded DLL none; max 4 mini / 40 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $8,000 -> moved live.
+- **Payouts:** buffer $2,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `session_close_taken_from_firm_wide_page`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.30` on `max_day_share` with 2 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-50k-dlloff-evalintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 intraday trail, locks at +$2,100 (floor start+$100); eval DLL none; max 4 mini / 40 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $2,000 intraday trail, locks at +$2,100 (floor start+$100); funded DLL none; max 4 mini / 40 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $8,000 -> moved live.
+- **Payouts:** buffer $2,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `session_close_taken_from_firm_wide_page`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-50k-dllon-evaleod-fundedintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); eval DLL $1,200 soft; max 4 mini / 40 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $2,000 intraday trail, locks at +$2,100 (floor start+$100); funded DLL $1,200 soft; max 4 mini / 40 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $8,000 -> moved live.
+- **Payouts:** buffer $2,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `session_close_taken_from_firm_wide_page`, `unspecified_failure_frequency_is_intraday`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddaily-50k-dllon-evalintraday-cons40.v1.yaml`
+
+- **Account / thresholds:** evaluation target $3,000; eval max loss $2,000 intraday trail, locks at +$2,100 (floor start+$100); eval DLL $1,200 soft; max 4 mini / 40 micro; eval consistency 40% of total profit, gates the pass, window all time; funded max loss $2,000 intraday trail, locks at +$2,100 (floor start+$100); funded DLL $1,200 soft; max 4 mini / 40 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar); max daily profit $8,000 -> moved live.
+- **Payouts:** buffer $2,100; min request $500; profit goal $1 since the last payout; no numeric per-request cap; split 0.9; no maximum number of payouts; threshold after a payout: unchanged.
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news: flat 1 min before to 1 min after any of FOMC_STATEMENT/FOMC_PRESS_CONFERENCE/FOMC_MINUTES/CPI/NFP/PPI (all_trading, block, fail); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `session_close_taken_from_firm_wide_page`, `unspecified_target_frequency_is_eod`.
+- **Conflicts:** `daily_eval_consistency_tier` selects `0.40` on `max_day_share` with 1 alternative(s) (sensitivity scenarios; confirm the stricter reading).
+
+### `lucid-luciddirect-100k.v1.yaml`
+
+- **Account / thresholds:** funded max loss $3,500 EOD trail, locks at +$3,600 (floor start+$100); funded DLL $2,100 soft; max 6 mini / 60 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; cycle goal $6,000; no numeric per-request cap; caps by payout $2,500/$2,500/$2,500/$3,000; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 20% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-luciddirect-150k.v1.yaml`
+
+- **Account / thresholds:** funded max loss $5,000 EOD trail, locks at +$5,100 (floor start+$100); funded DLL $3,000 soft; max 10 mini / 100 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; cycle goal $9,000; no numeric per-request cap; caps by payout $3,000/$3,000/$3,000/$3,500; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 20% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-luciddirect-25k.v1.yaml`
+
+- **Account / thresholds:** funded max loss $1,000 EOD trail, locks at +$1,100 (floor start+$100); funded DLL none; max 2 mini / 20 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; cycle goal $1,500; no numeric per-request cap; caps by payout $1,000/$1,000/$1,000/$1,000; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 20% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+### `lucid-luciddirect-50k.v1.yaml`
+
+- **Account / thresholds:** funded max loss $2,000 EOD trail, locks at +$2,100 (floor start+$100); funded DLL $1,200 soft; max 4 mini / 40 micro, no scaling; forced flat 4:45 PM ET, no entry before 6:00 PM ET, plus a session-relative flat 15 minutes before the scheduled session close (which is how an altered holiday close comes from the CME calendar).
+- **Payouts:** buffer $0; min request $500; cycle goal $3,000; no numeric per-request cap; caps by payout $2,000/$2,000/$2,000/$2,500; split 0.9; at most 5 payouts; threshold after a payout: unchanged; consistency 20% of the cycle's profit, gates the payout, best day since the last payout over the profit of the cycle (numerator and denominator windows declared separately).
+- **Fees / commissions:** evaluation and reset fee amounts unknown (no fee rule); commissions per side: ES/NQ/RTY/NKD/YM $1.75, MES/MNQ/M2K/MYM $0.50; whether that amount is all-in or excludes the exchange and NFA fees is **unknown** (no page says), declared as `includes_exchange_and_regulatory_fees: unknown`, so the cash statistics stay conditional.
+- **News / compliance:** news trading allowed (no restriction); automation permitted; HFT prohibited (material).
+- **Assumptions:** `dll_reset_at_6pm_et_session_reopen`, `est_means_america_new_york`, `unspecified_failure_frequency_is_intraday`.
+- **Conflicts:** none recorded (section 7 lists what was checked and found consistent).
+
+## 14. Self-check at handback
+
+Run on the 44 files at handback (round 2, 2026-11-22):
+
+- `uv run crucible prop validate <file> --json` for every one of the 44 files: **44/44 pass**.
+- The sweep of section 12: **44 files, 1047 attributions, 1047/1047 snapshot hashes matched,
+  1047/1047 quotes found verbatim, RESULT: PASS**.
+- `uv run crucible prop list --firm lucid --json`: 44 rulesets, `count: 44`, every one
+  `unverified`, schema version 2, version 1, 44 distinct content hashes, and every one
+  `evaluation_status: conditional_on_modeled_rules` (material unmodelled rules remain, section 5).
+- Every file declares `schema_version: 2`; `rulesets/prop/INDEX.json` is regenerated by
+  `tools.docgen` and is not touched by this migration.
+
+## 15. Open questions for the owner
+
+1. The DLL page and the funded page disagree on the LucidPro $25,000 daily loss limit ($600 vs
+   `None`). The file carries $600; confirm, or say that size has no DLL.
+2. Is the LucidDaily evaluation consistency 40% (customization page, carried) or 50% (evaluation
+   table)? The 50% reading is one sensitivity scenario.
+3. What is the **LucidFlex DLL amount** per size? Until it is published the DLL-on Flex files
+   cannot model the daily lock and are optimistic.
+4. Evaluation and reset prices are needed before any net-cash claim. Should the stated zero
+   activation and monthly fees be written as zero-amount `fee` rules?
+5. Is the max-loss threshold tested intrabar on equity (carried) or only on the closing balance?
+6. Is the DLL's reset clock the 6:00 PM ET session reopen (carried) or the calendar day?
+7. Does 'EST' on every page mean US Eastern time with daylight saving (carried) or a fixed UTC-5
+   clock?
+8. Should the LucidDaily all-EOD configuration be the 30% tier (carried) when the page allows
+   30% or 40%?
+9. Which LucidPro configuration is canonical if only one may be the default: DLL on (the
+   cheapest, with on-demand payouts) or DLL off?
+10. **Are the commissions all-in?** No Lucid page says whether the per-side commission includes
+    the CME exchange fee and the NFA assessment (section 6). Every file declares
+    `includes_exchange_and_regulatory_fees: unknown`, so net-cash statistics stay conditional.
+    Confirm all-in (one number per side) or ex-fees (the exchange table is added), and the flag can
+    become `true` or `false`.
+11. **Is a holiday early close flat fifteen minutes before the altered close?** The session-relative
+    rule takes the firm's own 15-minute offset between 4:45 PM ET and the 5:00 PM ET close and
+    applies it to an earlier holiday close (`minutes_before_session_end: 15`). A firm that instead
+    wants the position flat at the altered close itself, or earlier, changes one number.
+12. **Does the LucidDaily news ban cover FOMC minutes, the FOMC press conference and PPI?** The
+    firm names no release type ("U.S high impact red folder news"), so all six calendar types are
+    enforced (section 10). If the firm means a narrower list, the extra types are one line each.
+    The press-conference and some minutes dates state no hour, so an attempt through them reports a
+    named coverage gap and a `partial` estimate rather than a window.
+
+## 16. Unreadable pages
+
+`lucidtrading.com` and its subdomains answer with a Cloudflare interstitial, not content: `/`
+and `/pricing` returned HTTP 403 with `<title>Just a moment...</title>` (`20261122_blocked_home_
+cloudflare.html`, `20261122_blocked_pricing_cloudflare.html`), as did `sitemap.xml` and
+`robots.txt`. Nothing in any ruleset comes from that host, and it is why the evaluation and reset
+fees are unmodelled. The help centre `support.lucidtrading.com` was fully readable, including the
+commission table.
+
