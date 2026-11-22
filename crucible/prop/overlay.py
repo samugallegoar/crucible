@@ -25,7 +25,7 @@ Semantics, all from the ruleset and never from a firm:
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any, Literal
@@ -41,9 +41,9 @@ from crucible.execution.interfaces import (
     OverlayEvent,
 )
 from crucible.prop import rules as rl
+from crucible.prop.lifecycle import Lifecycle
+from crucible.prop.news import NewsEvent, minute_ns
 from crucible.prop.ruleset import (
-    DEFAULT_RESET_TIME,
-    DEFAULT_RESET_TZ,
     DailyLossRule,
     Phase,
     PropRuleset,
@@ -66,6 +66,8 @@ class PropAccountOverlay:
         session_close_ns: np.ndarray,
         start_day: dt.date,
         payout_policy: str = "none",
+        news_events: Sequence[NewsEvent] = (),
+        news_covered: bool = True,
     ) -> None:
         if tick_micro <= 0:
             msg = f"tick_micro must be positive, got {tick_micro}"
@@ -103,6 +105,13 @@ class PropAccountOverlay:
         """``(time_ns, gross_micro, net_micro, rule_id)`` for every payout taken."""
         self.trading_days: int = 0
         """Rule-days the account has opened, for ``min_days_since_last``."""
+        self.forfeited: int = 0
+        """Profit forfeited to a ``daily_profit_cap`` (micro-dollars): not trading P&L."""
+        self.news_events: tuple[NewsEvent, ...] = tuple(news_events)
+        self.news_covered = news_covered
+        self.news_flattened: set[str] = set()
+        self.lifecycle = Lifecycle.for_phase(phase.kind)
+        self._start_day = start_day
         self._bar = -1
         self._last_marks: AccountMarks | None = None
         clock = self._clock()
@@ -118,6 +127,9 @@ class PropAccountOverlay:
         self.daily: list[rl.DailyLoss] = []
         self.payouts_rules: list[rl.Payout] = []
         self.payout_consistency: list[rl.Consistency] = []
+        self.caps: list[rl.DailyProfitCap] = []
+        self.inactivity: list[rl.Inactivity] = []
+        self.news: list[rl.News] = []
         for rule in (*phase.rules, *phase.pass_conditions):
             evaluator = rl.build(
                 rule,
@@ -138,6 +150,12 @@ class PropAccountOverlay:
                 self.flat_rules.append(evaluator)
             elif isinstance(evaluator, rl.DailyLoss):
                 self.daily.append(evaluator)
+            elif isinstance(evaluator, rl.DailyProfitCap):
+                self.caps.append(evaluator)
+            elif isinstance(evaluator, rl.Inactivity):
+                self.inactivity.append(evaluator)
+            elif isinstance(evaluator, rl.News):
+                self.news.append(evaluator)
             elif isinstance(evaluator, rl.Payout):
                 self.payouts_rules.append(evaluator)
             elif isinstance(evaluator, rl.Consistency) and evaluator.rule.applies_to == "payout":
@@ -149,7 +167,7 @@ class PropAccountOverlay:
         for rule in (*self.phase.rules, *self.phase.pass_conditions):
             if isinstance(rule, DailyLossRule):
                 return rule.reset.time, rule.reset.tz
-        return DEFAULT_RESET_TIME, DEFAULT_RESET_TZ
+        return self.ruleset.reset.time, self.ruleset.reset.tz
 
     @property
     def closed(self) -> bool:
@@ -202,15 +220,20 @@ class PropAccountOverlay:
         if self.closed:
             return None
         for evaluator in self.flat_rules:
-            window = evaluator.flat_and_reopen(marks.open_time_ns, marks.close_time_ns)
+            window = evaluator.flat_and_reopen(
+                marks.open_time_ns, marks.close_time_ns, self._session_close(self._bar)
+            )
             if window is None:
                 continue
             flat, _ = window
-            day = rl.local_day(marks.open_time_ns, dt.time(0, 0), evaluator.rule.tz)
+            tz = evaluator.rule.tz
+            day = (
+                rl.local_day(marks.open_time_ns, dt.time(0, 0), tz) if tz is not None else self.day
+            )
             if marks.close_time_ns < flat or self.flat_done.get(evaluator.rule_id) == day:
                 continue
             self.flat_done[evaluator.rule_id] = day
-            if evaluator.rule.consequence == "fail":
+            if evaluator.rule.action == "fail":
                 if marks.position != 0:
                     self._fail(evaluator.rule_id, marks, marks.open_ticks)
                     return OverlayAction("close_account", evaluator.rule_id, True)
@@ -218,7 +241,7 @@ class PropAccountOverlay:
             if marks.position != 0:
                 self._record("forced_flat", evaluator.rule_id, marks)
                 return OverlayAction("liquidate", evaluator.rule_id, False)
-        return None
+        return self._news_flatten(marks)
 
     def admit(self, i: int, marks: AccountMarks, requested: int) -> int:
         """Step 3: the target the account allows (lock, closed account, forced-flat window,
@@ -227,7 +250,10 @@ class PropAccountOverlay:
         if self.closed:
             return marks.position
         allowed = requested
-        if self.locked_by is not None or self._flat_window(marks):
+        if self._news_all_trading(marks):
+            # ``all_trading``: nothing may change the position while the window is open
+            allowed = marks.position
+        elif self.locked_by is not None or self._flat_window(marks) or self._news_blocks(marks):
             allowed = self._reduction(marks, requested)
         limit = self._contract_limit()
         if limit is not None:
@@ -278,6 +304,8 @@ class PropAccountOverlay:
         if kind in ("roll_close", "roll_open"):
             return
         self._day_stats(marks).trades += 1
+        for evaluator in self.inactivity:
+            evaluator.note_trade(self.day, self._trade_date(marks))
 
     def _day_stats(self, marks: AccountMarks) -> rl.DayStats:
         """The current rule-day's statistics, opened with the balance it started from."""
@@ -320,10 +348,44 @@ class PropAccountOverlay:
             return OverlayAction(kind, breach.rule_id, breach.hard, marks.close_ticks)
         if self._check_time_limit(marks):
             return None
+        cap_action = self._apply_profit_cap(i, marks)
+        if cap_action is not None or self.closed:
+            return cap_action
         action = self._pass_action(marks)
         if action is not None or self.closed:
             return action
         self._maybe_pay(marks)
+        return None
+
+    def _apply_profit_cap(self, i: int, marks: AccountMarks) -> OverlayAction | None:
+        """Step 8b: a per-rule-day profit cap, forfeiting the excess or promoting the phase."""
+        stats = self.days.get(self.day)
+        if stats is None:
+            return None
+        for evaluator in self.caps:
+            excess = evaluator.excess(marks, stats.start_balance)
+            if excess <= 0:
+                continue
+            if evaluator.rule.action == "promote_phase":
+                self.outcome = "pass"
+                self.passed_at = i
+                self._record("promote_phase", evaluator.rule_id, marks)
+                if self.lifecycle.state != "passed_terminal":
+                    self.lifecycle.transition(
+                        "passed_terminal",
+                        time_ns=int(marks.close_time_ns),
+                        cause=f"daily_profit_cap {evaluator.rule_id}",
+                    )
+                if marks.position == 0:
+                    return None
+                return OverlayAction("phase_flatten", evaluator.rule_id, False, marks.close_ticks)
+            self.forfeited += excess
+            self._record(
+                "forfeit_excess",
+                evaluator.rule_id,
+                marks,
+                note=f"forfeited {excess} micro-dollars above the daily profit cap",
+            )
         return None
 
     def _pass_action(self, marks: AccountMarks) -> OverlayAction | None:
@@ -335,19 +397,41 @@ class PropAccountOverlay:
         return OverlayAction("phase_flatten", "pass", False, marks.close_ticks)
 
     def _maybe_pay(self, marks: AccountMarks) -> None:
-        """A payout at this close, when the trader takes every eligible one (P1)."""
+        """A payout at this close, when the trader takes every eligible one (P1).
+
+        A ``payout_group`` pays at most once per close: ``max_eligible`` takes the path with the
+        largest net, ``none`` takes none.
+        """
         if not self.payouts_rules or self.payout_policy != "max_eligible":
             return
-        consistency = all(evaluator.passes() for evaluator in self.payout_consistency)
+        calendar_days = (self._trade_date(marks) - self._start_day).days
+        best: dict[str, tuple[rl.Payout, rl.PayoutDecision]] = {}
         for evaluator in self.payouts_rules:
+            since_day = evaluator.last_payout_day
+            consistency = all(item.passes(since_day) for item in self.payout_consistency)
             decision = evaluator.decision(
                 marks,
                 self.closed_days,
                 trading_days=self.trading_days,
+                calendar_days=calendar_days,
                 consistency_holds=consistency,
             )
             if decision is None:
                 continue
+            key = decision.payout_group or evaluator.rule_id
+            current = best.get(key)
+            if current is None or decision.net > current[1].net:
+                best[key] = (evaluator, decision)
+        if not best:
+            return
+        payout_day = self.day
+        for evaluator, decision in best.values():
+            first = evaluator.count == 0
+            self.lifecycle.transition(
+                "payout_pending",
+                time_ns=int(marks.close_time_ns),
+                cause=f"payout {decision.rule_id} eligible",
+            )
             self.withdrawn += decision.gross
             evaluator.apply(
                 decision,
@@ -358,13 +442,22 @@ class PropAccountOverlay:
             self.payouts.append(
                 (int(marks.close_time_ns), decision.gross, decision.net, decision.rule_id)
             )
+            for trailing in self.rules:
+                if isinstance(trailing, rl.TrailingDrawdown) and first:
+                    trailing.on_first_payout()
+            for item in self.payout_consistency:
+                item.last_payout_day = payout_day
             self._record(
                 "payout",
                 decision.rule_id,
                 marks,
                 note=f"gross {decision.gross} net {decision.net} micro-dollars",
             )
-            return
+            self.lifecycle.transition(
+                "funded_active" if self.phase.kind == "funded" else "evaluation",
+                time_ns=int(marks.close_time_ns),
+                cause=f"withdrawal {decision.gross} recorded",
+            )
 
     def finish(self, marks: AccountMarks) -> None:
         """The end of the data: a complete rule-day was already processed at its close, so an
@@ -377,15 +470,29 @@ class PropAccountOverlay:
             return
         self.outcome = "censored"
         self._record("censored", "attempt", marks, note="data ended inside the rule-day")
+        if not self.lifecycle.terminal:
+            self.lifecycle.transition(
+                "censored",
+                time_ns=int(marks.close_time_ns),
+                cause="the data ended before the account resolved",
+            )
 
     # ------------------------------------------------------------------------- rule machinery
 
     def _adjusted(self, marks: AccountMarks) -> AccountMarks:
-        """The marks every rule sees: gross payouts are withdrawals, not trading losses, so the
-        balance the rules test is the trading balance minus what the trader took out."""
-        if not self.withdrawn:
+        """The marks every rule sees: a withdrawal and a forfeited excess are not trading P&L,
+        so the balance the rules test is the trading balance minus both."""
+        removed = self.withdrawn + self.forfeited
+        if not removed:
             return marks
-        return replace(marks, balance_micro=marks.balance_micro - self.withdrawn)
+        return replace(marks, balance_micro=marks.balance_micro - removed)
+
+    def _trade_date(self, marks: AccountMarks) -> dt.date:
+        return (
+            dt.datetime.fromtimestamp(int(marks.open_time_ns) // 1_000_000_000, dt.UTC)
+            .astimezone(_zone(self.reset_tz))
+            .date()
+        )
 
     def _new_day(self, day: int, marks: AccountMarks) -> None:
         self.trading_days += 1
@@ -395,9 +502,19 @@ class PropAccountOverlay:
             evaluator.new_day(day, marks)
         for evaluator in self.pass_conditions:
             evaluator.new_day(day, marks)
+        trade_date = self._trade_date(marks)
+        for evaluator in self.inactivity:
+            if evaluator.on_new_day(day, trade_date):
+                self._fail(evaluator.rule_id, marks, marks.open_ticks)
+                return
         if self.locked_by is not None:
             self._record("unlock", self.locked_by, marks)
             self.locked_by = None
+            self.lifecycle.transition(
+                "funded_active" if self.phase.kind == "funded" else "evaluation",
+                time_ns=int(marks.open_time_ns),
+                cause="the soft rule's reset clock reopened trading",
+            )
 
     def _rule_day_ended(self, i: int, marks: AccountMarks) -> bool:
         """The last bar of the rule-day, known causally: its close is the session's scheduled
@@ -449,6 +566,12 @@ class PropAccountOverlay:
         if self.locked_by is None:
             self.locked_by = rule_id
         self._record("lock", rule_id, marks, note="soft rule: liquidate and lock until reset")
+        if not self.lifecycle.terminal and self.lifecycle.state != "funded_locked_until_reset":
+            self.lifecycle.transition(
+                "funded_locked_until_reset",
+                time_ns=self.breach_time_ns,
+                cause=f"soft rule {rule_id} liquidated and locked until reset",
+            )
 
     def _fail(
         self, rule_id: str, marks: AccountMarks, price: int, *, when: int | None = None
@@ -459,6 +582,12 @@ class PropAccountOverlay:
         self.breached_rule = rule_id
         self.breach_time_ns = int(marks.close_time_ns) if when is None else int(when)
         self._record("breach", rule_id, marks, note=f"price {price} ticks")
+        if not self.lifecycle.terminal:
+            self.lifecycle.transition(
+                "failed",
+                time_ns=self.breach_time_ns,
+                cause=f"hard rule {rule_id} breached",
+            )
 
     def _check_pass(self, marks: AccountMarks) -> bool:
         if self.closed or not self.pass_conditions:
@@ -468,6 +597,12 @@ class PropAccountOverlay:
         self.outcome = "pass"
         self.passed_at = marks.bar
         self._record("pass", "attempt", marks)
+        if not self.lifecycle.terminal:
+            self.lifecycle.transition(
+                "passed_terminal",
+                time_ns=int(marks.close_time_ns),
+                cause="every pass condition holds",
+            )
         return True
 
     def _check_time_limit(self, marks: AccountMarks) -> bool:
@@ -534,13 +669,90 @@ class PropAccountOverlay:
 
     def _flat_window(self, marks: AccountMarks) -> bool:
         for evaluator in self.flat_rules:
-            window = evaluator.flat_and_reopen(marks.open_time_ns, marks.close_time_ns)
+            window = evaluator.flat_and_reopen(
+                marks.open_time_ns, marks.close_time_ns, self._session_close(self._bar)
+            )
             if window is None:
                 continue
             flat, reopen = window
             if int(marks.open_time_ns) < reopen and int(marks.close_time_ns) >= flat:
                 return True
         return False
+
+    def _session_close(self, i: int) -> int:
+        if 0 <= i < len(self.session_close_ns):
+            return int(self.session_close_ns[i])
+        return 0
+
+    # ------------------------------------------------------------------------------- news
+
+    def _news_windows(self, evaluator: rl.News) -> list[tuple[int, int, str]]:
+        """The restricted windows of one news rule, from the events the caller supplied.
+
+        An attempt whose calendar coverage does not include its period passes
+        ``news_covered=False`` and the rule stays ``not_modeled`` (reported), never enforced.
+        """
+        if not self.news_covered:
+            return []
+        instruments = evaluator.rule.instruments
+        if instruments and self.root not in instruments:
+            return []
+        pre = minute_ns(evaluator.rule.pre_minutes)
+        post = minute_ns(evaluator.rule.post_minutes)
+        out: list[tuple[int, int, str]] = []
+        for event in self.news_events:
+            if event.event_type not in evaluator.rule.event_types:
+                continue
+            if not event.time_known:
+                # no invented window: the caller reports the day as a coverage gap
+                continue
+            out.append((event.scheduled_ns - pre, event.scheduled_ns + post, event.event_id))
+        return sorted(out)
+
+    def _news_active(self, evaluator: rl.News, marks: AccountMarks) -> list[str]:
+        return [
+            event_id
+            for start, end, event_id in self._news_windows(evaluator)
+            if int(marks.open_time_ns) <= end and int(marks.close_time_ns) >= start
+        ]
+
+    def _news_blocks(self, marks: AccountMarks) -> bool:
+        """Whether an active window forbids opening or increasing a position."""
+        for evaluator in self.news:
+            if not self._news_active(evaluator, marks):
+                continue
+            if evaluator.rule.scope in ("new_entries", "all_trading"):
+                return True
+            if evaluator.rule.scope == "holding":
+                return True
+        return False
+
+    def _news_all_trading(self, marks: AccountMarks) -> bool:
+        return any(
+            evaluator.rule.scope == "all_trading" and self._news_active(evaluator, marks)
+            for evaluator in self.news
+        )
+
+    def _news_flatten(self, marks: AccountMarks) -> OverlayAction | None:
+        """Flatten at the first bar of a holding/all_trading window (``flatten: before_window``)."""
+        for evaluator in self.news:
+            if evaluator.rule.flatten != "before_window":
+                continue
+            if evaluator.rule.scope == "new_entries":
+                continue
+            active = self._news_active(evaluator, marks)
+            if not active or marks.position == 0:
+                continue
+            key = f"{evaluator.rule_id}:{active[0]}"
+            if key in self.news_flattened:
+                continue
+            self.news_flattened.add(key)
+            self._record("news_flatten", evaluator.rule_id, marks, note=f"event {active[0]}")
+            if evaluator.rule.action == "fail":
+                self._fail(evaluator.rule_id, marks, marks.open_ticks)
+                return OverlayAction("close_account", evaluator.rule_id, True)
+            return OverlayAction("liquidate", evaluator.rule_id, False)
+        return None
 
     # --------------------------------------------------------------------------- snapshotting
 
@@ -556,8 +768,11 @@ class PropAccountOverlay:
             "passed_at": self.passed_at,
             "flat_done": dict(self.flat_done),
             "withdrawn": self.withdrawn,
+            "forfeited": self.forfeited,
             "payouts": list(self.payouts),
             "trading_days": self.trading_days,
+            "lifecycle": self.lifecycle.snapshot(),
+            "news_flattened": sorted(self.news_flattened),
             "min_buffer": self.min_buffer,
             "days": {
                 str(day): [s.trades, s.start_balance, s.close_balance]
@@ -600,6 +815,9 @@ class PropAccountOverlay:
             self.passed_at = None if raw_passed is None else int(raw_passed)
             self.flat_done = {str(k): int(v) for k, v in data["flat_done"].items()}
             self.withdrawn = int(data["withdrawn"])
+            self.forfeited = int(data.get("forfeited", 0))
+            self.lifecycle.restore(data["lifecycle"])
+            self.news_flattened = {str(k) for k in data.get("news_flattened", [])}
             self.payouts = [
                 (int(when), int(gross), int(net), str(rule))
                 for when, gross, net, rule in data["payouts"]
@@ -671,6 +889,12 @@ class PropAccountOverlay:
             "count",
             "last_payout_day",
             "last_payout_trading_day",
+            "last_payout_balance",
+            "peak_profit",
+            "last_amount",
+            "days_since_trade",
+            "last_trade_day",
+            "first_payout",
         ):
             if hasattr(evaluator, name):
                 value = getattr(evaluator, name)
@@ -695,6 +919,12 @@ class PropAccountOverlay:
                 "count",
                 "last_payout_day",
                 "last_payout_trading_day",
+                "last_payout_balance",
+                "peak_profit",
+                "last_amount",
+                "days_since_trade",
+                "last_trade_day",
+                "first_payout",
             ):
                 setattr(evaluator, name, int(value))
             else:

@@ -21,6 +21,7 @@ from crucible.prop.coverage import (
     rule_coverage,
 )
 from crucible.prop.ruleset import Attribution, PropRuleset, Verification, load_ruleset
+from crucible.prop.scenarios import scenarios
 
 _ATTEMPT_ADAPTER: TypeAdapter[AttemptResult] = TypeAdapter(AttemptResult)
 
@@ -29,6 +30,7 @@ def attribution_document(source: Attribution) -> dict[str, object]:
     """One attribution as JSON-ready values (the snapshot hash is the evidence)."""
     return {
         "url": source.url,
+        "provided_by": source.provided_by,
         "quote": source.quote,
         "snapshot_sha256": source.snapshot_sha256,
         "retrieved_at": source.retrieved_at.isoformat(),
@@ -45,6 +47,7 @@ def verification_document(verification: Verification) -> dict[str, object]:
             None if verification.confirmed_at is None else verification.confirmed_at.isoformat()
         ),
         "confirmation_note": verification.confirmation_note,
+        "rules_checked": list(verification.rules_checked),
     }
 
 
@@ -73,6 +76,31 @@ def ruleset_document(ruleset: PropRuleset) -> dict[str, object]:
         ],
         "verification": verification_document(ruleset.verification),
         "verified": ruleset.verified,
+        "reset": {"time": ruleset.reset.time.isoformat(), "tz": ruleset.reset.tz},
+        "commissions": {
+            "status": ruleset.commissions.status,
+            "per_side_usd": {
+                root: str(value) for root, value in ruleset.commissions.per_side_usd.items()
+            },
+            "platform": ruleset.commissions.platform,
+        },
+        "conflicts": [
+            {
+                "conflict_id": conflict.conflict_id,
+                "rule_id": conflict.rule_id,
+                "field": conflict.field,
+                "selected_value": conflict.selected_value,
+                "alternatives": [
+                    {"value": alt.value, "source": attribution_document(alt.source)}
+                    for alt in conflict.alternatives
+                ],
+                "rationale": conflict.rationale,
+            }
+            for conflict in ruleset.conflicts
+        ],
+        "evidence_counts": _evidence_counts(ruleset),
+        "not_modeled_by_materiality": _not_modeled_counts(ruleset),
+        "scenarios": [item.scenario_id for item in scenarios(ruleset)],
         "phases": [
             {
                 "phase_id": phase.phase_id,
@@ -96,6 +124,39 @@ def ruleset_document(ruleset: PropRuleset) -> dict[str, object]:
         "evaluation_status": evaluation_status(rows),
         "material_unmodeled": list(material_unmodeled(rows)),
         "warnings": list(coverage_warnings(rows, ruleset)),
+    }
+
+
+def _evidence_counts(ruleset: PropRuleset) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for phase in ruleset.phases:
+        for rule in (*phase.rules, *phase.pass_conditions, *phase.fees):
+            counts[rule.evidence] = counts.get(rule.evidence, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _not_modeled_counts(ruleset: PropRuleset) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for entry in ruleset.not_modeled:
+        counts[entry.materiality] = counts.get(entry.materiality, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def listing_document(ruleset: PropRuleset) -> dict[str, object]:
+    """One row of ``crucible prop list --json``."""
+    rows = rule_coverage(ruleset)
+    return {
+        "ruleset_id": ruleset.ruleset_id,
+        "version": ruleset.version,
+        "firm": ruleset.firm,
+        "program": ruleset.program,
+        "ruleset_sha256": ruleset.ruleset_sha256,
+        "verified": ruleset.verified,
+        "verification_status": ruleset.verification.status,
+        "evidence_counts": _evidence_counts(ruleset),
+        "conflicts": len(ruleset.conflicts),
+        "not_modeled_by_materiality": _not_modeled_counts(ruleset),
+        "evaluation_status": evaluation_status(rows),
     }
 
 

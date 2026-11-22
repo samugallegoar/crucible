@@ -27,6 +27,7 @@ EXPECTED_TOOLS = {
     "crucible_artifact",
     "crucible_schema",
     "crucible_prop_validate",
+    "crucible_prop_list",
     "crucible_prop_schema",
     "crucible_run",
     "crucible_run_vectorized",
@@ -290,6 +291,7 @@ def _captured_calls() -> list[list[str]]:
             "crucible_artifact": {"artifact_id": "ART-1", "detail": True, "artifacts": "a"},
             "crucible_schema": {"kind": "manifest"},
             "crucible_prop_validate": {"ruleset": "r.yaml"},
+            "crucible_prop_list": {"firm": "synthetic", "root": "r"},
             "crucible_prop_schema": {"kind": "prop-attempt"},
             "crucible_data_list": {"store": "s"},
             "crucible_data_check": {
@@ -369,7 +371,7 @@ def test_every_tool_builds_an_argv_the_real_parser_accepts() -> None:
     from crucible.cli.main import build_parser
 
     calls = _captured_calls()
-    assert len(calls) == 29
+    assert len(calls) == 30
     for argv in calls:
         build_parser().parse_args(argv)  # a mistyped flag would exit(2) here
 

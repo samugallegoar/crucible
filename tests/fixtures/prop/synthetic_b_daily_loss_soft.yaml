@@ -1,9 +1,9 @@
-schema_version: 1
+schema_version: 2
 ruleset_id: synthetic-b-daily-loss-soft
 version: 1
 firm: SyntheticFirm A
 program: Synthetic Evaluation
-account_size_usd: "50000"
+account_size_usd: '50000'
 platform: TestPlatform
 addons: []
 jurisdiction: TestLand
@@ -11,35 +11,55 @@ as_of: 2024-01-01
 effective_from: 2024-01-01
 effective_to: null
 instruments:
-  - root: ES
-    contract_weight: "1"
-  - root: MES
-    contract_weight: "0.1"
+- root: ES
+  contract_weight: '1'
+- root: MES
+  contract_weight: '0.1'
 verification:
   status: unverified
 phases:
-  - phase_id: evaluation
-    kind: evaluation
-    starting_balance_usd: "50000"
-    rules:
-      - kind: daily_loss
-        rule_id: daily
-        description: synthetic daily_loss
-        amount_usd: "1000"
-        reference: day_start_balance
-        basis: equity
-        evaluated: intraday
-        reset: {time: "17:00", tz: America/Chicago}
-        severity: soft
-        source: 
-          url: https://example.invalid/synthetic-rules
-          quote: "Synthetic rule value invented for a test, not a real firm's rule"
-          snapshot_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
-          retrieved_at: 2024-01-01T00:00:00Z
-          section: "1"
-          synthetic: true
-    pass_conditions: []
-    max_calendar_days: null
-    max_trading_days: null
-    fees: []
+- phase_id: evaluation
+  kind: evaluation
+  starting_balance_usd: '50000'
+  rules:
+  - kind: daily_loss
+    rule_id: daily
+    description: synthetic daily_loss
+    amount_usd: '1000'
+    reference: day_start_balance
+    basis: equity
+    evaluated: intraday
+    reset:
+      time: '17:00'
+      tz: America/Chicago
+    source:
+      url: https://example.invalid/synthetic-rules
+      quote: Synthetic rule value invented for a test, not a real firm's rule
+      snapshot_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+      retrieved_at: 2024-01-01 00:00:00+00:00
+      section: '1'
+      synthetic: true
+    evidence: official_quote
+    comparison: <=
+    action: soft_lock_until_reset
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
 not_modeled: []
+reset:
+  time: '17:00:00'
+  tz: America/Chicago
+commissions:
+  status: known
+  per_side_usd:
+    ES: '2.00'
+  platform: null
+  source:
+    url: https://example.invalid/synthetic-rules
+    quote: Synthetic rule value invented for a test, not a real firm's rule
+    snapshot_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    retrieved_at: '2024-01-01T00:00:00Z'
+    section: '1'
+    synthetic: true
+conflicts: []

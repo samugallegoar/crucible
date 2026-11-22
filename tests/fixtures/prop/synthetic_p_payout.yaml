@@ -1,9 +1,9 @@
-schema_version: 1
+schema_version: 2
 ruleset_id: synthetic-p-payout
 version: 1
 firm: SyntheticFirm A
 program: Synthetic Funded
-account_size_usd: "50000"
+account_size_usd: '50000'
 platform: TestPlatform
 addons: []
 jurisdiction: TestLand
@@ -11,36 +11,56 @@ as_of: 2024-01-01
 effective_from: 2024-01-01
 effective_to: null
 instruments:
-  - root: ES
-    contract_weight: "1"
+- root: ES
+  contract_weight: '1'
 verification:
   status: unverified
 phases:
-  - phase_id: funded
-    kind: funded
-    starting_balance_usd: "50000"
-    rules:
-      - kind: payout
-        rule_id: payout
-        description: synthetic payout
-        min_days_since_last: 0
-        min_profitable_days: 1
-        min_day_profit_usd: "0"
-        buffer_usd: "1000"
-        split: "0.8"
-        min_usd: "100"
-        max_usd: "2000"
-        max_payouts: null
-        threshold_after_payout: unchanged
-        source:
-          url: https://example.invalid/synthetic-rules
-          quote: "Synthetic rule value invented for a test, not a real firm's rule"
-          snapshot_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
-          retrieved_at: 2024-01-01T00:00:00Z
-          section: "1"
-          synthetic: true
-    pass_conditions: []
-    max_calendar_days: null
-    max_trading_days: null
-    fees: []
+- phase_id: funded
+  kind: funded
+  starting_balance_usd: '50000'
+  rules:
+  - kind: payout
+    rule_id: payout
+    description: synthetic payout
+    min_days_since_last: 0
+    min_profitable_days: 1
+    min_day_profit_usd: '0'
+    buffer_usd: '1000'
+    split: '0.8'
+    min_usd: '100'
+    max_usd: '2000'
+    max_payouts: null
+    threshold_after_payout: unchanged
+    source:
+      url: https://example.invalid/synthetic-rules
+      quote: Synthetic rule value invented for a test, not a real firm's rule
+      snapshot_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+      retrieved_at: 2024-01-01 00:00:00+00:00
+      section: '1'
+      synthetic: true
+    evidence: official_quote
+    comparison: '>='
+    action: withdraw
+    window: all_time
+  pass_conditions: []
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
 not_modeled: []
+reset:
+  time: '17:00:00'
+  tz: America/Chicago
+commissions:
+  status: known
+  per_side_usd:
+    ES: '2.00'
+  platform: null
+  source:
+    url: https://example.invalid/synthetic-rules
+    quote: Synthetic rule value invented for a test, not a real firm's rule
+    snapshot_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    retrieved_at: '2024-01-01T00:00:00Z'
+    section: '1'
+    synthetic: true
+conflicts: []

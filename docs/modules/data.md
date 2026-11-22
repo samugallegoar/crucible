@@ -64,6 +64,20 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
 - `providers/` — price providers behind one interface (`PriceProvider`, ADR-0063): the `tiingo` and `yfinance`
   adapters, and `fetch.py` behind `crucible data fetch`, the shared normalizer, settings (API keys),
   HTTP retry and the raw-response cache. See "Data providers" below.
+- `econ_events.py` — the economic-event calendar `econ_events_v1` (ADR-0107 section 12): the release
+  instants of every FOMC policy statement (scheduled meetings *and* intermeeting actions), of the
+  BLS Consumer Price Index release and of the BLS Employment Situation release, 2010-01-01 to the
+  last date the sources publish, built from raw snapshots of federalreserve.gov and bls.gov
+  (`docs/data/econ-events.md`). `ECON_EVENT_SCHEMA` / `ECON_EVENT_SORT_KEYS`, the parsers
+  `parse_fomc_statement` / `parse_fomc_calendar` / `parse_fomc_historical` / `parse_bls_schedule`,
+  `events_from_snapshots` (the assembly, where an earlier snapshot of a schedule turns a release
+  `rescheduled` or `cancelled`), `build_econ_events` (it refuses to overwrite a stored dataset),
+  `load_econ_events(store, event_types, start_ns, end_ns, *, as_of=None)` (reads with the
+  open-ended sentinel: a calendar is a firm-rule constraint, not a strategy signal),
+  `coverage(store)` / `coverage_of(frame)` (the covered intervals and the gaps per event type),
+  `day_only_events(frame)` (the rows whose hour no source states) and `fetch_raw` (the ingestion,
+  which discovers the statement pages from the Fed's own pages and writes `MANIFEST.json`). This is
+  **not** market data and the futures vault guard does not cover it.
 - `interfaces.py` — `DatasetManifest` and the Protocols `PITAccessor`, `DataStore`,
   `UniverseProvider`, `TradingCalendar`, `QualityCheck`.
 
@@ -316,3 +330,10 @@ oversights): a Polymarket loser settles at `settlement_floor` (0.001), not 0, be
 battery needs positive prices; an order placed on a contract's last bar fills at the settlement print
 (1.0 or the floor, no spread), which gives a buyer no edge since the print is the payoff.
 `exchange_calendars` is an untyped boundary (mypy override in pyproject).
+Economic events (`econ_events.py`): every row is `available_at = event_time` because no page states
+when its own schedule entries were first published, so a point-in-time read hides an event until it
+happens — the dataset serves firm rules, never signals (ADR-0107 section 12). 48 FOMC rows
+(2010-2015) and 10 announced-but-unreleased meetings state a date but no hour, and the October 2013
+shutdown's original BLS dates are not recorded (no pre-shutdown capture of that page exists in the
+Internet Archive). Notation-vote statements are read only when labelled "Statement"; joint
+Treasury/Fed announcements are not FOMC statements and are absent.

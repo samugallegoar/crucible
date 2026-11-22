@@ -14,6 +14,7 @@ built datasets live in `data/processed/` (gitignored). Import specs are in `exam
 | CME Globex futures 1m, Databento (ES, NQ, YM, RTY, NKD), raw contracts | `es_1m_raw`, `nq_1m_raw`, `ym_1m_raw`, `rty_1m_raw`, `nkd_1m_raw` | [glbx-futures-1m.md](glbx-futures-1m.md) |
 | CME Globex futures 1m, continuous (unadjusted, ratio-adjusted, rolls) | `<root>_1m_cont_v3`, `<root>_1m_cont_ratio_v3`, `<root>_1m_rolls_v3` | [glbx-futures-1m.md](glbx-futures-1m.md#continuous-series-adr-0086) |
 | CME Globex session calendar (equity-index futures), a table in code | — | [cme-globex-sessions.md](cme-globex-sessions.md) |
+| Economic events: FOMC statements, CPI, Employment Situation (federalreserve.gov, bls.gov) | `econ_events_v1` | [econ-events.md](econ-events.md) |
 | Free providers (yfinance, Tiingo), fetched on demand | whatever `--dataset` names | [providers.md](providers.md) |
 
 **How big can a run be?** See [scale.md](scale.md).

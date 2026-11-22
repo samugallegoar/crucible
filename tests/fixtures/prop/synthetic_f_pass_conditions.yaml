@@ -1,9 +1,9 @@
-schema_version: 1
+schema_version: 2
 ruleset_id: synthetic-f-pass-conditions
 version: 1
 firm: SyntheticFirm A
 program: Synthetic Evaluation
-account_size_usd: "50000"
+account_size_usd: '50000'
 platform: TestPlatform
 addons: []
 jurisdiction: TestLand
@@ -11,58 +11,86 @@ as_of: 2024-01-01
 effective_from: 2024-01-01
 effective_to: null
 instruments:
-  - root: ES
-    contract_weight: "1"
-  - root: MES
-    contract_weight: "0.1"
+- root: ES
+  contract_weight: '1'
+- root: MES
+  contract_weight: '0.1'
 verification:
   status: unverified
 phases:
-  - phase_id: evaluation
-    kind: evaluation
-    starting_balance_usd: "50000"
-    rules: []
-    pass_conditions:
-        - kind: profit_target
-          rule_id: target
-          description: synthetic profit_target
-          amount_usd: "500"
-          basis: equity
-          evaluated: eod
-          require_flat: true
-          source: 
-            url: https://example.invalid/synthetic-rules
-            quote: "Synthetic rule value invented for a test, not a real firm's rule"
-            snapshot_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
-            retrieved_at: 2024-01-01T00:00:00Z
-            section: "1"
-            synthetic: true
-        - kind: min_trading_days
-          rule_id: days
-          description: synthetic min_trading_days
-          days: 2
-          day_counts_if: {min_trades: 1}
-          source: 
-            url: https://example.invalid/synthetic-rules
-            quote: "Synthetic rule value invented for a test, not a real firm's rule"
-            snapshot_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
-            retrieved_at: 2024-01-01T00:00:00Z
-            section: "1"
-            synthetic: true
-        - kind: consistency
-          rule_id: consistency
-          description: synthetic consistency
-          max_day_share: "0.8"
-          measure: best_day_profit/total_profit
-          applies_to: pass
-          source: 
-            url: https://example.invalid/synthetic-rules
-            quote: "Synthetic rule value invented for a test, not a real firm's rule"
-            snapshot_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
-            retrieved_at: 2024-01-01T00:00:00Z
-            section: "1"
-            synthetic: true
-    max_calendar_days: null
-    max_trading_days: null
-    fees: []
+- phase_id: evaluation
+  kind: evaluation
+  starting_balance_usd: '50000'
+  rules: []
+  pass_conditions:
+  - kind: profit_target
+    rule_id: target
+    description: synthetic profit_target
+    amount_usd: '500'
+    basis: equity
+    evaluated: eod
+    require_flat: true
+    source:
+      url: https://example.invalid/synthetic-rules
+      quote: Synthetic rule value invented for a test, not a real firm's rule
+      snapshot_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+      retrieved_at: 2024-01-01 00:00:00+00:00
+      section: '1'
+      synthetic: true
+    evidence: official_quote
+    comparison: '>='
+    action: promote_phase
+  - kind: min_trading_days
+    rule_id: days
+    description: synthetic min_trading_days
+    days: 2
+    day_counts_if:
+      min_trades: 1
+    source:
+      url: https://example.invalid/synthetic-rules
+      quote: Synthetic rule value invented for a test, not a real firm's rule
+      snapshot_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+      retrieved_at: 2024-01-01 00:00:00+00:00
+      section: '1'
+      synthetic: true
+    evidence: official_quote
+    unit: trading_days
+    comparison: '>='
+    action: promote_phase
+  - kind: consistency
+    rule_id: consistency
+    description: synthetic consistency
+    max_day_share: '0.8'
+    measure: best_day_profit/total_profit
+    applies_to: pass
+    source:
+      url: https://example.invalid/synthetic-rules
+      quote: Synthetic rule value invented for a test, not a real firm's rule
+      snapshot_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+      retrieved_at: 2024-01-01 00:00:00+00:00
+      section: '1'
+      synthetic: true
+    evidence: official_quote
+    window: all_time
+    comparison: <=
+    action: promote_phase
+  max_calendar_days: null
+  max_trading_days: null
+  fees: []
 not_modeled: []
+reset:
+  time: '17:00:00'
+  tz: America/Chicago
+commissions:
+  status: known
+  per_side_usd:
+    ES: '2.00'
+  platform: null
+  source:
+    url: https://example.invalid/synthetic-rules
+    quote: Synthetic rule value invented for a test, not a real firm's rule
+    snapshot_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    retrieved_at: '2024-01-01T00:00:00Z'
+    section: '1'
+    synthetic: true
+conflicts: []

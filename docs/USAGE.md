@@ -556,17 +556,26 @@ Each row names the time, caller, purpose, dataset, `as_of`, outcome and registra
 `vault status` and `vault log` never report a metric: the numbers of the protected period live in the
 sealed artifact of an evaluation that has run.
 
-## 13. A prop-firm attempt (C7a, ADR-0106)
+## 13. A prop-firm attempt (C7a/C7b, ADR-0106/0107)
 
 A prop-firm ruleset is sourced, versioned data (`docs/modules/prop.md`); the engine knows rule
 kinds, never a firm. Check one before using it:
 
 ```bash
-uv run crucible prop validate path/to/ruleset.yaml          # identity, hash, coverage, warnings
+uv run crucible prop validate path/to/ruleset.yaml          # identity, hash, evidence, scenarios
 uv run crucible prop validate path/to/ruleset.yaml --json   # the same document
+uv run crucible prop list --firm <firm> --json              # every ruleset, hash and evidence
+uv run crucible prop confirm path/to/ruleset.yaml           # OWNER ONLY: interactive TTY
 uv run crucible schema --kind prop-ruleset                  # the file's JSON Schema
 uv run crucible schema --kind prop-attempt                  # the result's JSON Schema
 ```
+
+`prop list` lists `rulesets/prop/**` with each file's id, version, content hash, evidence counts,
+conflicts, unmodeled rules by materiality and verification status; a v1 file is shown as
+`pending_migration`. `prop confirm` is the owner's step only: it refuses without a TTY, prints
+every rule with its quotation and URL, asks for the first 12 hex of the content hash and writes
+`<file>.verification.yaml`. It is never exposed over MCP. `rulesets/prop/INDEX.json` is generated
+by `uv run python -m tools.docgen --write` and is append-only.
 
 `prop validate` changes no file. It reports the ruleset's `ruleset_sha256`, its verification status
 (only the owner can confirm a ruleset, and a synthetic one can never be `verified`), one
@@ -575,24 +584,37 @@ or `blocked`) and the warnings those gaps imply. A ruleset marked `unverified` m
 `unverified_ruleset: true`, and a data window that starts before the ruleset's `effective_from` is
 labelled a counterfactual application.
 
-Running an attempt is a library call until C7b gives it a run config:
+Running an attempt is a library call until C7c gives it a run config:
 
 ```python
-from crucible.prop import load_ruleset, simulate_attempt
+from crucible.prop import load_ruleset, scenarios, simulate_attempt
 
 ruleset = load_ruleset("path/to/ruleset.yaml")
-result = simulate_attempt(
-    bars=bars, targets=targets, rolls=rolls, spec=spec, costs=costs,
-    ruleset=ruleset, start_trade_date=date(2024, 1, 8), max_horizon_days=20,
-    calendar=calendar,            # the CME session calendar: it decides when a rule-day ends
-    payout_policy="max_eligible", # the trader's choice, not a firm rule; "none" takes none
-)
-result.outcome          # pass | fail | timeout | censored
-result.breached_rule    # which rule ended it, and when
-result.min_buffer_usd   # the smallest distance to a failure threshold, and where
-result.payouts          # gross and net of every withdrawal
-result.evaluation_status, result.warnings
+for item in scenarios(ruleset):   # primary, then one sensitivity per conflict alternative
+    result = simulate_attempt(
+        bars=bars, targets=targets, rolls=rolls, spec=spec, costs=costs,
+        ruleset=item.ruleset, start_trade_date=date(2024, 1, 8), max_horizon_days=20,
+        calendar=calendar,            # the CME session calendar: it decides when a rule-day ends
+        payout_policy="max_eligible", # the trader's choice, not a firm rule; "none" takes none
+        execution_mode="manual",      # REQUIRED: automated|manual, for compliance eligibility
+        news_events=events,           # Sequence[NewsEvent] or None
+        news_coverage=coverage,       # Sequence[(start_ns, end_ns)] or None
+        scenario_id=item.scenario_id,
+    )
+    result.outcome          # pass | fail | timeout | censored (the mechanical account)
+    result.mechanical_outcome, result.estimate_status   # what may be claimed, and why
+    result.practical_eligibility  # eligible | blocked_by_compliance | unknown
+    result.breached_rule    # which rule ended it, and when
+    result.min_buffer_usd   # the smallest distance to a failure threshold, and where
+    result.fees             # evaluation, activation, monthly (per started month) and reset
+    result.payouts          # gross and net of every withdrawal
+    result.evaluation_status, result.estimate_reasons, result.warnings
 ```
+
+The ruleset's `commissions` replace the run's fee schedule; spread and slippage still come from
+the run's `CostSchedule`. Unknown commissions are never zero: without a named `cost_assumption` the
+cost-dependent statistics are `unavailable`. A news rule with no calendar coverage is `not_modeled`
+(material), so the estimate becomes `partial` rather than "no news".
 
 A `censored` attempt is the data ending before the attempt resolved: it is its own class, never a
 failure. `min_buffer_usd` and every money field are `Decimal`; the breach, lock, resize and payout

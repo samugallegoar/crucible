@@ -133,5 +133,6 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0104](0104-effective-trials-and-futures-pbo.md) | Effective trials by correlation clustering, supplementary DSR, and PBO on valid futures candidate panels | accepted | Series |
 | [0105](0105-futures-holdout-vault.md) | Futures holdout vault — family-wide locked period, data-layer enforcement, human authorization, one evaluation per registration | accepted | The protected period |
 | [0106](0106-prop-firm-rule-engine.md) | Generic prop-firm rule engine — sourced versioned rulesets, bar-by-bar account overlay inside the futures simulation, conservative OHLC breach semantics, rule coverage | accepted | `crucible/prop/` is a new package in the layer of `risk` and `strategy` |
+| [0107](0107-firm-rulesets-and-attempt-statistics.md) | Firm rulesets as sourced, hash-locked data with owner-only verification; attempt sequences, censoring and pass probability with an overlapping-attempt block bootstrap | accepted | Files. Each ruleset is a file `rulesets/prop/<firm>/<ruleset_id>.v<N>.yaml` |
 
 <!-- END GENERATED: adr-index -->

@@ -396,6 +396,17 @@ def build_server() -> MCPServer:
         )
 
     @server.tool()
+    async def crucible_prop_list(
+        firm: str | None = None, root: str | None = None
+    ) -> dict[str, object]:
+        """List every prop-firm ruleset (`crucible prop list --json`): its id, version, content
+        hash, evidence counts, conflicts, unmodeled rules by materiality and verification status.
+        Read-only; `crucible prop confirm` is the owner's TTY-only step and is never exposed here
+        (ADR-0107 section 2)."""
+        options: dict[str, Option] = {"json": True, "firm": firm, "root": absolute(root)}
+        return await run_cli(build_argv(["prop", "list"], [], options))
+
+    @server.tool()
     async def crucible_prop_schema(kind: str = "prop-ruleset") -> dict[str, object]:
         """A prop-firm JSON Schema: `prop-ruleset` (a ruleset file: identity, instruments,
         verification, phases and every rule kind) or `prop-attempt` (the attempt result: outcome,

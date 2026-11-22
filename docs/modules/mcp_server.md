@@ -80,11 +80,15 @@ decision, so an agent cannot read the holdout by asking for it.
 Resource `crucible://guide` and prompt `backtest_a_strategy`: the agent guide
 (`AGENT_GUIDE.md` at the repository root, packaged into the wheel as a resource).
 
-**Prop-firm tools (ADR-0106).** `crucible_prop_validate` runs `crucible prop validate --json` on
-a ruleset path (identity, content hash, verification, one coverage row per rule, evaluation status
-and warnings; it changes no file) and `crucible_prop_schema` runs `crucible schema --kind
-prop-ruleset|prop-attempt`. There is no tool that runs an attempt: that is `simulate_attempt` in the
-library, and the futures-run config that names a ruleset is C7b.
+**Prop-firm tools (ADR-0106/0107).** `crucible_prop_validate` runs `crucible prop validate --json`
+on a ruleset path (identity, content hash, evidence counts, conflicts and scenarios, verification,
+one coverage row per rule, evaluation status and warnings; it changes no file),
+`crucible_prop_list` runs `crucible prop list --json` (id, version, hash, evidence counts,
+conflicts, unmodeled rules by materiality and verification status) and `crucible_prop_schema` runs
+`crucible schema --kind prop-ruleset|prop-attempt`. `crucible prop confirm` is deliberately absent:
+verification is the owner's interactive TTY step (ADR-0107 section 2). There is no tool that runs
+an attempt: that is `simulate_attempt` in the library, and the futures-run config that names a
+ruleset is C7c.
 
 ### Operational rules
 

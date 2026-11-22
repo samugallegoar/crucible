@@ -605,6 +605,47 @@ One column per factor (header row = factor names), one row per period, **row-ali
 run's own return series**; no date column; all values floats (ADR-0022). Loaded by
 `experiments.validate.load_factors_csv`.
 
+### 1.6 Economic-event calendar (`econ_events_v1`)
+
+A dataset of release instants, not market data (ADR-0107 section 12; ingestion record in
+`docs/data/econ-events.md`). Hand-written here because it is not one of the `crucible/data/contracts.py`
+schemas: its rows are events, and its `event_type` column replaces the `symbol` of a bar dataset.
+Stored sort order: `event_time`, `event_type`, `event_id`. Built by
+`crucible.data.econ_events.build_econ_events`.
+
+| Column | Dtype | Nullable | Unit / meaning |
+|---|---|---|---|
+| `event_id` | `String` | no | stable id: `<event_type>-<YYYYMMDD>[-<seq>]`, dated by the **scheduled** release date (the original one for a rescheduled release) |
+| `event_type` | `String` | no | `FOMC_STATEMENT`, `CPI` or `NFP` |
+| `scheduled_local` | `String` | no | the release instant the source states, ISO 8601 with the UTC offset `America/New_York` had on that date |
+| `timezone` | `String` | no | IANA zone of `scheduled_local`: `America/New_York` |
+| `event_time` | `Int64` | no | the release instant that materialised (UTC ns); 00:00 local when the source states no hour |
+| `time_known` | `Boolean` | no | `false` = no source stated the hour, so `event_time` marks the local **day**, not the release |
+| `scheduled_time_source` | `String` | no | who stated the release time: `fed_stated`, `bls_stated` or `not_stated` |
+| `status` | `String` | no | `released`, `scheduled`, `rescheduled` or `cancelled`; a `cancelled` release never happened and has no actual date |
+| `actual_publication_date` | `String` | yes | `YYYY-MM-DD` the release actually happened; `null` until it does |
+| `unscheduled` | `Boolean` | no | `true` for an intermeeting action: no advance schedule existed |
+| `source_url` | `String` | no | the page the row was read from (a statement page or a schedule page) |
+| `snapshot_sha256` | `String` | no | SHA-256 of that page's raw bytes, as the raw folder's `MANIFEST.json` records them |
+| `available_at` | `Int64` | no | UTC ns the schedule entry was publicly known; **may be earlier than `event_time`**, which a bar dataset may not |
+| `availability_basis` | `String` | no | `schedule_publication_unknown` (every row today: `available_at = event_time`) or `schedule_page_stated_date` |
+| `record_sha256` | `String` | no | SHA-256 of this row's other fields in canonical JSON; a row that changes under a stable `event_id` is detectable |
+| `dataset_version` | `String` | no | `econ_events_v1`: the version of the **rows**, bumped when a parsing rule changes what a row says |
+
+Two differences from every other dataset, both deliberate:
+
+- **`available_at` may be before `event_time`.** A release schedule is published in advance, so
+  the schedule is knowable before the event; a bar can only be known after it closed. `1.1`'s rule
+  that `available_at >= event_time` therefore does not apply to this dataset.
+- **A window is not always placeable.** When `time_known` is `false` the source states the day but
+  no hour (a 2010-2015 FOMC statement went out "for immediate release"; a future meeting has no
+  stated hour), and a consumer must widen its window to the whole local day rather than place it
+  at `event_time`. `day_only_events(frame)` returns exactly those rows.
+
+A strategy must not read this dataset as a signal: with `available_at = event_time`, a
+point-in-time read hides each event until the instant it happens. Its consumer is a firm rule
+(`news_restriction`), which reads it structurally through `load_econ_events`.
+
 ## 2. Output artifacts
 
 ```
@@ -1490,14 +1531,18 @@ The two copies must agree on every key except `opens`/`last_log_hash`; a disagre
 The access log is written by BOTH the data layer (every read/whole-file attempt on a dataset of a
 protected root) and the protocol (`authorize`, `register`, `evaluate` steps): one log, never two.
 
-## The prop-firm ruleset file (ADR-0106, `crucible prop validate`)
+## The prop-firm ruleset file (ADR-0106/0107, `crucible prop validate`)
 
-A ruleset is YAML that validates into `crucible.prop.ruleset.PropRuleset` (`schema_version: 1`);
-`crucible schema --kind prop-ruleset` prints its JSON Schema. The required fields:
+A ruleset is YAML that validates into `crucible.prop.ruleset.PropRuleset` (`schema_version: 2`);
+`crucible schema --kind prop-ruleset` prints its JSON Schema. A v1 file is refused with a
+migration message, never silently upgraded. The required fields:
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| `schema_version` | `1` | the ruleset file's format version |
+| `schema_version` | `2` | the ruleset file's format version |
+| `reset` | `{time, tz}` | the ruleset's rule-day boundary; no default, a firm declares it |
+| `commissions` | `{status: known\|unknown, per_side_usd: {ROOT: decimal}, platform, source}` | per-side commissions; unknown is never zero and a sentinel is refused |
+| `conflicts` | list (optional) | `{conflict_id, rule_id, field, selected_value, alternatives [{value, source}], selected_source, rationale, applicability_checked: true}` |
 | `ruleset_id` | string | the program's stable id; `(ruleset_id, version)` is the ruleset's identity |
 | `version` | integer >= 1 | a released version is immutable: a change is a new number |
 | `firm`, `program` | string | labels only: no value in the engine is keyed on them |
@@ -1506,18 +1551,23 @@ A ruleset is YAML that validates into `crucible.prop.ruleset.PropRuleset` (`sche
 | `as_of` | date | when the rules were read (independent of the data window) |
 | `effective_from`, `effective_to` | date, date or null | when the rules are in force; data earlier than `effective_from` is a counterfactual application |
 | `instruments` | list of `{root, contract_weight}` | the roots allowed and their mini/micro weight (1 and 0.1) |
-| `verification` | `{status: unverified\|verified, confirmed_by, confirmed_at, confirmation_note}` | `verified` requires all three confirmation fields and a complete, non-synthetic attribution on every rule, pass condition and fee |
+| `verification` | `{status: unverified}` | only `unverified` is allowed in the file; verification lives in `<file>.verification.yaml` (`ruleset_sha256`, `confirmed_by`, `confirmed_at`, `confirmation_note`, `rules_checked`) and is written only by `crucible prop confirm` |
 | `phases` | list of `Phase` | ordered: `phase_id`, `kind` (`evaluation` or `funded`), `starting_balance_usd`, `rules`, `pass_conditions`, `max_calendar_days`/`max_trading_days`, `fees` |
 | `not_modeled` | list of `{rule, description, materiality: immaterial\|material\|critical, source}` | every firm rule the vocabulary cannot express; declared, never dropped |
 
-Every rule, pass condition, fee and `not_modeled` entry carries `source`: `url`, `quote`,
-`snapshot_sha256` (64 hex), `retrieved_at` (a UTC timestamp), optional `section` and `synthetic`.
-A rule is a discriminated union on `kind`; the parameters of each kind are in
-`docs/modules/prop.md` ("The rule kinds"), and `evaluated` (`intraday` or `eod`) is required on
-`static_drawdown`, `trailing_drawdown` and `daily_loss`.
+Every rule, pass condition, fee and `not_modeled` entry carries `source`: `url` (null only with
+`provided_by: owner`), `quote`, `snapshot_sha256` (64 hex), `retrieved_at` (a UTC timestamp),
+optional `section`, `synthetic`, `provided_by`; and `evidence: official_quote | owner_provided |
+assumption | conflict_resolution`, with `assumption {name, rationale}` required when the value is
+an assumption. A rule may declare its own `effective_from`/`effective_to`. A rule is a
+discriminated union on `kind`; the parameters of each kind are in `docs/modules/prop.md`
+("The rule kinds"), and `evaluated` (`intraday`, `eod` or `on_request`) is required on every
+threshold rule.
 
-`ruleset_sha256` is the canonical JSON hash of the content (not a field in the file): the loader
-refuses two files with the same `(ruleset_id, version)` and different hashes.
+`ruleset_sha256` is the canonical JSON hash of the content **excluding** `verification` (not a
+field in the file): confirming a ruleset never changes its identity, and the loader refuses two
+files with the same `(ruleset_id, version)`. `rulesets/prop/INDEX.json` (generated) locks every
+file's hash and is append-only.
 
 ## The prop-firm attempt result (C7a, `AttemptResult`)
 
@@ -1531,7 +1581,9 @@ prints its JSON Schema. The fields:
 | `breached_rule`, `breach_time_ns` | string / integer or null | the rule that ended the attempt and the instant it was found |
 | `days_to_pass_trading`, `days_to_pass_calendar` | integer or null | trading days and calendar days from the start to the pass |
 | `min_buffer_usd`, `min_buffer_bar`, `min_buffer_time_ns`, `min_buffer_rule` | decimal / integer / integer / string or null | the smallest basis-minus-threshold over every failure threshold, at each bar's conservative extreme, and where it happened |
-| `fees_usd`, `payouts_usd`, `payouts`, `payout_policy`, `payout_modeled`, `net_cash_usd` | decimal / decimal / list of `{time_ns, gross_usd, net_usd, rule_id}` / `max_eligible` or `none` / boolean / decimal | attempt costs; the trader's net payouts, the choice that produced them and whether withdrawals are modeled at all; `net_cash_usd = payouts_usd - fees_usd` |
+| `fees_usd`, `fees`, `payouts_usd`, `payouts`, `payout_policy`, `payout_modeled`, `net_cash_usd` | decimal / `{evaluation_usd, activation_usd, monthly_usd, reset_usd, total_usd}` / decimal / list of `{time_ns, gross_usd, net_usd, rule_id}` / `max_eligible` or `none` / boolean / decimal | attempt costs broken out (monthly is per started calendar month); the trader's net payouts, the choice that produced them and whether withdrawals are modeled; `net_cash_usd = payouts_usd - fees_usd` |
+| `mechanical_outcome`, `estimate_status`, `estimate_reasons`, `practical_eligibility`, `scenario_id` | outcome / `complete\|conditional\|partial\|unavailable` / list of strings / `eligible\|blocked_by_compliance\|unknown` / string | what the simulated account did, what the evidence allows it to claim (and why), whether the exact execution mode may trade the plan, and which scenario ran |
+| `commissions`, `news_covered`, `news_coverage_gaps` | `{status, per_side_usd, root, source, cost_assumption}` / boolean or null / list of event ids | the commission table applied (the run's fee schedule is replaced, spread/slippage kept); whether the calendar covered the attempt; the events whose release TIME is unknown (`time_known: false`), whose whole trade date is therefore outside coverage; timed events keep their windows enforced |
 | `overlay_events` | list of `{kind, bar, time_ns, rule_id, requested, allowed, note}` | resizes, rejections, locks, unlocks, breaches, forced flats, payouts, pass, timeout, censored |
 | `rule_coverage` | list of `{rule, description, modeled, materiality, source}` | one row per rule, then one per `not_modeled` entry |
 | `evaluation_status`, `material_unmodeled`, `warnings` | `complete` / `conditional_on_modeled_rules` / `blocked`, list of strings, list of strings | what the declared gaps allow a result to claim |

@@ -285,18 +285,27 @@ the data layer refuses the read even when a caller bypasses them. `futures compa
 `futures trials` exclude the `VAULT/` artifacts unless `--include-vault` is passed (after the
 evaluation).
 
-## The prop-firm commands (C7a, ADR-0106)
+## The prop-firm commands (C7a/C7b, ADR-0106/0107)
 
 - **`crucible prop validate <ruleset.yaml>`** checks a prop-firm ruleset and changes no file: the
   identity (`ruleset_id`, version, firm, program, account size, platform, jurisdiction), the
-  content `ruleset_sha256`, the `effective_from`/`effective_to` window, the instruments and their
-  contract weights, the verification status (only the owner can confirm a ruleset, and a synthetic
-  one can never be `verified`), one `rule_coverage` row per rule, the `evaluation_status`
-  (`complete`, `conditional_on_modeled_rules` or `blocked`) and the `warnings`. `--json` prints the
-  same document; a file that does not validate is refused with the loader's actionable message.
+  content `ruleset_sha256` (which excludes verification), the `effective_from`/`effective_to`
+  window, the instruments and their contract weights, the reset clock, the commissions, the
+  evidence counts, every conflict and its sensitivity scenarios, the verification status (only the
+  owner can confirm a ruleset with `prop confirm`, and a synthetic one can never be `verified`),
+  one `rule_coverage` row per rule, the `evaluation_status` (`complete`,
+  `conditional_on_modeled_rules` or `blocked`) and the `warnings`. `--json` prints the same
+  document; a v1 file is refused with a migration message.
+- **`crucible prop list [--firm F] [--root R] [--json]`** lists every ruleset under
+  `rulesets/prop`: id, version, content hash, evidence counts, conflicts, unmodeled rules by
+  materiality and verification status. A v1 file is `pending_migration`, never a crash.
+- **`crucible prop confirm <ruleset.yaml>`** is the OWNER's verification step: it refuses without
+  an interactive TTY (like `vault set-admin`), prints every rule with its evidence, quotation,
+  URL, conflicts and assumptions, asks the owner to type the first 12 hex of `ruleset_sha256` and
+  writes `<file>.verification.yaml`. It is never exposed over MCP.
 - **`crucible schema --kind prop-ruleset`** prints the JSON Schema of a ruleset file and
   **`crucible schema --kind prop-attempt`** the JSON Schema of an attempt result (outcome, phases,
-  breach, buffer, payouts, coverage, evaluation status).
+  breach, buffer, fees, payouts, coverage, estimate status, practical eligibility).
 
 ## Extension points
 Handlers stay thin: parse args, call into `experiments`/`analytics`/`data`,

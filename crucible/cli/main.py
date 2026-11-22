@@ -819,11 +819,30 @@ def build_parser() -> argparse.ArgumentParser:
     prop_sub = prop.add_subparsers(dest="prop_command", required=True)
     prop_validate = prop_sub.add_parser(
         "validate",
-        help="Check a ruleset file: identity, content hash, verification, rule coverage and "
-        "warnings. Changes no file",
+        help="Check a ruleset file: identity, content hash, verification, evidence, conflicts, "
+        "commissions, scenarios, rule coverage and warnings. Changes no file",
     )
     prop_validate.add_argument("ruleset", help="Path to a prop-firm ruleset YAML")
     _add_json(prop_validate)
+    prop_list = prop_sub.add_parser(
+        "list",
+        help="List every ruleset under rulesets/prop with its hash, evidence counts, conflicts, "
+        "unmodeled rules by materiality and verification status",
+    )
+    prop_list.add_argument("--firm", default=None, help="Only this firm's directory")
+    prop_list.add_argument(
+        "--root",
+        default=None,
+        help="Ruleset root (default: rulesets/prop beside the repository)",
+    )
+    _add_json(prop_list)
+    prop_confirm = prop_sub.add_parser(
+        "confirm",
+        help="The OWNER's interactive verification: prints every rule, asks for the content "
+        "hash prefix and writes the sidecar. Refused without a TTY; never exposed over MCP",
+    )
+    prop_confirm.add_argument("ruleset", help="Path to a v2 ruleset YAML to verify")
+    _add_json(prop_confirm)
 
     product_commands.add_parsers(subparsers)
     return parser
@@ -2082,7 +2101,34 @@ def _home_of(home: object) -> Path | None:
 
 
 def _cmd_prop(args: argparse.Namespace) -> int:
-    """``crucible prop validate <ruleset>``: report a ruleset, change nothing (ADR-0106)."""
+    """``crucible prop validate|list|confirm`` (ADR-0106/0107)."""
+    command = getattr(args, "prop_command", "validate")
+    if command == "confirm":
+        from crucible.prop.confirm import confirm_ruleset
+
+        sidecar = confirm_ruleset(Path(args.ruleset))
+        if args.json:
+            machine.emit({"sidecar": str(sidecar), "status": "verified"})
+        else:
+            sys.stdout.write(f"wrote {sidecar}" + chr(10))
+        return 0
+    if command == "list":
+        from crucible.prop.list import list_document
+
+        document = list_document(getattr(args, "root", None), firm=getattr(args, "firm", None))
+        if args.json:
+            machine.emit(document)
+            return 0
+        for row in cast(list[dict[str, object]], document["rulesets"]):
+            counts = cast(dict[str, int], row["evidence_counts"])
+            evidence = ", ".join(f"{key}={value}" for key, value in counts.items()) or "none"
+            sys.stdout.write(
+                f"{row['ruleset_id']} v{row['version']} [{row['verification_status']}] "
+                f"{row['evaluation_status']} sha {str(row['ruleset_sha256'])[:12]} "
+                f"evidence {evidence} conflicts {row['conflicts']} "
+                f"not_modeled {row['not_modeled_by_materiality']}" + chr(10)
+            )
+        return 0
     from crucible.prop.validate import validate_ruleset_document
 
     document = validate_ruleset_document(Path(args.ruleset))

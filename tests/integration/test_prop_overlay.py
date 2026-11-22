@@ -361,12 +361,12 @@ def test_daily_loss_soft_liquidates_locks_and_resumes_next_rule_day() -> None:
 
 
 def test_daily_loss_hard_fails_the_account() -> None:
-    """The same path with ``severity: hard`` fails at 4,980.25 with the same balance:
+    """The same path with ``action: fail`` fails at 4,980.25 with the same balance:
     49,979.25 - 987.50 - 20.75 = 48,971.00, and nothing trades afterwards.
     """
     bars = _daily_loss_bars()
     result, overlay = _run(
-        _ruleset("synthetic_b_daily_loss_soft.yaml", severity="hard"),
+        _ruleset("synthetic_b_daily_loss_soft.yaml", action="fail"),
         bars,
         [1, 1, 1, 1, 1],
         close_bars=(4,),
@@ -479,10 +479,10 @@ def test_max_contracts_clips_and_records_the_resize() -> None:
 
 
 def test_max_contracts_reject_trades_nothing() -> None:
-    """``on_excess: reject`` refuses the 5-contract target entirely: no fill, no cost."""
+    """``action: reject`` refuses the 5-contract target entirely: no fill, no cost."""
     bars = _bars([(5000, 5000, 5000, 5000), (5000, 5000, 5000, 5000)], [0, 1])
     result, overlay = _run(
-        _ruleset("synthetic_c_max_contracts.yaml", on_excess="reject"),
+        _ruleset("synthetic_c_max_contracts.yaml", action="reject"),
         bars,
         [5, 5],
         close_bars=(1,),
@@ -575,7 +575,7 @@ def test_flat_by_auto_liquidates_at_the_open_and_refuses_entries_until_reopen() 
 
 
 def test_flat_by_fail_fails_the_account_instead_of_holding_past_the_time() -> None:
-    """``consequence: fail`` fails the account at the 12:00 bar with the position still open."""
+    """``action: fail`` fails the account at the 12:00 bar with the position still open."""
     result, overlay = _run(
         load_ruleset(FIXTURES / "synthetic_d_flat_by_fail.yaml"),
         _flat_by_bars(),
@@ -661,6 +661,7 @@ def _attempt(ruleset: PropRuleset, bars: pl.DataFrame, targets: pl.DataFrame):
         start_trade_date=dt.date(2024, 1, 8),
         max_horizon_days=5,
         calendar=CALENDAR,
+        execution_mode="manual",
     )
 
 
@@ -914,7 +915,7 @@ def test_eod_evaluated_daily_loss_fails_at_the_close() -> None:
     49,979.25 - 20 * 50 = 48,979.25 <= 49,000.00, so the account fails at the close 4,980.00:
     realized -1,000.00, balance 49,979.25 - 1,000.00 - 20.75 = 48,958.50.
     """
-    ruleset = _ruleset("synthetic_b_daily_loss_soft.yaml", severity="hard", evaluated="eod")
+    ruleset = _ruleset("synthetic_b_daily_loss_soft.yaml", action="fail", evaluated="eod")
     bars = _bars([(5000, 5000, 5000, 5000), (5000, 5005, 4955, 4980)], [0, 1])
     result, overlay = _run(ruleset, bars, [1, 0], close_bars=(1,))
     assert _fills(result) == [
@@ -956,7 +957,8 @@ def _next_phase_ruleset() -> PropRuleset:
         "kind": "max_contracts",
         "rule_id": "contracts",
         "limit": "1",
-        "on_excess": "clip",
+        "comparison": "<=",
+        "action": "clip",
         "source": {
             "url": "https://example.invalid/synthetic-rules",
             "quote": "Synthetic rule value invented for a test, not a real firm's rule",

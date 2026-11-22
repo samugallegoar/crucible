@@ -1145,6 +1145,18 @@ def render_files() -> dict[str, str]:
     return out
 
 
+def prop_index_text() -> str:
+    """``rulesets/prop/INDEX.json``: the append-only hash lock (ADR-0107 section 1)."""
+    from crucible.prop.index import render_index
+
+    return render_index(ROOT / "rulesets" / "prop")
+
+
+def raw_generated_files() -> dict[str, str]:
+    """Generated files that are not Markdown blocks (a JSON document with no markers)."""
+    return {"rulesets/prop/INDEX.json": prop_index_text()}
+
+
 def main(argv: typing.Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="tools.docgen", description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -1152,11 +1164,13 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
     mode.add_argument("--check", action="store_true", help="fail if any block is stale")
     args = parser.parse_args(argv)
     stale = []
-    for rel, text in render_files().items():
+    for rel, text in {**render_files(), **raw_generated_files()}.items():
         path = ROOT / rel
-        if path.read_text(encoding="utf-8") == text:
+        current = path.read_text(encoding="utf-8") if path.is_file() else None
+        if current == text:
             continue
         if args.write:
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8", newline="\n")
             sys.stdout.write(f"updated {rel}\n")
         else:

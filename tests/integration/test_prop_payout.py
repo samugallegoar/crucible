@@ -53,7 +53,11 @@ def _with_payout_consistency(**fields: object) -> PropRuleset:
             "kind": "consistency",
             "rule_id": "consistency",
             "max_day_share": "0.5",
+            "measure": "best_day_profit/total_profit",
             "applies_to": "payout",
+            "window": "all_time",
+            "comparison": "<=",
+            "action": "block_payout",
             "source": {
                 "url": "https://example.invalid/synthetic-rules",
                 "quote": "Synthetic rule value invented for a test, not a real firm's rule",
@@ -277,7 +281,11 @@ def test_a_payout_shrinks_the_balance_the_failure_rules_test() -> None:
             "split": "0.8",
             "min_usd": "100",
             "max_usd": "2000",
+            "window": "all_time",
             "min_profitable_days": "1",
+            "comparison": ">=",
+            "action": "withdraw",
+            "threshold_after_payout": "unchanged",
             "source": {
                 "url": "https://example.invalid/synthetic-rules",
                 "quote": "Synthetic rule value invented for a test",
@@ -294,6 +302,8 @@ def test_a_payout_shrinks_the_balance_the_failure_rules_test() -> None:
             "amount_usd": "3000",
             "basis": "balance",
             "evaluated": "eod",
+            "comparison": "<=",
+            "action": "fail",
             "source": {
                 "url": "https://example.invalid/synthetic-rules",
                 "quote": "Synthetic rule value invented for a test",
@@ -361,6 +371,7 @@ def test_the_attempt_records_payouts_and_the_traders_choice() -> None:
         "start_trade_date": dt.date(2024, 1, 8),
         "max_horizon_days": 5,
         "calendar": CALENDAR,
+        "execution_mode": "manual",
     }
     paid = simulate_attempt(**common, payout_policy="max_eligible")
     assert paid.payouts_usd == Decimal("1600")

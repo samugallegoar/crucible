@@ -19,6 +19,7 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Literal
 
+from crucible.prop.rules_schema import NewsRestrictionRule
 from crucible.prop.ruleset import Attribution, PropRuleset
 
 Materiality = Literal["immaterial", "material", "critical"]
@@ -36,17 +37,24 @@ class RuleCoverageRow:
     source: Attribution
 
 
-def rule_coverage(ruleset: PropRuleset) -> tuple[RuleCoverageRow, ...]:
-    """One row per rule of every phase, then one per ``not_modeled`` entry."""
+def rule_coverage(
+    ruleset: PropRuleset, *, news_covered: bool | None = None
+) -> tuple[RuleCoverageRow, ...]:
+    """One row per rule of every phase, then one per ``not_modeled`` entry.
+
+    ``news_covered`` says whether the economic calendar covers this attempt's period. A news rule
+    without coverage is ``not_modeled`` (material): an uncovered window is never "no news".
+    """
     rows: list[RuleCoverageRow] = []
     for phase in ruleset.phases:
         for rule in (*phase.rules, *phase.pass_conditions, *phase.fees):
+            unmodeled_news = isinstance(rule, NewsRestrictionRule) and news_covered is not True
             rows.append(
                 RuleCoverageRow(
                     rule=f"{phase.phase_id}.{rule.rule_id}",
                     description=rule.description or rule.kind,
-                    materiality="immaterial",
-                    modeled=True,
+                    materiality="material" if unmodeled_news else "immaterial",
+                    modeled=not unmodeled_news,
                     source=rule.source,
                 )
             )

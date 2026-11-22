@@ -479,3 +479,28 @@ per the CME session calendar). It is its own outcome class, never folded into a 
 `complete` (nothing unmodeled, or only immaterial rules), `conditional_on_modeled_rules` (a
 material rule is unmodeled) or `blocked` (a critical one is). `material_unmodeled` names them
 (ADR-0106).
+
+**Evidence** — where a rule value comes from (ADR-0107 section 7): `official_quote` (an official
+page), `owner_provided` (the owner pasted it; `provided_by: owner`, the URL may be null and the
+saved text is hashed), `assumption` (a named default the owner accepted where the firm is silent,
+with its rationale) or `conflict_resolution` (a genuine contradiction resolved to the stricter
+reading). Every rule declares one, and a synthetic attribution can never be verified.
+
+**Sensitivity scenario** — a full ruleset with one conflict's alternative value switched in, id
+`<conflict_id>#<index>`, label `sensitivity`. It is simulated and reported beside the primary
+result, never presented as an official plan (ADR-0107 section 7). The primary scenario is
+`primary`, label `official`.
+
+**Payout cycle** — the span between two withdrawals on a funded account. Eligibility windows that
+declare `since_last_payout` count only rule-days after the previous withdrawal; the first cycle
+starts at the phase's start (ADR-0107 section 9).
+
+**Practical eligibility** — whether the exact plan may be traded by the exact execution mode:
+`eligible`, `blocked_by_compliance` (a critical compliance rule such as a ban on automated trading
+applies to this ruleset and this `execution_mode`) or `unknown`. A mechanically successful attempt
+under a blocker is never a practically valid pass (ADR-0107 section 11).
+
+**`unlimited` vs `unknown`** — `unlimited` is an explicit source value (a payout cap the firm
+states is uncapped); `unknown` is a value the sources do not give, and it cannot appear in a
+modeled rule: the rule goes to `not_modeled`. A numeric sentinel (>= 1,000,000 USD for a cap) is
+refused (ADR-0107 section 7).

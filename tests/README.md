@@ -186,7 +186,7 @@ nothing is ever written into a real store or home.
 - **Property tests** — keep them fast (`max_examples` tuned, `deadline=None` where a cold-start
   import can trip it) and deterministic (the `ci` profile derandomizes).
 
-## 7a. The prop-firm tests (ADR-0106)
+## 7a. The prop-firm tests (ADR-0106, ADR-0107)
 
 The prop-firm engine has its own set, all on synthetic data (no real market data, no firm name):
 
@@ -204,6 +204,19 @@ The prop-firm engine has its own set, all on synthetic data (no real market data
 - `tests/integration/test_prop_payout.py` — payout eligibility (buffer, cap, consistency, the
   two threshold behaviours, `max_payouts`, the day and profit gates) and the attempt-level record.
 - `tests/integration/test_prop_cli.py` — `crucible prop validate` and the two schemas.
+- `tests/integration/test_prop_v2.py` — schema version 2 and the C7b vocabulary, hand-computed:
+  the lifecycle transitions and its end-of-day order, payout caps by index / share of withdrawable
+  / since-last windows / cumulative goal / first-payout calendar gate, a trailing lock on the first
+  payout and `hwm_basis` separate from `basis`, tiered and ratcheting daily loss, `daily_profit_cap`,
+  inactivity, `scaling_plan.on_excess`, a session-relative `flat_by` on a CME early close, monthly
+  and reset fees, news windows (block / flatten / coverage gap), conflicts and sensitivity
+  scenarios, critical compliance for `automated` vs `manual`, estimate status with unknown
+  commissions and a named cost assumption, the schema refusals, the hash-excludes-verification and
+  sidecar rules, `prop confirm` (non-TTY refused, sidecar written with a fake TTY), and the
+  append-only INDEX. `tests/fixtures/prop/` is migrated to schema version 2. It also asserts that
+  every rule model requires `comparison` and `action` and leaves no semantic field defaulted (F1),
+  that an expired per-rule `effective_to` is refused, and that a known news window still blocks
+  entries when another event on the same date has no known release time (F2).
 - `tests/property/test_prop_overlay_properties.py` — a non-binding ruleset is `account=None`
   exactly, every liquidation is on the grid inside its bar, and a failed static drawdown ends at or
   below its threshold.
