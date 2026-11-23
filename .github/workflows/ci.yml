@@ -88,11 +88,12 @@ jobs:
         run: uv sync --locked --all-extras
       - name: Record what this shard collects
         # The same selection as the run below; `shard-union` compares the union of these with the
-        # whole suite, so a test in no shard (or in two) fails the PR.
+        # whole suite, so a test in no shard (or in two) fails the PR. No `-n`: xdist changes how
+        # the tests run, not which ones are collected, and a collection through `-n auto` pays the
+        # imports of every worker (30-44 s on macOS instead of 6 s).
         run: >-
           uv run pytest --collect-only -q --color=no
-          --splits ${{ matrix.splits }} --group ${{ matrix.group }}
-          -n auto --dist loadscope ${{ matrix.extra }}
+          --splits ${{ matrix.splits }} --group ${{ matrix.group }} ${{ matrix.extra }}
           > shard-ids.txt
       - name: Tests (shard ${{ matrix.group }}/${{ matrix.splits }} on ${{ matrix.os }})
         # Windows and macOS skip the OS-independent plumbing marked single_os, which Ubuntu runs

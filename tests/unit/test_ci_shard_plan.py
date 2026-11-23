@@ -84,8 +84,12 @@ def test_each_shard_collects_and_runs_the_same_selection() -> None:
     shard = "--splits ${{ matrix.splits }} --group ${{ matrix.group }}"
     for command in (collects[0], runs[0]):
         assert shard in command
-        assert "-n auto --dist loadscope" in command, "a shard still parallelises its own tests"
         assert "${{ matrix.extra }}" in command, "the OS cut comes from the matrix"
+    assert "-n auto --dist loadscope" in runs[0], "a shard still parallelises its own tests"
+    assert "-n" not in collects[0], (
+        "xdist does not change which tests are collected, and collecting through it pays every "
+        "worker's imports (30-44 s on macOS instead of 6 s)"
+    )
     assert "--junitxml=junit.xml" in runs[0], "the run has to report what it ran"
     assert "> shard-ids.txt" in collects[0], "the collection has to be uploaded for the union job"
 

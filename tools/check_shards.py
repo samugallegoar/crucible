@@ -226,7 +226,9 @@ def check_artifacts(root: Path, *, out: object = print) -> list[str]:
         shards.setdefault(os_name, {})[group] = ids
         ran.setdefault(os_name, {})[group] = cases
     plans = [plan for plan in SHARD_PLAN if plan.os in shards]
-    whole = {plan.os: collect(plan.select) for plan in plans}
+    with ThreadPoolExecutor(max_workers=len(plans)) as pool:
+        collected = list(pool.map(collect, [plan.select for plan in plans]))
+    whole = {plan.os: ids for plan, ids in zip(plans, collected, strict=True)}
     return verify(plans, whole, shards, ran, out=out)
 
 
