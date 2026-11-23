@@ -46,21 +46,33 @@ _ARTIFACT = re.compile(r"^shard-(?P<os>.+)-(?P<group>\d+)$")
 
 @dataclass(frozen=True, slots=True)
 class ShardPlan:
-    """One OS of the CI matrix: how many shards its suite runs in, and its selector arguments."""
+    """One OS of the CI matrix: its shards, its selector, and the durations file it balances on."""
 
     os: str
     splits: int
     select: tuple[str, ...] = ()
 
+    @property
+    def tag(self) -> str:
+        """The short name of the OS in the durations file: ``ubuntu``, ``macos``, ``windows``."""
+        return self.os.removesuffix("-latest")
+
+    @property
+    def durations(self) -> str:
+        """Each OS is balanced on its OWN measurements: a macOS shard is not a ubuntu shard."""
+        return f".test_durations.{self.tag}"
+
 
 SHARD_PLAN: tuple[ShardPlan, ...] = (
-    # Measured (p50 of the suite on four workers): ubuntu 320 s, macOS 340 s, windows 466 s, so
-    # 6/6/8 shards put about 55-60 s of tests in a shard -- each shard on its own runner, still
-    # `-n auto --dist loadscope` inside. The matrix in `.github/workflows/ci.yml` carries the same
-    # numbers, and `tests/unit/test_ci_shard_plan.py` fails when the two disagree.
-    ShardPlan("ubuntu-latest", 6),
-    ShardPlan("macos-latest", 6, ("-m", "not single_os")),
-    ShardPlan("windows-latest", 8, ("-m", "not single_os")),
+    # 5/5/6 = 16 shard jobs, plus `checks`, `clean-install` and `shard-union`: 19 jobs at once,
+    # under the workflow's ~20-job concurrency ceiling, so every shard starts in the same wave.
+    # The counts come from the per-OS durations files: ubuntu ~615 s, macOS ~800 s, Windows ~900 s
+    # of estimated suite, so a shard holds 120-150 s of it, about 45-60 s on four workers. The
+    # matrix in `.github/workflows/ci.yml` carries the same numbers, and
+    # `tests/unit/test_ci_shard_plan.py` fails when the two disagree.
+    ShardPlan("ubuntu-latest", 5),
+    ShardPlan("macos-latest", 5, ("-m", "not single_os")),
+    ShardPlan("windows-latest", 6, ("-m", "not single_os")),
 )
 
 
@@ -198,7 +210,15 @@ def check_plan(plans: Sequence[ShardPlan], *, workers: int = 4) -> list[str]:
     commands: list[list[str]] = []
     for plan in plans:
         commands.extend(
-            [*plan.select, "--splits", str(plan.splits), "--group", str(group)]
+            [
+                *plan.select,
+                "--splits",
+                str(plan.splits),
+                "--group",
+                str(group),
+                "--durations-path",
+                plan.durations,
+            ]
             for group in range(1, plan.splits + 1)
         )
         commands.append(list(plan.select))

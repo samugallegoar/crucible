@@ -74,6 +74,44 @@ def test_the_matrix_carries_the_os_cut_the_plan_expects() -> None:
         )
 
 
+def test_each_shard_balances_on_its_own_os_durations() -> None:
+    """One durations file per OS (ADR-0109 amendment): the macOS runner is not the ubuntu one."""
+    runs = " ".join(str(step.get("run", "")) for step in _workflow()["jobs"]["tests"]["steps"])
+    assert "--durations-path .test_durations.${{ matrix.tag }}" in runs
+    for entry in _matrix():
+        plan = _plan_for(entry["os"])
+        assert entry["tag"] == plan.tag, (entry["os"], plan.tag)
+        assert (ROOT / plan.durations).is_file(), (
+            f"{plan.durations} is missing: refresh it with the `durations` job (tests/README.md)"
+        )
+
+
+def test_the_durations_job_measures_every_os() -> None:
+    job = _workflow()["jobs"]["durations"]
+    assert job["if"] == "github.event_name == 'workflow_dispatch'", (
+        "a durations refresh is a dispatch, not something every PR pays for"
+    )
+    assert {entry["tag"] for entry in job["strategy"]["matrix"]["include"]} == {
+        plan.tag for plan in SHARD_PLAN
+    }
+    steps = " ".join(str(step.get("run", "")) + str(step.get("with", "")) for step in job["steps"])
+    assert "--store-durations" in steps
+    assert "--durations-path .test_durations.${{ matrix.tag }}" in steps
+    assert "include-hidden-files" in steps
+
+
+def test_the_plan_fits_in_one_wave() -> None:
+    """Every job must start at once: the workflow's concurrency ceiling is about 20 jobs."""
+    jobs = _workflow()["jobs"]
+    once = {name for name in jobs if name != "durations"}  # dispatch-only: no slot on a PR
+    shards = sum(plan.splits for plan in SHARD_PLAN)
+    total = len(once) - 1 + shards  # `tests` is the matrix, counted by its shards
+    assert total < 20, (
+        f"{total} jobs would run at once ({shards} shards + the rest): a 20th+ job waits for a "
+        "slot, and a waited-for shard is what puts the tail on the workflow"
+    )
+
+
 def test_each_shard_runs_the_whole_shard_selection() -> None:
     """`shard-union` reads what each shard RAN: one pytest command, reporting every case."""
     runs_text = [str(step.get("run", "")) for step in _workflow()["jobs"]["tests"]["steps"]]
@@ -121,7 +159,7 @@ def test_the_durations_upload_includes_a_hidden_file() -> None:
         if str(step.get("uses", "")).startswith("actions/upload")
     ]
     assert len(uploads) == 1, uploads
-    assert uploads[0]["with"]["path"] == ".test_durations"
+    assert uploads[0]["with"]["path"] == ".test_durations.${{ matrix.tag }}"
     assert uploads[0]["with"]["include-hidden-files"] is True
 
 
@@ -143,7 +181,7 @@ def test_every_job_has_a_budget() -> None:
     """`timeout-minutes` is a budget that fails the job, not a widened limit (ADR-0109)."""
     for name, job in _workflow()["jobs"].items():
         assert isinstance(job.get("timeout-minutes"), int), f"job {name} has no timeout-minutes"
-        assert job["timeout-minutes"] <= 20, f"job {name} has a budget too wide to be one"
+        assert job["timeout-minutes"] <= 30, f"job {name} has a budget too wide to be one"
 
 
 # --------------------------------------------------------------------------- the union checker

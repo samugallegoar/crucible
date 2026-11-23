@@ -285,14 +285,23 @@ never a selection of it, and two things enforce that on every PR:
   or a `--deselect` added to a shard fails it. Locally, `uv run python -m tools.check_shards` runs
   the same comparison from the plan.
 
-`.test_durations` is what balances the shards; it is a hint, not a filter, so a stale file only makes
-the shards uneven. Refresh it from a real ubuntu run, never by hand:
+**One durations file per OS** (`.test_durations.ubuntu`, `.test_durations.macos`,
+`.test_durations.windows`), each measured on that OS's own runner: a macOS shard is not a ubuntu
+shard, and a single file for all three left the macOS and Windows shards 1.2-1.8x over their planned
+share. They are a hint, never a filter, so a stale file only makes the shards uneven. Refresh all
+three from real runs, never by hand:
 
 ```bash
-gh workflow run CI            # the `durations` job (workflow_dispatch only) runs the whole suite
-gh run download --name test-durations --dir /tmp/durations
-cp /tmp/durations/.test_durations .test_durations
+gh workflow run CI                                   # the `durations` matrix job (dispatch only)
+gh run download <run-id> --pattern "test-durations-*" --dir /tmp/durations
+cp /tmp/durations/test-durations-ubuntu/.test_durations.ubuntu    /tmp/durations/test-durations-macos/.test_durations.macos    /tmp/durations/test-durations-windows/.test_durations.windows .
 ```
+
+The plan is 5 shards on ubuntu, 5 on macOS and 6 on Windows: 16 shard jobs plus `checks`,
+`clean-install` and `shard-union` is **19 jobs at once**, under the workflow's ~20-job concurrency
+ceiling, so every shard starts in the same wave (a 20th job waits for a slot, and a waited-for shard
+is what puts the tail on the workflow). `tests/unit/test_ci_shard_plan.py` fails if the plan stops
+fitting in one wave.
 
 Job budgets (`timeout-minutes` in `ci.yml`; a budget fails the job, it does not widen a limit), at
 about 2x the measured p95 after ADR-0109:
