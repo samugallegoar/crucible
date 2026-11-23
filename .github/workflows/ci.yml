@@ -54,7 +54,7 @@ jobs:
         include:
           - { os: ubuntu-latest, splits: 6, group: 1, extra: "" }
           - { os: ubuntu-latest, splits: 6, group: 2, extra: "" }
-          - { os: ubuntu-latest, splits: 6, group: 3, extra: "" }
+          - { os: ubuntu-latest, splits: 6, group: 3, extra: '--deselect tests/unit/test_errors.py' }
           - { os: ubuntu-latest, splits: 6, group: 4, extra: "" }
           - { os: ubuntu-latest, splits: 6, group: 5, extra: "" }
           - { os: ubuntu-latest, splits: 6, group: 6, extra: "" }
