@@ -8,6 +8,25 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Faster, order-independent test suite (ADR-0108)
+- **The suite runs in random order** (`pytest-randomly`, a dev dependency) and prints its seed;
+  three seeds must pass before work is handed back (`AGENTS.md` §7, `tests/README.md` §3). A test
+  that only passes in one order is a bug in the test and is fixed at its root — nothing is retried,
+  skipped, deselected or weakened, and the collected count is unchanged.
+- **No test spends wall-clock time sleeping.** `econ_events.fetch_raw` pauses between pages only
+  for the real transport: an injected `transport` is a seam, not a crawl (18 s per fetching test).
+- **Repeated expensive work is shared, not rebuilt.** The futures walk-forward of
+  `test_futures_walkforward.py` runs once per module (12 tests read it; the re-run test copies the
+  artifacts root first), saving 32 s.
+- **`rulesets/prop/INDEX.json` is parsed by libyaml** when PyYAML ships it
+  (`crucible/prop/_yaml.py`, falling back to `SafeLoader`): 8.5 s -> 0.8 s for the 201-file registry,
+  which was the whole cost of `python -m tools.docgen --check` and of `crucible prop list`. Both
+  loaders are pinned to agree on every shipped ruleset.
+- Measured on the same machine (3,136 collected tests before, 3,139 after: three new tests):
+  serial 1065 s -> 919 s, `-n 4 --dist loadscope` 371 s -> 301-336 s over four runs. `--dist
+  loadscope` stays, re-measured against `worksteal` (328/352/308 s), `loadfile` (352 s) and `load`
+  (504 s).
+
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**
   - Files `rulesets/prop/<firm>/` cover Topstep, Apex, MyFundedFutures, Lucid, FTMO and FundedNext.

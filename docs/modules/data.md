@@ -80,7 +80,9 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   `coverage(store)` / `coverage_of(frame)` (the covered intervals and the gaps per event type),
   `day_only_events(frame)` (the rows whose hour no source states) and `fetch_raw` (the ingestion,
   which discovers the statement and press-conference pages from the Fed's own pages and writes
-  `MANIFEST.json`). This is **not** market data and the futures vault guard does not cover it.
+  `MANIFEST.json`; its `pause_s` politeness gap applies only to the real transport — an injected
+  `transport` is a seam and never sleeps, ADR-0108). This is **not** market data and the futures
+  vault guard does not cover it.
 - `exchange_fees.py` — the per-side, per-contract fee table `exchange_fees_v1` a prop-firm run
   charges on top of commission (`docs/data/cme-exchange-fees.md`): `EXCHANGE_FEE_SCHEMA` /
   `EXCHANGE_FEE_SORT_KEYS`, `parse_nfa_assessment` (the NFA Bylaw 1301 assessment fee, halved from

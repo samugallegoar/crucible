@@ -59,6 +59,7 @@ dev = [
     "import-linter>=2.15",
     "psutil>=5.9",
     "pytest-xdist>=3.6",
+    "pytest-randomly>=5.1.0",
 ]
 
 [build-system]

@@ -1266,6 +1266,22 @@ def test_fetch_raw_discovers_the_press_conference_pages(tmp_path: Path) -> None:
     assert not any("fomcminutes" in name for name in names)
 
 
+def test_an_injected_transport_never_sleeps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``pause_s`` is the real crawl's politeness gap between two reads of a real host; an
+    injected ``transport`` is a seam, so it never spends wall time sleeping (30 pages at 0.6 s was
+    18 s of every test that fetched)."""
+    slept: list[float] = []
+    monkeypatch.setattr(ee.time, "sleep", slept.append)
+    now = int(dt.datetime(2026, 11, 22, 2, 40, tzinfo=dt.UTC).timestamp())
+    entries = ee.fetch_raw(
+        tmp_path / "raw", transport=lambda _url: b"<html></html>", now=lambda: now * ee._NS_PER_S
+    )
+    assert len(entries) > 20  # the whole discovery pass ran, and it fetched every page
+    assert slept == []
+
+
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """No test in this module may reach the network: a fetch here always uses a fake transport."""

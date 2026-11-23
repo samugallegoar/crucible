@@ -98,6 +98,14 @@ experiments/       artifact store (gitignored except manifests of reference runs
 - `tests/lookahead/` must pass for every built-in strategy and every example. If you add a strategy or an accessor, add it to the harness matrix.
 - A new stateful component or strategy joins the resume-equivalence matrix (`tests/integration/test_checkpoint_resume_equivalence.py`, invariant I13); anything on the order path is also covered by the live parity tests (`tests/integration/test_live_parity.py`, invariant I14).
 - Property tests use `hypothesis`; keep them fast (`max_examples` tuned) and deterministic (`derandomize=True` in CI).
+- **A test that only passes in one order, or after a retry, has a bug: find and fix it.** Never buy green by retrying, widening a timeout, skipping/deselecting/deleting a test, lowering `max_examples` or weakening an assertion (AGENTS.md §1).
+- **The suite runs in random order** (`pytest-randomly`, ADR-0108) and prints the seed. `uv run pytest -p randomly --randomly-seed=<seed>` reproduces a run; `-p no:randomly` runs collection order (use it to bisect, never to declare victory). Before handing work back, run three seeds green. Hypothesis stays `derandomize=True` in CI.
+- **State-cleanup rules** — what a test must reset, and how:
+  - Anything written goes under `tmp_path` / `tmp_path_factory`; never the repository, a real home or a fixed temp name. A test that needs a `CRUCIBLE_HOME` sets it with `monkeypatch.setenv` (auto-reverted), never `os.environ[...] = ...`.
+  - Environment variables via `monkeypatch.setenv`/`delenv`; working directory via `monkeypatch.chdir`; never `os.environ` or `os.chdir` (a leak changes the next test's answer, in an order nobody reads).
+  - No module-level mutable cache. Share immutable work through a `session`/`module`-scoped fixture (a store, a sweep, a document) and **copy it into `tmp_path` before a test writes to it**; a cache keyed by its inputs may be used only if a fixture can clear it.
+  - Anything a test starts (processes, servers, threads, DuckDB handles, temporary roots outside `tmp_path`) is closed in a fixture finalizer, not at the end of the test body.
+  - Never spend wall-clock time sleeping: fix the seam instead (an injected `transport`/`clock`/`sleep`, never the real thing).
 - Golden fixtures live under `tests/golden/fixtures/` with a `README` stating how each was produced. Regeneration requires a `--regen-golden` flag and a justification in the commit.
 - Accounting edge cases (splits, dividends on shorts, FX, margin calls, futures rolls) have hand-computed expected ledgers; do not derive expected values from the engine.
 - Benchmarks are opt-in (`-m bench`) and never gate correctness work.
@@ -169,7 +177,8 @@ uv run python -m tools.docgen --check   # generated docs are current (--write to
 - Tests are deterministic too: fixed timestamps and seeded `numpy.random.Generator`, never wall-clock time or global RNG.
 - **Edit scripts:** a bash heredoc turns a backslash-n inside a Python string into a real newline and breaks the script. Write scripts that contain one with your editor/Write tool, or build the character with `chr(10)`.
 - **`__main__.py`:** keep the call under `if __name__ == "__main__":`. `tools.docgen` imports every module under `crucible/`; an unguarded one runs at import time (it once held a docs run for two hours). `tests/unit/test_main_modules_guarded.py` enforces it.
-- **Long runs:** run the full suite in the background with its output in a file and one pytest at a time; the harness stops background jobs when memory is critically low. `tools.check` runs the tests on up to four worker processes (ADR-0075, about 4-5 minutes); `--serial` runs one process (about 9-10 minutes, less memory).
+- **Long runs:** run the full suite in the background with its output in a file and one pytest at a time; the harness stops background jobs when memory is critically low. `tools.check` runs the tests on up to four worker processes (ADR-0075, about 6 minutes); `--serial` runs one process (about 13 minutes, less memory).
+- **Never edit the checkout while a suite is running** (and never run two suites in one worktree): the artifact overwrite guard compares the *code fingerprint* of the working tree (ADR-0079), so an edit made mid-run makes `test_product_backtest`/`test_runner_checkpoint` fail with "a different code fingerprint" — an artefact of the edit, not of the test.
 - **uv noise:** `UV_LINK_MODE=copy` silences the hardlink warning on another drive; a stale `VIRTUAL_ENV` only prints a warning (`tools.check` and the MCP server clear it for children).
 - **Worktrees** contain tracked files only: untracked or git-excluded files (private notes, `.env`, built datasets) are not there. Rebuild a venv per worktree (`uv sync --locked --all-extras`).
 

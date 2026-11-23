@@ -58,6 +58,7 @@
 | `import-linter` | Enforces the layering rule of `docs/ARCHITECTURE.md` (`uv run python -m tools.lint_imports`) | CI, `tests/unit/test_architecture_conformance.py` |
 | `psutil` | Peak-memory measurement for the opt-in scale benchmarks (`uv run pytest -m bench tests/bench -s`, ADR-0054) | `tests/bench/test_real_data_scale.py` only |
 | `pytest-xdist` | Runs the suite on several processes (`-n auto --dist loadscope`: a module stays on one worker, so its module fixtures are built once); test-only, never imported by `crucible` (ADR-0075) | CI, `tools.check` |
+| `pytest-randomly` | Reorders the tests and reseeds the global RNGs before every test, so a hidden dependency on collection order, another test's leftovers or the global RNG fails on a developer's machine instead of in a released run; the run prints the seed, so a failure is reproducible with `--randomly-seed=<seed>`. Test-only, never imported by `crucible` (ADR-0108, `AGENTS.md` §7) | every `pytest` run, `tests/conftest.py` |
 
 The standard library carries the rest: `decimal`, `dataclasses`, `hashlib`,
 `statistics.NormalDist` (DSR), `argparse` (CLI), `json`, `concurrent.futures` (sweeps).

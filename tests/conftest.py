@@ -37,6 +37,20 @@ def pytest_addoption(parser: object) -> None:
     )
 
 
+def pytest_terminal_summary(
+    terminalreporter: pytest.TerminalReporter, exitstatus: int, config: pytest.Config
+) -> None:
+    """Print the random seed at the end of the run too (ADR-0108).
+
+    ``pytest-randomly`` reports it in the header, which ``-q`` hides — and ``-q`` is what CI and
+    ``tools.check`` run. A random order without a printed, reproducible seed is a coin flip: the
+    line below is what turns a failure into ``uv run pytest --randomly-seed=<seed>``."""
+    seed = config.getoption("randomly_seed", None)
+    if seed is None:
+        return
+    terminalreporter.write_sep("-", f"random order: reproduce with --randomly-seed={seed}")
+
+
 def _slow_modules() -> frozenset[str]:
     """Test modules measured slow (``tests/slow_modules.txt``, ``python -m tools.slow_report``)."""
     path = Path(__file__).resolve().parent / "slow_modules.txt"

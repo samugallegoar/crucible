@@ -19,9 +19,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import yaml
-
 from crucible.core.errors import ConfigurationError, DataQualityError
+from crucible.prop._yaml import safe_load
 from crucible.prop.ruleset import RULE_SCHEMA_VERSION, load_ruleset
 
 INDEX_SCHEMA_VERSION = 1
@@ -41,7 +40,7 @@ def _files(root: Path) -> list[Path]:
 
 
 def _pending_entry(path: Path, root: Path) -> dict[str, object]:
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw = safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         msg = f"ruleset {path} must be a YAML mapping"
         raise ConfigurationError(msg)
@@ -59,7 +58,7 @@ def build_index(root: str | Path) -> dict[str, object]:
     prop_root = Path(root)
     entries: list[dict[str, object]] = []
     for path in _files(prop_root):
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = safe_load(path.read_text(encoding="utf-8"))
         version = raw.get("schema_version") if isinstance(raw, dict) else None
         if version != RULE_SCHEMA_VERSION:
             entries.append(_pending_entry(path, prop_root))

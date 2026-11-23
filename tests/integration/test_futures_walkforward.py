@@ -32,6 +32,7 @@ import datetime as dt
 import itertools
 import json
 import os
+import shutil
 from decimal import Decimal
 from pathlib import Path
 
@@ -264,11 +265,20 @@ def _document(path: Path, store: Path, artifacts: Path) -> dict[str, object]:
     return run_futures_walkforward(path, store_root=store, artifacts_root=artifacts).document
 
 
-@pytest.fixture
-def default_run(tmp_path: Path, store: Path) -> tuple[Path, dict[str, object], Path]:
-    """The reference walk-forward: four candidates, two folds, no extra constraint."""
-    path = walkforward_file(tmp_path)
-    artifacts = tmp_path / "artifacts"
+@pytest.fixture(scope="module")
+def default_run(
+    tmp_path_factory: pytest.TempPathFactory, store: Path
+) -> tuple[Path, dict[str, object], Path]:
+    """The reference walk-forward: four candidates, two folds, no extra constraint.
+
+    Module-scoped because it is ten sealed runs (four candidates x two training folds, the two test
+    runs and the registry records) and costs ~4 s: everything below only *reads* the document and
+    the artifacts directory. The one test that re-runs the job takes a private copy first
+    (``test_re_running_is_idempotent``), so no test sees another test's writes.
+    """
+    directory = tmp_path_factory.mktemp("walkforward-run")
+    path = walkforward_file(directory)
+    artifacts = directory / "artifacts"
     return path, _document(path, store, artifacts), artifacts
 
 
@@ -672,9 +682,13 @@ def test_the_trials_and_the_submissions_are_recorded_once(
 
 
 def test_re_running_is_idempotent(
-    default_run: tuple[Path, dict[str, object], Path], store: Path
+    default_run: tuple[Path, dict[str, object], Path], store: Path, tmp_path: Path
 ) -> None:
-    path, document, artifacts = default_run
+    path, document, shared = default_run
+    # a private copy of the artifacts root: this test re-runs the job, and the module-scoped
+    # reference run above must stay exactly as the other tests read it
+    artifacts = tmp_path / "artifacts"
+    shutil.copytree(shared, artifacts)
     first_oos = (artifacts / str(document["wf_id"]) / "oos_daily.parquet").read_bytes()
     registry = DuckDBTrialRegistry(artifacts / "trial_registry.duckdb")
     submissions_before = registry.submissions(batch_id=str(document["wf_id"]))
