@@ -585,9 +585,13 @@ phases:
     evidence: official_quote
   - kind: inactivity
     rule_id: xfa_inactivity
-    description: 'An Express Funded Account with no trading activity for more than 30 calendar days may
-      be closed. Modeled as a hard fail on the thirty-first inactive day: the account cannot be counted
-      as surviving a month of silence.'
+    description: 'An Express Funded Account with no trading activity for more than 30 calendar days
+      may be closed: the page says the account "may be closed", never that it is closed
+      automatically. Modelled as a hard fail at the start of the 31st calendar day after the last
+      trade date, i.e. once 30 full days have elapsed, which is the rule-day transition (17:00
+      America/Chicago) the overlay counts inactivity on: the account cannot be counted as surviving
+      a month of silence. The reading is pessimistic and provisional over a soft statement, never a
+      description of a guaranteed automatic close (owner decision 2026-11-23).'
     max_gap: 30
     unit: calendar_days
     rolling_window: true
@@ -601,7 +605,15 @@ phases:
       quote: XFAs with no trading activity for more than 30 days may be closed.
       section: Express Funded Account FAQs
       synthetic: false
-    evidence: official_quote
+    evidence: assumption
+    assumption:
+      name: xfa_inactivity_may_be_closed_on_day_31
+      assumption_kind: provisional_conservative
+      rationale: 'The page says the account may be closed after 30 days without trading: a soft
+        statement, not a guaranteed automatic close. The pessimistic reading, kept provisional,
+        closes the account at the start of the 31st calendar day after the last trade date (30 full
+        days of silence), the rule-day transition the overlay counts inactivity on. Owner decision
+        of 2026-11-23: keep this reading as provisional_conservative.'
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null

@@ -437,46 +437,6 @@ phases:
   kind: funded
   starting_balance_usd: '0'
   rules:
-  - kind: trailing_drawdown
-    rule_id: maximum_loss_limit
-    description: 'Express Funded Account balance starts at $0 and its Maximum Loss Limit starts at -$2,000,
-      trailing up with the end-of-day balance and locking at $0 permanently once the end-of-day balance
-      reaches $2,000; from then on the balance can never fall below $0. The mark is the end-of-day balance
-      (hwm_basis balance), the threshold is tested intrabar on equity (evaluated intraday, basis equity).
-      The firm states a second trigger: ''After each Payout: Your Maximum Loss Limit (MLL) resets to $0
-      permanently'' (and, on the payout policy page, ''Your MLL is set to $0 after your first Payout.
-      If it''s already at $0, it stays there.''). lock.on lists both triggers, so the threshold freezes
-      at $0 at whichever fires first.'
-    amount_usd: '2000'
-    mode: eod
-    evaluated: intraday
-    basis: equity
-    hwm_basis: balance
-    comparison: <=
-    action: fail
-    lock:
-      'on':
-      - hwm
-      - first_payout
-      at_balance_usd: '2000'
-      locked_threshold_usd: '0'
-    source:
-      url: https://help.topstep.com/en/articles/15520357-topstep-labs
-      snapshot_sha256: 3eeff491464260ca00802775549db9a203644e81d726396227d1eaa1c191c9b1
-      retrieved_at: '2026-11-22T01:53:10Z'
-      quote: Maximum Loss Limit $2,000, EOD $2,000 static
-      section: 'Phase 2: Express Funded Account (XFA) table (EOD / Static)'
-      synthetic: false
-    evidence: assumption
-    assumption:
-      name: static_xfa_drawdown_taken_as_the_trailing_firm_form
-      assumption_kind: section7_default
-      rationale: 'The drop''s XFA Maximum Loss Limit is stated as ''$2,000 static'', but the engine raises
-        a threshold after a payout only on a trailing rule, and the firm''s own funded form for a $50K
-        account is the trailing $2,000 MLL locking at $0. Modeling the trailing form is the conservative
-        substitution: the floor rises with the balance to $0 at a $2,000 balance, which is the level the
-        first payout sets it to anyway given the $2,000 profit buffer, and it fails the account no later
-        than a static floor would.'
   - kind: daily_loss
     rule_id: daily_loss_limit
     description: 'Daily Loss Limit of $1,000 counted from the day''s starting balance: when net P&L hits
@@ -673,9 +633,13 @@ phases:
     evidence: official_quote
   - kind: inactivity
     rule_id: xfa_inactivity
-    description: 'An Express Funded Account with no trading activity for more than 30 calendar days may
-      be closed. Modeled as a hard fail on the thirty-first inactive day: the account cannot be counted
-      as surviving a month of silence.'
+    description: 'An account with no trades placed for 30 days is closed: the drop page states it
+      directly ("If there are no trades placed for 30 days, the account will close.") under the $50K
+      Daily Payouts+ Trading Combine (EOD & Static) FAQs. Modelled as a hard fail at the start of
+      the 31st calendar day after the last trade date, i.e. once 30 full days have elapsed, which is
+      the rule-day transition the overlay counts inactivity on. The drop states the closure itself,
+      so the XFA page''s softer "may be closed" reading and its assumption are not borrowed here
+      (owner decision 2026-11-23).'
     max_gap: 30
     unit: calendar_days
     rolling_window: true
@@ -683,11 +647,12 @@ phases:
     comparison: '>'
     action: fail
     source:
-      url: https://help.topstep.com/en/articles/8284215-express-funded-account-parameters
-      snapshot_sha256: 147e7624b6b96fdfba83cc3a20e79ad394c7857a289610b0632b7af62989ba79
-      retrieved_at: '2026-11-22T01:36:31Z'
-      quote: XFAs with no trading activity for more than 30 days may be closed.
-      section: Express Funded Account FAQs
+      url: https://help.topstep.com/en/articles/15520357-topstep-labs
+      snapshot_sha256: 3eeff491464260ca00802775549db9a203644e81d726396227d1eaa1c191c9b1
+      retrieved_at: '2026-11-22T01:53:10Z'
+      quote: If there are no trades placed for 30 days, the account will close.
+      section: '$50K Daily Payouts+ Trading Combine (EOD & Static) FAQs - What are the rules on
+        inactivity?'
       synthetic: false
     evidence: official_quote
   pass_conditions: []
@@ -771,18 +736,21 @@ not_modeled:
     quote: During extreme volatility, we may temporarily tighten position limits on affected products.
     section: Position Limit Adjustments
     synthetic: false
-- rule: static_xfa_drawdown_taken_as_trailing
-  description: 'Material. The drop''s Express Funded Account Maximum Loss Limit is ''$2,000 static'',
-    but the engine raises a threshold after a payout only on a trailing rule, so the funded phase carries
-    the trailing form (declared as the named assumption static_xfa_drawdown_taken_as_the_trailing_firm_form).
-    The substitution is conservative: above a $2,000 balance both forms agree, and between $0 and $2,000
-    the trailing floor is the higher (earlier-failing) one. A static rule with a post-payout threshold
-    needs engine support.'
-  materiality: material
+- rule: static_xfa_drawdown_post_payout_reset
+  description: 'Critical. The drop''s Express Funded Account Maximum Loss Limit is "$2,000 static,
+    non-trailing" and "After first Payout, MLL sets to $0". static_drawdown expresses a static
+    threshold exactly (the floor never moves with equity highs or daily closes) but has no
+    post-payout reset or lock: the threshold_after_payout handler reaches trailing rules only.
+    Modelling the floor alone would hold it at -$2,000 for the whole funded life, looser than the
+    firm''s rule after any payout, and the trailing form is not this rule. So the funded phase
+    declares NO maximum loss limit rather than an approximation, and a funded attempt on this file
+    is unavailable on a critical unmodelled rule until the vocabulary gains a static lock (owner
+    decision 2026-11-23).'
+  materiality: critical
   source:
     url: https://help.topstep.com/en/articles/15520357-topstep-labs
     snapshot_sha256: 3eeff491464260ca00802775549db9a203644e81d726396227d1eaa1c191c9b1
     retrieved_at: '2026-11-22T01:53:10Z'
-    quote: Maximum Loss Limit $2,000, EOD $2,000 static
+    quote: After first Payout, MLL sets to $0
     section: 'Phase 2: Express Funded Account (XFA) table (Static column)'
     synthetic: false

@@ -1404,7 +1404,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-labs-daily-payouts-plus-50k-static.v1.yaml",
       "ruleset_id": "topstep-labs-daily-payouts-plus-50k-static",
-      "ruleset_sha256": "c1e6024d333e0095cf8a0527d34fe6e3929aaf0df674e1987bb899757668b61b",
+      "ruleset_sha256": "9b16c4334fc4d670c9264f763b16baf62cbd58efb9a9eb7039c186e3b213e968",
       "verification": "unverified",
       "version": 1
     },
@@ -1412,7 +1412,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-labs-daily-payouts-plus-50k.v1.yaml",
       "ruleset_id": "topstep-labs-daily-payouts-plus-50k",
-      "ruleset_sha256": "4628810e7f61692728dc2a80006598f3de47ec2867dea0ddc2c7b3df31a449f7",
+      "ruleset_sha256": "b96460722de9d08f89acf01263d59b41cf84f4fa9c218ad09aa45aa1ecef4d7b",
       "verification": "unverified",
       "version": 1
     },
@@ -1420,7 +1420,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "33150a82c0690f938967557c9e618c27f8a29df1167848d14feadbf000465bc9",
+      "ruleset_sha256": "c44f909688f9e8ef94d8993d5948049b61c4938d98438c412dbaf629b3556e5c",
       "verification": "unverified",
       "version": 1
     },
@@ -1428,7 +1428,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-consistency-payout",
-      "ruleset_sha256": "f11432558300361ca7d9e34fada02b4bbea11c001fd80854efa8803caa8ec611",
+      "ruleset_sha256": "80269a23bf00f06075fafd63e6e80ceda2dfe62c2aafa98234ffab1b3af0f9d2",
       "verification": "unverified",
       "version": 1
     },
@@ -1436,7 +1436,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-daily-loss-limit",
-      "ruleset_sha256": "0bcd3161ebe1bedaaa56106938da59b752cdd6fdde6dfc448c1feb30a78c61d0",
+      "ruleset_sha256": "87c5e21e5cf6d910a1de301e4e8a3e874d4ce029a4d7bd807eed3e61f8d308ee",
       "verification": "unverified",
       "version": 1
     },
@@ -1444,7 +1444,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-no-activation-fee-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "b254acea1c587f2d1c9b5734e0dba24842321cf3326918f8269cb5fa6f2a817c",
+      "ruleset_sha256": "ae2677680b9a9d8edcda6ac7f685b5f963c1e988560aa1ad885431caafbabba0",
       "verification": "unverified",
       "version": 1
     },
@@ -1452,7 +1452,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-no-activation-fee-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-no-activation-fee-consistency-payout",
-      "ruleset_sha256": "04f2bf6455f7552439bdf7bd195c0acbf7be04c7f1aed72a91fddf5b445e82e4",
+      "ruleset_sha256": "b760273e9aa40bd89868168d6baaff2dcf92b752753cd182bf733f3e1c0e4b38",
       "verification": "unverified",
       "version": 1
     },
@@ -1460,7 +1460,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-no-activation-fee-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-no-activation-fee-daily-loss-limit",
-      "ruleset_sha256": "46bb25c47e6eee0470232c440e36d0fe50db2199261ad7a9a33196c955b51398",
+      "ruleset_sha256": "aed97ad7360038c709eb6112e2494a70d372747e8744ffef5f478f077d4ad77c",
       "verification": "unverified",
       "version": 1
     },
@@ -1468,7 +1468,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-no-activation-fee.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-no-activation-fee",
-      "ruleset_sha256": "678002ce3ca13d44b8068b397e9a559bafc81d1a38a73916292d0987052e0925",
+      "ruleset_sha256": "9c500a71e18cab43de553db858cb026848fe72e9e27fafd52ba776a1d05ed69a",
       "verification": "unverified",
       "version": 1
     },
@@ -1476,7 +1476,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k",
-      "ruleset_sha256": "a821372fa7c7b030572562cc798eb40582a33760896ae30a2e577a8e18b61c8a",
+      "ruleset_sha256": "abeaa65b769b7722b4eff20affea6d60bc060d337fa58b2734a79d181adeaa4f",
       "verification": "unverified",
       "version": 1
     },
@@ -1484,7 +1484,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "d9e36d9e9d77b4d0c983de8e1335d6f43b909852a3671d37439b7f1e46a238b2",
+      "ruleset_sha256": "b82f320178517be5aed1105e3a76b737c1886a4df7c1767266d497c89b199c3f",
       "verification": "unverified",
       "version": 1
     },
@@ -1492,7 +1492,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-consistency-payout",
-      "ruleset_sha256": "0b6f012572c3885efd4af92a6c11208421701c45775bd545b10538253d1831a9",
+      "ruleset_sha256": "1ccac68759418badbd9c9b171b932220cf51723ac9df961626d92f691be68824",
       "verification": "unverified",
       "version": 1
     },
@@ -1500,7 +1500,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-daily-loss-limit",
-      "ruleset_sha256": "eba20adfabc0d613a51caf1d3a6eccc4711ea704b83512c702314ce5963e06c2",
+      "ruleset_sha256": "621d90c58b2cb3137a5e345c2311bff5ee8c737948fcb8b6e10577cdf448b178",
       "verification": "unverified",
       "version": 1
     },
@@ -1508,7 +1508,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-no-activation-fee-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "fcadb8ec3a3fc2ef5398e6a683e78678cd02b4d0e427405d7619de977c780137",
+      "ruleset_sha256": "d3c1dc0c5ffc5406451e8ec8cd10ee6a540f42fe3ddfe344945401d1962d1004",
       "verification": "unverified",
       "version": 1
     },
@@ -1516,7 +1516,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-no-activation-fee-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-no-activation-fee-consistency-payout",
-      "ruleset_sha256": "ff74bad989ec75bde5e04a16f492fc9463427b02860dcf4717be12ebf85075b1",
+      "ruleset_sha256": "6e19bd18ca5d33ab7f0b86251de29338027aa3a2b440352f2da8351245345f4c",
       "verification": "unverified",
       "version": 1
     },
@@ -1524,7 +1524,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-no-activation-fee-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-no-activation-fee-daily-loss-limit",
-      "ruleset_sha256": "38fd5ae1e486846ce8e44dc0b37e911a74652c96f108d2952e6af8754f51a5a8",
+      "ruleset_sha256": "221eeeb55a5a8a1dd7d7d528269a3e923d7c81e99a542a68764ba014f912da55",
       "verification": "unverified",
       "version": 1
     },
@@ -1532,7 +1532,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-no-activation-fee.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-no-activation-fee",
-      "ruleset_sha256": "227d4b0863287e976010ab0ece607c4b7f0ff87a1907a55f412ff760812db38f",
+      "ruleset_sha256": "6f5097a2498f870046ef98589f22b9534f04a91bc46084e55539c891784e8953",
       "verification": "unverified",
       "version": 1
     },
@@ -1540,7 +1540,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k",
-      "ruleset_sha256": "4668ac37541b1748ade119a5c0e1b9c89403857213f1f46e623f5ebb3c02c8ad",
+      "ruleset_sha256": "88bf148431f36f04fdfb48f79caba92f0fca7dfc6d1771394e6b8315a4131e94",
       "verification": "unverified",
       "version": 1
     },
@@ -1548,7 +1548,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "0433ecd6eca89d3dec225be15398b835f4575c89e19b9db7410cb2a34ce4a7a1",
+      "ruleset_sha256": "92def0ac39653bfdbb488bc1644f7db36154fbf0e8907518e472e540c14999f8",
       "verification": "unverified",
       "version": 1
     },
@@ -1556,7 +1556,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-consistency-payout",
-      "ruleset_sha256": "e2bf4961cd8983692abd8b5a0a998e9f63dc9435864b0ef6a50e37a6e219a7b1",
+      "ruleset_sha256": "f24ba4af2e8977ab52b2fa24c613a56d1b1a100e564978e55fa906b7de787150",
       "verification": "unverified",
       "version": 1
     },
@@ -1564,7 +1564,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-daily-loss-limit",
-      "ruleset_sha256": "107d12e06a9d88d64f46611ba023c55d79c04edde00fc7065a9c5898fdac1968",
+      "ruleset_sha256": "f3f57f31b06fc3c3cf58ec3c696147b53b99a16c30d107520db004254e33e9a0",
       "verification": "unverified",
       "version": 1
     },
@@ -1572,7 +1572,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-no-activation-fee-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "48456d0651b4f34e93b9f5534de790e96af0a19fc8d341df8f0bed60cdcd700f",
+      "ruleset_sha256": "9e603ce573495e3b6aa7f98860db83ee555e3456d8a41a6ec3d52b1598e2eb2f",
       "verification": "unverified",
       "version": 1
     },
@@ -1580,7 +1580,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-no-activation-fee-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-no-activation-fee-consistency-payout",
-      "ruleset_sha256": "acf2013f9d4a34b6cc64e6042c509868f73422105f3d94f416e2841ec15b0fe5",
+      "ruleset_sha256": "753c786a8f340a0c1de27f15d00fe29d48a0c4acfb9c71b616ffd2ced126d985",
       "verification": "unverified",
       "version": 1
     },
@@ -1588,7 +1588,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-no-activation-fee-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-no-activation-fee-daily-loss-limit",
-      "ruleset_sha256": "6797d24f964e8c86d260990412fab80c55f96cbba567152a34136cb0bc6931e5",
+      "ruleset_sha256": "fd7b1b89484072b1ffad87cf1ba79c605ceed978c406f4eb1bc81ecee8954b70",
       "verification": "unverified",
       "version": 1
     },
@@ -1596,7 +1596,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-no-activation-fee.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-no-activation-fee",
-      "ruleset_sha256": "80adffb255e59cab8d96c44b2c32fd4ee107a45fd799a06a6747da058bcb8345",
+      "ruleset_sha256": "f98bf43b3b0f571a55ff464272c37741eb066df372873b2de7ab2725dcf08d9b",
       "verification": "unverified",
       "version": 1
     },
@@ -1604,7 +1604,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k",
-      "ruleset_sha256": "b50a07fce037ad634156e8391e042f22c1a88114aa0a32ff9771af078e2d743f",
+      "ruleset_sha256": "28a330b000ed546175d578e28036a6150a63494bfaa127e8a16e144aa9af944c",
       "verification": "unverified",
       "version": 1
     }

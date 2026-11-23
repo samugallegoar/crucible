@@ -670,9 +670,13 @@ phases:
     evidence: official_quote
   - kind: inactivity
     rule_id: xfa_inactivity
-    description: 'An Express Funded Account with no trading activity for more than 30 calendar days may
-      be closed. Modeled as a hard fail on the thirty-first inactive day: the account cannot be counted
-      as surviving a month of silence.'
+    description: 'An account with no trades placed for 30 days is closed: the drop page states it
+      directly ("If there are no trades placed for 30 days, the account will close.") under the $50K
+      Daily Payouts+ Trading Combine (EOD & Static) FAQs. Modelled as a hard fail at the start of
+      the 31st calendar day after the last trade date, i.e. once 30 full days have elapsed, which is
+      the rule-day transition the overlay counts inactivity on. The drop states the closure itself,
+      so the XFA page''s softer "may be closed" reading and its assumption are not borrowed here
+      (owner decision 2026-11-23).'
     max_gap: 30
     unit: calendar_days
     rolling_window: true
@@ -680,11 +684,12 @@ phases:
     comparison: '>'
     action: fail
     source:
-      url: https://help.topstep.com/en/articles/8284215-express-funded-account-parameters
-      snapshot_sha256: 147e7624b6b96fdfba83cc3a20e79ad394c7857a289610b0632b7af62989ba79
-      retrieved_at: '2026-11-22T01:36:31Z'
-      quote: XFAs with no trading activity for more than 30 days may be closed.
-      section: Express Funded Account FAQs
+      url: https://help.topstep.com/en/articles/15520357-topstep-labs
+      snapshot_sha256: 3eeff491464260ca00802775549db9a203644e81d726396227d1eaa1c191c9b1
+      retrieved_at: '2026-11-22T01:53:10Z'
+      quote: If there are no trades placed for 30 days, the account will close.
+      section: '$50K Daily Payouts+ Trading Combine (EOD & Static) FAQs - What are the rules on
+        inactivity?'
       synthetic: false
     evidence: official_quote
   pass_conditions: []

@@ -8,6 +8,42 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C7b.1: participant profile, breach on fill, promotions, Topstep review decisions (ADR-0106, ADR-0107 amendments)
+- **Participant profile.**
+  - A run declares an immutable participant profile (dimension to value); its sha256 is in the
+    manifest, the summary, every attempt row and the evaluation id.
+  - Each fee row names the classification dimension it needs and is resolved against the
+    profile. A missing or `unknown` dimension leaves that component a named gap; there is no
+    default classification.
+- **"other" fee rows.** Accepted only as a specific, named per-side charge from cmegroup.com,
+  with:
+  - its quote;
+  - evidence that it applies;
+  - a statement of why it is distinct from exchange, clearing and NFA.
+
+  Refused: generic names, monthly or platform charges, an exchange row covering `other`, and
+  duplicates.
+- **Breach on fill.** An intraday loss threshold is tested after every fill and cost posting,
+  flat or not, and fails at that fill. Previously a flat account below its maximum loss limit
+  kept trading until its next position crossed it.
+- **Blocked entries.** A blocked entry is attributed to the rule that blocked it
+  (`session_entry_block`, `news_entry_block`), not to the size limit.
+- **Promotions.**
+  - A rule value may carry eligibility-gated promotions, applied only when the profile proves
+    every requirement and the purchase date is inside the window.
+  - An unknown end date never extends past the ruleset's `as_of`.
+- **Assumption kinds.** Every assumption declares `section7_default`, `provisional_conservative`
+  or `owner_decision`.
+- **Topstep rulesets (26, all still unverified).** The owner's review decisions are applied:
+  - the DLL doubled payout cap is a promotion over the standard cap;
+  - XFA inactivity is a provisional conservative close on day 31;
+  - Labs inactivity is sourced from the Labs page;
+  - the Labs post-payout static drawdown is `not_modeled` (critical) instead of approximated by a
+    trailing one;
+  - the scope is TopstepX, without metals, as of 2026-11-22.
+- **Ruleset lock.** A verified ruleset can never change. An unverified one may be corrected in
+  place, and its owner confirmation is bound to the content hash.
+
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**
   - Files `rulesets/prop/<firm>/` cover Topstep, Apex, MyFundedFutures, Lucid, FTMO and FundedNext.
