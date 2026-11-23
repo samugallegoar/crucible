@@ -106,6 +106,34 @@ kind of change is recorded).
   - The Trading Combine's maximum position size is never the XFA limit, and nothing in a funded
     phase changes size mid-session.
 
+### A preliminary cross-firm cost: the versioned upper-bound cost-assumption file (ADR-0107 amendment, 2026-11-23)
+- **`kind` on a cost-assumption file (REQUIRED): `point_estimate` or `upper_bound`.**
+  - `point_estimate` keeps the meaning: the owner's best single figure, and an amount on a cost
+    the firm already has is refused.
+  - `upper_bound` states ceilings, fills only the gaps a firm's own sources leave, and skips (never
+    charges, never refuses) an amount on an `included` component, one the fee dataset priced or a
+    commission the firm states.
+  - Existing fixtures gained `kind: point_estimate`; a file without it is refused by name.
+- **`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`.** The owner's explicit, unverified bound
+  per root and component (ES/NQ/YM/RTY: exchange 2.00, clearing 0.50, NFA 0.02, other 0.50; NKD:
+  3.00, 0.50, 0.02, 0.50; MES/MNQ/MYM/M2K: 0.60, 0.25, 0.02, 0.25 USD per contract per side), with
+  the rationale per row in its evidence. Hashed like a ruleset: an INDEX.json entry of kind
+  `cost_assumption` plus the run's summary, manifest and attempt rows. A change is a new file
+  (`upper_bound_v2.yaml`), never an edit in place. It is not a fee table and never feeds
+  `exchange_fees_v1`.
+- **Labels under an upper-bound file.** `cost_bound: upper` in `summary.json` (top level and every
+  scenario) and in every `attempts.parquet` row; the cash statistic is `lower_bound`
+  (`cash.status`, `cash_estimate_status`); the pass probability reasons carry `costs are an upper
+  bound: the probability and the net cash are pessimistic (lower bounds) under it`; every report
+  carries the comparability note (`firms with fewer sourced cost components receive more of the
+  bound, so cross-firm comparisons under it are pessimistic for the less documented firms`). The
+  estimate stays `conditional`, never `complete`.
+- **The per-firm cost-component table is unchanged:** no ruleset value, hash or verification status
+  moved. `crucible prop list` keeps listing rulesets only, and the new directory is excluded from it.
+- **Docs:** `docs/modules/prop.md`, `docs/USAGE.md` (how to run the analysis and read the labels),
+  `docs/GLOSSARY.md` (upper-bound cost assumption), `docs/data/cme-exchange-fees.md` (the file is
+  not the fee table) and `docs/SCHEMAS.md` (the new columns and keys).
+
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**
   - Files `rulesets/prop/<firm>/` cover Topstep, Apex, MyFundedFutures, Lucid, FTMO and FundedNext.

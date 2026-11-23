@@ -721,6 +721,13 @@
       "version": 1
     },
     {
+      "assumption_kind": "upper_bound",
+      "kind": "cost_assumption",
+      "name": "upper-bound-v1",
+      "path": "rulesets/prop/cost_assumptions/upper_bound_v1.yaml",
+      "sha256": "def90ed9713cb48e97a3e2d8e08d48ca4c35b5bcc43c3eac5caa2ce053fd004d"
+    },
+    {
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-growth-100k.v1.yaml",
       "ruleset_id": "ftmo-futures-growth-100k",

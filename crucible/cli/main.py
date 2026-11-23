@@ -558,11 +558,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         dest="cost_assumption",
         metavar="FILE",
-        help="Path of a cost-assumption YAML file (name, description, provided_by, status: "
-        "unverified, evidence, amounts per root and component). It is the only way a cost gap "
-        "becomes a number: it prices exactly the gaps it names, makes the estimate CONDITIONAL and "
-        "is never reported as a firm value. Without one an unmatched cost keeps the cash statistic "
-        "unavailable, never zero",
+        help="Path of a cost-assumption YAML file (name, kind: point_estimate|upper_bound, "
+        "description, provided_by, status: unverified, evidence, amounts per root and component). "
+        "It is the only way a cost gap becomes a number: it prices exactly the gaps it names, "
+        "makes the estimate CONDITIONAL and is never reported as a firm value. An upper_bound "
+        "file states ceilings: the cost is labelled 'upper', the cash statistic 'lower_bound'. "
+        "Without one an unmatched cost keeps the cash statistic unavailable, never zero",
     )
     futures_prop.add_argument(
         "--participant-profile",
@@ -2133,6 +2134,15 @@ def _prop_scenario_lines(entry: dict[str, object]) -> list[str]:
         f"{eligibility['conditionally_valid_passes']}",
         f"  estimate:   {entry['estimate_status']}",
     ]
+    cost_bound = entry.get("cost_bound")
+    if cost_bound is not None:
+        lines.append(
+            f"  cost bound: {cost_bound} (every cost is a ceiling, so the net cash is a lower "
+            "bound: the cost can only come down)"
+        )
+    note = entry.get("comparability_note")
+    if note is not None:
+        lines.append(f"  compare:    {note}")
     for reason in reasons:
         lines.append(f"    reason:   {reason}")
     conditions = eligibility["conditions"]

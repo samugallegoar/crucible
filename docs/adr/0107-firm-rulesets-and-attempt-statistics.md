@@ -758,6 +758,69 @@ an assumption.
 the 24 Topstep Trading Combine files gained a rule, and each was re-hashed in place, so
 `rulesets/prop/INDEX.json` is regenerated and no verified hash changes.
 
+## Amendment (2026-11-23, owner decision): an explicit upper-bound cost-assumption file
+
+The per-firm cost-component table (`commissions.components` per firm file, priced per component where
+a source exists) is the tracker of which firms have sourced costs, and it stays exactly as it is: it
+will keep being filled with real data. What it cannot do is let a PRELIMINARY analysis run across
+ALL firms today — a firm whose sources state nothing is a named gap, and a gap makes the cash
+statistic `unavailable`, which is the correct answer and the wrong instrument for a first pass.
+
+The owner therefore adds ONE explicit, versioned UPPER-BOUND cost-assumption file, and a `kind` on
+every assumption file that says what its amounts claim. This is an addition to section 10 as the
+2026-11-22 amendment rewrote it; nothing in that amendment is relaxed.
+
+**1. `kind` is REQUIRED on a cost-assumption file: `point_estimate` or `upper_bound`.**
+
+- `point_estimate` keeps the meaning the file already had: the owner's best single figure, naming
+the costs it estimates. An amount that lands on a component the firm already has (`included`, priced
+by the fee dataset, or a commission the firm states) is still a contradiction and is refused.
+- `upper_bound` states CEILINGS. The file is a table over every root and component, so an amount that
+lands on such a component is SKIPPED — never charged, never an error — because the bound fills only
+the gaps. It never prices an `included` component, never a component the fee dataset priced, and
+never a commission a firm states: those rules are enforced per component, not trusted.
+- Either kind leaves the estimate `conditional`, never `complete`, and prices only gaps. A root the
+file does not list stays a named gap: no extrapolation, ever.
+
+**2. The artifact says what the cost is.** Under an `upper_bound` file:
+
+- `summary.json` (top level and every scenario) and every `attempts.parquet` row carry
+  `cost_bound: upper`;
+- the cash statistic is labelled `lower_bound` — the cost is a ceiling, so the net cash can only
+  rise once real costs arrive. It takes precedence over a payout cap's `upper_bound` label on the
+  cash statistic, which applies to fewer attempts; the per-payout `bound` still reports
+  `upper_bound`;
+- the pass probability carries the reason `costs are an upper bound: the probability and the net cash
+  are pessimistic (lower bounds) under it`, so a bound can never be read as a point estimate;
+- every report carries the comparability note: *firms with fewer sourced cost components receive more
+  of the bound, so cross-firm comparisons under it are pessimistic for the less documented firms*.
+  A firm that states all of its components is charged none of the bound and a firm that states none
+  is charged all of it, so the note is the honest reading of a cross-firm table under it.
+
+**3. The file is data, versioned whole.** `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` is
+committed, `status: unverified`, `provided_by: owner`, and hashed like a ruleset: its `sha256` is an
+entry of kind `cost_assumption` in `rulesets/prop/INDEX.json` (append-only, never edited in place
+once merged) and is recorded in `summary.json`, the sealed manifest and every attempt row, and it is
+part of the evaluation id. A change is a NEW file (`upper_bound_v2.yaml`), never an edit. It is NOT
+`exchange_fees_v1`: it is not a fee table, no engine module or `docs/data/cme-exchange-fees.md` row
+reads it, and its amounts are the owner's bounds, revisable when the real data arrive.
+
+**Values (USD per contract per side, `unit: per_contract_per_side`).** ES/NQ/YM/RTY: exchange 2.00,
+clearing 0.50, NFA 0.02, other 0.50. NKD: exchange 3.00, clearing 0.50, NFA 0.02, other 0.50.
+MES/MNQ/MYM/M2K: exchange 0.60, clearing 0.25, NFA 0.02, other 0.25. The evidence text states the
+rationale per row: Topstep publishes an ES exchange fee of $2.76 round turn (1.38 per side), which
+matches the owner's 1.38 reference, plus margin; NKD is unknown, hence a wider margin; clearing and
+`other` have no source and are deliberately generous bounds (the `other` entry is named
+`unidentified_per_side_charges_upper_bound`); the NFA assessment comes from the NFA bylaw.
+
+**Mechanically.** `CostAssumption` gains `kind` and its `cost_bound`; `validate`d file keys gain
+`kind` (existing fixtures migrated); `AttemptResult`/`CommissionApplication` gain `cost_bound` and
+`cost_assumption_kind`; `summary.json` gains `cost_bound`, `comparability_note` and
+`cost_assumption.kind`; `attempts.parquet` gains the `cost_bound` column; `cash_estimate_status`
+gains the `lower_bound` label; `rulesets/prop/INDEX.json` gains the assumption entry; `crucible prop
+list` keeps listing rulesets only. Every one of those is additive: no released artifact changes, and
+`/schema_version` stays where it is.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

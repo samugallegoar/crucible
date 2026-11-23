@@ -56,6 +56,7 @@ from crucible.experiments.futures_prop import (
     run_prop_evaluation,
 )
 from crucible.experiments.futures_stats import bootstrap_seed
+from crucible.prop.costs import UPPER_BOUND_COMPARABILITY_NOTE, UPPER_BOUND_REASON
 from crucible.prop.rules_schema import Instrument
 from crucible.prop.ruleset import Attribution, PropRuleset, load_ruleset
 from crucible.validation.trial_registry import DuckDBTrialRegistry
@@ -529,12 +530,18 @@ def write_ruleset(path: Path, ruleset_object: PropRuleset) -> Path:
 
 
 def write_cost_assumption(
-    path: Path, *, covers: Sequence[str], amount: str = "0.77", root: str = "ES"
+    path: Path,
+    *,
+    covers: Sequence[str],
+    amount: str = "0.77",
+    root: str = "ES",
+    kind: str = "point_estimate",
 ) -> Path:
     """A SYNTHETIC cost-assumption file pricing ``covers`` for one root."""
     path.parent.mkdir(parents=True, exist_ok=True)
     document = {
         "name": "synthetic-owner-estimate",
+        "kind": kind,
         "description": "SYNTHETIC TEST VALUE: a cost estimate invented for a test",
         "provided_by": "owner",
         "status": "unverified",
@@ -1235,6 +1242,75 @@ def test_unknown_commissions_make_the_cash_unavailable_unless_a_named_assumption
         hashlib.sha256(assumption.read_bytes()).hexdigest()
     }
     assert set(frame["cost_gaps"].to_list()) == {""}
+    # a point estimate claims no bound: no cost_bound label, no lower_bound cash, no note
+    assert set(frame["cost_bound"].to_list()) == {""}
+    assert assumed.summary["cost_assumption"]["kind"] == "point_estimate"
+    assert assumed.summary["cost_bound"] is None
+    assert assumed.summary["comparability_note"] is None
+    assert assumed.summary["scenarios"][0]["cost_bound"] is None
+    assert not any("upper bound" in reason for reason in cash["reasons"])
+
+
+def test_an_upper_bound_assumption_labels_the_cost_and_the_cash_as_bounds(
+    store: Path, artifacts: Path
+) -> None:
+    """``kind: upper_bound``: cost ``upper``, cash ``lower_bound``, and the comparability note.
+
+    The same synthetic ruleset and the same 0.77 per side as the point estimate above: only the
+    file's ``kind`` changes, and the artifact must say what the amounts claim -- the cost is a
+    ceiling, so the pass probability and the net cash are pessimistic, and a firm with fewer
+    sourced components gets more of the bound. The estimate stays ``conditional``, never
+    ``complete``, and the file's SHA-256 is what the sealed manifest records.
+    """
+    unknown = {
+        "status": "unknown",
+        "components": _COMPONENTS_UNKNOWN,
+        "platform": None,
+        "source": _source(),
+    }
+    assumption = write_cost_assumption(
+        artifacts / "bounded" / "assumption.yaml",
+        covers=("commission", "exchange", "clearing", "nfa", "other"),
+        kind="upper_bound",
+    )
+    result = evaluate(
+        store,
+        artifacts / "bounded",
+        commissions=unknown,
+        cost_assumption=assumption,
+    )
+    summary = result.summary
+    scenario = summary["scenarios"][0]
+    assert summary["cost_bound"] == "upper"
+    assert summary["comparability_note"] == UPPER_BOUND_COMPARABILITY_NOTE
+    assert scenario["cost_bound"] == "upper"
+    assert scenario["comparability_note"] == UPPER_BOUND_COMPARABILITY_NOTE
+    assert summary["cost_assumption"]["kind"] == "upper_bound"
+    assert (
+        summary["cost_assumption"]["sha256"] == hashlib.sha256(assumption.read_bytes()).hexdigest()
+    )
+    assert scenario["cash"]["status"] == "lower_bound"
+    assert scenario["cash"]["mean_net_cash_usd"] is not None
+    assert UPPER_BOUND_REASON in scenario["cash"]["reasons"]
+    assert scenario["probability"]["field"] == CONDITIONAL_PASS_PROBABILITY
+    assert UPPER_BOUND_REASON in scenario["probability"]["reasons"]
+    # every attempt row carries the label, and the cost is still conditional (never complete)
+    frame = pl.read_parquet(result.evaluation_dir / "attempts.parquet")
+    assert set(frame["cost_bound"].to_list()) == {"upper"}
+    assert set(frame["cash_estimate_status"].to_list()) == {"lower_bound"}
+    assert set(frame["cost_status"].to_list()) == {"conditional"}
+    assert set(frame["estimate_status"].to_list()) == {"conditional"}
+    assert set(frame["cost_assumption_sha256"].to_list()) == {
+        hashlib.sha256(assumption.read_bytes()).hexdigest()
+    }
+    manifest = json.loads((result.evaluation_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cost_assumption"]["kind"] == "upper_bound"
+    assert (
+        manifest["cost_assumption"]["sha256"] == hashlib.sha256(assumption.read_bytes()).hexdigest()
+    )
+    assert manifest["cost_bound"] == "upper"
+    # the outcomes are the run's, unchanged by the label: five passes of sixteen starts
+    assert scenario["counts"]["pass"] == 5
 
 
 def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path) -> None:

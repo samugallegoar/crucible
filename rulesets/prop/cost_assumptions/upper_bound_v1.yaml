@@ -1,0 +1,160 @@
+# An explicit, versioned UPPER BOUND on the per-side execution cost of the roots listed.
+#
+# It exists for a PRELIMINARY analysis across every firm while the per-firm cost-component table is
+# still being filled with sourced data: it prices ONLY the gaps a firm's own sources leave (never a
+# component the firm includes, never one the fee dataset prices, never a commission the firm states),
+# and it is never a firm's value. Under it the run labels the cost `cost_bound: upper` and the cash
+# statistic `lower_bound`: the real cost can only come down, so the pass probability and the net cash
+# are pessimistic. These values are subject to change once the real data arrive.
+#
+# Versioning: this file is data, hashed like a ruleset (`sha256` in `rulesets/prop/INDEX.json` and in
+# every run's `summary.json`, sealed manifest and `attempts.parquet`). A change is a NEW version
+# (`upper_bound_v2.yaml`), never an edit in place once merged. See ADR-0107 (2026-11-23
+# owner-decision amendment) and `docs/modules/prop.md`.
+name: upper-bound-v1
+kind: upper_bound
+description: >-
+  A per-side cost ceiling for every root a prop firm may trade, used only to fill the cost gaps a
+  firm's own sources leave, in a preliminary cross-firm analysis. It is not a firm's cost, not a fee
+  table, and not a claim that the firm charges these amounts.
+provided_by: owner
+status: unverified
+evidence: >-
+  EXCHANGE 2.00 for ES (and 0.60 for its micro MES): Topstep publishes an ES exchange fee of $2.76
+  round turn, i.e. 1.38 per side, which matches the owner's 1.38 reference; the bound adds margin on
+  top of it (a non-member rate class, a fee schedule change and the clearing component a published
+  page may bundle are all unpriced). NKD 3.00: unknown, so a wider margin than the equity index
+  roots. CLEARING 0.50 (0.25 micro) and OTHER 0.50 (0.25 micro): no source states either, so both are
+  deliberately generous bounds rather than a measured figure; the other entry is named
+  `unidentified_per_side_charges_upper_bound` because naming a charge nobody published would be an
+  invention. NFA 0.02: the NFA assessment from the NFA bylaw itself (its per-side share of the
+  round-turn assessment). Every amount is USD per contract per side (unit:
+  per_contract_per_side). A root missing from this file stays a named gap: the file never
+  extrapolates, and no value here is carried across roots.
+amounts:
+  ES:
+    - covers: [exchange]
+      per_side_usd: '2.00'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound
+  NQ:
+    - covers: [exchange]
+      per_side_usd: '2.00'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound
+  YM:
+    - covers: [exchange]
+      per_side_usd: '2.00'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound
+  RTY:
+    - covers: [exchange]
+      per_side_usd: '2.00'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound
+  NKD:
+    - covers: [exchange]
+      per_side_usd: '3.00'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.50'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound
+  MES:
+    - covers: [exchange]
+      per_side_usd: '0.60'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.25'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.25'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound
+  MNQ:
+    - covers: [exchange]
+      per_side_usd: '0.60'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.25'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.25'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound
+  MYM:
+    - covers: [exchange]
+      per_side_usd: '0.60'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.25'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.25'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound
+  M2K:
+    - covers: [exchange]
+      per_side_usd: '0.60'
+      unit: per_contract_per_side
+    - covers: [clearing]
+      per_side_usd: '0.25'
+      unit: per_contract_per_side
+    - covers: [nfa]
+      per_side_usd: '0.02'
+      unit: per_contract_per_side
+    - covers: [other]
+      per_side_usd: '0.25'
+      unit: per_contract_per_side
+      charge_name: unidentified_per_side_charges_upper_bound

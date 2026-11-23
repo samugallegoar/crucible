@@ -308,6 +308,16 @@ exactly what this dataset refuses to do. A user who wants an attempt to price wi
 cost-assumption file naming the root and the components, and the attempt records that file's
 SHA-256 and reports the estimate as `conditional`.
 
+**The upper-bound cost file is NOT a fee table, and never feeds this dataset.**
+`rulesets/prop/cost_assumptions/upper_bound_v1.yaml` (`kind: upper_bound`) is the owner's explicit
+ceiling for a preliminary cross-firm analysis, ADR-0107's 2026-11-23 owner-decision amendment. Its
+amounts are not rows: nothing here is built from them, no `fee_type`/`root`/`classification`
+resolution reads them, `build_exchange_fees` never sees them, and no run reads them unless the user
+passes the file with `--cost-assumption`. They are bounds (its exchange 2.00 for ES is a margin over
+the 1.38 reference above, not a rate), they are subject to change when the real data arrive, and a
+change is a new file (`upper_bound_v2.yaml`), never an edit in place. The dataset stays the only
+per-root, per-classification, dated table the engine prices `excluded` components from.
+
 ## Gaps
 
 - **Every exchange, clearing and other fee is missing** (all nine roots, all dates). The consequence

@@ -7,6 +7,7 @@ example.invalid URLs and ``synthetic: true`` on every attribution.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -1056,10 +1057,17 @@ def test_prop_confirm_refuses_without_a_tty_and_writes_the_sidecar_with_one(
 
 
 def test_the_index_lists_every_ruleset_file_and_is_append_only() -> None:
+    """Every ruleset and every versioned cost-assumption file is hashed in the lock, once.
+
+    A merged assumption file is immutable data like a ruleset: its ``sha256`` may not change in
+    place (a change is ``upper_bound_v2.yaml``), so the same append-only check applies to both
+    entry kinds and ``crucible prop list`` still lists rulesets only.
+    """
     import json
     import subprocess
 
-    from crucible.prop.index import build_index
+    from crucible.prop.index import COST_ASSUMPTION_ENTRY_KIND, build_index
+    from crucible.prop.list import list_document
 
     root = Path(__file__).resolve().parents[2]
     document = build_index(root / "rulesets" / "prop")
@@ -1070,6 +1078,16 @@ def test_the_index_lists_every_ruleset_file_and_is_append_only() -> None:
         if not path.name.endswith(".verification.yaml")
     )
     assert sorted(by_path) == files
+    assumption_entries = {
+        path: entry
+        for path, entry in by_path.items()
+        if entry.get("kind") == COST_ASSUMPTION_ENTRY_KIND
+    }
+    assert assumption_entries, "no cost-assumption file is registered in the lock"
+    for path, entry in assumption_entries.items():
+        assert entry["sha256"] == hashlib.sha256((root / path).read_bytes()).hexdigest()
+        assert entry["assumption_kind"] in ("point_estimate", "upper_bound")
+        assert [row["path"] for row in list_document()["rulesets"]].count(path) == 0
     try:
         previous = json.loads(
             subprocess.run(
@@ -1089,6 +1107,10 @@ def test_the_index_lists_every_ruleset_file_and_is_append_only() -> None:
             # a version never disappears from the lock
             current = by_path.get(entry["path"])
             assert current is not None
+            if entry.get("kind") == COST_ASSUMPTION_ENTRY_KIND:
+                # a merged assumption file is data a run cites by hash: no edit in place
+                assert current["sha256"] == entry["sha256"]
+                continue
             assert (current["ruleset_id"], current["version"]) == (
                 entry.get("ruleset_id"),
                 entry.get("version"),

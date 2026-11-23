@@ -119,10 +119,10 @@
   `excluded_priced`, `excluded_unpriced`, `unknown`, `assumption`, and `known`/`unknown` for the
   commission), the charged USD, the gaps, and the cost status `complete | conditional |
   unavailable`. `CostAssumption` + `load_cost_assumption(path)` read the unverified, owner-provided
-  YAML file (`name`, `description`, `provided_by`, `status: unverified`, `evidence`, `amounts` per
-  root) that prices exactly the gaps it names; its SHA-256 is recorded. `price_components(...)` is
-  the one function that applies the order: commission, then each component by its declared status,
-  then the assumption.
+  YAML file (`name`, `kind`, `description`, `provided_by`, `status: unverified`, `evidence`,
+  `amounts` per root) that prices exactly the gaps it names; its SHA-256 is recorded.
+  `price_components(...)` is the one function that applies the order: commission, then each
+  component by its declared status, then the assumption.
 - **`attempt.py`**: `simulate_attempt(...) -> AttemptResult`, one attempt from one start trade
   date: phases in order, each a fresh `PropAccountOverlay` inside `simulate_futures`; outcome
   `pass`/`fail`/`timeout`/`censored`, `PhaseOutcome` per phase, `min_buffer_usd` with where it
@@ -289,6 +289,32 @@ includes or the dataset already priced, an `unknown` component it prices is ADDE
 strategy), and the recorded SHA-256 names the file. Because it is a user's statement and not a firm
 value, the resulting estimate is `conditional`, never `exact`.
 
+### The kind of a cost assumption: `point_estimate` or `upper_bound`
+
+An assumption file says what its amounts CLAIM (`kind`, REQUIRED since the 2026-11-23
+owner-decision amendment of ADR-0107; `docs/GLOSSARY.md`, "Upper-bound cost assumption"):
+
+- `point_estimate` — the owner's best single figure. It names the costs it estimates, so an amount
+  that lands on a component the firm already has (an `included` one, one the fee dataset priced, a
+  stated commission) is a contradiction and is REFUSED.
+- `upper_bound` — an explicit, versioned ceiling (`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`)
+  that fills only the GAPS a firm's own sources leave, for a preliminary analysis across every firm.
+  It is a table over every root and component, so an amount that lands on a cost the firm already
+  has is skipped, never charged and never an error. It never prices an `included` component, never
+  one the dataset priced, never a commission the firm states, and its estimate is still
+  `conditional` — never `complete`.
+
+An upper-bound run labels the artifact: `cost_bound: upper` in `summary.json` (top level and every
+scenario) and in every `attempts.parquet` row, the cash statistic `lower_bound` (the cost is a
+ceiling, so the net cash can only rise once real costs arrive), the pass probability's reason
+`costs are an upper bound: the probability and the net cash are pessimistic (lower bounds) under
+it`, and the comparability note *firms with fewer sourced cost components receive more of the
+bound, so cross-firm comparisons under it are pessimistic for the less documented firms* (the bound
+fills gaps, so a firm that states its costs is charged less of it). The file is hashed like a
+ruleset: its `sha256` is in `rulesets/prop/INDEX.json` (an entry of kind `cost_assumption`) and in
+the run's `summary.json`, sealed manifest and every attempt row. A change is a NEW version
+(`upper_bound_v2.yaml`), never an edit in place once merged.
+
 ### The participant profile: classification resolved per component
 
 A fee row does not state a participant type. It states the ONE classification dimension it needs
@@ -329,10 +355,13 @@ states inside the attempt's window is reported in `warnings` (one schedule per a
 silent mid-window change).
 
 `cash_estimate_status` is the label on the money: `exact`, `conditional` (a named cost assumption
-was used), `upper_bound` (a payout cap the sources do not state: the simulation pays what the
-other terms allow, so every payout amount and cash statistic is the MOST it can be) or
-`unavailable`; `cash_estimate_reasons` names the gap, and `estimate_status` is at best `partial`
-when a cap is unknown. An `unknown` cap is never read as `unlimited`.
+was used), `lower_bound` (the run's cost assumption is an `upper_bound` file: the cost is a ceiling,
+so every net-cash number is the LEAST it can be), `upper_bound` (a payout cap the sources do not
+state: the simulation pays what the other terms allow, so every payout amount and cash statistic is
+the MOST it can be) or `unavailable`; `cash_estimate_reasons` names the gap, and `estimate_status`
+is at best `partial` when a cap is unknown. An `unknown` cap is never read as `unlimited`.
+`lower_bound` wins over a payout cap's `upper_bound` on the cash statistic because it applies to
+every attempt of the run; the per-payout `bound` still says `upper_bound`.
 
 ## The attempt sequence (C7b, ADR-0107 section 4)
 
@@ -423,6 +452,12 @@ assertions of `tests/integration/test_futures_prop.py`.
   Chicago regime close because the 2023 Thanksgiving schedule was never archived (see the
   session-calendar paragraph above). The sourced 2024 instance (2024-11-29, 12:15 Chicago) is the
   hand test, and a firm rule that assumes the 2023 early close stays `not_modeled` for that date.
+- The upper-bound file (`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`) is a PRELIMINARY
+  stand-in, not a cost: its exchange margin, its clearing and its `other` amounts are the owner's
+  bounds, and a firm whose components are all sourced is charged none of it while a firm with no
+  sourced component is charged all of it — which is why the run carries the comparability note. It
+  prices no commission, so a firm whose per-side commission the sources do not state still reports
+  `commission` as a gap (the file is not a substitute for a commission).
 - An `activity_requirement` window is judged on the overlay's COMPLETE rule-days: a window is never
   judged on the rule-day in progress, it is judged at that day's close.
 - `crucible prop list` and the generated `rulesets/prop/INDEX.json` report a v2 file that does not

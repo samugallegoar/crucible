@@ -111,6 +111,9 @@ from crucible.experiments.futures_stats import (
 )
 from crucible.prop.attempt import AttemptResult, practical_eligibility, simulate_attempt
 from crucible.prop.costs import (
+    UPPER_BOUND_COMPARABILITY_NOTE,
+    UPPER_BOUND_COST_LABEL,
+    UPPER_BOUND_REASON,
     CostAssumption,
     load_cost_assumption,
     store_component_fees,
@@ -177,17 +180,26 @@ attempts can overlap, and grows to ``ceil(sqrt(n))`` when the sequence is longer
 STATISTICS: Final = ("pass_probability", "mean_net_cash_usd")
 """The two bootstrapped statistics: the pass rate and the mean net cash per attempt."""
 
-CashStatus = Literal["exact", "conditional", "upper_bound", "unavailable"]
+CashStatus = Literal["exact", "conditional", "lower_bound", "upper_bound", "unavailable"]
 EligibilityStatus = Literal["eligible", "eligible_conditional", "blocked_by_compliance", "unknown"]
 """``unknown`` is never produced by the ruleset: it is reserved for a caller that cannot judge."""
 
 _CASH_VALUES: dict[str, CashStatus] = {
     "exact": "exact",
     "conditional": "conditional",
+    "lower_bound": "lower_bound",
     "upper_bound": "upper_bound",
     "unavailable": "unavailable",
 }
-_CASH_RANK: dict[str, int] = {name: rank for rank, name in enumerate(_CASH_VALUES)}
+_CASH_RANK: dict[str, int] = {
+    "exact": 0,
+    "conditional": 1,
+    # both are bounds on the same number: a run that used an upper-bound cost file has every
+    # attempt ``lower_bound``, so the two never compete inside one scenario
+    "lower_bound": 2,
+    "upper_bound": 2,
+    "unavailable": 3,
+}
 
 _ELIGIBILITY_VALUES: dict[str, EligibilityStatus] = {
     "eligible": "eligible",
@@ -230,7 +242,8 @@ PROP_ATTEMPTS_SCHEMA: dict[str, pl.DataType] = {
     "fees_reset_usd": pl.Decimal(38, 6),  # USD; reset fees bought by the attempt policy
     "fees_usd": pl.Decimal(38, 6),  # USD; every fee of the attempt, the four kinds above
     "net_cash_usd": pl.Decimal(38, 6),  # USD; payouts_usd - fees_usd (see cash_estimate_status)
-    "cash_estimate_status": pl.String(),  # exact | conditional | upper_bound | unavailable
+    "cash_estimate_status": pl.String(),  # exact | conditional | lower_bound | upper_bound | …
+    "cost_bound": pl.String(),  # 'upper' when the cost assumption's amounts are ceilings, else ''
     "commission_usd": pl.Decimal(38, 6),  # nullable: USD per side the firm's commission charges
     "commission_status": pl.String(),  # known | unknown | assumption (never read as zero)
     "exchange_usd": pl.Decimal(38, 6),  # nullable: USD per side added for the exchange fee
@@ -321,9 +334,13 @@ class PropProbability(_Strict):
 
 
 class PropCash(_Strict):
-    """The mean net cash per attempt: payouts minus fees, and what the number is worth."""
+    """The mean net cash per attempt: payouts minus fees, and what the number is worth.
 
-    status: Literal["exact", "conditional", "upper_bound", "unavailable"]
+    ``lower_bound`` is the label under an upper-bound cost-assumption file: the cost is a ceiling,
+    so every net-cash number can only be higher once real costs arrive.
+    """
+
+    status: Literal["exact", "conditional", "lower_bound", "upper_bound", "unavailable"]
     mean_net_cash_usd: str | None
     interval: PropInterval
     reasons: list[str]
@@ -391,6 +408,10 @@ class PropScenarioSummary(_Strict):
     practical_eligibility: PropPracticalEligibility
     unmodeled_rules: list[PropUnmodeledRule]
     cost_components: list[PropCostComponents]
+    cost_bound: Literal["upper"] | None = None
+    """``upper`` when the run's cost assumption is an upper bound (``docs/GLOSSARY.md``)."""
+    comparability_note: str | None = None
+    """The cross-firm caveat an upper-bound run carries, verbatim; ``None`` otherwise."""
     warnings: list[str]
 
 
@@ -398,6 +419,8 @@ class PropCostAssumption(_Strict):
     """The cost-assumption file a run used: its identity, and what it priced (ADR-0107 s10)."""
 
     name: str
+    kind: Literal["point_estimate", "upper_bound"]
+    """What the file's amounts claim: a best single figure, or a ceiling over the gaps."""
     sha256: str
     provided_by: str
     status: str
@@ -462,6 +485,10 @@ class PropEvaluationSummary(_Strict):
     payout_policy: str
     cost_assumption: PropCostAssumption | None
     cost_components: list[PropCostComponents]
+    cost_bound: Literal["upper"] | None
+    """``upper`` when the run's cost-assumption file states ceilings, else ``None``."""
+    comparability_note: str | None
+    """The cross-firm caveat an upper-bound run carries, verbatim; ``None`` otherwise."""
     promotions_applied: list[str]
     promotions_not_applied: list[str]
     participant_profile: dict[str, str] | None
@@ -842,6 +869,7 @@ def _probability_reasons(
     cash_status: CashStatus,
     cash_reasons: Sequence[str],
     blocked_execution_mode: str | None,
+    cost_bound: str | None = None,
 ) -> list[str]:
     """Every reason the pass probability is not definitive (ADR-0107 sections 5, 11 and 12)."""
     reasons: list[str] = []
@@ -863,6 +891,8 @@ def _probability_reasons(
         reasons.append("the ruleset is unverified: only the owner can confirm it")
     if cost_assumption is not None:
         reasons.append(f"a cost assumption {cost_assumption!r} was used")
+    if cost_bound == UPPER_BOUND_COST_LABEL:
+        reasons.append(UPPER_BOUND_REASON)
     if cash_status == "unavailable":
         reasons.append(
             "the cost of the attempt is unknown, so the cash statistic is unavailable: "
@@ -1007,6 +1037,7 @@ def _scenario_summary(
     horizon_trading_days: int,
     execution_mode: ExecutionMode,
     cost_assumption: str | None,
+    cost_bound: str | None = None,
     resamples: int,
     confidence: float,
 ) -> PropScenarioSummary:
@@ -1097,6 +1128,7 @@ def _scenario_summary(
         cash_status=cash_status,
         cash_reasons=cash_reasons_sorted,
         blocked_execution_mode=execution_mode if blocked else None,
+        cost_bound=cost_bound,
     )
     definitive = not reasons
     probability = PropProbability(
@@ -1150,6 +1182,10 @@ def _scenario_summary(
         estimate_status=estimate_status,
         estimate_reasons=estimate_reasons,
         cost_components=_cost_components_document(classifications),
+        cost_bound=(UPPER_BOUND_COST_LABEL if cost_bound == UPPER_BOUND_COST_LABEL else None),
+        comparability_note=(
+            UPPER_BOUND_COMPARABILITY_NOTE if cost_bound == UPPER_BOUND_COST_LABEL else None
+        ),
         practical_eligibility=PropPracticalEligibility(
             execution_mode=execution_mode,
             status=eligibility,
@@ -1210,6 +1246,7 @@ def _attempt_row(item: _Classified, horizon_trading_days: int) -> dict[str, obje
         "fees_usd": attempt.fees.total_usd,
         "net_cash_usd": attempt.net_cash_usd,
         "cash_estimate_status": attempt.cash_estimate_status,
+        "cost_bound": attempt.cost_bound,
         "commission_usd": application.component("commission").usd,
         "commission_status": application.component("commission").status,
         "exchange_usd": application.component("exchange").usd,
@@ -1642,6 +1679,7 @@ def run_prop_evaluation(
             horizon_trading_days=horizon_trading_days,
             execution_mode=execution_mode,
             cost_assumption=None if assumption is None else assumption.name,
+            cost_bound=None if assumption is None else assumption.cost_bound,
             resamples=config.statistics.resamples,
             confidence=config.statistics.confidence,
         )
@@ -1668,6 +1706,7 @@ def run_prop_evaluation(
             if assumption is None
             else PropCostAssumption(
                 name=assumption.name,
+                kind=assumption.kind,
                 sha256=assumption.sha256,
                 provided_by=assumption.provided_by,
                 status=assumption.status,
@@ -1690,6 +1729,14 @@ def run_prop_evaluation(
             )
         ),
         cost_components=_cost_components_document(classifications),
+        cost_bound=(
+            UPPER_BOUND_COST_LABEL if assumption is not None and assumption.is_upper_bound else None
+        ),
+        comparability_note=(
+            UPPER_BOUND_COMPARABILITY_NOTE
+            if assumption is not None and assumption.is_upper_bound
+            else None
+        ),
         promotions_applied=sorted(
             {entry for item in classifications for entry in item.attempt.promotions_applied}
         ),
@@ -1786,6 +1833,8 @@ def run_prop_evaluation(
         "cost_assumption": (
             None if assumption is None else summary.model_dump(mode="json")["cost_assumption"]
         ),
+        "cost_bound": summary.model_dump(mode="json")["cost_bound"],
+        "comparability_note": summary.model_dump(mode="json")["comparability_note"],
         "cost_components": summary.model_dump(mode="json")["cost_components"],
         "promotions_applied": summary.model_dump(mode="json")["promotions_applied"],
         "promotions_not_applied": summary.model_dump(mode="json")["promotions_not_applied"],

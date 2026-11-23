@@ -7,11 +7,17 @@ this engine now REQUIRES is missing, which is the state a firm file is in until 
 reaches it), is listed as ``pending_migration`` so the committed index stays stable while the
 migration finishes. The index never invents a hash for such a file.
 
+A **cost-assumption file** under ``rulesets/prop/cost_assumptions`` is registered here too, with
+its own entry kind: it is versioned data like a ruleset (a change is a new ``*_v2`` file, never an
+edit in place once merged) and its SHA-256 is the hash a run's artifact cites. It is not a ruleset:
+it carries no firm, version or verification, and ``crucible prop list`` does not list it.
+
 Append-only means an entry that already exists may not disappear and may not reuse a version
 number, and a ``verified`` ruleset's hash may never change (the owner's confirmation is what makes
 a version immutable data). An ``unverified`` file may still be corrected in place while the firm's
-migration is unmerged, which is why its hash may change with it. The test compares the index with
-the copy in git history; this module only builds the document.
+migration is unmerged, which is why its hash may change with it. The same holds for an assumption
+file's hash once it is merged. The test compares the index with the copy in git history; this
+module only builds the document.
 """
 
 from __future__ import annotations
@@ -22,10 +28,20 @@ from pathlib import Path
 import yaml
 
 from crucible.core.errors import ConfigurationError, DataQualityError
+from crucible.prop.costs import COST_ASSUMPTIONS_DIRNAME, load_cost_assumption
 from crucible.prop.ruleset import RULE_SCHEMA_VERSION, load_ruleset
 
 INDEX_SCHEMA_VERSION = 1
 INDEX_RELATIVE = Path("rulesets") / "prop" / "INDEX.json"
+
+RULESET_ENTRY_KIND = "ruleset"
+COST_ASSUMPTION_ENTRY_KIND = "cost_assumption"
+"""The two kinds of entry the lock holds: a firm's ruleset, and a versioned assumption file."""
+
+
+def is_cost_assumption(path: Path, root: Path) -> bool:
+    """Whether ``path`` sits in ``root``'s ``cost_assumptions`` directory (not a ruleset)."""
+    return COST_ASSUMPTIONS_DIRNAME in path.relative_to(root).parts[:-1]
 
 
 def _files(root: Path) -> list[Path]:
@@ -55,10 +71,24 @@ def _pending_entry(path: Path, root: Path) -> dict[str, object]:
 
 
 def build_index(root: str | Path) -> dict[str, object]:
-    """The INDEX.json document for every ruleset under ``rulesets/prop``."""
+    """The INDEX.json document for every ruleset and assumption file under ``rulesets/prop``."""
     prop_root = Path(root)
     entries: list[dict[str, object]] = []
     for path in _files(prop_root):
+        if is_cost_assumption(path, prop_root):
+            # an assumption file is versioned data with its own entry kind: it validates through
+            # its own loader, and its SHA-256 is the one a run records
+            assumption = load_cost_assumption(path)
+            entries.append(
+                {
+                    "kind": COST_ASSUMPTION_ENTRY_KIND,
+                    "name": assumption.name,
+                    "assumption_kind": assumption.kind,
+                    "path": path.relative_to(prop_root.parent.parent).as_posix(),
+                    "sha256": assumption.sha256,
+                }
+            )
+            continue
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         version = raw.get("schema_version") if isinstance(raw, dict) else None
         if version != RULE_SCHEMA_VERSION:
