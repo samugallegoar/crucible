@@ -4,7 +4,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k-5pack.v1.yaml",
       "ruleset_id": "apex-eod-100k-5pack",
-      "ruleset_sha256": "fc2e941433191c9fa23ab48dad30f99a54cc2ce832d977864cdb3b2a490b0092",
+      "ruleset_sha256": "0338f019065b40d056c5c76dee1adaf4a651541dbf906d18aa69e5ef08722b75",
       "verification": "unverified",
       "version": 1
     },
@@ -12,7 +12,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-100k-no-activation-fee",
-      "ruleset_sha256": "0d3e4e92f35280de069e297c7dd65f0f3e6b57a7032a2d9a276ad02064abb1b6",
+      "ruleset_sha256": "880426e6ca2a11dab9490a5810d234ff276fe7234d6618010b962999d505fa7a",
       "verification": "unverified",
       "version": 1
     },
@@ -20,7 +20,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k-tradovate-5pack.v1.yaml",
       "ruleset_id": "apex-eod-100k-tradovate-5pack",
-      "ruleset_sha256": "b02a07fa83307997718bd209187a5a6f0d8b49411e56e975f3149d5670eb3095",
+      "ruleset_sha256": "cc049898ba12f82a7910e75adb6479579da1a51cac9ae4b254e1f4b75dffe67f",
       "verification": "unverified",
       "version": 1
     },
@@ -28,7 +28,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k-tradovate-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-100k-tradovate-no-activation-fee",
-      "ruleset_sha256": "3d87e427ba5f1c744e678ec50f9e3db1809107ca67eec1c6bbdfa7f81b8ae2cc",
+      "ruleset_sha256": "2a6543dd672705af24788e842aaa61c34df27493a8df24e4e18ed04d2d9141e4",
       "verification": "unverified",
       "version": 1
     },
@@ -36,7 +36,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k-tradovate.v1.yaml",
       "ruleset_id": "apex-eod-100k-tradovate",
-      "ruleset_sha256": "32e487633b6e0bc8427244da813829a181d900506f776aced1045e24272e2810",
+      "ruleset_sha256": "6f419224cad4639df9a10691d5f7744a4eea6111b26e2542efd16ba6ee0d0db4",
       "verification": "unverified",
       "version": 1
     },
@@ -44,7 +44,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k-wealthcharts-5pack.v1.yaml",
       "ruleset_id": "apex-eod-100k-wealthcharts-5pack",
-      "ruleset_sha256": "011103e3dd60c5fc75b06d79cedab9b7cea723374e5fb7ccd0cb16c1aa87f6b0",
+      "ruleset_sha256": "3dabcb6014253d5d6cc8726b47343c470f5961458d0f13f49c9eafbe7081925a",
       "verification": "unverified",
       "version": 1
     },
@@ -52,7 +52,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k-wealthcharts-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-100k-wealthcharts-no-activation-fee",
-      "ruleset_sha256": "24724a1e9260e8970df9ce86e46c90284747025a339cdda748358c15c588d156",
+      "ruleset_sha256": "e51c571b535cc8157a575e90afe5276ceddc785d25f56191a1c24b915e856929",
       "verification": "unverified",
       "version": 1
     },
@@ -60,7 +60,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k-wealthcharts.v1.yaml",
       "ruleset_id": "apex-eod-100k-wealthcharts",
-      "ruleset_sha256": "482db394b5150ddc8d589d27900c23a322f6314eff8bfe6932c82ce29acb4e33",
+      "ruleset_sha256": "dc679399bab6920024ac65630750bd8ca775bff11f9f9e1a913073c01c886820",
       "verification": "unverified",
       "version": 1
     },
@@ -68,7 +68,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-100k.v1.yaml",
       "ruleset_id": "apex-eod-100k",
-      "ruleset_sha256": "25b26e06cb3892020e6d7b8c7c9672d38c5e026067a104364fb7e2470e81d2cb",
+      "ruleset_sha256": "aae97c0d034ffec0a91d1d860b4040816e630279c9c44b40d26e4b47347f6399",
       "verification": "unverified",
       "version": 1
     },
@@ -76,7 +76,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k-5pack.v1.yaml",
       "ruleset_id": "apex-eod-150k-5pack",
-      "ruleset_sha256": "c5be620de67fe69dee944b7c400bac549b87b5c78ce6a02033d80552291ba46b",
+      "ruleset_sha256": "d83396a5d4da2eb23d1d04a0ca9d78571c0fab962aa2923ba1c3dd022a5d639a",
       "verification": "unverified",
       "version": 1
     },
@@ -84,7 +84,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-150k-no-activation-fee",
-      "ruleset_sha256": "7d5b5c5c2a9499f26089a1f47a964595935217abe7bff4ffdfcc9bea9376efd9",
+      "ruleset_sha256": "9c3d953286c513556ca07ce60ba7b22ec5a442e2e40a2ba864cbcfd348cda1c1",
       "verification": "unverified",
       "version": 1
     },
@@ -92,7 +92,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k-tradovate-5pack.v1.yaml",
       "ruleset_id": "apex-eod-150k-tradovate-5pack",
-      "ruleset_sha256": "3f7e6474faf190febaa7acaf346e13b8770969aace4e69c51b208bca4cb825d7",
+      "ruleset_sha256": "0a4f74c5aa4a8d5f357f2650e3920770dafc2f3d6db8e20d13828e96819029ec",
       "verification": "unverified",
       "version": 1
     },
@@ -100,7 +100,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k-tradovate-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-150k-tradovate-no-activation-fee",
-      "ruleset_sha256": "a92336ccc49e502368d4729d8361f2bb4386c97032c3caf689d49fc1135af544",
+      "ruleset_sha256": "a60326b52b6e093d5444e9a7186d1b1c9b612810f5e15a800e4ab54db815abe1",
       "verification": "unverified",
       "version": 1
     },
@@ -108,7 +108,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k-tradovate.v1.yaml",
       "ruleset_id": "apex-eod-150k-tradovate",
-      "ruleset_sha256": "4eb70d38998f83b25e993aee6e2616dfa95edae96b5331763b41f89db02b192c",
+      "ruleset_sha256": "64c2969f2e79e2c2e109fe3e3dca4a3705775734e6d6e6242ca0eb207efcda0f",
       "verification": "unverified",
       "version": 1
     },
@@ -116,7 +116,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k-wealthcharts-5pack.v1.yaml",
       "ruleset_id": "apex-eod-150k-wealthcharts-5pack",
-      "ruleset_sha256": "b866c8bd333a205a6aae84d1a783a716750fcd11283cd6161f8fd3812c91bbd4",
+      "ruleset_sha256": "d95950490f300c15b4e4e66ed40d084a3d9fb154fbe8b56fc1c94933b2940c69",
       "verification": "unverified",
       "version": 1
     },
@@ -124,7 +124,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k-wealthcharts-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-150k-wealthcharts-no-activation-fee",
-      "ruleset_sha256": "889e7de2967c70b8b5b292c1734adfe48b16a9201a7902dc456aabd48369f3bb",
+      "ruleset_sha256": "4f9f5f957ecc7c88e4554c98c7a81f536b65c095a6a1cb4ccae10579115be821",
       "verification": "unverified",
       "version": 1
     },
@@ -132,7 +132,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k-wealthcharts.v1.yaml",
       "ruleset_id": "apex-eod-150k-wealthcharts",
-      "ruleset_sha256": "3e1a57d0af32f7b764bb57dbb3992ea73168f914365bd637ecefc13fa2481961",
+      "ruleset_sha256": "67f4ae9221b317c63c27dc9b20c5fdcb02e2a4961bab37652c3f7d727368566d",
       "verification": "unverified",
       "version": 1
     },
@@ -140,7 +140,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-150k.v1.yaml",
       "ruleset_id": "apex-eod-150k",
-      "ruleset_sha256": "fe49b9c7156b393dc363656072b5a858695c36d9af9646dca3ab689f14147adb",
+      "ruleset_sha256": "e46bb4eb8805e7d0bceca76caa192d060516230a3f328b157a0d2a07fdbf263f",
       "verification": "unverified",
       "version": 1
     },
@@ -148,7 +148,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-5pack.v1.yaml",
       "ruleset_id": "apex-eod-25k-5pack",
-      "ruleset_sha256": "82bc699e17bf94d0cc37f808093fdd03d1887a77e854ef2916d7cc2a30b6aae9",
+      "ruleset_sha256": "19b04f2b4c03dc186dd0222123b7d3c3400f0de0a56b2cb5e35ea208ebf9f47b",
       "verification": "unverified",
       "version": 1
     },
@@ -156,7 +156,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-eod-25k-no-activation-fee-5pack",
-      "ruleset_sha256": "9d9115a5cc011df282a39cc60003b99a36c0ba93d7846ef7bfc3842ddd33ec21",
+      "ruleset_sha256": "1e6bc7bac87c91a001b8c45ed81eb9d9b5188c75fef4ae63bdda4c77d2cae3e8",
       "verification": "unverified",
       "version": 1
     },
@@ -164,7 +164,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-25k-no-activation-fee",
-      "ruleset_sha256": "eabbc5ef566b7d61dde9b1be5e0a0568c2609adfc7b383ff482e4fc9b57c654c",
+      "ruleset_sha256": "38ffe1735df445619214303de36a15a5a818afb7d491b2a728c71e25a52278e2",
       "verification": "unverified",
       "version": 1
     },
@@ -172,7 +172,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-tradovate-5pack.v1.yaml",
       "ruleset_id": "apex-eod-25k-tradovate-5pack",
-      "ruleset_sha256": "4c958545aa8ea56ce511204ef09de4aa2528a908f8018871eebdc943df927505",
+      "ruleset_sha256": "7d789d228cedbf29fe0c65b8dd0084d4ddf241d198fde7382d0b25e87c3b15dd",
       "verification": "unverified",
       "version": 1
     },
@@ -180,7 +180,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-tradovate-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-eod-25k-tradovate-no-activation-fee-5pack",
-      "ruleset_sha256": "55d9288ed63fbc8c3e377f20607fcac82eacc12e966e1ce355f745678021b0de",
+      "ruleset_sha256": "02490791c14d82184eef8c4a71ee2a54cb85af40b80d335ed61fd3b050d80e4c",
       "verification": "unverified",
       "version": 1
     },
@@ -188,7 +188,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-tradovate-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-25k-tradovate-no-activation-fee",
-      "ruleset_sha256": "1785fceac7c332b93e0d082480fdf5e587f8c07e692701800d7a1f9c608c464c",
+      "ruleset_sha256": "599a7bf6ee0c4d5de56570bbd6df51b0664349ea939328391517079c5e2037bb",
       "verification": "unverified",
       "version": 1
     },
@@ -196,7 +196,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-tradovate.v1.yaml",
       "ruleset_id": "apex-eod-25k-tradovate",
-      "ruleset_sha256": "5364248bbeae7309f6c9a9e0ac5c03c8b473b9ab84f31bb8fdc2a0c713945153",
+      "ruleset_sha256": "7a438e47a8b5b921ab9d888e61f6fef00fea72c7543b2236cc943bb44168a653",
       "verification": "unverified",
       "version": 1
     },
@@ -204,7 +204,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-wealthcharts-5pack.v1.yaml",
       "ruleset_id": "apex-eod-25k-wealthcharts-5pack",
-      "ruleset_sha256": "289962e4196cb1769ecf869d455216d79df21e24c2fcec91de800cc395df9c90",
+      "ruleset_sha256": "882609de99c9157edc007ee90defde50bee85bfed977cf7c1853fb12933d3983",
       "verification": "unverified",
       "version": 1
     },
@@ -212,7 +212,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-wealthcharts-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-eod-25k-wealthcharts-no-activation-fee-5pack",
-      "ruleset_sha256": "20a1e4c368d2014e75c62bc67c933d395e671aeb5e5cf97668706db62a36fb2d",
+      "ruleset_sha256": "2ecd3b4df9070399ab9688b1a8bca948c44fd6365369069bfa9fdacf4b7cf543",
       "verification": "unverified",
       "version": 1
     },
@@ -220,7 +220,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-wealthcharts-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-25k-wealthcharts-no-activation-fee",
-      "ruleset_sha256": "917f95f1fa2ce5a75847fcb1c99aa2be8e1450a907256f6680da7d42e5610635",
+      "ruleset_sha256": "d8a04379345fad4de3357ab31770368649a8491089497ea6aeaf668a4c3f515a",
       "verification": "unverified",
       "version": 1
     },
@@ -228,7 +228,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k-wealthcharts.v1.yaml",
       "ruleset_id": "apex-eod-25k-wealthcharts",
-      "ruleset_sha256": "5b960fe45e2e206dddc247f7891f0f0ff2a0838dc7d2ba4611fbff29813e2433",
+      "ruleset_sha256": "69e7cec04bb6c06c0eac549d378265da57904e905b2e625afe73c99858db1421",
       "verification": "unverified",
       "version": 1
     },
@@ -236,7 +236,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-25k.v1.yaml",
       "ruleset_id": "apex-eod-25k",
-      "ruleset_sha256": "c5c5e0e5aaf36dc28f0daffd0672b66f01c3815525d6f168419ff7de5201e7dd",
+      "ruleset_sha256": "a85c306be68fea135d4dfd84648ecee677572e236e482c76325022179bb4110f",
       "verification": "unverified",
       "version": 1
     },
@@ -244,7 +244,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-5pack.v1.yaml",
       "ruleset_id": "apex-eod-50k-5pack",
-      "ruleset_sha256": "fd9c94952e0e7c904e4b711844b5c067af6350f28837b97706d224a2f9300c18",
+      "ruleset_sha256": "600e882111e326661d4b56144f3361e802a2e70bff23a99c7a73bdbff7041090",
       "verification": "unverified",
       "version": 1
     },
@@ -252,7 +252,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-eod-50k-no-activation-fee-5pack",
-      "ruleset_sha256": "7850d823bf7fd8edd41dc8f2772a3aeed9a36800e81956cdaa66303c9c7ce8b2",
+      "ruleset_sha256": "4515a7282b8831b0917ec85de1fbd13d2f645407bb4c049e15660c4328053a9c",
       "verification": "unverified",
       "version": 1
     },
@@ -260,7 +260,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-50k-no-activation-fee",
-      "ruleset_sha256": "dda696b75f29465d5a32d3ac506a1bd676fb8df748d8ba80ad8137d3d562415d",
+      "ruleset_sha256": "5bea6559b1a141d9f462978c239f89fe43ccdaea16b7410fe6642737b1fff454",
       "verification": "unverified",
       "version": 1
     },
@@ -268,7 +268,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-tradovate-5pack.v1.yaml",
       "ruleset_id": "apex-eod-50k-tradovate-5pack",
-      "ruleset_sha256": "3225f08dbbf2b5c05e07ff1ce8379b9eadca25add1bbc8b81e6ca3147ea9600e",
+      "ruleset_sha256": "af69ecc4f1e6b149e194c52a0ae1a22df3a94bf43cd49fd540b70d03890cb0ed",
       "verification": "unverified",
       "version": 1
     },
@@ -276,7 +276,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-tradovate-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-eod-50k-tradovate-no-activation-fee-5pack",
-      "ruleset_sha256": "d8a3a7a822bc56e16bc5ee520ea1d7b0a91dafc89545f3bc5c3b3ccb8dd4f241",
+      "ruleset_sha256": "690e2d70f603799915896f0e6f4d872925ea761a35eeb03a5eb7ee97aea42a49",
       "verification": "unverified",
       "version": 1
     },
@@ -284,7 +284,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-tradovate-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-50k-tradovate-no-activation-fee",
-      "ruleset_sha256": "7941f90b47f022b16651f51c6586cd9a491c90c77e5d1d6a66972357bc496ddc",
+      "ruleset_sha256": "28b58d8ad34de85a02eef83942c80770896dcc0cad8d4d89f7c1a1db4a221227",
       "verification": "unverified",
       "version": 1
     },
@@ -292,7 +292,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-tradovate.v1.yaml",
       "ruleset_id": "apex-eod-50k-tradovate",
-      "ruleset_sha256": "bd4dfc03a807adf8dd193b77f801a74919210cbdcb96d23087c10ad191f2d1de",
+      "ruleset_sha256": "96b163186cf8425e378ed3b89515c8fbf3f235e6a44b652519865e02e1ea2c65",
       "verification": "unverified",
       "version": 1
     },
@@ -300,7 +300,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-wealthcharts-5pack.v1.yaml",
       "ruleset_id": "apex-eod-50k-wealthcharts-5pack",
-      "ruleset_sha256": "983a3626bc85651644c30ac6cd567a4ef65c7ac06b86fe717f5346a9fb9875c4",
+      "ruleset_sha256": "6a81481beef0377eefddbdfca90a2e3c192ea5838afc2d77c24a2f23969d1b5e",
       "verification": "unverified",
       "version": 1
     },
@@ -308,7 +308,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-wealthcharts-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-eod-50k-wealthcharts-no-activation-fee-5pack",
-      "ruleset_sha256": "819bec94b7390fc9a915aaf769ef27d96aee2063dc637b66f855f58094084f96",
+      "ruleset_sha256": "9159c5f6260de65565ce64dc087064cad00f795cc231478018bf6fb152bfbcbe",
       "verification": "unverified",
       "version": 1
     },
@@ -316,7 +316,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-wealthcharts-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-eod-50k-wealthcharts-no-activation-fee",
-      "ruleset_sha256": "e13ec67811aca576344429e2a2e198074e192977be22e9b7d9c4e65d6a6b9703",
+      "ruleset_sha256": "22040213cc995cb5acad2989b299628ec6d83f3c916903bcc6451adae85648a0",
       "verification": "unverified",
       "version": 1
     },
@@ -324,7 +324,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k-wealthcharts.v1.yaml",
       "ruleset_id": "apex-eod-50k-wealthcharts",
-      "ruleset_sha256": "f1f4ad40640a2780a8cf57dd6f6bc05196a51417d5c8ab0be2a9d662e04b567c",
+      "ruleset_sha256": "c2732a7ac6fb7b9db63bdfa2e7a49e0c8e064d8a4502d7f19fa6ac7f7aa99608",
       "verification": "unverified",
       "version": 1
     },
@@ -332,7 +332,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-eod-50k.v1.yaml",
       "ruleset_id": "apex-eod-50k",
-      "ruleset_sha256": "e422bf551c940487321237607c570600073fdacd56e183d3c8cbda236b594c04",
+      "ruleset_sha256": "c5e66ca869a7396508bc5af8d8b7410dc2043bd07cfcaaf164992a8e16bec3d3",
       "verification": "unverified",
       "version": 1
     },
@@ -340,7 +340,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-100k-5pack",
-      "ruleset_sha256": "ce9a32d8aa8cd217e48cdd6fe9cd4b99596b8b93af248620b426ff3304a7f830",
+      "ruleset_sha256": "cdae5442bc2cd2b36b7c5d3afefd1098f11beeecde5ecadab3b028476360cf7e",
       "verification": "unverified",
       "version": 1
     },
@@ -348,7 +348,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-100k-no-activation-fee-5pack",
-      "ruleset_sha256": "b0ca6a97dc8d3441c65463e333b530c7b6e82738217ee586ecd2b6710ec7eb4f",
+      "ruleset_sha256": "1061151eb4e78584c26733c9c34b49d55553289f2b63c03f0c0ec065c293fdea",
       "verification": "unverified",
       "version": 1
     },
@@ -356,7 +356,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-100k-no-activation-fee",
-      "ruleset_sha256": "585385da01746a2514e2dc20cc955924d664613be36e2a99617698856b65b67c",
+      "ruleset_sha256": "5a81192f61a3f958544a788ab24d50e9db9618f7fbf45b8d953eab3becf63458",
       "verification": "unverified",
       "version": 1
     },
@@ -364,7 +364,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-tradovate-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-100k-tradovate-5pack",
-      "ruleset_sha256": "dd3542c9103e9ee2b9ecc205a8c2c68c8ad89386d935c54ccfb3a09012af0ea8",
+      "ruleset_sha256": "2ed50dedde492031beaa9127ec644c47b9e5236cc0ff51575ec21af15d4933ae",
       "verification": "unverified",
       "version": 1
     },
@@ -372,7 +372,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-tradovate-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-100k-tradovate-no-activation-fee-5pack",
-      "ruleset_sha256": "c5e8ad4e0aabc98a2e2bc70373cf231fe4db3680f078423b9098d2b79af84e29",
+      "ruleset_sha256": "bbf2347d569123543274a77ba43e0e4e12cba443007208514a2e9bcf95969e1b",
       "verification": "unverified",
       "version": 1
     },
@@ -380,7 +380,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-tradovate-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-100k-tradovate-no-activation-fee",
-      "ruleset_sha256": "04cda22c18c404098624169834033681b9e600f1ae9022be6dfe2912815f0b6c",
+      "ruleset_sha256": "12749d81bc918cd8be25ae00e08fcd96aaf764d5f1b5ad20ae0f5d54484c8f95",
       "verification": "unverified",
       "version": 1
     },
@@ -388,7 +388,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-tradovate.v1.yaml",
       "ruleset_id": "apex-intraday-100k-tradovate",
-      "ruleset_sha256": "605ddc39e0771bd675972321f3bb12e39db32c3c5406f706232e17341e807f13",
+      "ruleset_sha256": "283ddcbbd3224911448abc5ccdf1d7f745538feb2cc065590a872e1b7d29b346",
       "verification": "unverified",
       "version": 1
     },
@@ -396,7 +396,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-wealthcharts-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-100k-wealthcharts-5pack",
-      "ruleset_sha256": "c44c74ac2498c0d695374f9641f7bcd5445bfb595e444b9d1d1c12d3582d7b10",
+      "ruleset_sha256": "a78a3dea7989579f1830f6dac162efaca0716e411a33dd84ff41fbe7c2bcc41c",
       "verification": "unverified",
       "version": 1
     },
@@ -404,7 +404,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-wealthcharts-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-100k-wealthcharts-no-activation-fee-5pack",
-      "ruleset_sha256": "ce4bbd66cce88ae6fcb2897ae2c046a5156933949c91bbc8012e1aee27e8af82",
+      "ruleset_sha256": "4b42bf6c38238499de3d45ee316db638af3369803bf42c8344fbfb646051436d",
       "verification": "unverified",
       "version": 1
     },
@@ -412,7 +412,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-wealthcharts-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-100k-wealthcharts-no-activation-fee",
-      "ruleset_sha256": "36c7465c1f68276e74ce2b745ac60abc90de759a9bce136a75f4074f49ccd3c8",
+      "ruleset_sha256": "9d56a38ee675b53f5d8a3ce46241c3819f77ac2360d701e760c81c7ae63a99e9",
       "verification": "unverified",
       "version": 1
     },
@@ -420,7 +420,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k-wealthcharts.v1.yaml",
       "ruleset_id": "apex-intraday-100k-wealthcharts",
-      "ruleset_sha256": "c741da9c1e53844b527dcdf63d1f232b93fa2e779ee0c15ec9877a1d7b7aaffb",
+      "ruleset_sha256": "35169a971c8636860ad1d08871bb42f1b37eec6baec33a7389d47a2eae2e7977",
       "verification": "unverified",
       "version": 1
     },
@@ -428,7 +428,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-100k.v1.yaml",
       "ruleset_id": "apex-intraday-100k",
-      "ruleset_sha256": "5a2ad53a1998448e93dc06cfaa1142d1d48a1503b9dcf8f6641ed0d2e3b64740",
+      "ruleset_sha256": "a162dbde196a304daea7f3972210ac7ea2a8ee465e1a3752382e3f6a853c15d8",
       "verification": "unverified",
       "version": 1
     },
@@ -436,7 +436,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-150k-5pack",
-      "ruleset_sha256": "8ad00b9ddfc42bba81292fbb020fee9269a6750e46b6832121cc3f5accac7d4a",
+      "ruleset_sha256": "875fa75df24fa6dcadc96cbb1de3e8ed90f5882353957b8a3c5aa6c8f25209a5",
       "verification": "unverified",
       "version": 1
     },
@@ -444,7 +444,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-150k-no-activation-fee-5pack",
-      "ruleset_sha256": "6cd236a70b6c938969c53a5ea78a868eddb46615a7a676df660ba42f83578338",
+      "ruleset_sha256": "437ee98839ae67954ccbfa5f68936e93355f6d3a4c0f80bec635548bb2328668",
       "verification": "unverified",
       "version": 1
     },
@@ -452,7 +452,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-150k-no-activation-fee",
-      "ruleset_sha256": "59a7993c3518e1889c272d17d66c0d3e747ed80005de04f28658487e79e1acff",
+      "ruleset_sha256": "7bd35ff22518d22fa2417513179f80fd817a4fce9345bf5ee5bfd83844a3db7b",
       "verification": "unverified",
       "version": 1
     },
@@ -460,7 +460,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-tradovate-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-150k-tradovate-5pack",
-      "ruleset_sha256": "19f6d09e320433aff144b9b7ab995be5f81ea03a1b7069ce370854753b07cd23",
+      "ruleset_sha256": "31c0e370c4edc331d41cdce129e7bd0e9600ae1fd8c5cda21d050192909869ce",
       "verification": "unverified",
       "version": 1
     },
@@ -468,7 +468,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-tradovate-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-150k-tradovate-no-activation-fee-5pack",
-      "ruleset_sha256": "243f67b7c6d072a5adf99157f237da4315200ecf5d05d9c81c19ac007103f2e3",
+      "ruleset_sha256": "5cccf72a143f89c10b404abaf3c54dd65f2eaa326c55f5d61afeff6406175832",
       "verification": "unverified",
       "version": 1
     },
@@ -476,7 +476,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-tradovate-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-150k-tradovate-no-activation-fee",
-      "ruleset_sha256": "5e62be9d75e34e30eb26d28df9236256c83a33121652a2d72f32e531e42996db",
+      "ruleset_sha256": "4454361a36388736c8cf23b8d46a5b10aa1de4bc75aa66a1979b1511ab1cb066",
       "verification": "unverified",
       "version": 1
     },
@@ -484,7 +484,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-tradovate.v1.yaml",
       "ruleset_id": "apex-intraday-150k-tradovate",
-      "ruleset_sha256": "7644226e20f3d55850fae79e3762e92515d724fc617676b5713c042f6d31d68f",
+      "ruleset_sha256": "64e342228a10e61d7c4d7f0e5087d01f8b6c14a8e6e7af6b9e0e317e21dfc050",
       "verification": "unverified",
       "version": 1
     },
@@ -492,7 +492,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-wealthcharts-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-150k-wealthcharts-5pack",
-      "ruleset_sha256": "b8ee1e0008d40521cf49687b7ba7957b17d32d4b20ea9607211e5a05b42d845e",
+      "ruleset_sha256": "7260a4a81521adda70169924d995e2361cfc1ccea2688a6d3a0f276dbf605e5f",
       "verification": "unverified",
       "version": 1
     },
@@ -500,7 +500,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-wealthcharts-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-150k-wealthcharts-no-activation-fee-5pack",
-      "ruleset_sha256": "1cc5dd57c091082b3d326e5eab6c21f6a320b55d8eb97cac905b9ccdb249375d",
+      "ruleset_sha256": "207acf82642a050fc8708ada21ed03c71a99d6cab5b40eb1ec6e64825f15d29d",
       "verification": "unverified",
       "version": 1
     },
@@ -508,7 +508,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-wealthcharts-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-150k-wealthcharts-no-activation-fee",
-      "ruleset_sha256": "7e7753d002aa4e314bd35466fabdfc1041418ec58d5d5deb6f772176c0e48bc4",
+      "ruleset_sha256": "910b26bc97ff5f71ad5920d4a689a70e44b35a3bffe768f67368f75650a0435a",
       "verification": "unverified",
       "version": 1
     },
@@ -516,7 +516,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k-wealthcharts.v1.yaml",
       "ruleset_id": "apex-intraday-150k-wealthcharts",
-      "ruleset_sha256": "4cfd8da475a8918a4a5e2415b36a525498f999eaa08fc978aed6225021e273c3",
+      "ruleset_sha256": "ed89a9944f7ffec1204c141279fda52659b86e498e375e3931474e6271869d64",
       "verification": "unverified",
       "version": 1
     },
@@ -524,7 +524,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-150k.v1.yaml",
       "ruleset_id": "apex-intraday-150k",
-      "ruleset_sha256": "3c26b3750ea8132c7c482d92a60eefd4d65cd1a70460a2eda9be37ba14461c5b",
+      "ruleset_sha256": "c05165f42370aaaf2745be472ad14c94b2a4541dd8ed7c13b8a598b994268241",
       "verification": "unverified",
       "version": 1
     },
@@ -532,7 +532,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-25k-5pack",
-      "ruleset_sha256": "bb089e348bef81fbe59d49fc6f2d9ba9ba6d05c059a0c5952aa25499bbdc9f94",
+      "ruleset_sha256": "ca82ac1c9b1d45b923638f41d6c57e55e40f69d568690e95b0a81f4fc091c82c",
       "verification": "unverified",
       "version": 1
     },
@@ -540,7 +540,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-25k-no-activation-fee-5pack",
-      "ruleset_sha256": "4e364506a113577bc2852691e69b1237e9d4a381865b7fc8151293a8061f6a4c",
+      "ruleset_sha256": "8a3c4e276c150661b0fab89521904102ee51b30f33afed4c2bb09bb12e78f2b1",
       "verification": "unverified",
       "version": 1
     },
@@ -548,7 +548,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-25k-no-activation-fee",
-      "ruleset_sha256": "9e3f4a4f619c8096995c21d8c27c6599c9a3d9ff230375b6f2703b46561fe427",
+      "ruleset_sha256": "a2fa3de5155536ddfd7a84d9044127bd6a75c063c3c52edaeafb3a28581b5d12",
       "verification": "unverified",
       "version": 1
     },
@@ -556,7 +556,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-tradovate-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-25k-tradovate-5pack",
-      "ruleset_sha256": "ca07c96b45ff740552eb0c0952427bdae858789dfc697cc5e95f2fcc3f7c71b5",
+      "ruleset_sha256": "612e523864afaede0bc0c0bfb53997ac9e567dcc9931ca5f78c0e756ef3fcec4",
       "verification": "unverified",
       "version": 1
     },
@@ -564,7 +564,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-tradovate-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-25k-tradovate-no-activation-fee-5pack",
-      "ruleset_sha256": "ba62547f966e9dc9bd1469f8715febd20171e8871cee0f238cbf3eaa0f051372",
+      "ruleset_sha256": "b45fee8811e44e94c99edbc75e16a74bde0172c55b1cc2978761d0fdbe9038d5",
       "verification": "unverified",
       "version": 1
     },
@@ -572,7 +572,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-tradovate-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-25k-tradovate-no-activation-fee",
-      "ruleset_sha256": "d94656d03ac982cff94f109994191daaa997c18d96b119b0895603d74f7a2e7d",
+      "ruleset_sha256": "25ce105e68a5e394e4a8fdd83fbd88eba3d9cd8e285ed122c916d2730be27822",
       "verification": "unverified",
       "version": 1
     },
@@ -580,7 +580,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-tradovate.v1.yaml",
       "ruleset_id": "apex-intraday-25k-tradovate",
-      "ruleset_sha256": "0449bbc73c8fd81eca375647d399d716ecbbb7dc1c0fd169f4478d06b64a8354",
+      "ruleset_sha256": "2e5e479c0f99bb1e5ff0456ae724aaef3b587976874cbdf0d762e494b4a50484",
       "verification": "unverified",
       "version": 1
     },
@@ -588,7 +588,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-wealthcharts-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-25k-wealthcharts-5pack",
-      "ruleset_sha256": "74f820e838e6a51cc3b547df64aad17c4062de0f6af6d430f98e03c1dca42f2c",
+      "ruleset_sha256": "2c8996a9479b67576faf5dab0dd9aa14526f445571a8df04d75c7879f70051e0",
       "verification": "unverified",
       "version": 1
     },
@@ -596,7 +596,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-wealthcharts-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-25k-wealthcharts-no-activation-fee-5pack",
-      "ruleset_sha256": "083fed42d93e425adc35ebf06bee960eecefe9ebb886187f65a6e88472cf9108",
+      "ruleset_sha256": "2e7fe546321fefce7335e8b272c1d79714851400a72dee6fd8e4bf2ec42c688e",
       "verification": "unverified",
       "version": 1
     },
@@ -604,7 +604,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-wealthcharts-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-25k-wealthcharts-no-activation-fee",
-      "ruleset_sha256": "38ff813a5f6adf9c276bc49170180d59588b038548a7c965d771aa3e26c2e717",
+      "ruleset_sha256": "8b246d47aa8d91e42cc0a281978351092373fd4b975ff87d3a7f356476e8c147",
       "verification": "unverified",
       "version": 1
     },
@@ -612,7 +612,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k-wealthcharts.v1.yaml",
       "ruleset_id": "apex-intraday-25k-wealthcharts",
-      "ruleset_sha256": "3dd3acaaf441aa9ca8c60b9d80b4eb3edb299653561bc4b05e8415a2cb6725fc",
+      "ruleset_sha256": "e03dfe9aa549189e0c7b2c0a290d154c539727c271edf86456d7c67fc6b712c0",
       "verification": "unverified",
       "version": 1
     },
@@ -620,7 +620,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-25k.v1.yaml",
       "ruleset_id": "apex-intraday-25k",
-      "ruleset_sha256": "404f7bb5291eb13bfdb3f86ecf4ab285a2dbe32c53fe48c15a4052f6444e3da8",
+      "ruleset_sha256": "685624580359c3f394687a40e62647e0e8bf2d3ff5dfdf4b5754842ea269ae94",
       "verification": "unverified",
       "version": 1
     },
@@ -628,7 +628,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-50k-5pack",
-      "ruleset_sha256": "daa2a693566d9846425386366301ef2ad7fb3ab1daf5f671807888f1d4bf3ae9",
+      "ruleset_sha256": "584336ec24bbf415866e90c3cba80cd9603575641582dc99194d84bec80f81f9",
       "verification": "unverified",
       "version": 1
     },
@@ -636,7 +636,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-50k-no-activation-fee-5pack",
-      "ruleset_sha256": "4ee028af665f03c798ea4b8d71d93ceef3e620151165721e93eb69d88b95d4b6",
+      "ruleset_sha256": "3dadbbf4567ddedc083c9b467621ab18af1f0bce2ef7887c8bedc6cbdebbdf3a",
       "verification": "unverified",
       "version": 1
     },
@@ -644,7 +644,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-50k-no-activation-fee",
-      "ruleset_sha256": "f0a78ae350414d712cded62455ae711bae81e9a0ffa118ffedbd1b0c9ea0e5e2",
+      "ruleset_sha256": "a221d734de974e35ebb3c7682a084172ff760a6ac5f9ee382e4481dd8b63be33",
       "verification": "unverified",
       "version": 1
     },
@@ -652,7 +652,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-tradovate-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-50k-tradovate-5pack",
-      "ruleset_sha256": "c561a88984534270b096b63ecd165dcb7185a31ffb7e87627ea290346a98fe7a",
+      "ruleset_sha256": "b8ea0949b5844671150d294733176426b05bcbd18c183b40008dede57cee71a4",
       "verification": "unverified",
       "version": 1
     },
@@ -660,7 +660,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-tradovate-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-50k-tradovate-no-activation-fee-5pack",
-      "ruleset_sha256": "a43ad741f34879fd8298a0abbee60712ba43f9c1b95af1a211ea43db422941da",
+      "ruleset_sha256": "f53c707f4ae5f3ed12e21e09cc2f7650e1bc3b08aca5bf9eacd4b6642eef797d",
       "verification": "unverified",
       "version": 1
     },
@@ -668,7 +668,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-tradovate-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-50k-tradovate-no-activation-fee",
-      "ruleset_sha256": "e4bc327e2afd63d8b57550728511c59c485dffc0f1cf6edfbf6be7cecfc245dd",
+      "ruleset_sha256": "cb973ee50dfe333af8d5dc5f4a86dcea919c730792d4f7e07b1eb06ac8aa3b28",
       "verification": "unverified",
       "version": 1
     },
@@ -676,7 +676,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-tradovate.v1.yaml",
       "ruleset_id": "apex-intraday-50k-tradovate",
-      "ruleset_sha256": "1eace25d6bc8ba614f436f370ab2befcc99f7867430bc3f8f3a77400b116572c",
+      "ruleset_sha256": "35e91f72aa6b9ba8e39879606a5bf4d49f3a800e5a8b153feae6e7616ff78d5d",
       "verification": "unverified",
       "version": 1
     },
@@ -684,7 +684,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-wealthcharts-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-50k-wealthcharts-5pack",
-      "ruleset_sha256": "211bae370fb95beb5c7bc4ae83c56cde543bd84074199456bd37f831544ee10d",
+      "ruleset_sha256": "e1a810d0514861ea3f622ef925a2498eb791e4441998f7d31372781e86d821b0",
       "verification": "unverified",
       "version": 1
     },
@@ -692,7 +692,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-wealthcharts-no-activation-fee-5pack.v1.yaml",
       "ruleset_id": "apex-intraday-50k-wealthcharts-no-activation-fee-5pack",
-      "ruleset_sha256": "fb0ab88391f9ea722a8b51f79017905eeb898192f6872e037e30b3772a686536",
+      "ruleset_sha256": "768ae51be4e41664a99878bd1f356f5d3295a24594ddb02c562d78568e02980a",
       "verification": "unverified",
       "version": 1
     },
@@ -700,7 +700,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-wealthcharts-no-activation-fee.v1.yaml",
       "ruleset_id": "apex-intraday-50k-wealthcharts-no-activation-fee",
-      "ruleset_sha256": "95c105884799d088997180adb1b549fa28a699fd655b545a4dae9eebb7066d05",
+      "ruleset_sha256": "62bf9efee2bed3a3271f107e0107b491842ce8b34799d93a08000c8d37110474",
       "verification": "unverified",
       "version": 1
     },
@@ -708,7 +708,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k-wealthcharts.v1.yaml",
       "ruleset_id": "apex-intraday-50k-wealthcharts",
-      "ruleset_sha256": "ca70aa706f79c9c3ac437a8a91ecf9878c07b6dc49a580ae0bd856ef4d15e5b9",
+      "ruleset_sha256": "a70ec83907db0a229effba59c2b0cbe516bfdf463196b30793ffd86b3af10baa",
       "verification": "unverified",
       "version": 1
     },
@@ -716,7 +716,7 @@
       "firm": "apex",
       "path": "rulesets/prop/apex/apex-intraday-50k.v1.yaml",
       "ruleset_id": "apex-intraday-50k",
-      "ruleset_sha256": "91fa28a0da2b1d54a64e41520c45d887ad9a40057ca5c4e0787430789d6d437d",
+      "ruleset_sha256": "e8347ec2813198c8e07608fb5b6418656fc6bb3cbe23110057dc5cd1a009e678",
       "verification": "unverified",
       "version": 1
     },
@@ -724,7 +724,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-growth-100k.v1.yaml",
       "ruleset_id": "ftmo-futures-growth-100k",
-      "ruleset_sha256": "ba61862694a650682a07f4eb9313be8ec8a17fc7f929536e126c01e893609069",
+      "ruleset_sha256": "dce644270add7c792bd7926763221feb32d84e8226bc1bf61dd764e0274a4b8d",
       "verification": "unverified",
       "version": 1
     },
@@ -732,7 +732,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-growth-150k.v1.yaml",
       "ruleset_id": "ftmo-futures-growth-150k",
-      "ruleset_sha256": "7c40f730434b0445d21b893755f1be7766fd3cf67906107062cc15e743fcc6ea",
+      "ruleset_sha256": "b6121db3080dbb412792fe664e0159ce5abe9969bcecf9efa7640eac3e53ed21",
       "verification": "unverified",
       "version": 1
     },
@@ -740,7 +740,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-growth-50k.v1.yaml",
       "ruleset_id": "ftmo-futures-growth-50k",
-      "ruleset_sha256": "71cccec0657d787ea87b0b38b32049f10be0f9248ceb45a13da1c46580b816a3",
+      "ruleset_sha256": "7abf196f7c4d80f8144697f3a2f8e5f595a9b4faec5a6eff05ac8b832a5195c4",
       "verification": "unverified",
       "version": 1
     },
@@ -748,7 +748,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-pro-100k.v1.yaml",
       "ruleset_id": "ftmo-futures-pro-100k",
-      "ruleset_sha256": "d112d0b73dabfe4a93aa1f4652c4f1ab3af3583b73da1766b611b96a65ce88d0",
+      "ruleset_sha256": "823d8551c3f457787357d4941163e7daf5341277bf7b7c0a5530cea6963fe81c",
       "verification": "unverified",
       "version": 1
     },
@@ -756,7 +756,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-pro-150k.v1.yaml",
       "ruleset_id": "ftmo-futures-pro-150k",
-      "ruleset_sha256": "888636be51ad8275fcaa327bc8e7e48b362a281ba4fbc00430619af2cc747c8e",
+      "ruleset_sha256": "a504d240b36c4adac749a8ce5cc001866368a3a2dadfb1e4c20247fd8e79aebc",
       "verification": "unverified",
       "version": 1
     },
@@ -764,7 +764,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-pro-50k.v1.yaml",
       "ruleset_id": "ftmo-futures-pro-50k",
-      "ruleset_sha256": "25d6c250231227c6b1945abd15010566c2744f4ae6e8c276b37c3844e94b7337",
+      "ruleset_sha256": "484d5401dd01cd276006e29f93225a211a0b1d5b18b45d423a03bd758e8fc285",
       "verification": "unverified",
       "version": 1
     },
@@ -772,7 +772,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-direct-100k.v1.yaml",
       "ruleset_id": "fundednext-futures-direct-100k",
-      "ruleset_sha256": "0cadea0fe770177fcb116ebd7c7e4507c1ab53722796d1189497989cf7ca082d",
+      "ruleset_sha256": "a417200d86554c84e8dec08822762eb75986034020a6c2511b8a962e0e1718d4",
       "verification": "unverified",
       "version": 1
     },
@@ -780,7 +780,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-direct-150k.v1.yaml",
       "ruleset_id": "fundednext-futures-direct-150k",
-      "ruleset_sha256": "674eeeb658162c4f0afd27bf16b59db06855b10829394333e0f9544e252462b3",
+      "ruleset_sha256": "805dcbfba922938c811bce282c5f6a841d83bd40ed217b4e0aff9f8e0328989c",
       "verification": "unverified",
       "version": 1
     },
@@ -788,7 +788,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-direct-50k.v1.yaml",
       "ruleset_id": "fundednext-futures-direct-50k",
-      "ruleset_sha256": "cd40622b35eb2cb723522f9dc7918c5872e288ef7f25d589a72cb5ecc01fae5a",
+      "ruleset_sha256": "4b49a0576b4ae2491a88575feaefd4ef9eeb6a1e2946b57b3aabbc8d6149da28",
       "verification": "unverified",
       "version": 1
     },
@@ -796,7 +796,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-flex-100k.v1.yaml",
       "ruleset_id": "fundednext-futures-flex-100k",
-      "ruleset_sha256": "dafd64f037cd3ddf4fdc94442541f4dce002b0dc90a2c4c9ae25dc25c2fc7dc7",
+      "ruleset_sha256": "4963352065fdfa18a04f64e4d4a869ba284b116bd4a40172c8a799dea3a46553",
       "verification": "unverified",
       "version": 1
     },
@@ -804,7 +804,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-flex-150k.v1.yaml",
       "ruleset_id": "fundednext-futures-flex-150k",
-      "ruleset_sha256": "1242242be86a14207c82fbf1bade45352ba3b38ded55cc52802d773a8ffbf5e2",
+      "ruleset_sha256": "a4cef1d8f036977c24ed8e3a31ce8f0846e7924e6323397ec09285583d2261fc",
       "verification": "unverified",
       "version": 1
     },
@@ -812,7 +812,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-flex-50k.v1.yaml",
       "ruleset_id": "fundednext-futures-flex-50k",
-      "ruleset_sha256": "e6103f9d80bc3232db83f470a6388219b2e04f0c2a58745cee39f9d812a2435f",
+      "ruleset_sha256": "1e816d5313ef8c294b5e8474e3d8a543d400373e7593ac29531a01749d1a3727",
       "verification": "unverified",
       "version": 1
     },
@@ -820,7 +820,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapiddaily-100k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapiddaily-100k",
-      "ruleset_sha256": "4330e5fe3cba8f1aa36d65fca149c069c6de45fc04c5c25e4c9885ced0445e28",
+      "ruleset_sha256": "fdacbeb2a6780d13af3a353e5fbf89b2d820699905c0494c8fff11eef3d13f9b",
       "verification": "unverified",
       "version": 1
     },
@@ -828,7 +828,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapiddaily-25k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapiddaily-25k",
-      "ruleset_sha256": "fc19338b7fd74ef1000d391cd3fd3b3e39df88a784d8b8b968334fe799c4ab27",
+      "ruleset_sha256": "6c3c6b5ccff83c222785dbe960d72be78eb192e3d08fdfbe83c36dafd462739a",
       "verification": "unverified",
       "version": 1
     },
@@ -836,7 +836,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapiddaily-50k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapiddaily-50k",
-      "ruleset_sha256": "df4044ee8baeec216388689a95d2ecddc2f10db0db47411d565d1e545d0a2c5d",
+      "ruleset_sha256": "ac6541e0f072e3df45ccfb846ab85a788e343efda59703f2d8bd6f05375293f2",
       "verification": "unverified",
       "version": 1
     },
@@ -844,7 +844,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-100k-dlladdon.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-100k-dlladdon",
-      "ruleset_sha256": "422da41f17aa0dc999ec62ae8e498d182bc9c63893c61cb453593c064ec79554",
+      "ruleset_sha256": "796dbc2ab3db0f23df8e8479091fe3f6d395df0873011f53c677753e2b00751b",
       "verification": "unverified",
       "version": 1
     },
@@ -852,7 +852,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-100k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-100k",
-      "ruleset_sha256": "c17c84073f35c4bfa37fa77831bd0446079b02134febbf5e5a5bc1fb51588f1b",
+      "ruleset_sha256": "c333551d4ddf587801c8fb238012d42113ecdbc0f7fb0d2c4dbec923a855a0d7",
       "verification": "unverified",
       "version": 1
     },
@@ -860,7 +860,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-25k-dlladdon.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-25k-dlladdon",
-      "ruleset_sha256": "4dce65f0522dd09d901dfa114c9f089e4e55c1deb32187ec1bc92679fb5b297d",
+      "ruleset_sha256": "f8ec241e64363b8ddbb00fc7c6dfcf558a6ad1657adb54a2551f33303ddf5965",
       "verification": "unverified",
       "version": 1
     },
@@ -868,7 +868,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-25k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-25k",
-      "ruleset_sha256": "78ba3429691742a941f4f8b13bf5ca4afe086814f9190a14d746db33fcfc993e",
+      "ruleset_sha256": "9a9289da006d5fb310f728b6b09d4a17d89384a287b939bd4073b2f4286da6bf",
       "verification": "unverified",
       "version": 1
     },
@@ -876,7 +876,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-50k-dlladdon.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-50k-dlladdon",
-      "ruleset_sha256": "28f592ebbf07de5176080143a02244b517f997d50b777f6bad32b8d8ef14084e",
+      "ruleset_sha256": "05685bc3c0572d3fe58d79c0c951770c8c8e4443c6f8d286e2409bde5a49cbf2",
       "verification": "unverified",
       "version": 1
     },
@@ -884,7 +884,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-50k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-50k",
-      "ruleset_sha256": "cdbc99d1cbce99675b5f4bf1d371a7e87ada86299c3846bcb9ca18c76bc6c8e2",
+      "ruleset_sha256": "a3b6144f6de0418644c03428150f2045e3e2a336c03f782bf274ba2bbfbb5db5",
       "verification": "unverified",
       "version": 1
     },
@@ -892,7 +892,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-100k-dlloff-evaleod-fundedeod-cons30.v1.yaml",
       "ruleset_id": "lucid-luciddaily-100k-dlloff-evaleod-fundedeod-cons30",
-      "ruleset_sha256": "b7a21b1ba4d2827f443c3523db6299c7dd287e6b3c22abafa7de7edcb935f117",
+      "ruleset_sha256": "c63161ea3aa2328ba45e530f892c1429a151242a3dca9340e165a4af6cf9c85c",
       "verification": "unverified",
       "version": 1
     },
@@ -900,7 +900,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-100k-dlloff-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-100k-dlloff-evalintraday-cons40",
-      "ruleset_sha256": "34d3b502e8beb8d44e6a7d7a0a3684391b539741b9b5d834a5b36babe5b46b62",
+      "ruleset_sha256": "2d5afaa2011c2585bfc3e90e9deb7800433d14d60b2a74b66359b6e7c5ce8d29",
       "verification": "unverified",
       "version": 1
     },
@@ -908,7 +908,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-100k-dllon-evaleod-fundedintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-100k-dllon-evaleod-fundedintraday-cons40",
-      "ruleset_sha256": "7237a019f74b77607a8004ef7b2a294c1fec543b165f44c8e01637b8ffe39114",
+      "ruleset_sha256": "5899bf73f35c9e53143376d4c142afff8e037fcd187f70af3b68fee28a8ada31",
       "verification": "unverified",
       "version": 1
     },
@@ -916,7 +916,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-100k-dllon-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-100k-dllon-evalintraday-cons40",
-      "ruleset_sha256": "93da31f204f77912da2a6c6bceb2bedb4217db260e6b1b7e59d0607a9b80538b",
+      "ruleset_sha256": "e8fa06fb232dcfce1e4592f45ed87fe8b3f27461b419c395d207bb38c4d05376",
       "verification": "unverified",
       "version": 1
     },
@@ -924,7 +924,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-150k-dlloff-evaleod-fundedeod-cons30.v1.yaml",
       "ruleset_id": "lucid-luciddaily-150k-dlloff-evaleod-fundedeod-cons30",
-      "ruleset_sha256": "fcbd1e4fec5dac5212ec6340c5d88421c2292cda462f4aba08442fafb39dc4a3",
+      "ruleset_sha256": "177a6894401d2d29e5bbc72de36fbeca61b22fd7392df560e47e5dad98557157",
       "verification": "unverified",
       "version": 1
     },
@@ -932,7 +932,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-150k-dlloff-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-150k-dlloff-evalintraday-cons40",
-      "ruleset_sha256": "a92af3edac8fbe053d196a6f8a164bcab849622b62034f4b4c36ca15bf89431e",
+      "ruleset_sha256": "59b769e7a49ef4057e57a46229d28f00fa1601fd689342bd77fe1a898244d162",
       "verification": "unverified",
       "version": 1
     },
@@ -940,7 +940,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-150k-dllon-evaleod-fundedintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-150k-dllon-evaleod-fundedintraday-cons40",
-      "ruleset_sha256": "b8e2e1029b1d32794da58777898f5de791a20543dde3b00d141e779ec4b0f464",
+      "ruleset_sha256": "8c8bfc7ef5be241b690353531674cace01629afe53573bdac6c8ed33d5fb0f88",
       "verification": "unverified",
       "version": 1
     },
@@ -948,7 +948,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-150k-dllon-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-150k-dllon-evalintraday-cons40",
-      "ruleset_sha256": "2e7befdd9faf565fc8f4c3c84e6d04375c50cfc16bd15d276814a138552d564d",
+      "ruleset_sha256": "277aca0a4e586d762be345e0586240705c993903cbef9d171f1b7ddd966b246b",
       "verification": "unverified",
       "version": 1
     },
@@ -956,7 +956,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-25k-dlloff-evaleod-fundedeod-cons30.v1.yaml",
       "ruleset_id": "lucid-luciddaily-25k-dlloff-evaleod-fundedeod-cons30",
-      "ruleset_sha256": "8e1d090e432d82aa8952215a0aa16ac0ac38e2d538ce4221f356a2cdcdffab96",
+      "ruleset_sha256": "eab950cd6f09d8cd7b017a263752e016d693ed4b20cdd0f1aa71baa1717d2997",
       "verification": "unverified",
       "version": 1
     },
@@ -964,7 +964,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-25k-dlloff-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-25k-dlloff-evalintraday-cons40",
-      "ruleset_sha256": "550ef17d18719df8f3a6a0f26fd503b4b27c2752b8981f23bd1d08184a7327c8",
+      "ruleset_sha256": "c48aa8524eff9d840f91b71aae84d7ea73cfdb46859cfcacd3d98f890dd985e3",
       "verification": "unverified",
       "version": 1
     },
@@ -972,7 +972,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-25k-dllon-evaleod-fundedintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-25k-dllon-evaleod-fundedintraday-cons40",
-      "ruleset_sha256": "d3c28bcf969944fe326a2a3a2b52a46250d4c3ccf6896ad7a71f6a61f60e0588",
+      "ruleset_sha256": "2838bc341e810abf2b146bfe637cd03092762106ecb8ffce5ce69c873d00492e",
       "verification": "unverified",
       "version": 1
     },
@@ -980,7 +980,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-25k-dllon-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-25k-dllon-evalintraday-cons40",
-      "ruleset_sha256": "a36eb801742d1c1d27d546ca62ea43bede25930d4eaf03bc67785c6b5aa7072f",
+      "ruleset_sha256": "8cdb0b3bef67afa4770b0152252065f47e5f1a3064df04ecfc6d3cbcc7f01f5d",
       "verification": "unverified",
       "version": 1
     },
@@ -988,7 +988,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-50k-dlloff-evaleod-fundedeod-cons30.v1.yaml",
       "ruleset_id": "lucid-luciddaily-50k-dlloff-evaleod-fundedeod-cons30",
-      "ruleset_sha256": "ee5ee92c68a3b2f205b99d58edf2f798d5989c0f0baff79aca52bb6b3849058f",
+      "ruleset_sha256": "dd919a65ed4727cb5cc17f5d3b654cf78d0504b69000d6d149b4baca8772d2ea",
       "verification": "unverified",
       "version": 1
     },
@@ -996,7 +996,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-50k-dlloff-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-50k-dlloff-evalintraday-cons40",
-      "ruleset_sha256": "575625eaafe6123df5bfeeabf4fa364235ee5990f24fe3443d2134f8a63ed719",
+      "ruleset_sha256": "eea69925c88baf34c276dd8124eea38d2a1c0f7ad6c7c2f324f778a1cfd4486a",
       "verification": "unverified",
       "version": 1
     },
@@ -1004,7 +1004,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-50k-dllon-evaleod-fundedintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-50k-dllon-evaleod-fundedintraday-cons40",
-      "ruleset_sha256": "33b7c6c7ddfb3d35475cec5f144c845d8f81f9fa4d2d6843c6d8213cd2f89048",
+      "ruleset_sha256": "d1034457b55d2f9539ce7b1b487c449d75d32f9d7164aff7a805bf3c09e92e6c",
       "verification": "unverified",
       "version": 1
     },
@@ -1012,7 +1012,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-50k-dllon-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-50k-dllon-evalintraday-cons40",
-      "ruleset_sha256": "9bfe726311555ca26cb958258009e3ffecc0c6c1c1499c819404b748625d861b",
+      "ruleset_sha256": "3c137d23ae41325056e9a04d612f86e90ef209bc2d2d756781bfdf55dca75d6b",
       "verification": "unverified",
       "version": 1
     },
@@ -1020,7 +1020,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddirect-100k.v1.yaml",
       "ruleset_id": "lucid-luciddirect-100k",
-      "ruleset_sha256": "0834bf58a325e5c23e4200cd92131fa620c12587be997500e7de367addd6f0b1",
+      "ruleset_sha256": "3cef93f4d944a9b3bed5a95f9f3fa6c38e418ffcbb14b9b2b8da03836ff698d7",
       "verification": "unverified",
       "version": 1
     },
@@ -1028,7 +1028,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddirect-150k.v1.yaml",
       "ruleset_id": "lucid-luciddirect-150k",
-      "ruleset_sha256": "d27b395e1f2c369bc346b7ba6c9a55869ed3435c104f49ef3273ea22a424d436",
+      "ruleset_sha256": "b43b26403e3e67e8b718f01e6b1dcf1aa8465d30b7bb96d434cd3a45e846a9b0",
       "verification": "unverified",
       "version": 1
     },
@@ -1036,7 +1036,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddirect-25k.v1.yaml",
       "ruleset_id": "lucid-luciddirect-25k",
-      "ruleset_sha256": "7d4a35a7574a7083e1afc820a1af88f951b9c9650dd0a8e97bbc7b347be349e9",
+      "ruleset_sha256": "3b1758e7fda086e314364604feb7760ac5dfae9f1b95edc6f76183fb24238933",
       "verification": "unverified",
       "version": 1
     },
@@ -1044,7 +1044,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddirect-50k.v1.yaml",
       "ruleset_id": "lucid-luciddirect-50k",
-      "ruleset_sha256": "4ed3871d5e8f9c7659fc41eaedf838752fd007c3e1dd05ec3b6b7c1ff7ec367f",
+      "ruleset_sha256": "66b04941f6b39e939f4b0ff1a42f81a080b481bd23a2df028ccfa1159434f6b0",
       "verification": "unverified",
       "version": 1
     },
@@ -1052,7 +1052,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-100k-dll-off-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-100k-dll-off-cons40",
-      "ruleset_sha256": "f5f196d7a4d7b2a420afcd660050473275d41fca1d58a3073bcc7006bb07d22c",
+      "ruleset_sha256": "358f8b865c7b13a5ad90c403fdcac8b5c9ca823a3719e9bc76aee3938d31fb31",
       "verification": "unverified",
       "version": 1
     },
@@ -1060,7 +1060,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-100k-dll-off-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-100k-dll-off-cons50",
-      "ruleset_sha256": "64ba134cb66d96fdd740cf1834f44c796ce879c8347acc3934897b6413da8041",
+      "ruleset_sha256": "da91ed3b787b2a8c8d1f5463f7f2aebc24461c8edf52d28fdafe9c6e122bb3fb",
       "verification": "unverified",
       "version": 1
     },
@@ -1068,7 +1068,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-100k-dll-on-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-100k-dll-on-cons40",
-      "ruleset_sha256": "9a596d538a641277797d501b08fd259818309e59e727a08da27cc2b387007e9b",
+      "ruleset_sha256": "2d03b6fa20ed0605a02c692562bf9e8bf86cbf0b91a90a2962a57ab80f930eda",
       "verification": "unverified",
       "version": 1
     },
@@ -1076,7 +1076,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-100k-dll-on-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-100k-dll-on-cons50",
-      "ruleset_sha256": "604f77ec8b3ca4e5891d5d8f55ef49c9682e373e16e3f7476b015cc17ac20a61",
+      "ruleset_sha256": "0521167ce48e4225ba9ee950724aa1253d38097ed78075b00c66129882ad278a",
       "verification": "unverified",
       "version": 1
     },
@@ -1084,7 +1084,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-150k-dll-off-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-150k-dll-off-cons40",
-      "ruleset_sha256": "fea5544f53905e36cf53e066d2eb9e9cf93a6cca9cc9da2e44c23179aa265611",
+      "ruleset_sha256": "7e27888a86274f319e0068b236456bb51d78d66fee1bb906926871ab105030d1",
       "verification": "unverified",
       "version": 1
     },
@@ -1092,7 +1092,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-150k-dll-off-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-150k-dll-off-cons50",
-      "ruleset_sha256": "b07a65b3d548946b68bebcfc464c1bb47d7d2e11fc8f7c6426558add3f473b45",
+      "ruleset_sha256": "1173fe1f29c4d8cc86b270563e1ef0238061bcc092376ec46f9286904e131f9f",
       "verification": "unverified",
       "version": 1
     },
@@ -1100,7 +1100,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-150k-dll-on-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-150k-dll-on-cons40",
-      "ruleset_sha256": "31a3f24a6cd149b7e7325de43a06ce8f66c483e097a0c8c9b9e507a4c35eb5e0",
+      "ruleset_sha256": "475b6f6c797e97c7fded34365b3c87a57d4b6ab6e8c3bbd92b8691830fcdf5ef",
       "verification": "unverified",
       "version": 1
     },
@@ -1108,7 +1108,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-150k-dll-on-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-150k-dll-on-cons50",
-      "ruleset_sha256": "7dbb9de8d9d23e9ecb5fda339ebbbdb53254c19f67271384dc84e9a1439b1d0e",
+      "ruleset_sha256": "39a3abc638175c9b39ae63b4116f322bfbccd039f41076a817dd514c8e83da11",
       "verification": "unverified",
       "version": 1
     },
@@ -1116,7 +1116,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-25k-dll-off-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-25k-dll-off-cons40",
-      "ruleset_sha256": "d125f9a993c98b05ff6f68c0c8f1ae231b0c3e4110b24ea447516aa703223d56",
+      "ruleset_sha256": "9d563827f8ce3618d527fbda6336ba8eae7ede9c70f622e3ce466b4365508027",
       "verification": "unverified",
       "version": 1
     },
@@ -1124,7 +1124,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-25k-dll-off-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-25k-dll-off-cons50",
-      "ruleset_sha256": "e7312d329540a75f7082ec8ec9b9ed19518003e8bf4e89e53424e110749989a1",
+      "ruleset_sha256": "29a6f768786faf27998064b46d06024e076a35e12e7832db8b544b7b3f5c7d42",
       "verification": "unverified",
       "version": 1
     },
@@ -1132,7 +1132,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-25k-dll-on-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-25k-dll-on-cons40",
-      "ruleset_sha256": "b84c41317e68d5332198d0b2f0d3276eba2ec62d504b6f690e6704c225a5d2c5",
+      "ruleset_sha256": "cba8e9dd872cc029c209faa3d367fe505a726c8015bad1731d58acb5ef7b4e26",
       "verification": "unverified",
       "version": 1
     },
@@ -1140,7 +1140,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-25k-dll-on-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-25k-dll-on-cons50",
-      "ruleset_sha256": "10e028d3c2ba9e34cc6081b79fd838c7987b117db818b6fbb395765b505127f3",
+      "ruleset_sha256": "d2efcf114640ab04ef8ba60743174b734985f3c2c6970b0451ad8d1bd45f1fd6",
       "verification": "unverified",
       "version": 1
     },
@@ -1148,7 +1148,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-50k-dll-off-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-50k-dll-off-cons40",
-      "ruleset_sha256": "976a268e9a12ba6f05a6442093c2e219f29ebeca21d77b44dc3f7bd599a5abfb",
+      "ruleset_sha256": "f6bfec334c5596c30a8e7e8c590866893222d914c6f2e607ab2a47d91663de22",
       "verification": "unverified",
       "version": 1
     },
@@ -1156,7 +1156,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-50k-dll-off-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-50k-dll-off-cons50",
-      "ruleset_sha256": "7b30d2a500e905ca6011a2a45f007e5bd7f96069fd3af39db9e48c5601bcfd84",
+      "ruleset_sha256": "58fded2f0b603bd801ad6396e5ca2eaa6338364a3642763d84ad9c65b3f35436",
       "verification": "unverified",
       "version": 1
     },
@@ -1164,7 +1164,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-50k-dll-on-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-50k-dll-on-cons40",
-      "ruleset_sha256": "4e9cad1b65e0b6d746a3ed1c49fefde5c45c889d84a4af725073869764985214",
+      "ruleset_sha256": "cd6a726f1c32446464d9610536e4918df66a5ec88fee5ba0c36f88d01b9e4579",
       "verification": "unverified",
       "version": 1
     },
@@ -1172,7 +1172,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-50k-dll-on-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-50k-dll-on-cons50",
-      "ruleset_sha256": "74b8664511a27cee908262a8ced8c8ca573b010923e18ea62de56f63ce920d59",
+      "ruleset_sha256": "46519fcf85ad7572a2306d4216504baded3258a0d4228f21b672c2400f35ed7b",
       "verification": "unverified",
       "version": 1
     },
@@ -1180,7 +1180,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-100k-dll-off.v1.yaml",
       "ruleset_id": "lucid-lucidpro-100k-dll-off",
-      "ruleset_sha256": "8d055af54285be44c5ea25db9712a1d79d7cff2c0fad2300ce1fbe2823364657",
+      "ruleset_sha256": "b8aaee48ed0eb400e9342dc5c2575fce1160df65c306f877125b9848e695b20b",
       "verification": "unverified",
       "version": 1
     },
@@ -1188,7 +1188,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-100k-dll-on.v1.yaml",
       "ruleset_id": "lucid-lucidpro-100k-dll-on",
-      "ruleset_sha256": "c7c8c713d399f403b1bdb8bf20469ef0bb0d436abbe6889b3e8376a214c54203",
+      "ruleset_sha256": "8b80697bc60ee602048eff1d69e50148bc6ab6bfd98e7def6989e6be7b08f2ca",
       "verification": "unverified",
       "version": 1
     },
@@ -1196,7 +1196,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-150k-dll-off.v1.yaml",
       "ruleset_id": "lucid-lucidpro-150k-dll-off",
-      "ruleset_sha256": "8e880d7b6e9fb54538a7428254e6b5a8b795c45b322f394d41bd3ca6ee3f52f6",
+      "ruleset_sha256": "d4204d999da2c306e28601063956cae203748307191eb42fc0e1246b8477f219",
       "verification": "unverified",
       "version": 1
     },
@@ -1204,7 +1204,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-150k-dll-on.v1.yaml",
       "ruleset_id": "lucid-lucidpro-150k-dll-on",
-      "ruleset_sha256": "23b3ea1befe391dd041a4ae30264750327c9a31571de856760c1c5504ecf19e7",
+      "ruleset_sha256": "fee5683d2f86ba1004eb184b8f24e6b88e71d367932ce86f5322154f81ff84a6",
       "verification": "unverified",
       "version": 1
     },
@@ -1212,7 +1212,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-25k-dll-off.v1.yaml",
       "ruleset_id": "lucid-lucidpro-25k-dll-off",
-      "ruleset_sha256": "50c47c36c73100499bf783da362fb78063bc8b092f83b359fb810a2173d70d1b",
+      "ruleset_sha256": "01f3c20ea53ecaea0a44ec85d0750cf236b3daa2d26381a6bd29e84b3f7d8d51",
       "verification": "unverified",
       "version": 1
     },
@@ -1220,7 +1220,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-25k-dll-on.v1.yaml",
       "ruleset_id": "lucid-lucidpro-25k-dll-on",
-      "ruleset_sha256": "f4cea4de9c6721f935813ff97d18dbbdd802759895b68fef962957e6a9cc8c50",
+      "ruleset_sha256": "e29cffab738980614130e783b7636b1afff8ed5da486e85d81c1d489350863fa",
       "verification": "unverified",
       "version": 1
     },
@@ -1228,7 +1228,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-50k-dll-off.v1.yaml",
       "ruleset_id": "lucid-lucidpro-50k-dll-off",
-      "ruleset_sha256": "8403e4fca68230e5c05eab8eaa0d27724b711b326eb8ef60d99e0deb0f5fc36e",
+      "ruleset_sha256": "77595e1b520421582df6d2089413a9719379ee3eca8216069ee6ecc433bbfc3b",
       "verification": "unverified",
       "version": 1
     },
@@ -1236,7 +1236,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-50k-dll-on.v1.yaml",
       "ruleset_id": "lucid-lucidpro-50k-dll-on",
-      "ruleset_sha256": "bc145d09bf1d912d629812fda53eb252ffa3a222b74d12ebeed4036375280186",
+      "ruleset_sha256": "e7d4fe4d24fe40377b7fa2555ac5fb3e6c6bc4637b5cc90f000e9f6092093766",
       "verification": "unverified",
       "version": 1
     },
@@ -1244,7 +1244,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-100k.v1.yaml",
       "ruleset_id": "mffu-builder-100k",
-      "ruleset_sha256": "7cc32ff37e5701df54edc9c26a8c085eca26e55adefe6c87dcee396b6ef8ad6d",
+      "ruleset_sha256": "43dbc992836d7876cf087d94277119555ac4e1a0cfa791058e72fddc3afbf782",
       "verification": "unverified",
       "version": 1
     },
@@ -1252,7 +1252,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-150k.v1.yaml",
       "ruleset_id": "mffu-builder-150k",
-      "ruleset_sha256": "7b408ae77e024782122a5b1d0f8addaa7dc9427929238cd12854e207a6ea8dba",
+      "ruleset_sha256": "941e0c6c7e7d85f88746be3d065daa367bad8e9bf19a45c18bb8b3cdd9932150",
       "verification": "unverified",
       "version": 1
     },
@@ -1260,7 +1260,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-25k.v1.yaml",
       "ruleset_id": "mffu-builder-25k",
-      "ruleset_sha256": "d3048917ea46576fb87d8c09bf1e091ac1cd0b37a1efb83bb01faaf9301350de",
+      "ruleset_sha256": "2af727690c208ae14a6a3b758fda25b3a8fb8b603fa465f1080b408e73e97918",
       "verification": "unverified",
       "version": 1
     },
@@ -1268,7 +1268,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-50k-addon.v1.yaml",
       "ruleset_id": "mffu-builder-50k-addon",
-      "ruleset_sha256": "651d6d460fddac80a7a42155b64a1405cca21a0011dde137042d3076f189ffd4",
+      "ruleset_sha256": "be623a9348a3353a1456da67f83968a956cc49c137b6b63720ce1b1fd87ece46",
       "verification": "unverified",
       "version": 1
     },
@@ -1276,7 +1276,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-50k.v1.yaml",
       "ruleset_id": "mffu-builder-50k",
-      "ruleset_sha256": "59e3b495e7fc240e63518a0c69facb4658f4675c5734dd6216de240f6aa23a4c",
+      "ruleset_sha256": "43a1458ab92b61c63137f644ef5d9ab94f46f9a723a09b81dd1ebb03c2c2810d",
       "verification": "unverified",
       "version": 1
     },
@@ -1284,7 +1284,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-pro-100k.v1.yaml",
       "ruleset_id": "mffu-pro-100k",
-      "ruleset_sha256": "e87367736285996bab13ca1626153ec0e0de91991aced67d8f3cb1a6289031ed",
+      "ruleset_sha256": "e6096cc55f986f56d04ba8fe5917d4a521db111b0f5bd5f01a68d328be437937",
       "verification": "unverified",
       "version": 1
     },
@@ -1292,7 +1292,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-pro-150k.v1.yaml",
       "ruleset_id": "mffu-pro-150k",
-      "ruleset_sha256": "12a2853962540961b60b89338860250b8057aa289d08f59a7de2b37447a4ab7d",
+      "ruleset_sha256": "bf7a344791b6c6ade4ceb15392f9cbc1a944cd1c5b3363b34ef6358ac1cfa293",
       "verification": "unverified",
       "version": 1
     },
@@ -1300,7 +1300,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-pro-50k-1day.v1.yaml",
       "ruleset_id": "mffu-pro-50k-1day",
-      "ruleset_sha256": "be916c98511bc726ad7a4e9248fed0239a4054d0e4f50b01c178b669446cb229",
+      "ruleset_sha256": "70d833cdfa5c0fdd546bfa0050d76b8022014b175d8df05958971d4f6b5ad147",
       "verification": "unverified",
       "version": 1
     },
@@ -1308,7 +1308,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-pro-50k.v1.yaml",
       "ruleset_id": "mffu-pro-50k",
-      "ruleset_sha256": "41d6716560c30330b636350a89cda9500e2c0efc59083bf67347b060ed74b236",
+      "ruleset_sha256": "72a2107bc51e63c55797b7fb990a67c802cc07f1269e4a169cb86d42a40f9d2c",
       "verification": "unverified",
       "version": 1
     },
@@ -1316,7 +1316,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapid-100k.v1.yaml",
       "ruleset_id": "mffu-rapid-100k",
-      "ruleset_sha256": "e204f5afe83908c780a8914ae9460fcfddc06d411ce7c41036b2018e33dae3d1",
+      "ruleset_sha256": "3f23350e3f2cbb010c2ab3b2a5cfd6147daada68a320f215df279017d5adfe05",
       "verification": "unverified",
       "version": 1
     },
@@ -1324,7 +1324,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapid-150k.v1.yaml",
       "ruleset_id": "mffu-rapid-150k",
-      "ruleset_sha256": "20cf02519e595c99eea9c63e46a2293c155b0444375ee04d941d08dca35618f5",
+      "ruleset_sha256": "237bfdafb85952b7e64914fc49fde1175aac6a2acc7cee20c50afb983de888ac",
       "verification": "unverified",
       "version": 1
     },
@@ -1332,7 +1332,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapid-25k.v1.yaml",
       "ruleset_id": "mffu-rapid-25k",
-      "ruleset_sha256": "8610c2345c4722a6e8859be0788b275366cb967c87dbb02e2a1423acba15e01f",
+      "ruleset_sha256": "d6307fdbf3bbbf0874e70cf1b9a147492c027b6bac607bed6ac4db03aaf803ba",
       "verification": "unverified",
       "version": 1
     },
@@ -1340,7 +1340,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapid-50k.v1.yaml",
       "ruleset_id": "mffu-rapid-50k",
-      "ruleset_sha256": "7d1418ecc4bf4733af2fb462d6f14a2ae020f8c049d22d735470d55ec248f07f",
+      "ruleset_sha256": "09298ab073336bcb14e05d622ed0e25bd1fb40b2606cf5f1f3a589cf980d3f8c",
       "verification": "unverified",
       "version": 1
     },
@@ -1348,7 +1348,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapideod-25k-dll.v1.yaml",
       "ruleset_id": "mffu-rapideod-25k-dll",
-      "ruleset_sha256": "087eccfd7bdf6c7ed34c0bbbd75e77aab6cd91587cba3d612fca88294e904306",
+      "ruleset_sha256": "27b9c4d8160e4f25bfb2b5cc8a729468aebd26719c5b95e9111b5c194395dd04",
       "verification": "unverified",
       "version": 1
     },
@@ -1356,7 +1356,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapideod-25k.v1.yaml",
       "ruleset_id": "mffu-rapideod-25k",
-      "ruleset_sha256": "1aa40eaad322abbf9109b9c5e94ef8195b35e3cfa16ee8d6a1785060ac98410d",
+      "ruleset_sha256": "ea01021475ea839c4e33a2412689a341fde36d32817fae848982ff9cd46ac601",
       "verification": "unverified",
       "version": 1
     },
@@ -1364,7 +1364,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapideod-50k-dll.v1.yaml",
       "ruleset_id": "mffu-rapideod-50k-dll",
-      "ruleset_sha256": "6d0864d62e52cdb97e7b5e9b0e2b8d6d8b9083f1e990a037456c6a76a0cfcbb4",
+      "ruleset_sha256": "f9b5541fc74aa8a2c1cb9c74df400f6c440eee44296a911604869bc22c06d68a",
       "verification": "unverified",
       "version": 1
     },
@@ -1372,7 +1372,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapideod-50k.v1.yaml",
       "ruleset_id": "mffu-rapideod-50k",
-      "ruleset_sha256": "e69cc313d330e205e6c50e2e961c8b59988ae20853937db938e2337f400ba056",
+      "ruleset_sha256": "e98f81fe3ca1500d9c99288081e8eb5bc2ee7c5f596836227b6116ceb4c04284",
       "verification": "unverified",
       "version": 1
     },
@@ -1380,7 +1380,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-studio001-10k.v1.yaml",
       "ruleset_id": "mffu-studio001-10k",
-      "ruleset_sha256": "52a8539cb40751373d568d520d3045cd235c4f27f088a864f8fe185cf42856dd",
+      "ruleset_sha256": "9c59950319edbafc76b6c7d64944ed3d305ffb56094f67cd4ad93371fc40b88d",
       "verification": "unverified",
       "version": 1
     },
@@ -1388,7 +1388,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-studio002-20k.v1.yaml",
       "ruleset_id": "mffu-studio002-20k",
-      "ruleset_sha256": "b9ac625db89507afadcedcd31be80110b4bc9ba30d84545d28f99dd56e178dcd",
+      "ruleset_sha256": "d70af592dd0c7eb4d1161b789ff26ec0788dadf9aa9f5e2b4b1122195e443138",
       "verification": "unverified",
       "version": 1
     },
@@ -1396,7 +1396,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-studio003-5k.v1.yaml",
       "ruleset_id": "mffu-studio003-5k",
-      "ruleset_sha256": "4c0befe76b5d84697d8fbe144c71fabd43f52c7bf6885520a4841f124b432a9f",
+      "ruleset_sha256": "72a0b2fe872dccc0b5b3aac44a5952349d5610c39b874ae60e9d3b7d3b987e75",
       "verification": "unverified",
       "version": 1
     },
@@ -1404,7 +1404,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-labs-daily-payouts-plus-50k-static.v1.yaml",
       "ruleset_id": "topstep-labs-daily-payouts-plus-50k-static",
-      "ruleset_sha256": "84da3f871b13f0dcba9bdcd733f1f5f7a15b84ddf970e8ef22747626ba098982",
+      "ruleset_sha256": "111fc38860f18e9bf4595f5f25467298ff4f86bf371e2ad47ad386bc971ab8ca",
       "verification": "unverified",
       "version": 1
     },
@@ -1412,7 +1412,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-labs-daily-payouts-plus-50k.v1.yaml",
       "ruleset_id": "topstep-labs-daily-payouts-plus-50k",
-      "ruleset_sha256": "124094561b991a94b026506568e70279dd174b344ffa11ba7535ab8140c60613",
+      "ruleset_sha256": "1fb85579dd369f503705def0a7981e95b7a9b3410666743aa5d02d64b864d639",
       "verification": "unverified",
       "version": 1
     },
@@ -1420,7 +1420,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "e6257d0dcfe5a237d85349748e524e2b34ffbe95c4738e75204493a9299d8f08",
+      "ruleset_sha256": "47ffbbc71d154b8a216cb0223447d8b9b22c0645f34b5a73ae4b42857baf5618",
       "verification": "unverified",
       "version": 1
     },
@@ -1428,7 +1428,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-consistency-payout",
-      "ruleset_sha256": "2637df3f52c18fb7f49faf45874b29f6886daf60753e4b5a066e4f993e805449",
+      "ruleset_sha256": "f5d9cd29bcd39dc85eaa3c22fa037876725b55a84291ec08771777bf5755d929",
       "verification": "unverified",
       "version": 1
     },
@@ -1436,7 +1436,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-daily-loss-limit",
-      "ruleset_sha256": "6e4f321ac6c62218235503dcf340f20c9015ebe5def936a6aa97c2a7f2f48819",
+      "ruleset_sha256": "b58b7a137459e2c7fe376fe356ea36d0e8ef88d0910876eba3aa6d694cf36c7f",
       "verification": "unverified",
       "version": 1
     },
@@ -1444,7 +1444,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-no-activation-fee-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "77c80216be783e285165393337e5f5230c0dd3ddfafee192465ee9ca1d95cab5",
+      "ruleset_sha256": "2bc91866a7ba0a9878bfa7ab63f3b373928c473e8f295bb233935db9ca286d73",
       "verification": "unverified",
       "version": 1
     },
@@ -1452,7 +1452,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-no-activation-fee-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-no-activation-fee-consistency-payout",
-      "ruleset_sha256": "d18837f47a089cdb1fbe08e05499b2ee630db970623e2e934a84f8e3c6b8d840",
+      "ruleset_sha256": "f54527302ee288ab94320467ba2aaead5e7d04772dde3b6727e38e45224358b9",
       "verification": "unverified",
       "version": 1
     },
@@ -1460,7 +1460,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-no-activation-fee-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-no-activation-fee-daily-loss-limit",
-      "ruleset_sha256": "ed22daba9b9d6382030e0cbe5bc0a8671998d546a8f41fe1031c13fd99217259",
+      "ruleset_sha256": "bf7fe1605707d8ae71ccee6f366341d6500f37708e62c2fdbf18488d45dc31ff",
       "verification": "unverified",
       "version": 1
     },
@@ -1468,7 +1468,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k-no-activation-fee.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k-no-activation-fee",
-      "ruleset_sha256": "f3c0692c484d25a80110351b2cb4c917e56f8d75654f98709f278297513932c0",
+      "ruleset_sha256": "9d927890cee6cfbea46fb1d8c949d67ef01e58021a3d0a8a097fab87b39004e8",
       "verification": "unverified",
       "version": 1
     },
@@ -1476,7 +1476,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-100k.v1.yaml",
       "ruleset_id": "topstep-trading-combine-100k",
-      "ruleset_sha256": "1a9d3d8228537f861596ee689342ff3f4a92d14348242437434ccabac0b158aa",
+      "ruleset_sha256": "d53f3908ecd3da27d9025a43fe8777ba4ac6e8a806729f6a95ab26ea6834950b",
       "verification": "unverified",
       "version": 1
     },
@@ -1484,7 +1484,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "aa039d08515db3ea3180bd6fde5ac999d3b3060a13a0222c14cc9ac8d6872dc5",
+      "ruleset_sha256": "33cbb28b58d85ff9a147edca40e5671a9dcd6f0e6bf78c7ffaa37ad3013f1e71",
       "verification": "unverified",
       "version": 1
     },
@@ -1492,7 +1492,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-consistency-payout",
-      "ruleset_sha256": "22950cb4a1bb601d74235a2693dc650ba03bd1eb1f400f75a34bfa3bb8e296f4",
+      "ruleset_sha256": "9c39636519c749c9ac1a98f7741b03dc94098644e5d3545cd5bc5d8cf2eb6e81",
       "verification": "unverified",
       "version": 1
     },
@@ -1500,7 +1500,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-daily-loss-limit",
-      "ruleset_sha256": "05ccf8e91a2bc7dadd9c1268c72209be867bad12e2b2ec78cd5fb0a4c586b3d3",
+      "ruleset_sha256": "1a6bf71d322de4801d5bfc5b37b66dfb6f01c9986c7ab12b38d98faf44c8b944",
       "verification": "unverified",
       "version": 1
     },
@@ -1508,7 +1508,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-no-activation-fee-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "62e4c7780adee05dec5a0d5b7d6b957da157b3524bb202bab1ec895269523e2e",
+      "ruleset_sha256": "f0f8efb1e2dc80fc97a390aa002dd0ec3d6a98a7ae57de8b70f795d444c4ae82",
       "verification": "unverified",
       "version": 1
     },
@@ -1516,7 +1516,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-no-activation-fee-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-no-activation-fee-consistency-payout",
-      "ruleset_sha256": "00818acaefd89d14b7ab0cf635718fd68036a9d4eec2b9ee0f4d2d41f01e1e80",
+      "ruleset_sha256": "0d8969f751ed4194b0657c5420a8d1e28efd008f93df917f67fd8bfdb2142890",
       "verification": "unverified",
       "version": 1
     },
@@ -1524,7 +1524,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-no-activation-fee-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-no-activation-fee-daily-loss-limit",
-      "ruleset_sha256": "53a3dcf8023853d8ebfd56745ed02b7f3d6a043fe4945bbb342e141c4fb12295",
+      "ruleset_sha256": "3b10567f2ce78fa805dc41ba20490e079a80c6842ed6c7db91a07b5ad13ecc85",
       "verification": "unverified",
       "version": 1
     },
@@ -1532,7 +1532,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k-no-activation-fee.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k-no-activation-fee",
-      "ruleset_sha256": "214f07ed585a02c66fc672afe25cf6f787c86908345f174ae17b6fffe9039453",
+      "ruleset_sha256": "58fd3a68b50a1ef135fdba78e56bcfe8a450e08531771cce51a1a521ad8c0410",
       "verification": "unverified",
       "version": 1
     },
@@ -1540,7 +1540,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-150k.v1.yaml",
       "ruleset_id": "topstep-trading-combine-150k",
-      "ruleset_sha256": "bc2e7643202e9dbaf5ebb8e5831e64d13730a294eadf52549aed557f8044b0e7",
+      "ruleset_sha256": "6915456f704e9d194fab518d3d693bdd3c2408a6f2fecd924e97403e5447ce0a",
       "verification": "unverified",
       "version": 1
     },
@@ -1548,7 +1548,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "c671545843a492b8633cf9aca584f6d51e852439afb074344510da93ce86bb5c",
+      "ruleset_sha256": "f5a831733634057dfdc8f617e4cccd80c7395ced1d5280ee85161d5159b602ba",
       "verification": "unverified",
       "version": 1
     },
@@ -1556,7 +1556,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-consistency-payout",
-      "ruleset_sha256": "2905788e7fa83270b010cbd03d70a0c4545c5a5d096e98bef604994c7d9b927a",
+      "ruleset_sha256": "b6b9d78cd4af9a9a1c186a93a80858aea0ab6dc2c8e79343aa51b708fc4d54d2",
       "verification": "unverified",
       "version": 1
     },
@@ -1564,7 +1564,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-daily-loss-limit",
-      "ruleset_sha256": "f6e5fa9a2c15050ffe4eff19b03dcdfa865ed98966fd5dbc0a330adb3c0ff056",
+      "ruleset_sha256": "212d73ec36ec9b61157fab837dd06ecf90a087e92881286e9a60d0fbcb334f29",
       "verification": "unverified",
       "version": 1
     },
@@ -1572,7 +1572,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-no-activation-fee-consistency-payout-daily-loss-limit",
-      "ruleset_sha256": "bf27dd4d385b121fdc47294a15a7e22506bfd2ce2af9b58139c1c39c55041cba",
+      "ruleset_sha256": "b985bbe86bdc25054bd43f0481c653a8af6fb68f133058875fd2e2fbdc5b6ad7",
       "verification": "unverified",
       "version": 1
     },
@@ -1580,7 +1580,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-no-activation-fee-consistency-payout.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-no-activation-fee-consistency-payout",
-      "ruleset_sha256": "eca9521f98049d7a4ca7aa3cca2ff31eb85b25247a5cf21ffd49e9bc1e624216",
+      "ruleset_sha256": "8128abac72b4b8794aecf7e8358c387d93325021a9a4961199b85a26509f989e",
       "verification": "unverified",
       "version": 1
     },
@@ -1588,7 +1588,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-no-activation-fee-daily-loss-limit.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-no-activation-fee-daily-loss-limit",
-      "ruleset_sha256": "4638835fd23189c18e1893d72a0f8a0d909dbb92b265bf7d6579fbf35fd64b76",
+      "ruleset_sha256": "a03769b9a502068151ff9b4fe22139184a959f338da89dd622c97d8b8f11334e",
       "verification": "unverified",
       "version": 1
     },
@@ -1596,7 +1596,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k-no-activation-fee.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k-no-activation-fee",
-      "ruleset_sha256": "ab9f86c048a587a461ee57f71e45b483d78092ce05c2d07818356fa81432375d",
+      "ruleset_sha256": "041c82a119dc868a3ce2792d70ab188f6f094abe0ac364aac651d98e532857ba",
       "verification": "unverified",
       "version": 1
     },
@@ -1604,7 +1604,7 @@
       "firm": "topstep",
       "path": "rulesets/prop/topstep/topstep-trading-combine-50k.v1.yaml",
       "ruleset_id": "topstep-trading-combine-50k",
-      "ruleset_sha256": "73c9745a928496fccb47795f554292ea92f4e2a04a7e3fc5c9b468a9e89f3715",
+      "ruleset_sha256": "fdbf506ca9df88e5ae0d1b55e7b7327919eaf3bfea56a45df76f49a2bb651b4e",
       "verification": "unverified",
       "version": 1
     }

@@ -20,10 +20,31 @@ exact cell text as evidence. Until such a file is supplied, :func:`fee_rows_as_o
 for the missing components: an unresolved fee is unknown, not zero (AGENTS.md section 1.5, "refuse,
 don't warn").
 
-**No universal fee, and no extrapolation.** A row prices only its exact root, participant type and
-date range, and it states which components (``covers``) its amount covers. A row covering several
-components is charged once. There is no product-bucket-to-root mapping here: the engine never
-invents one.
+**No universal fee, and no extrapolation.** A row prices only its exact root and date range and,
+for the *classification* it declares, the participant it is written for. It states which components
+(``covers``) its amount covers, and a row covering several components is charged once. There is no
+product-bucket-to-root mapping here: the engine never invents one.
+
+**Classification, resolved per component.** A row does not carry a participant type; it carries
+the one dimension of the run's :class:`ParticipantProfile` it needs
+(``classification_dimension``) and the value it states (``classification_value``). A row that is
+the same for every participant uses ``classification_dimension=none`` /
+``classification_value=all``, which needs no profile entry. :func:`fee_rows_as_of` looks each
+covering row's dimension up in the profile: a dimension the profile does not declare (or declares
+``unknown``) makes the component a GAP whose reason names the dimension, a value that differs
+makes the row inapplicable, exactly one applicable row prices the component, two are refused as
+ambiguous, and none is a gap. There is never a default classification and never a fallback to the
+only row available. The NFA row keeps its own dimension (``nfa_assessment_eligibility =
+fcm_member``, the assessment Bylaw 1301 makes on the FCM member), so a profile that does not
+declare it leaves the ``nfa`` component a gap rather than silently pricing it.
+
+**``other`` rows need evidence of their own.** A row typed ``other`` may not be a catch-all: it
+must name the charge (``charge_name``, never a generic word such as ``misc`` or ``CME other
+fees``), state ``unit = per_contract_per_side`` (fixed monthly, platform or subscription charges
+belong in the ruleset's fee schedule, not here), give ``applies_quote`` (the source text showing
+the charge applies to this execution) and ``distinct_from`` (why it is not exchange, clearing or
+NFA), and cite an official ``source_url`` on ``www.cmegroup.com``. An ``other`` row's ``covers``
+is exactly ``other``; no row of another type may list ``other`` in its ``covers``.
 
 Rows:
 
@@ -57,12 +78,14 @@ import itertools
 import json
 import re
 import time
+import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
 import polars as pl
+import yaml
 
 from crucible.core.errors import ConfigurationError, DataQualityError
 from crucible.core.types import DatasetId, TimestampNs
@@ -104,17 +127,68 @@ FEE_TYPES: tuple[str, ...] = ("exchange", "clearing", "nfa", "other")
 and any other per-side charge. A row's ``fee_type`` must be one of the components its ``covers``
 column lists."""
 
-PARTICIPANT_TYPE_EXCHANGE = "non_member_customer"
-"""``participant_type`` of an exchange row: the rate a **customer** (non-member) account pays, as
- opposed to a member, a lessee or a clearing member. CME's schedule does not say which class a prop
-firm's accounts fall in; this is the assumption any exchange row must carry, and an owner-provided
-file may name another class explicitly (``docs/data/cme-exchange-fees.md``)."""
+UNITS: tuple[str, ...] = ("per_contract_per_side",)
+"""The only unit this per-side table holds. A monthly, platform, subscription or account charge
+is refused BY NAME (``unit`` must be exactly ``per_contract_per_side``): a fixed charge belongs in
+the ruleset's fee schedule, separate from execution costs (ADR-0107, second 2026-11-22
+amendment)."""
 
-PARTICIPANT_TYPE_NFA = "fcm_member_assessment"
-"""``participant_type`` of an NFA row: the bylaw assesses the **FCM member** per contract; a
- customer sees it passed through as a per-contract charge. The class is stated by the source, not
- assumed. It is therefore not a customer rate class, so an ``nfa`` row prices any requested
- participant type (see :func:`fee_rows_as_of`)."""
+UNIT_PER_CONTRACT_PER_SIDE = UNITS[0]
+"""The accepted ``unit`` value."""
+
+EXCHANGE_CLASSIFICATION_DIMENSION = "cme_membership_status"
+"""``classification_dimension`` an exchange row declares: whether the account is a CME member."""
+
+EXCHANGE_CLASSIFICATION_VALUE = "non_member"
+"""``classification_value`` of the exchange row this dataset's owner files normally carry: the
+rate a **non-member** account pays. CME's schedule does not say which class a prop firm's accounts
+fall in, so the run's participant profile declares the value, and an owner file that states
+another one says so in its own row (``docs/data/cme-exchange-fees.md``)."""
+
+NFA_CLASSIFICATION_DIMENSION = "nfa_assessment_eligibility"
+"""``classification_dimension`` of an NFA row: the assessment Bylaw 1301(b)(i)(A) makes on the
+FCM member, which a customer sees passed through. A profile must declare it — there is no
+pass-through to "any participant" — or the ``nfa`` component is a gap."""
+
+NFA_CLASSIFICATION_VALUE = "fcm_member"
+"""``classification_value`` of an NFA row: the bylaw's own subject, the FCM member."""
+
+CLASSIFICATION_DIMENSION_NONE = "none"
+"""``classification_dimension`` of a row that is the same for every participant. It needs no
+profile entry, and its ``classification_value`` must be :data:`CLASSIFICATION_VALUE_ALL`."""
+
+CLASSIFICATION_VALUE_ALL = "all"
+"""``classification_value`` of a :data:`CLASSIFICATION_DIMENSION_NONE` row."""
+
+CLASSIFICATION_VALUE_UNKNOWN = "unknown"
+"""The profile value that means *not known*: a component whose row names that dimension is a gap,
+never priced from the row (unknown is never a value an owner may be assumed to match)."""
+
+CLASSIFICATION_DIMENSION_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+"""A dimension name is an identifier, not a fixed enum: lower-case, digits and underscores."""
+
+CME_GROUP_HOST = "www.cmegroup.com"
+"""The host an ``other`` row's ``source_url`` must be on: CME Group's own site. Every root this
+table prices is a CME Group market, so an ``other`` charge has to come from CME Group's schedule."""
+
+GENERIC_CHARGE_WORDS: frozenset[str] = frozenset(
+    {
+        "other",
+        "others",
+        "misc",
+        "miscellaneous",
+        "fees",
+        "fee",
+        "charges",
+        "charge",
+        "additional",
+        "cme",
+        "exchange",
+    }
+)
+"""Words that name no charge on their own. A ``charge_name`` made only of these (after stripping
+punctuation and case) is refused: it is a catch-all, and a catch-all cannot be charged as a
+specific per-side cost."""
 
 SOURCE_KIND_OFFICIAL = "official_page"
 """``source_kind`` of a row read from an official publisher's own page (the NFA bylaw)."""
@@ -134,8 +208,11 @@ EXCHANGE_FEE_SCHEMA: dict[str, pl.DataType] = {
     "root": pl.String(),  # product root: ES, NQ, YM, RTY, NKD, MES, MNQ, MYM or M2K
     "venue": pl.String(),  # the exchange the root trades on: CME or CBOT
     "fee_type": pl.String(),  # exchange, clearing, nfa or other: the component the row prices
-    "participant_type": pl.String(),  # who the rate is for (non_member_customer, fcm_member_...)
+    "classification_dimension": pl.String(),  # profile dimension the row needs, or 'none'
+    "classification_value": pl.String(),  # the value that dimension must have, or 'all'
     "covers": pl.String(),  # ';'-separated components the amount covers; contains fee_type
+    "charge_name": pl.String(),  # nullable: the specific name of an 'other' charge
+    "unit": pl.String(),  # 'per_contract_per_side': the only unit this table holds
     "per_side_usd": pl.String(),  # Decimal string: USD per contract per side (a float would round)
     "effective_from": pl.Date(),  # first calendar date the rate applies to
     "effective_to": pl.Date(),  # nullable: last date it applies to; null = open-ended
@@ -144,13 +221,22 @@ EXCHANGE_FEE_SCHEMA: dict[str, pl.DataType] = {
     "source_url": pl.String(),  # the page fetched or the owner file's document: never invented
     "snapshot_sha256": pl.String(),  # SHA-256 of the bytes the row was read from (MANIFEST.json)
     "quote": pl.String(),  # the exact text the rate was read from: a bylaw sentence or a cell
+    "applies_quote": pl.String(),  # nullable: 'other' only, text showing it applies to this side
+    "distinct_from": pl.String(),  # nullable: 'other' only, why it is not exchange/clearing/NFA
     "event_time": pl.Int64(),  # UTC ns: first instant of effective_from; the rate's own start
     "available_at": pl.Int64(),  # UTC ns the rate was knowable; equals event_time
     "record_sha256": pl.String(),  # SHA-256 of this row's other fields in canonical JSON
     "dataset_version": pl.String(),  # DATASET_VERSION the row was built by
 }
-EXCHANGE_FEE_SORT_KEYS = ["root", "participant_type", "fee_type", "effective_from", "covers"]
-"""Stored order: by root, participant type, fee type, effective date and coverage, so identical
+EXCHANGE_FEE_SORT_KEYS = [
+    "root",
+    "classification_dimension",
+    "classification_value",
+    "fee_type",
+    "effective_from",
+    "covers",
+]
+"""Stored order: by root, classification, fee type, effective date and coverage, so identical
 inputs rebuild to identical bytes (ADR-0011) and a root's history reads top to bottom."""
 
 _NS_PER_S = 1_000_000_000
@@ -177,6 +263,238 @@ _MONTHS: dict[str, int] = {
     )
 }
 
+# --------------------------------------------------------------------- the participant profile
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantProfile:
+    """Who the run's account is, as far as a fee table's classifications go (ADR-0107).
+
+    A per-side fee row does not state a participant type; it states the one classification
+    dimension it needs and the value it is written for (``cme_membership_status = non_member``,
+    ``nfa_assessment_eligibility = fcm_member``, …), so a run declares a PROFILE: a flat mapping
+    from dimension name to value. The dimension names are not an enum — each row brings its own —
+    and every name is an identifier matching ``^[a-z][a-z0-9_]*$``.
+
+    ``unknown`` is an allowed value and means unknown: a component whose row names a dimension the
+    profile leaves out, or declares ``unknown``, is a GAP, never priced from that row. Nothing here
+    has a default: an absent entry is an absent fact, not a usual one.
+
+    The profile is a RUN input (a ruleset never states one), it is immutable, and its canonical
+    SHA-256 identifies it: two profiles give two artifacts.
+
+    .. code-block:: yaml
+
+        cme_membership_status: non_member
+        nfa_assessment_eligibility: fcm_member
+    """
+
+    values: tuple[tuple[str, str], ...]
+    """``(dimension, value)`` pairs, sorted by dimension: the profile's canonical order."""
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, object]) -> ParticipantProfile:
+        """A profile from a flat mapping, validated; refuses what the contract cannot hold."""
+        pairs: list[tuple[str, str]] = []
+        for dimension, raw in values.items():
+            name = str(dimension).strip()
+            if not CLASSIFICATION_DIMENSION_PATTERN.match(name):
+                msg = (
+                    f"participant profile dimension {name!r} is not an identifier matching "
+                    "^[a-z][a-z0-9_]*$"
+                )
+                raise ConfigurationError(msg)
+            if name == CLASSIFICATION_DIMENSION_NONE:
+                msg = (
+                    "participant profile dimension 'none' is reserved for a fee row that is the "
+                    "same for every participant: the profile does not declare it"
+                )
+                raise ConfigurationError(msg)
+            if isinstance(raw, bool) or not isinstance(raw, str | int | float):
+                msg = f"participant profile value for {name!r} must be a string, got {raw!r}"
+                raise ConfigurationError(msg)
+            value = str(raw).strip()
+            if not value:
+                msg = (
+                    f"participant profile dimension {name!r} has an empty value; state one (the "
+                    "literal 'unknown' is allowed and means unknown)"
+                )
+                raise ConfigurationError(msg)
+            pairs.append((name, value))
+        if not pairs:
+            msg = (
+                "participant profile declares no dimension; leave it out instead of passing an "
+                "empty mapping (a profile is only needed when a fee component is excluded)"
+            )
+            raise ConfigurationError(msg)
+        return cls(values=tuple(sorted(pairs)))
+
+    def __post_init__(self) -> None:
+        if not self.values:
+            msg = "participant profile declares no dimension: it prices nothing"
+            raise ConfigurationError(msg)
+
+    def lookup(self, dimension: str) -> str | None:
+        """The declared value of ``dimension``, or ``None`` when the profile does not declare it."""
+        for name, value in self.values:
+            if name == dimension:
+                return value
+        return None
+
+    def as_mapping(self) -> dict[str, str]:
+        """The profile as a plain mapping, in canonical (dimension-sorted) order."""
+        return dict(self.values)
+
+    @property
+    def dimensions(self) -> tuple[str, ...]:
+        """The declared dimensions, sorted."""
+        return tuple(name for name, _ in self.values)
+
+    @property
+    def sha256(self) -> str:
+        """The profile's canonical SHA-256: what the artifact records and the id hashes."""
+        canonical = json.dumps(
+            self.as_mapping(), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def load_participant_profile(path: Path) -> ParticipantProfile:
+    """Load a participant-profile YAML file: a flat mapping from dimension name to value.
+
+    The file is the run's own statement of who the account is. It is required only when a
+    component is ``excluded``; when it is given it is recorded by its canonical SHA-256, and using
+    it keeps the cost estimate ``conditional`` (a declared profile is not a firm's statement).
+    """
+    if not path.is_file():
+        msg = f"participant profile {path} does not exist: pass the YAML file, or omit it"
+        raise ConfigurationError(msg)
+    body = path.read_bytes()
+    try:
+        document = yaml.safe_load(body.decode("utf-8"))
+    except yaml.YAMLError as exc:
+        msg = f"participant profile {path} is not valid YAML: {exc}"
+        raise ConfigurationError(msg) from exc
+    if not isinstance(document, dict):
+        msg = (
+            f"participant profile {path}: the file must be a flat mapping from dimension name to "
+            "value (e.g. 'cme_membership_status: non_member')"
+        )
+        raise ConfigurationError(msg)
+    nested = [str(key) for key, value in document.items() if isinstance(value, dict | list)]
+    if nested:
+        msg = (
+            f"participant profile {path}: dimension(s) {nested} hold a nested value; every value "
+            "is a plain string"
+        )
+        raise ConfigurationError(msg)
+    return ParticipantProfile.from_mapping(document)
+
+
+@dataclass(frozen=True, slots=True)
+class FeeLookup:
+    """What a fee table priced for one root on one date, and why the rest is not priced.
+
+    ``priced`` maps a component to its ``(USD per side, row record_sha256)``; ``gaps`` maps a
+    component to the reason it is a gap. A component appears in exactly one of them, and neither
+    is ever a zero: an unpriced component is not a free one.
+    """
+
+    priced: Mapping[str, tuple[Decimal, str]] = field(default_factory=dict)
+    gaps: Mapping[str, str] = field(default_factory=dict)
+
+
+def resolve_component_rows(
+    *,
+    where: str,
+    classifications: Sequence[tuple[str, str]],
+    profile: ParticipantProfile | None,
+    labels: Sequence[str] | None = None,
+    multiple: bool = False,
+) -> tuple[tuple[int, ...], str | None]:
+    """Which of the rows covering one component applies, or why none of them does.
+
+    ``classifications`` is one ``(dimension, value)`` pair per covering row, in a deterministic
+    order; ``labels`` optionally names each row (a record hash) for the refusal message.
+
+    The rule (ADR-0107, second 2026-11-22 amendment) is applied row by row and never relaxed:
+
+    - ``none``/``all`` rows apply to every participant and need no profile entry;
+    - a row whose dimension the profile does not declare, or declares ``unknown``, makes the whole
+      component a GAP whose reason names that dimension — the engine may not guess whether that
+      row would have applied;
+    - a row whose stated value differs from the profile's does not apply;
+    - exactly one applicable row prices the component, two are refused as ambiguous, and none is a
+      gap.
+
+    ``multiple`` is the one stated exception, and it exists for ``other`` alone: two distinctly
+    NAMED ``other`` charges are two charges, each with its own evidence, so every applicable row is
+    returned and the caller sums them (a duplicate name is refused when the table is built). Every
+    other component takes the first branch: exactly one row.
+
+    Returns ``(indices, None)`` for the rows that apply or ``((), reason)`` for a gap; raises
+    :class:`ConfigurationError` when two rows apply to a component that takes one. There is no
+    default classification and no fallback to "the only row there is".
+    """
+    if not classifications:
+        return (), f"no fee row covers {where}"
+    if labels is not None and len(labels) != len(classifications):
+        msg = "resolve_component_rows: labels and classifications must have one entry per row"
+        raise ConfigurationError(msg)
+    declared: list[int] = []
+    undeclared: list[str] = []
+    for index, (dimension, value) in enumerate(classifications):
+        if dimension == CLASSIFICATION_DIMENSION_NONE:
+            declared.append(index)
+            continue
+        stated = None if profile is None else profile.lookup(dimension)
+        if stated is None or stated == CLASSIFICATION_VALUE_UNKNOWN:
+            if dimension not in undeclared:
+                undeclared.append(dimension)
+            continue
+        if stated == value:
+            declared.append(index)
+    if undeclared:
+        return (), f"classification {', '.join(undeclared)} not declared"
+    if multiple:
+        if not declared:
+            stated = (
+                "no profile"
+                if profile is None
+                else ", ".join(
+                    f"{dimension}={profile.lookup(dimension)}"
+                    for dimension, _ in classifications
+                    if dimension != CLASSIFICATION_DIMENSION_NONE
+                )
+            )
+            return (), f"no fee row for {where} matches the declared classification ({stated})"
+        return tuple(declared), None
+    if len(declared) > 1:
+        named = (
+            sorted(str(labels[index])[:12] for index in declared)
+            if labels is not None
+            else [str(index) for index in declared]
+        )
+        msg = (
+            f"{where}: {len(declared)} fee rows apply ({', '.join(named)}): the profile matches "
+            "more than one classification on the same date, and no amount may be chosen from an "
+            "ambiguity (close one row's effective_to, or declare fewer dimensions)"
+        )
+        raise ConfigurationError(msg)
+    if not declared:
+        stated = (
+            "no profile"
+            if profile is None
+            else ", ".join(
+                f"{dimension}={profile.lookup(dimension)}"
+                for dimension, _ in classifications
+                if dimension != CLASSIFICATION_DIMENSION_NONE
+            )
+        )
+        return (), f"no fee row for {where} matches the declared classification ({stated})"
+    return (declared[0],), None
+
+
 # ------------------------------------------------------------------------------- the row model
 
 
@@ -186,13 +504,17 @@ class RawFee:
 
     ``per_side_usd`` is a ``Decimal``: money never goes through a float. ``effective_to`` is
     ``None`` for an open-ended rate, which the source states explicitly (the NFA bylaw says the
-    higher rate applies "after which time", with no end).
+    higher rate applies "after which time", with no end). ``classification_dimension`` names the
+    one participant-profile dimension the row needs (``none`` for a charge that is the same for
+    every participant) and ``classification_value`` the value it states. The ``other`` evidence
+    fields are ``None`` on every other row type and REQUIRED on an ``other`` row.
     """
 
     root: str
     venue: str
     fee_type: str
-    participant_type: str
+    classification_dimension: str
+    classification_value: str
     covers: tuple[str, ...]
     per_side_usd: Decimal
     effective_from: dt.date
@@ -202,13 +524,18 @@ class RawFee:
     source_url: str
     snapshot_sha256: str
     quote: str
+    unit: str = UNIT_PER_CONTRACT_PER_SIDE
+    charge_name: str | None = None
+    applies_quote: str | None = None
+    distinct_from: str | None = None
 
     def __post_init__(self) -> None:
         _check_row(
             root=self.root,
             venue=self.venue,
             fee_type=self.fee_type,
-            participant_type=self.participant_type,
+            classification_dimension=self.classification_dimension,
+            classification_value=self.classification_value,
             covers=self.covers,
             per_side_usd=self.per_side_usd,
             effective_from=self.effective_from,
@@ -217,6 +544,10 @@ class RawFee:
             provided_by=self.provided_by,
             source_url=self.source_url,
             quote=self.quote,
+            unit=self.unit,
+            charge_name=self.charge_name,
+            applies_quote=self.applies_quote,
+            distinct_from=self.distinct_from,
         )
 
 
@@ -250,12 +581,25 @@ class BuildReport:
     snapshots: int
 
 
+def is_generic_charge_name(name: str) -> bool:
+    """Whether a ``charge_name`` names nothing specific, so it cannot be charged.
+
+    Case is stripped and punctuation becomes a space, so ``Other``, ``misc.`` and ``CME other
+    fees`` are all catch-alls. A name is generic when every word it has is a
+    :data:`GENERIC_CHARGE_WORDS` entry: one real word ("Globex", "connectivity", "storage") is
+    enough to make it a name.
+    """
+    words = [word for word in re.split(r"[^a-z0-9]+", name.lower()) if word]
+    return not words or all(word in GENERIC_CHARGE_WORDS for word in words)
+
+
 def _check_row(
     *,
     root: str,
     venue: str,
     fee_type: str,
-    participant_type: str,
+    classification_dimension: str,
+    classification_value: str,
     covers: Sequence[str],
     per_side_usd: Decimal,
     effective_from: dt.date,
@@ -264,6 +608,10 @@ def _check_row(
     provided_by: str | None,
     source_url: str,
     quote: str,
+    unit: str,
+    charge_name: str | None = None,
+    applies_quote: str | None = None,
+    distinct_from: str | None = None,
 ) -> None:
     """Refuse a row the dataset's contract cannot hold, with a message that says how to fix it."""
     if root not in ROOTS:
@@ -274,6 +622,13 @@ def _check_row(
         raise ConfigurationError(msg)
     if fee_type not in FEE_TYPES:
         msg = f"fee_type {fee_type!r} is not one of {list(FEE_TYPES)}"
+        raise ConfigurationError(msg)
+    if unit not in UNITS:
+        msg = (
+            f"{root} {fee_type}: unit {unit!r} is not accepted; this table holds only "
+            f"{' or '.join(UNITS)}. A monthly, platform, subscription or account charge is a fixed "
+            "charge and belongs in the ruleset's fee schedule, separate from execution costs"
+        )
         raise ConfigurationError(msg)
     if not covers:
         msg = (
@@ -297,12 +652,22 @@ def _check_row(
             "prices the component it is typed as"
         )
         raise ConfigurationError(msg)
-    if not participant_type.strip():
+    if "other" in covers and fee_type != "other":
         msg = (
-            f"{root} {fee_type}: participant_type is empty; record who the rate is for "
-            "(non_member_customer, member, fcm_member_assessment, ...)"
+            f"{root} {fee_type}: covers {list(covers)} lists other, but an exchange fee cannot "
+            "cover other components: an other charge is its own row, with its own charge_name, "
+            "applies_quote and distinct_from evidence"
         )
         raise ConfigurationError(msg)
+    if fee_type == "other" and tuple(covers) != ("other",):
+        msg = (
+            f"{root} other: covers must be exactly ['other'] for an other row, got {list(covers)}; "
+            "a charge that is not exchange, clearing or NFA is a single other component"
+        )
+        raise ConfigurationError(msg)
+    _check_classification(
+        root=root, fee_type=fee_type, dimension=classification_dimension, value=classification_value
+    )
     if not per_side_usd.is_finite() or per_side_usd < 0:
         msg = (
             f"{root} {fee_type}: per_side_usd must be a finite, non-negative Decimal, "
@@ -336,6 +701,90 @@ def _check_row(
         raise ConfigurationError(msg)
     if not quote.strip():
         msg = f"{root} {fee_type}: quote is empty; store the exact text the rate was read from"
+        raise ConfigurationError(msg)
+    if fee_type == "other":
+        _check_other_evidence(
+            root=root,
+            source_url=source_url,
+            charge_name=charge_name,
+            applies_quote=applies_quote,
+            distinct_from=distinct_from,
+        )
+
+
+def _check_classification(*, root: str, fee_type: str, dimension: str, value: str) -> None:
+    """A row names one profile dimension and the value it needs, or ``none``/``all``."""
+    if not CLASSIFICATION_DIMENSION_PATTERN.match(dimension):
+        msg = (
+            f"{root} {fee_type}: classification_dimension {dimension!r} is not an identifier "
+            "matching ^[a-z][a-z0-9_]*$ (use 'none' for a charge that is the same for every "
+            "participant)"
+        )
+        raise ConfigurationError(msg)
+    if not value.strip():
+        msg = (
+            f"{root} {fee_type}: classification_value is empty; state the value the row needs "
+            "(or 'all' with classification_dimension 'none')"
+        )
+        raise ConfigurationError(msg)
+    if dimension == CLASSIFICATION_DIMENSION_NONE and value != CLASSIFICATION_VALUE_ALL:
+        msg = (
+            f"{root} {fee_type}: classification_dimension 'none' needs classification_value "
+            f"'all', got {value!r}: a charge the source states is the same for every "
+            "participant needs no profile entry"
+        )
+        raise ConfigurationError(msg)
+    if dimension != CLASSIFICATION_DIMENSION_NONE and value == CLASSIFICATION_VALUE_ALL:
+        msg = (
+            f"{root} {fee_type}: classification_value 'all' is only allowed with "
+            "classification_dimension 'none'; name the value the row states"
+        )
+        raise ConfigurationError(msg)
+
+
+def _check_other_evidence(
+    *,
+    root: str,
+    source_url: str,
+    charge_name: str | None,
+    applies_quote: str | None,
+    distinct_from: str | None,
+) -> None:
+    """An ``other`` row is a NAMED, sourced, per-side charge or it is nothing (ADR-0107)."""
+    name = "" if charge_name is None else charge_name.strip()
+    if not name:
+        msg = (
+            f"{root} other: charge_name is required; name the charge specifically, so an 'other' "
+            "row is not a catch-all (a generic word such as 'misc' or 'CME other fees' is "
+            "refused too)"
+        )
+        raise ConfigurationError(msg)
+    if is_generic_charge_name(name):
+        msg = (
+            f"{root} other: charge_name {name!r} is a generic name, not a charge. Name what is "
+            "charged (e.g. 'CME Globex connectivity fee'), or file the amount in the ruleset's "
+            "fee schedule if it is not a per-side execution cost"
+        )
+        raise ConfigurationError(msg)
+    host = urllib.parse.urlsplit(source_url.strip()).hostname or ""
+    if host != CME_GROUP_HOST:
+        msg = (
+            f"{root} other: source_url host is {host or '(none)'!r}; an other row must cite an "
+            f"official CME Group page on {CME_GROUP_HOST} (the schedule that states the charge "
+            "and to whom it applies)"
+        )
+        raise ConfigurationError(msg)
+    if applies_quote is None or not applies_quote.strip():
+        msg = (
+            f"{root} other: applies_quote is required; quote the source text that shows the "
+            "charge applies to this contract and this participant"
+        )
+        raise ConfigurationError(msg)
+    if distinct_from is None or not distinct_from.strip():
+        msg = (
+            f"{root} other: distinct_from is required; state why the charge is not part of the "
+            "exchange, clearing or NFA fee already recorded for this root"
+        )
         raise ConfigurationError(msg)
 
 
@@ -450,7 +899,8 @@ def parse_nfa_assessment(html: str, *, url: str = NFA_BYLAW_URL, sha256: str) ->
                 root=root,
                 venue=VENUE_OF[root],
                 fee_type="nfa",
-                participant_type=PARTICIPANT_TYPE_NFA,
+                classification_dimension=NFA_CLASSIFICATION_DIMENSION,
+                classification_value=NFA_CLASSIFICATION_VALUE,
                 covers=("nfa",),
                 per_side_usd=first,
                 effective_from=start,
@@ -467,7 +917,8 @@ def parse_nfa_assessment(html: str, *, url: str = NFA_BYLAW_URL, sha256: str) ->
                 root=root,
                 venue=VENUE_OF[root],
                 fee_type="nfa",
-                participant_type=PARTICIPANT_TYPE_NFA,
+                classification_dimension=NFA_CLASSIFICATION_DIMENSION,
+                classification_value=NFA_CLASSIFICATION_VALUE,
                 covers=("nfa",),
                 per_side_usd=second,
                 effective_from=end + dt.timedelta(days=1),
@@ -487,25 +938,36 @@ def parse_nfa_assessment(html: str, *, url: str = NFA_BYLAW_URL, sha256: str) ->
 OWNER_COLUMNS: tuple[str, ...] = (
     "root",
     "fee_type",
-    "participant_type",
+    "classification_dimension",
+    "classification_value",
     "covers",
     "per_side_usd",
+    "unit",
     "effective_from",
     "source_url",
     "quote",
 )
 """Columns an owner-provided fee file must carry.
 
-``covers`` is a semicolon-separated list of the components the amount covers and must contain the
-row's own ``fee_type`` (a CME "Exchange Fees for Clearing & Trading" cell is
-``fee_type=exchange``, ``covers=exchange;clearing``). ``source_url`` names the document the cell
-came from — the CME page the owner downloaded, e.g.
-``https://www.cmegroup.com/company/clearing-fees/historical-fees.html`` — and is required: a rate
-nobody can point at is not a fee. ``venue`` and ``effective_to`` are optional."""
+``classification_dimension``/``classification_value`` are the one participant-profile dimension
+and the value the row is written for (``cme_membership_status``/``non_member``), or
+``none``/``all`` for a charge the source states is the same for every participant. ``covers`` is a
+semicolon-separated list of the components the amount covers and must contain the row's own
+``fee_type`` (a CME "Exchange Fees for Clearing & Trading" cell is ``fee_type=exchange``,
+``covers=exchange;clearing``). ``unit`` must be ``per_contract_per_side``. ``source_url`` names
+the document the cell came from — the CME page the owner downloaded — and is required: a rate
+nobody can point at is not a fee."""
 
-OWNER_OPTIONAL: tuple[str, ...] = ("venue", "effective_to")
+OWNER_OPTIONAL: tuple[str, ...] = (
+    "venue",
+    "effective_to",
+    "charge_name",
+    "applies_quote",
+    "distinct_from",
+)
 """Columns an owner-provided file may also carry; any other column is refused, so a typo in a
-heading cannot silently drop a rate."""
+heading cannot silently drop a rate. ``charge_name``/``applies_quote``/``distinct_from`` carry an
+``other`` row's evidence and are REQUIRED on an ``other`` row (refused when missing or empty)."""
 
 _COVERS_SEPARATOR = ";"
 """The separator between component names in a row's ``covers`` value."""
@@ -526,6 +988,14 @@ def parse_covers(text: str, *, where: str) -> tuple[str, ...]:
 def owner_template() -> str:
     """The header line an owner-provided file starts with, for the docs and the tests."""
     return ",".join((*OWNER_COLUMNS, *OWNER_OPTIONAL))
+
+
+def _optional_text(value: object) -> str | None:
+    """An optional text cell: ``None`` when it is absent or empty, the text otherwise."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def load_owner_provided_csv(
@@ -593,7 +1063,8 @@ def load_owner_provided_csv(
                 root=root,
                 venue=venue_text,
                 fee_type=fee_type,
-                participant_type=str(record["participant_type"]).strip(),
+                classification_dimension=str(record["classification_dimension"]).strip(),
+                classification_value=str(record["classification_value"]).strip(),
                 covers=parse_covers(str(record["covers"]), where=where),
                 per_side_usd=_parse_amount(str(record["per_side_usd"]), where),
                 effective_from=effective_from,
@@ -603,6 +1074,10 @@ def load_owner_provided_csv(
                 source_url=source_url,
                 snapshot_sha256=sha,
                 quote="" if record["quote"] is None else str(record["quote"]),
+                unit=str(record["unit"]).strip(),
+                charge_name=_optional_text(record.get("charge_name")),
+                applies_quote=_optional_text(record.get("applies_quote")),
+                distinct_from=_optional_text(record.get("distinct_from")),
             )
         )
     if not rows:
@@ -757,8 +1232,11 @@ def _row_dict(fee: RawFee, dataset_version: str) -> dict[str, object]:
         "root": fee.root,
         "venue": fee.venue,
         "fee_type": fee.fee_type,
-        "participant_type": fee.participant_type,
+        "classification_dimension": fee.classification_dimension,
+        "classification_value": fee.classification_value,
         "covers": _covers_text(fee),
+        "charge_name": fee.charge_name,
+        "unit": fee.unit,
         "per_side_usd": str(fee.per_side_usd),
         "effective_from": fee.effective_from,
         "effective_to": fee.effective_to,
@@ -767,6 +1245,8 @@ def _row_dict(fee: RawFee, dataset_version: str) -> dict[str, object]:
         "source_url": fee.source_url,
         "snapshot_sha256": fee.snapshot_sha256,
         "quote": fee.quote,
+        "applies_quote": fee.applies_quote,
+        "distinct_from": fee.distinct_from,
         "event_time": moment,
         "available_at": moment,
         "dataset_version": dataset_version,
@@ -775,38 +1255,63 @@ def _row_dict(fee: RawFee, dataset_version: str) -> dict[str, object]:
     return row
 
 
-def _series_key(fee: RawFee, component: str) -> tuple[str, str, str]:
+def _series_key(fee: RawFee, component: str) -> tuple[str, str, str, str]:
     """The key one component of a row is stored under on a date.
 
-    Every component is keyed by ``(root, participant_type, component)`` — except ``nfa``, which
-    is the **FCM member's** assessment passed through to every customer, so its participant type
-    is ``fcm_member_assessment`` rather than a customer rate class, and two NFA rows for one root
-    and date would be contradictory whatever their participant type (``fee_rows_as_of`` prices an
-    NFA row for any requested participant type).
+    Every component is keyed by ``(root, classification_dimension, classification_value,
+    component)``. There is no wildcard: a row that is the same for every participant says so with
+    ``none``/``all`` (its own key), and an NFA row is keyed by its own dimension
+    (``nfa_assessment_eligibility = fcm_member``) instead of pricing every requested type.
     """
-    if component == "nfa":
-        return (fee.root, "*", component)
-    return (fee.root, fee.participant_type, component)
+    return (
+        fee.root,
+        fee.classification_dimension,
+        fee.classification_value,
+        component,
+    )
 
 
 def _check_series(fees: Sequence[RawFee]) -> None:
     """Refuse a table in which one component has two rows, or two rows overlap in time.
 
     ``fee_rows_as_of`` has to return *the* amount for a component on a date; two rows covering it
-    would make the answer depend on row order, which is never acceptable for money. A row that
-    covers several components is checked once per component, because that is how it is charged.
+    under one key would make the answer depend on row order, which is never acceptable for money.
+    A row that covers several components is checked once per component, because that is how it is
+    charged. Two ``other`` rows with the same ``charge_name``, root and classification that
+    overlap are refused by name: that is one charge written twice, not two charges.
     """
-    grouped: dict[tuple[str, str, str], list[RawFee]] = {}
+    named: dict[tuple[str, str, str, str], list[RawFee]] = {}
+    for fee in fees:
+        if fee.fee_type == "other":
+            key = (
+                fee.root,
+                str(fee.charge_name),
+                fee.classification_dimension,
+                fee.classification_value,
+            )
+            named.setdefault(key, []).append(fee)
+    for (root, charge_name, dimension, value), rows in sorted(named.items()):
+        ordered = sorted(rows, key=lambda row: row.effective_from)
+        for earlier, later in itertools.pairwise(ordered):
+            if earlier.effective_to is None or earlier.effective_to >= later.effective_from:
+                msg = (
+                    f"{root} other {charge_name!r} ({dimension}={value}): the row from "
+                    f"{earlier.effective_from} (to {earlier.effective_to or 'open'}) overlaps "
+                    f"the row from {later.effective_from}; one charge is one row per period, so "
+                    "close one (effective_to) or give the second charge its own charge_name"
+                )
+                raise ConfigurationError(msg)
+    grouped: dict[tuple[str, str, str, str], list[RawFee]] = {}
     for fee in fees:
         for component in fee.covers:
+            if component == "other":
+                # two NAMED other charges on one date are two charges, not a contradiction; the
+                # same name twice is checked above, by charge_name
+                continue
             grouped.setdefault(_series_key(fee, component), []).append(fee)
     for key, rows in sorted(grouped.items()):
-        root, participant_type, component = key
-        label = (
-            f"{root} {component}"
-            if participant_type == "*"
-            else f"{root} {participant_type} {component}"
-        )
+        root, dimension, value, component = key
+        label = f"{root} {component} ({dimension}={value})"
         ordered = sorted(rows, key=lambda row: row.effective_from)
         seen: dict[dt.date, str] = {}
         for row in ordered:
@@ -932,29 +1437,15 @@ def _covers_of(value: object) -> tuple[str, ...]:
     return tuple(part.strip() for part in str(value).split(_COVERS_SEPARATOR) if part.strip())
 
 
-def _participant_matches(*, row_participant_type: object, requested: str, component: str) -> bool:
-    """Whether a stored row prices ``participant_type`` for ``component``.
-
-    An exact match on the row's own ``participant_type`` — plus one stated exception: the ``nfa``
-    assessment is made on the FCM member per contract and passed through to every customer, so its
-    row carries ``fcm_member_assessment`` rather than a customer rate class and it prices any
-    requested participant type. Every other component requires the exact type: a member rate is
-    never offered as a customer rate (ADR-0107 section 10, no extrapolation).
-    """
-    if component == "nfa":
-        return True
-    return str(row_participant_type) == requested
-
-
 def fee_rows_as_of(
     store: DataStore,
     root: str,
     date: dt.date,
     *,
-    participant_type: str,
+    profile: ParticipantProfile | None,
     components: Sequence[str],
     dataset: DatasetId | None = None,
-) -> dict[str, tuple[Decimal, str]]:
+) -> FeeLookup:
     """``{component: (USD per side, row record_sha256)}`` for ONE root on ``date``.
 
     The rows are read at the end of ``date`` (UTC), so a rate that starts later is invisible: a
@@ -965,27 +1456,26 @@ def fee_rows_as_of(
     nine roots and refused otherwise, so an owner file that priced ES alone could not be used at
     all; here an unpriced root is the caller's named gap, not the dataset's refusal.
 
-    A component with no covering row is simply absent from the result: the caller reports it as a
-    gap, never as a zero fee (AGENTS.md section 1.5). A row that covers several components (a CME
-    "Exchange Fees for Clearing & Trading" cell is ``fee_type=exchange`` with
+    **Classification is resolved per component**, not per table: each covering row names the one
+    :class:`ParticipantProfile` dimension it needs and the value it states, and
+    :func:`resolve_component_rows` decides. A dimension the profile leaves out (or declares
+    ``unknown``) makes the component a gap whose reason names that dimension — so an NFA row is a
+    gap unless the profile says ``nfa_assessment_eligibility`` — and a row whose value differs
+    does not apply. There is no default and no fallback.
+
+    A component no row covers, one whose classification is undeclared, and one whose rows all
+    state another value come back in ``gaps`` with their reason; a priced component comes back in
+    ``priced``. Neither is ever a zero fee (AGENTS.md section 1.5). A row that covers several
+    components (a CME "Exchange Fees for Clearing & Trading" cell is ``fee_type=exchange`` with
     ``covers=exchange;clearing``) is charged once, and each component it covers carries that same
     amount and record hash.
 
-    ``participant_type`` is the customer's rate class (``non_member_customer``, ``member``, ...).
-    A row prices only its exact participant type — except an ``nfa`` row, which is the FCM
-    member's pass-through assessment and prices any requested type.
-
-    ``dataset`` reads another built version of the table instead of :data:`DATASET`. Two rows
-    covering one component on one date are refused: no rate may be chosen from a contradiction.
+    ``dataset`` reads another built version of the table instead of :data:`DATASET`. Two rows that
+    both apply to one component on one date are refused: no rate may be chosen from a
+    contradiction.
     """
     if root not in ROOTS:
         msg = f"root {root!r} is not one of {list(ROOTS)}: the fee table prices those roots only"
-        raise ConfigurationError(msg)
-    if not participant_type.strip():
-        msg = (
-            "fee_rows_as_of needs a participant_type (non_member_customer, member, ...): a fee "
-            "without the class it is for is a fee for nobody in particular"
-        )
         raise ConfigurationError(msg)
     requested: list[str] = []
     for component in components:
@@ -995,61 +1485,77 @@ def fee_rows_as_of(
         if component not in requested:
             requested.append(component)
     if not requested:
-        return {}
+        return FeeLookup()
     as_of_ns = _day_ns(date + dt.timedelta(days=1)) - 1
     frame = _read(store, as_of_ns, dataset).filter(
         (pl.col("root") == root)
         & (pl.col("effective_from") <= date)
         & (pl.col("effective_to").is_null() | (pl.col("effective_to") >= date))
     )
+    records = sorted(frame.iter_rows(named=True), key=lambda row: str(row["record_sha256"]))
     priced: dict[str, tuple[Decimal, str]] = {}
+    gaps: dict[str, str] = {}
     for component in requested:
-        covering = [
-            record
-            for record in frame.iter_rows(named=True)
-            if component in _covers_of(record["covers"])
-            and _participant_matches(
-                row_participant_type=record["participant_type"],
-                requested=participant_type,
-                component=component,
-            )
-        ]
-        if not covering:
+        covering = [record for record in records if component in _covers_of(record["covers"])]
+        indices, reason = resolve_component_rows(
+            where=f"{root} {component} on {date.isoformat()}",
+            classifications=[
+                (str(record["classification_dimension"]), str(record["classification_value"]))
+                for record in covering
+            ],
+            profile=profile,
+            labels=[str(record["record_sha256"]) for record in covering],
+            multiple=component == "other",
+        )
+        if not indices:
+            assert reason is not None
+            gaps[component] = reason
             continue
-        if len(covering) > 1:
-            hashes = ", ".join(sorted(str(record["record_sha256"])[:12] for record in covering))
-            msg = (
-                f"{root} {component}: {len(covering)} rows cover {date} for participant type "
-                f"{participant_type!r} ({hashes}): the stored table contradicts itself and no "
-                "amount may be chosen from it (rebuild it, closing one row's effective_to)"
-            )
-            raise ConfigurationError(msg)
-        record = covering[0]
+        if component == "other":
+            # distinct NAMED other charges are distinct charges: each is added, and the
+            # component's identity is the set of rows that charged it
+            chosen = [covering[index] for index in indices]
+            total = sum((Decimal(str(record["per_side_usd"])) for record in chosen), Decimal(0))
+            joined = ";".join(sorted(str(record["record_sha256"]) for record in chosen))
+            priced[component] = (total, hashlib.sha256(joined.encode("utf-8")).hexdigest())
+            continue
+        record = covering[indices[0]]
         priced[component] = (
             Decimal(str(record["per_side_usd"])),
             str(record["record_sha256"]),
         )
-    return priced
+    return FeeLookup(priced=priced, gaps=gaps)
 
 
 def coverage_of(
     frame: pl.DataFrame,
-) -> dict[tuple[str, str, str], list[tuple[dt.date, dt.date | None]]]:
-    """The covered date intervals per ``(root, participant_type, component)``.
+) -> dict[tuple[str, str, str, str], list[tuple[dt.date, dt.date | None]]]:
+    """The covered date intervals per ``(root, dimension, value, component)``.
 
     No interval is invented: a gap between two rows is a gap, and an open-ended row is reported
     with ``None``. A row that covers several components appears under each of them. Used by the
     docs' coverage table and by a caller that wants to know where :func:`fee_rows_as_of` will
     report a missing component before calling it.
     """
-    out: dict[tuple[str, str, str], list[tuple[dt.date, dt.date | None]]] = {}
+    out: dict[tuple[str, str, str, str], list[tuple[dt.date, dt.date | None]]] = {}
     for record in sorted(
         frame.iter_rows(named=True),
-        key=lambda row: (row["root"], row["participant_type"], row["effective_from"]),
+        key=lambda row: (
+            row["root"],
+            row["classification_dimension"],
+            row["classification_value"],
+            row["effective_from"],
+        ),
     ):
         for component in _covers_of(record["covers"]):
             entry = out.setdefault(
-                (str(record["root"]), str(record["participant_type"]), component), []
+                (
+                    str(record["root"]),
+                    str(record["classification_dimension"]),
+                    str(record["classification_value"]),
+                    component,
+                ),
+                [],
             )
             end = record["effective_to"]
             start = _as_date(record["effective_from"])

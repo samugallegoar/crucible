@@ -128,6 +128,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
+      assumption_kind: section7_default
       rationale: The firm states the max-loss amount and the mark it trails from, and never says whether
         open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified
         observation frequency of a failure threshold as intraday, which is the stricter reading.
@@ -161,6 +162,7 @@ phases:
     evidence: assumption
     assumption:
       name: dll_reset_at_6pm_et_session_reopen
+      assumption_kind: section7_default
       rationale: The DLL page says trading is restricted 'until the next trading session' and never gives
         the reset instant. Allowed Trading Times states 'Trading resumes at 6:00 PM EST, Sunday through
         Thursday', so the rule-day boundary is 18:00 America/New_York (ADR-0107 section 7 reads EST as
@@ -205,6 +207,7 @@ phases:
     evidence: assumption
     assumption:
       name: session_close_taken_from_firm_wide_page
+      assumption_kind: section7_default
       rationale: 'taken from Allowed Trading Times (section ''LucidPro, LucidFlex and LucidDirect Accounts'')
         for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET
         reopen is the only session clock the firm publishes.'
@@ -250,6 +253,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: 'The firm states the profit target amount and never says when it is measured. A target
         tested no earlier than the end of the trade date on closed balance is the conservative reading:
         the trader passes no earlier, and a later same-day breach still counts.'
@@ -326,6 +330,7 @@ phases:
     evidence: assumption
     assumption:
       name: dll_reset_at_6pm_et_session_reopen
+      assumption_kind: section7_default
       rationale: The DLL page says trading is restricted 'until the next trading session' and never gives
         the reset instant. Allowed Trading Times states 'Trading resumes at 6:00 PM EST, Sunday through
         Thursday', so the rule-day boundary is 18:00 America/New_York (ADR-0107 section 7 reads EST as
@@ -370,6 +375,7 @@ phases:
     evidence: assumption
     assumption:
       name: session_close_taken_from_firm_wide_page
+      assumption_kind: section7_default
       rationale: 'taken from Allowed Trading Times (section ''LucidPro, LucidFlex and LucidDirect Accounts'')
         for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET
         reopen is the only session clock the firm publishes.'
@@ -480,6 +486,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: section7_default
       rationale: 'The firm states the profit target amount and never says when it is measured. A target
         tested no earlier than the end of the trade date on closed balance is the conservative reading:
         the trader passes no earlier, and a later same-day breach still counts.'

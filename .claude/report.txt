@@ -1,0 +1,15 @@
+CHANGES (26 files, all unverified, no confirm run)
+D1 clearing/other: unchanged, still unknown gaps.
+D2 (12 DLL files): max_usd back to the STANDARD cap (2k/3k/5k standard, 3k/4k/6k consistency) + promotions[dll_doubled_payout_cap]: x2 on max_usd, starts_on/purchase_on_or_after 2026-06-02, ends_on unknown, requires account_purchase=new, dll_selected_at_purchase='true' + purchase_date; offer quote, url, sha256 verbatim. Runtime-checked: base 2000, 4000 only for a qualifying profile.
+D3 target: unchanged (eod, closed balance, provisional_conservative).
+D3 min days: unchanged; checked trading_days = the 17:00 America/Chicago rule-day and min_trades=1 = executed fills only (roll legs out); spans equal since nothing trades 15:10-17:00 CT. Payout days keep their own gates.
+D3 XFA inactivity (24): now evidence assumption, xfa_inactivity_may_be_closed_on_day_31, provisional_conservative, "may be closed", closes at the start of day 31 (gap>30 at the rule-day transition).
+D3 Labs inactivity (2): re-sourced to the drop page "If there are no trades placed for 30 days, the account will close." (hc_labs 3eeff49...), no XFA assumption.
+D4 (static Labs): trailing rule + assumption removed; static_xfa_drawdown_post_payout_reset not_modeled critical on "After first Payout, MLL sets to $0"; evaluation static $2,000 stays exact; status now blocked.
+D5: conflict kept (250 primary, 125 sensitivity), rationale names the decision.
+D6: checked, no change (news.py gaps only that trade date, never a whole-day block).
+D7: scope in RESEARCH.md round 3.
+D8: reviews/topstep.md gets section 0 (D1-D8); F1/2/5/6/7/8/9/14/15/17/18/19/20 marked 2026-11-23; per-variant tables refreshed; 26 decision lines empty.
+GATES: 26/26 prop validate; quote+sha256 770/770, 0 missing; docgen --write/--check clean (it regenerates rulesets/prop/INDEX.json, the one file outside my nominal edit list); pytest tests/integration -k prop 198 passed.
+NOT EXPRESSIBLE: static threshold with post-payout reset/lock (needs static_drawdown.lock plus a threshold_after_payout reaching static rules), hence critical; the 5:00 PM-3:10 PM CT day is only implied by rule-day+flat_by; Promotion has no description field.
+OPEN: F3,F4,F10,F11,F12,F13,F16,F21; the Labs drop also states a 90-day lifespan and 30-day inactivity for its evaluation phase, which no rule carries; F11 still blocks a funded contract limit; packet section D says 8/6 where its table shows 7/7.

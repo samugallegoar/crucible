@@ -130,6 +130,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
+      assumption_kind: section7_default
       rationale: 'The Studio pages state the maximum loss as static and never state when it is tested.
         ADR-0107 section 7 default for a failure threshold: intraday, on equity, so an open position deep
         underwater breaches even if the account recovers by the close.'
@@ -329,6 +330,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: 'No MFFU page states when the profit target is judged. Recorded default for a pass condition
         whose frequency the firm does not state: tested at the rule-day close on the closed balance, so
         the trader passes no earlier than the end of the trade date and a same-day breach after the target
@@ -402,6 +404,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
+      assumption_kind: section7_default
       rationale: 'The Studio pages state the maximum loss as static and never state when it is tested.
         ADR-0107 section 7 default for a failure threshold: intraday, on equity, so an open position deep
         underwater breaches even if the account recovers by the close.'

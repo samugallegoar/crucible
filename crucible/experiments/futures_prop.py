@@ -83,6 +83,7 @@ from crucible.data.econ_events import (
 from crucible.data.econ_events import (
     coverage as econ_calendar_coverage,
 )
+from crucible.data.exchange_fees import ParticipantProfile
 from crucible.data.store import ParquetDataStore
 from crucible.data.vault import refuse_protected_window
 from crucible.experiments.artifact_id import read_seal, seal_artifact, write_manifest
@@ -120,6 +121,7 @@ from crucible.prop.coverage import (
     rule_coverage,
 )
 from crucible.prop.news import Coverage, NewsEvent
+from crucible.prop.promotions import resolve_promotions
 from crucible.prop.ruleset import PropRuleset, load_ruleset
 from crucible.prop.scenarios import (
     PRIMARY_SCENARIO_ID,
@@ -176,7 +178,8 @@ STATISTICS: Final = ("pass_probability", "mean_net_cash_usd")
 """The two bootstrapped statistics: the pass rate and the mean net cash per attempt."""
 
 CashStatus = Literal["exact", "conditional", "upper_bound", "unavailable"]
-EligibilityStatus = Literal["eligible", "blocked_by_compliance", "unknown"]
+EligibilityStatus = Literal["eligible", "eligible_conditional", "blocked_by_compliance", "unknown"]
+"""``unknown`` is never produced by the ruleset: it is reserved for a caller that cannot judge."""
 
 _CASH_VALUES: dict[str, CashStatus] = {
     "exact": "exact",
@@ -185,6 +188,14 @@ _CASH_VALUES: dict[str, CashStatus] = {
     "unavailable": "unavailable",
 }
 _CASH_RANK: dict[str, int] = {name: rank for rank, name in enumerate(_CASH_VALUES)}
+
+_ELIGIBILITY_VALUES: dict[str, EligibilityStatus] = {
+    "eligible": "eligible",
+    "eligible_conditional": "eligible_conditional",
+    "blocked_by_compliance": "blocked_by_compliance",
+    "unknown": "unknown",
+}
+"""The only eligibility labels a summary may carry, so a new one cannot slip in unreported."""
 
 _ESTIMATE_RANK: dict[str, int] = {
     "complete": 0,
@@ -233,14 +244,16 @@ PROP_ATTEMPTS_SCHEMA: dict[str, pl.DataType] = {
     "cost_status": pl.String(),  # complete | conditional | unavailable (see cost_gaps)
     "cost_gaps": pl.String(),  # components no source could price, joined by ';' ('' when none)
     "cost_assumption_sha256": pl.String(),  # nullable: SHA-256 of the cost-assumption file used
-    "fee_participant_type": pl.String(),  # nullable: rate class the excluded components used
+    "participant_profile_sha256": pl.String(),  # nullable: canonical sha256 of the run's profile
     "coverage_gap_count": pl.Int64(),  # news and session-calendar coverage gaps of the attempt
     "coverage_gaps": pl.String(),  # the gaps themselves, joined by ';' ('' when none)
     "estimate_status": pl.String(),  # complete | conditional | partial | unavailable
     "estimate_reasons": pl.String(),  # why the estimate is not complete, joined by ';'
-    "practical_eligibility": pl.String(),  # eligible | blocked_by_compliance | unknown
+    "practical_eligibility": pl.String(),  # eligible | eligible_conditional | blocked | unknown
+    "practical_eligibility_conditions": pl.String(),  # what the trader must meet, ";"-joined
     "unverified_ruleset": pl.Boolean(),  # true when the ruleset has no matching verification
     "counterfactual_application": pl.Boolean(),  # data starts before the ruleset's effective_from
+    "promotions_applied": pl.String(),  # promotions used, "<id>:<rule>:<field>=<v>", ";"-joined
 }
 """``attempts.parquet``: one row per (scenario, start), sorted by scenario then start date."""
 
@@ -332,13 +345,29 @@ class PropFunded(_Strict):
 
 
 class PropPracticalEligibility(_Strict):
-    """Practical eligibility for the exact execution mode, and the passes it allows."""
+    """Practical eligibility for the exact execution mode, and the passes it allows.
+
+    ``eligible_conditional`` means no critical blocker applies but at least one compliance
+    obligation the SIMULATION cannot prove does: ``conditions`` lists every one of them. A
+    mechanical pass under a condition is counted in ``conditionally_valid_passes`` and NEVER in
+    ``practically_valid_passes`` (ADR-0107 section 11, amended 2026-11-23).
+    """
 
     execution_mode: str
-    status: Literal["eligible", "blocked_by_compliance", "unknown"]
+    status: Literal["eligible", "eligible_conditional", "blocked_by_compliance", "unknown"]
+    conditions: list[str]
     mechanical_passes: int
     practically_valid_passes: int
+    conditionally_valid_passes: int
     reason: str | None
+
+
+class PropUnmodeledRule(_Strict):
+    """One declared unmodeled firm rule, its materiality and the fact that would change it."""
+
+    rule: str
+    materiality: str
+    becomes_immaterial_if: str | None
 
 
 class PropScenarioSummary(_Strict):
@@ -360,6 +389,7 @@ class PropScenarioSummary(_Strict):
     estimate_status: str
     estimate_reasons: list[str]
     practical_eligibility: PropPracticalEligibility
+    unmodeled_rules: list[PropUnmodeledRule]
     cost_components: list[PropCostComponents]
     warnings: list[str]
 
@@ -384,7 +414,7 @@ class PropCostComponents(_Strict):
     """The per-component cost status of one root: declared, and how the attempts priced it."""
 
     root: str
-    participant_type: str | None
+    participant_profile_sha256: str | None
     components: dict[str, str]
     cost_status: str
     gaps: list[str]
@@ -432,7 +462,10 @@ class PropEvaluationSummary(_Strict):
     payout_policy: str
     cost_assumption: PropCostAssumption | None
     cost_components: list[PropCostComponents]
-    fee_participant_type: str | None
+    promotions_applied: list[str]
+    promotions_not_applied: list[str]
+    participant_profile: dict[str, str] | None
+    participant_profile_sha256: str | None
     scenarios_requested: Literal["primary", "all"]
     start_dates: dict[str, object]
     ruleset: PropRulesetReference
@@ -915,8 +948,8 @@ def _cost_components_document(
             entries.setdefault(charge.component, set()).add(charge.status)
         gaps.setdefault(root, set()).update(application.cost_gaps)
         statuses.setdefault(root, set()).add(application.cost_status)
-        if application.participant_type is not None:
-            participant[root] = application.participant_type
+        if application.participant_profile_sha256 is not None:
+            participant[root] = application.participant_profile_sha256
     document: list[PropCostComponents] = []
     for root in sorted(seen):
         components = {
@@ -927,13 +960,43 @@ def _cost_components_document(
         document.append(
             PropCostComponents(
                 root=root,
-                participant_type=participant.get(root),
+                participant_profile_sha256=participant.get(root),
                 components=components,
                 cost_status=(next(iter(cost_statuses)) if len(cost_statuses) == 1 else "mixed"),
                 gaps=sorted(gaps.get(root, set())),
             )
         )
     return document
+
+
+def _eligibility_reason(
+    *,
+    ruleset: PropRuleset,
+    execution_mode: str,
+    status: EligibilityStatus,
+    conditions: tuple[str, ...],
+) -> str | None:
+    """Why the execution mode is not plainly eligible, in one sentence (ADR-0107 section 11).
+
+    ``blocked_by_compliance`` and ``eligible_conditional`` answer different questions: the first
+    says the account may not be traded this way at all, the second says it may, but only while the
+    trader keeps every listed obligation, which the simulation cannot prove.
+    """
+    if status == "blocked_by_compliance":
+        return (
+            f"{execution_mode} execution is blocked by a critical compliance rule of "
+            f"{ruleset.ruleset_id} v{ruleset.version}: a mechanically successful attempt under a "
+            "compliance blocker is never a practically valid pass (ADR-0107 section 11)"
+        )
+    if status == "eligible_conditional":
+        return (
+            f"{execution_mode} execution is eligible only under {len(conditions)} condition(s) "
+            f"the simulation cannot prove, listed in this block; a mechanical pass is a "
+            "conditionally valid pass, never a practically valid one, and meeting them is the "
+            "trader's responsibility, not something the ruleset's authorization guarantees "
+            "(ADR-0107 section 11)"
+        )
+    return None
 
 
 def _scenario_summary(
@@ -1020,14 +1083,9 @@ def _scenario_summary(
         1 for item in classifications if item.attempt.counterfactual_application
     )
     raw_eligibility = practical_eligibility(scenario.ruleset, execution_mode)
-    eligibility: EligibilityStatus = (
-        "blocked_by_compliance"
-        if raw_eligibility == "blocked_by_compliance"
-        else "eligible"
-        if raw_eligibility == "eligible"
-        else "unknown"
-    )
+    eligibility: EligibilityStatus = _ELIGIBILITY_VALUES.get(raw_eligibility.status, "unknown")
     blocked = eligibility == "blocked_by_compliance"
+    conditional = eligibility == "eligible_conditional"
     reasons = _probability_reasons(
         status=status,
         material_unmodeled=material,
@@ -1095,17 +1153,25 @@ def _scenario_summary(
         practical_eligibility=PropPracticalEligibility(
             execution_mode=execution_mode,
             status=eligibility,
+            conditions=list(raw_eligibility.conditions),
             mechanical_passes=passes_all,
-            practically_valid_passes=0 if blocked else passes_all,
-            reason=(
-                f"{execution_mode} execution is blocked by a critical compliance rule of "
-                f"{scenario.ruleset.ruleset_id} v{scenario.ruleset.version}: a mechanically "
-                "successful attempt under a compliance blocker is never a practically valid pass "
-                "(ADR-0107 section 11)"
-                if blocked
-                else None
+            practically_valid_passes=0 if (blocked or conditional) else passes_all,
+            conditionally_valid_passes=passes_all if conditional else 0,
+            reason=_eligibility_reason(
+                ruleset=scenario.ruleset,
+                execution_mode=execution_mode,
+                status=eligibility,
+                conditions=raw_eligibility.conditions,
             ),
         ),
+        unmodeled_rules=[
+            PropUnmodeledRule(
+                rule=entry.rule,
+                materiality=entry.materiality,
+                becomes_immaterial_if=entry.becomes_immaterial_if,
+            )
+            for entry in sorted(scenario.ruleset.not_modeled, key=lambda entry: entry.rule)
+        ],
         warnings=sorted(warnings),
     )
 
@@ -1157,14 +1223,16 @@ def _attempt_row(item: _Classified, horizon_trading_days: int) -> dict[str, obje
         "cost_status": application.cost_status,
         "cost_gaps": ";".join(application.cost_gaps),
         "cost_assumption_sha256": application.cost_assumption_sha256,
-        "fee_participant_type": application.participant_type,
+        "participant_profile_sha256": application.participant_profile_sha256,
         "coverage_gap_count": len(gaps),
         "coverage_gaps": ";".join(gaps),
         "estimate_status": attempt.estimate_status,
         "estimate_reasons": ";".join(attempt.estimate_reasons),
         "practical_eligibility": attempt.practical_eligibility,
+        "practical_eligibility_conditions": ";".join(attempt.practical_eligibility_conditions),
         "unverified_ruleset": attempt.unverified_ruleset,
         "counterfactual_application": attempt.counterfactual_application,
+        "promotions_applied": ";".join(attempt.promotions_applied),
     }
 
 
@@ -1308,7 +1376,7 @@ def evaluation_basis(
     news_hash: str,
     exchange_fees_dataset: str,
     exchange_fees_hash: str,
-    participant_type: str | None = None,
+    participant_profile_sha256: str | None = None,
 ) -> str:
     """The text the evaluation id hashes: every input that can change a number or a label."""
     return "|".join(
@@ -1320,7 +1388,7 @@ def evaluation_basis(
             f"payout_policy={payout_policy}",
             f"cost_assumption={cost_assumption.name if cost_assumption else ''}"
             f":{cost_assumption.sha256 if cost_assumption else ''}",
-            f"fee_participant_type={participant_type or ''}",
+            f"participant_profile={participant_profile_sha256 or ''}",
             f"scenarios={scenarios_requested}",
             f"news={news_dataset}:{news_hash}",
             f"exchange_fees={exchange_fees_dataset}:{exchange_fees_hash}",
@@ -1348,14 +1416,14 @@ def _needs_exchange_fees(rulesets: Iterable[PropRuleset]) -> bool:
     return any(bool(ruleset.commissions.excluded_components) for ruleset in rulesets)
 
 
-def _refuse_missing_participant_type(
-    rulesets: Iterable[PropRuleset], *, selected: PropRuleset, value: str | None
+def _refuse_missing_profile(
+    rulesets: Iterable[PropRuleset], *, selected: PropRuleset, value: ParticipantProfile | None
 ) -> None:
-    """Refuse ``fee_participant_type is None`` when a ruleset prices a component on top.
+    """Refuse a missing participant profile when a ruleset prices a component on top.
 
-    The participant type is a RUN parameter because a ruleset never states one, and the fee dataset
-    prices a rate class: without it an ``excluded`` component cannot be priced at all, so the run
-    stops here instead of reporting every attempt as a gap.
+    The profile is a RUN input because a ruleset never states one, and every fee row states the
+    classification it is written for: without a profile an ``excluded`` component cannot be priced
+    at all, so the run stops here instead of reporting every attempt as a gap.
     """
     excluded = sorted(
         {name for ruleset in rulesets for name in ruleset.commissions.excluded_components}
@@ -1363,9 +1431,10 @@ def _refuse_missing_participant_type(
     if excluded and value is None:
         msg = (
             f"ruleset {selected.ruleset_id} v{selected.version} declares {excluded} charged on top "
-            "of the commission, so the run needs fee_participant_type (--fee-participant-type), "
-            "e.g. non_member_customer: the fee dataset prices a participant type and the ruleset "
-            "never states one"
+            "of the commission, so the run needs a participant profile (--participant-profile "
+            "FILE), e.g. 'cme_membership_status: non_member' and "
+            "'nfa_assessment_eligibility: fcm_member': each fee row states the classification it "
+            "is written for and the ruleset never states one"
         )
         raise ConfigurationError(msg)
 
@@ -1409,7 +1478,7 @@ def run_prop_evaluation(
     execution_mode: ExecutionMode,
     payout_policy: str = "max_eligible",
     cost_assumption: str | Path | None = None,
-    fee_participant_type: str | None = None,
+    participant_profile: ParticipantProfile | None = None,
     scenarios: str = "primary",
     news_dataset: str = "econ_events_v2",
     exchange_fees_dataset: str = "exchange_fees_v1",
@@ -1428,9 +1497,14 @@ def run_prop_evaluation(
     choice between taking every eligible payout and none. ``cost_assumption`` is the PATH of a
     cost-assumption YAML file (``crucible.prop.costs.load_cost_assumption``): the user's explicit,
     unverified statement that prices the exact cost gaps it names, without which the cash statistics
-    are ``unavailable``. ``fee_participant_type`` is the rate class the components the firm charges
-    on top of the commission are priced for; the ruleset never states one, so it is required as soon
-    as a component is declared ``excluded``, and using it keeps the cost ``conditional``.
+    are ``unavailable``. ``participant_profile`` is the run's declaration of who its account is — a
+    flat mapping from classification dimension to value
+    (``crucible.data.exchange_fees.ParticipantProfile``), e.g.
+    ``{cme_membership_status: non_member, nfa_assessment_eligibility: fcm_member}``. Each fee row
+    names the one dimension it needs, so a component the firm charges on top of the commission is
+    required-resolvable through the profile: it is required as soon as a component is declared
+    ``excluded``, and the profile that priced anything is recorded by its canonical SHA-256 in the
+    manifest, the summary and every attempts row.
 
     ``scenarios``: ``primary`` evaluates the selected ruleset only; ``all`` adds one full
     sensitivity scenario per conflict alternative (ADR-0107 section 7), reported beside the
@@ -1498,8 +1572,8 @@ def run_prop_evaluation(
         fee_source = store_component_fees(store, dataset=exchange_fees_dataset)
     fees_hash = _content_hash(store, exchange_fees_dataset) if fee_source is not None else None
     news_hash = _content_hash(store, news_dataset)
-    _refuse_missing_participant_type(
-        (item.ruleset for item in chosen), selected=chosen[0].ruleset, value=fee_participant_type
+    _refuse_missing_profile(
+        (item.ruleset for item in chosen), selected=chosen[0].ruleset, value=participant_profile
     )
 
     run_basis = run_id_basis(config, prepared.refs, _session_table_hash(calendar))
@@ -1516,7 +1590,9 @@ def run_prop_evaluation(
         news_hash=news_hash or "",
         exchange_fees_dataset=exchange_fees_dataset,
         exchange_fees_hash=fees_hash or "",
-        participant_type=fee_participant_type,
+        participant_profile_sha256=(
+            None if participant_profile is None else participant_profile.sha256
+        ),
     )
     evaluation_id = evaluation_id_of(basis)
     evaluation_dir = artifacts_root / evaluation_id
@@ -1544,7 +1620,7 @@ def run_prop_evaluation(
                 news_coverage=news_coverage,
                 fee_source=fee_source,
                 cost_assumption=assumption,
-                participant_type=fee_participant_type,
+                profile=participant_profile,
                 scenario_id=scenario.scenario_id,
             )
             classifications.append(
@@ -1614,7 +1690,24 @@ def run_prop_evaluation(
             )
         ),
         cost_components=_cost_components_document(classifications),
-        fee_participant_type=fee_participant_type,
+        promotions_applied=sorted(
+            {entry for item in classifications for entry in item.attempt.promotions_applied}
+        ),
+        promotions_not_applied=sorted(
+            {
+                reason
+                for scenario in chosen
+                for reason in resolve_promotions(scenario.ruleset, participant_profile)[
+                    1
+                ].not_applied
+            }
+        ),
+        participant_profile=(
+            None if participant_profile is None else participant_profile.as_mapping()
+        ),
+        participant_profile_sha256=(
+            None if participant_profile is None else participant_profile.sha256
+        ),
         scenarios_requested=_scenario_mode(scenarios),
         start_dates={
             "count": len(plan.start_dates),
@@ -1694,7 +1787,10 @@ def run_prop_evaluation(
             None if assumption is None else summary.model_dump(mode="json")["cost_assumption"]
         ),
         "cost_components": summary.model_dump(mode="json")["cost_components"],
-        "fee_participant_type": fee_participant_type,
+        "promotions_applied": summary.model_dump(mode="json")["promotions_applied"],
+        "promotions_not_applied": summary.model_dump(mode="json")["promotions_not_applied"],
+        "participant_profile": summary.model_dump(mode="json")["participant_profile"],
+        "participant_profile_sha256": summary.model_dump(mode="json")["participant_profile_sha256"],
         "scenarios_requested": scenarios,
         "ruleset": {
             "file": ruleset_file.name,

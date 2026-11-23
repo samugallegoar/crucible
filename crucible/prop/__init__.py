@@ -12,6 +12,11 @@ owner's TTY-only verification and ``index`` the generated append-only hash lock.
 
 from __future__ import annotations
 
+from crucible.data.exchange_fees import (
+    FeeLookup,
+    ParticipantProfile,
+    load_participant_profile,
+)
 from crucible.prop.attempt import (
     PAYOUT_CAP_UNKNOWN,
     AttemptResult,
@@ -19,6 +24,7 @@ from crucible.prop.attempt import (
     FeeBreakdown,
     PayoutRecord,
     PhaseOutcome,
+    PracticalEligibility,
     cash_estimate,
     estimate_status,
     practical_eligibility,
@@ -26,6 +32,7 @@ from crucible.prop.attempt import (
 )
 from crucible.prop.costs import (
     COMPONENTS_WITH_COMMISSION,
+    PARTICIPANT_PROFILE_REASON,
     AssumptionAmount,
     ComponentCharge,
     ComponentFeeRow,
@@ -82,6 +89,7 @@ from crucible.prop.validate import (
 __all__ = [
     "COMPONENTS_WITH_COMMISSION",
     "EOD_ORDER",
+    "PARTICIPANT_PROFILE_REASON",
     "PAYOUT_CAP_UNKNOWN",
     "AccountState",
     "AssumptionAmount",
@@ -99,14 +107,17 @@ __all__ = [
     "CostPricing",
     "Coverage",
     "FeeBreakdown",
+    "FeeLookup",
     "FeeRow",
     "Lifecycle",
     "NewsEvent",
     "NotModeled",
+    "ParticipantProfile",
     "PayoutRecord",
     "PayoutRule",
     "Phase",
     "PhaseOutcome",
+    "PracticalEligibility",
     "PropAccountOverlay",
     "PropRuleset",
     "RuleCoverageRow",
@@ -126,6 +137,7 @@ __all__ = [
     "is_pass_condition",
     "list_document",
     "load_cost_assumption",
+    "load_participant_profile",
     "load_registry",
     "load_ruleset",
     "material_unmodeled",

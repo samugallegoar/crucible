@@ -32,6 +32,7 @@ from crucible.core.errors import ConfigurationError
 from crucible.data.cme_session_table import cme_session_table
 from crucible.data.cme_sessions import SessionCalendar
 from crucible.data.contracts import ROLL_SCHEMA
+from crucible.data.exchange_fees import ParticipantProfile
 from crucible.data.futures_specs import futures_spec
 from crucible.data.store import ParquetDataStore
 from crucible.execution.futures_sim import CostSchedule
@@ -763,12 +764,18 @@ def test_an_absent_conflict_alternative_removes_the_rule_from_its_scenario() -> 
 
 # --------------------------------------------- 8. per-component execution costs
 
+_PROFILE = ParticipantProfile.from_mapping(
+    {"cme_membership_status": "non_member", "nfa_assessment_eligibility": "fcm_member"}
+)
+"""The run's participant profile: it resolves the synthetic exchange row and the NFA row."""
+
 _FEE_TABLE = ComponentFeeTable(
     rows=(
         ComponentFeeRow(
             root="ES",
             fee_type="exchange",
-            participant_type="non_member_customer",
+            classification_dimension="cme_membership_status",
+            classification_value="non_member",
             covers=("exchange", "clearing"),
             per_side_usd=Decimal("1.27"),
             effective_from=dt.date(2024, 1, 1),
@@ -804,7 +811,7 @@ def test_a_commission_that_excludes_a_component_adds_it_from_the_fee_table() -> 
         "ES",
         None,
         fee_source=_FEE_TABLE,
-        participant_type="non_member_customer",
+        profile=_PROFILE,
         when=dt.date(2024, 1, 8),
     )
     assert schedule.commission == Decimal("2.00")
@@ -818,17 +825,17 @@ def test_a_commission_that_excludes_a_component_adds_it_from_the_fee_table() -> 
     assert application.component("nfa").status == "unknown"
     assert application.cost_status == "unavailable"
     assert application.cost_gaps == ("nfa", "other")
-    assert application.participant_type == "non_member_customer"
+    assert application.participant_profile_sha256 == _PROFILE.sha256
 
-    # an excluded component with no participant type cannot be priced at all: refused, by name
-    with pytest.raises(ConfigurationError, match="fee_participant_type"):
+    # an excluded component with no participant profile cannot be priced at all: refused, by name
+    with pytest.raises(ConfigurationError, match="participant profile"):
         _commissions_for(_unknowning(excluded), costs, "ES", None, when=dt.date(2024, 1, 8))
     _, blind = _commissions_for(
         _unknowning(excluded),
         costs,
         "ES",
         None,
-        participant_type="non_member_customer",
+        profile=_PROFILE,
         when=dt.date(2024, 1, 8),
     )
     assert blind.component("exchange").status == "excluded_unpriced"
@@ -840,11 +847,11 @@ def test_a_commission_that_excludes_a_component_adds_it_from_the_fee_table() -> 
         "ES",
         None,
         fee_source=_FEE_TABLE,
-        participant_type="non_member_customer",
+        profile=_PROFILE,
         when=dt.date(2023, 12, 1),
     )
     assert uncovered.component("exchange").usd is None
-    assert "no exchange row for ES on 2023-12-01" in (uncovered.fees_incomplete or "")
+    assert "no fee row covers ES exchange on 2023-12-01" in (uncovered.fees_incomplete or "")
 
     included = _ruleset([])  # the helper's default: every component included
     schedule, application = _commissions_for(
@@ -896,12 +903,10 @@ def test_the_attempt_reports_an_uncovered_component_as_unavailable_cash() -> Non
             },
         )
     )
-    # the run parameter the ruleset never states: without it an excluded component is refused
-    with pytest.raises(ConfigurationError, match="fee_participant_type"):
+    # the run input the ruleset never states: without it an excluded component is refused
+    with pytest.raises(ConfigurationError, match="participant profile"):
         _attempt(ruleset, [5000.0, 5000.0, 5000.0, 5000.0])
-    blind = _attempt(
-        ruleset, [5000.0, 5000.0, 5000.0, 5000.0], participant_type="non_member_customer"
-    )
+    blind = _attempt(ruleset, [5000.0, 5000.0, 5000.0, 5000.0], profile=_PROFILE)
     assert blind.cash_estimate_status == "unavailable"
     assert blind.commissions.cost_gaps == ("exchange", "clearing", "nfa", "other")
     assert blind.commissions.fees_incomplete is not None
@@ -911,7 +916,7 @@ def test_the_attempt_reports_an_uncovered_component_as_unavailable_cash() -> Non
         ruleset,
         [5000.0, 5000.0, 5000.0, 5000.0],
         fee_source=_FEE_TABLE,
-        participant_type="non_member_customer",
+        profile=_PROFILE,
     )
     assert priced.commissions.component("exchange").usd == Decimal("1.27")
     # nfa and other are declared unknown, so the cash number is still not available
@@ -923,7 +928,8 @@ def test_a_fee_table_refuses_an_ambiguous_or_unsourced_row() -> None:
     row = ComponentFeeRow(
         root="ES",
         fee_type="exchange",
-        participant_type="non_member_customer",
+        classification_dimension="cme_membership_status",
+        classification_value="non_member",
         covers=("exchange",),
         per_side_usd=Decimal("1.25"),
         effective_from=dt.date(2024, 1, 1),
@@ -936,7 +942,8 @@ def test_a_fee_table_refuses_an_ambiguous_or_unsourced_row() -> None:
         ComponentFeeRow(
             root="es",
             fee_type="exchange",
-            participant_type="non_member_customer",
+            classification_dimension="cme_membership_status",
+            classification_value="non_member",
             covers=("exchange",),
             per_side_usd=Decimal("1.25"),
             effective_from=dt.date(2024, 1, 1),
@@ -945,7 +952,8 @@ def test_a_fee_table_refuses_an_ambiguous_or_unsourced_row() -> None:
         ComponentFeeRow(
             root="ES",
             fee_type="exchange",
-            participant_type="non_member_customer",
+            classification_dimension="cme_membership_status",
+            classification_value="non_member",
             covers=("exchange",),
             per_side_usd=Decimal("-1"),
             effective_from=dt.date(2024, 1, 1),
@@ -954,7 +962,8 @@ def test_a_fee_table_refuses_an_ambiguous_or_unsourced_row() -> None:
         ComponentFeeRow(
             root="ES",
             fee_type="exchange",
-            participant_type="non_member_customer",
+            classification_dimension="cme_membership_status",
+            classification_value="non_member",
             covers=("clearing",),
             per_side_usd=Decimal("1.25"),
             effective_from=dt.date(2024, 1, 1),
@@ -1052,7 +1061,13 @@ _MONEY_NS = 86_400 * _NS
 
 
 def _fee_row(
-    root: str, fee_type: str, amount: str, participant_type: str, covers: str, source_kind: str
+    root: str,
+    fee_type: str,
+    amount: str,
+    dimension: str,
+    value: str,
+    covers: str,
+    source_kind: str,
 ) -> dict[str, object]:
     """One row of the fee contract, in the shape ``build_exchange_fees`` writes."""
     from crucible.data import exchange_fees as ef
@@ -1062,8 +1077,11 @@ def _fee_row(
         "root": root,
         "venue": ef.VENUE_OF[root],
         "fee_type": fee_type,
-        "participant_type": participant_type,
+        "classification_dimension": dimension,
+        "classification_value": value,
         "covers": covers,
+        "charge_name": None,
+        "unit": ef.UNIT_PER_CONTRACT_PER_SIDE,
         "per_side_usd": amount,
         "effective_from": day,
         "effective_to": None,
@@ -1072,6 +1090,8 @@ def _fee_row(
         "source_url": "https://example.invalid/synthetic-fees",
         "snapshot_sha256": "0" * 64,
         "quote": "SYNTHETIC TEST VALUE: a fee row invented for a test",
+        "applies_quote": None,
+        "distinct_from": None,
         "event_time": int(dt.datetime.combine(day, dt.time(0, 0), tzinfo=dt.UTC).timestamp()) * _NS,
         "available_at": int(dt.datetime.combine(day, dt.time(0, 0), tzinfo=dt.UTC).timestamp())
         * _NS,
@@ -1093,7 +1113,8 @@ def _fee_store(root: Path, *, exchange: bool):
                 name,
                 "nfa",
                 "0.02",
-                ef.PARTICIPANT_TYPE_NFA,
+                ef.NFA_CLASSIFICATION_DIMENSION,
+                ef.NFA_CLASSIFICATION_VALUE,
                 "nfa",
                 ef.SOURCE_KIND_OFFICIAL,
             )
@@ -1104,7 +1125,8 @@ def _fee_store(root: Path, *, exchange: bool):
                     name,
                     "exchange",
                     "1.25",
-                    ef.PARTICIPANT_TYPE_EXCHANGE,
+                    ef.EXCHANGE_CLASSIFICATION_DIMENSION,
+                    ef.EXCHANGE_CLASSIFICATION_VALUE,
                     "exchange",
                     ef.SOURCE_KIND_OWNER,
                 )
@@ -1157,7 +1179,7 @@ def test_the_stored_fee_dataset_prices_each_component_or_says_it_is_unknown(
         _exchange_only_unknown_ruleset(),
         [5000.0, 5000.0, 5000.0, 5000.0],
         fee_source=nfa_only,
-        participant_type="non_member_customer",
+        profile=_PROFILE,
     )
     assert blind.cash_estimate_status == "unavailable"
     assert blind.commissions.cost_gaps == ("exchange", "clearing", "other")
@@ -1168,7 +1190,7 @@ def test_the_stored_fee_dataset_prices_each_component_or_says_it_is_unknown(
         _exchange_only_unknown_ruleset(),
         [5000.0, 5000.0, 5000.0, 5000.0],
         fee_source=priced,
-        participant_type="non_member_customer",
+        profile=_PROFILE,
     )
     assert priced_attempt.commissions.component("exchange").usd == Decimal("1.25")
     assert priced_attempt.commissions.component("nfa").usd == Decimal("0.02")

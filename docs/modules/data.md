@@ -88,14 +88,15 @@ Datasets, point-in-time access, calendars and quality. Detail sections follow.
   `EXCHANGE_FEE_SORT_KEYS`, `parse_nfa_assessment` (the NFA Bylaw 1301 assessment fee, halved from
   the round-turn amount and split at the period the bylaw states), `load_owner_provided_csv` (the
   only route an **exchange**, **clearing** or **other** fee has into the dataset: a supplied file,
-  with its SHA-256, its supplier, its participant type, the components it covers and the exact cell
+  with its SHA-256, its supplier, its classification dimension and value, the components it covers
+  and the exact cell
   text as evidence), `fetch_raw` (NFA only — it fetches no CME Group bytes, on purpose),
   `build_exchange_fees` (refuses to overwrite; its `BuildReport` names the roots and the components
-  nothing priced) and `fee_rows_as_of(store, root, date, participant_type=..., components=...)` —
+  nothing priced) and `fee_rows_as_of(store, root, date, profile=..., components=...)` —
   raise
   ``{component: (amount, record_sha256)}`` for ONE root: a component with no covering row is absent
   (a gap the caller reports), never priced at zero, and the earlier all-nine-roots contract is gone.
-  `coverage_of(frame)` states the covered intervals per ``(root, participant_type, component)``;
+  `coverage_of(frame)` states the covered intervals per `(root, dimension, value, component)`;
   `PARTICIPANT_TYPE_EXCHANGE` is the assumed customer rate class and `PARTICIPANT_TYPE_NFA` the FCM
   member's pass-through type.
 - `interfaces.py` — `DatasetManifest` and the Protocols `PITAccessor`, `DataStore`,
@@ -358,9 +359,10 @@ battery needs positive prices; an order placed on a contract's last bar fills at
   lists exchange, clearing and other, and `fee_rows_as_of` returns no amount for them until the
   owner supplies a fee file (`load_owner_provided_csv`). The NFA rows start at 2026-07-01 (the bylaw
   states the current rate and its period, not earlier ones) and the assumed exchange
-  `participant_type` (`non_member_customer`) needs confirming against the firm's clearing agreement.
-  `fee_rows_as_of` prices one root, one participant type and the requested components: no fee is
-  carried across roots, products or participant types, and a row that covers several components is
+  `cme_membership_status` (`non_member`) needs confirming against the firm's clearing agreement.
+  `fee_rows_as_of` prices one root, one participant profile and the requested components: no fee is
+  carried across roots, products or classification values, and a row that covers several components
+  is
   charged once by the caller.
 Economic events (`econ_events.py`): every row is `available_at = event_time` because no page states
 when its own schedule entries were first published, so a point-in-time read hides an event until it

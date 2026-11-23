@@ -78,16 +78,28 @@
   economic-calendar dataset doc under `docs/data/`).
 - **`scenarios.py`**: `scenarios(ruleset) -> list[RulesetScenario]` (the primary plus one per
   conflict alternative, deterministic order) and `scenario(ruleset, id)`.
+- **`promotions.py`**: `resolve_promotions(ruleset, profile) -> (promoted, PromotionOutcome)` and
+  `promotion_reason`. A rule may carry `promotions` (a better value for a limited offer: a doubled
+  payout cap for an account bought during the offer), each naming the numeric `field` it replaces,
+  its `value` or `multiplier`, the offer window and the profile facts it `requires`. Resolution is
+  per RUN: a promotion applies only when every requirement is declared and matches and the
+  profile's `purchase_date` falls in `[starts_on, ends_on]` (`ends_on: unknown` never continues
+  past the ruleset's `as_of`); anything missing or `unknown` leaves the base value and is reported
+  (`promotion <id> not applied: <reason>`). A promoted value never changes the file's hash:
+  `simulate_attempt` builds its phases from the promoted copy and cites the original.
 - **`costs.py`**: the per-COMPONENT execution cost. `FeeRow {component, per_side_usd,
-  record_sha256}`, `ComponentFeeRow {root, fee_type, participant_type, covers, per_side_usd,
-  effective_from, effective_to}` (one row prices exactly its root, participant type and dates, and
-  a row that covers several components is charged once), `ComponentFeeTable {rows, source_sha256}`
-  (rows for one key may not overlap) and the `ComponentFeeSource` Protocol: `rows_for(root, when,
-  participant_type=..., components=[...])` returns only the components it can price — an absent
-  component is a reported gap and never a zero fee. `store_component_fees(store)` returns the
-  `StoreComponentFees` adapter over the stored `exchange_fees_v1` dataset, whose every read goes
-  through `crucible.data.exchange_fees.fee_rows_as_of` (per root, per participant type, per
-  component; an owner file that prices ES alone is usable).
+  record_sha256}`, `ComponentFeeRow {root, fee_type, classification_dimension,
+  classification_value, covers, per_side_usd, effective_from, effective_to, charge_name}` (one row
+  prices exactly its root, its own classification and its dates; a row that covers several
+  components is charged once; an `other` row carries its own `charge_name`),
+  `ComponentFeeTable {rows, source_sha256}` (rows for one key may not overlap) and the
+  `ComponentFeeSource` Protocol: `lookup(root, when, profile=..., components=[...]) ->
+  FeeLookup{priced, gaps}` returns only the components it can price — a component in neither map
+  was not asked for, and a component it cannot price is a reported gap with its reason, never a
+  zero fee. `store_component_fees(store)` returns the `StoreComponentFees` adapter over the stored
+  `exchange_fees_v1` dataset, whose every read goes through
+  `crucible.data.exchange_fees.fee_rows_as_of` (per root, per participant profile, per component;
+  an owner file that prices ES alone is usable).
   `CostPricing`/`ComponentCharge` are the result: one charge per component (`included`,
   `excluded_priced`, `excluded_unpriced`, `unknown`, `assumption`, and `known`/`unknown` for the
   commission), the charged USD, the gaps, and the cost status `complete | conditional |
@@ -156,9 +168,16 @@ and a result computed from one reports its `scenario_id`.
   Chicago days, which is why the 2023-11-24 session is caught: it opens on 2023-11-23), the estimate
   becomes `partial` with the reason `session calendar unsourced <first>..<last>`, and a warning says
   which rules are affected.
-- `practical_eligibility` is `blocked_by_compliance` when a critical compliance rule that bans the
-  exact `execution_mode` (`automated` or `manual`) applies, otherwise `eligible`. A mechanically
-  successful attempt under a compliance blocker is never reported as a practically valid pass.
+- `practical_eligibility` is `blocked_by_compliance` when a critical compliance rule with
+  `action: block` applies to the exact `execution_mode` (`automated` or `manual`); the block wins
+  over everything, because it says the account may not be traded that way at all. Otherwise, when
+  at least one `effect: condition` compliance rule applies, it is `eligible_conditional` and every
+  condition is listed (sorted, de-duplicated) in the result, `summary.json` and
+  `attempts.parquet`: a condition is an obligation the SIMULATION cannot prove (orders only through
+  the firm's API, only from the trader's own device, no HFT), so a mechanically successful attempt
+  under one is a CONDITIONALLY valid pass, never a practically valid one. With no blocker and no
+  condition it is `eligible`. `PracticalEligibility` (`status`, `conditions`, `blocker`) is what
+  `practical_eligibility(ruleset, execution_mode)` returns.
 
 ## The per-bar order (ADR-0106 section 3)
 
@@ -169,10 +188,10 @@ The simulator calls the overlay at fixed points of every bar:
 | 1 | `begin_bar` | the rule-day transition (the reset clock): the daily-loss reference resets, soft locks lift, the scaling plan takes the limit its last close chose, inactivity counts |
 | 2 | `begin_bar` (gap test) | equity at the bar's open with the position carried in; a threshold already crossed liquidates at the open |
 | 3 | `forced_flat` | the first bar reaching a `flat_by` instant (absolute or session-relative) or a news window that flattens liquidates at its open; no entry until the reopen time — for the session-relative form that reopen IS the session's scheduled close, so the block lasts from the flat instant to the close |
-| 4 | `admit` | the target the account allows: contract limit and scaling plan by contract weight (`clip` or `reject`), a lock, a closed account, the forced-flat window, an active news window |
+| 4 | `admit` | the target the account allows. Each rule that REFUSES the entry is recorded under its own id and reason first (`session_entry_block` for a session-close `flat_by` window, `news_entry_block` for a news window, `entry_blocked` for a lock), then the contract limit and scaling plan by contract weight (`clip` or `reject`) — a `resize` under the size rule only when the SIZE limit changed the size |
 | 5 | `favorable` | the bar's favourable extreme in equity terms (high for a long, low for a short) updates the high-water marks **first** |
 | 6 | `breach_prices` | each active threshold's breach price, merged with the touched lot stops, recomputed after every stop |
-| 7 | `breach_filled`, `fill` | the breach consequence (hard closes, soft locks), every fill for the day statistics and inactivity |
+| 7 | `breach_filled`, `fill` | the breach consequence (hard closes, soft locks); on every fill the day statistics and inactivity, AND each `evaluated: intraday` loss threshold tested against the POST-fill basis at the fill's own price, flat included: a crossing fails at that instant and a position still open is liquidated at that fill's price (ADR-0106, amendment of 2026-11-23) |
 | 8 | `end_bar` | the close mark; on the rule-day's last scheduled bar the EOD rules, an `activity_requirement` short of its qualifying days in a full rolling window (it closes the account **before** the pass conditions), the time limit, the daily profit cap, the payouts and the pass conditions. An EOD breach liquidates **at that close**; a pass with a position open flattens it **at that close** as `phase_flatten`. The time limit is tested **before** the pass conditions, so a firm's own limit ending the phase on the same close wins (the pessimistic direction). **Pass conditions are split by their declaration** (`crucible.prop.rules.pass_frequency`): an `evaluated: eod` target is tested ONLY here, on the closed trade date, and an `evaluated: intraday` one at every bar's close (its touch counts at the bar's favourable extreme) |
 | 9 | `finish` | the end of the data: an unresolved attempt whose data ends inside a rule-day is `censored` |
 
@@ -206,7 +225,7 @@ threshold: the fill pays the bar's open (or close) spread and slippage plus
 | `inactivity` | `max_gap`, `unit`, `rolling_window`, `action: fail` | a maximum gap between trading days |
 | `activity_requirement` | `days`, `window`, `unit: calendar_days\|trading_days`, `qualifies_if`, `observed`, `action: fail\|close_account` | at least N qualifying days in every rolling window of M days |
 | `news_restriction` | `event_types`, `instruments`, `pre_minutes`, `post_minutes`, `scope: new_entries\|holding\|all_trading`, `flatten: before_window\|none`, `effect: block\|contract_cap` (**required**, no default), `cap_contracts` (a contract WEIGHT, like `max_contracts.limit`, required when the effect is `contract_cap`), `action` | a scheduled-event trading window: block the entry or clip the size inside it |
-| `compliance` | `restriction`, `applies_to_execution: [automated\|manual]`, `materiality`, `action: block\|none` | practical eligibility, never the mechanical account |
+| `compliance` | `restriction`, `applies_to_execution: [automated\|manual]`, `materiality`, `action: block\|none`, `effect: condition` with a REQUIRED `condition` text | practical eligibility, never the mechanical account: `action: block` gates it, `effect: condition` lists an obligation the sim cannot prove |
 
 Every rule kind requires `comparison` and `action` (its state transition) explicitly, and none of
 `basis`/`hwm_basis`, the threshold, `evaluated`/`mode`/`observed`, `reset`, `comparison` or `action`
@@ -237,10 +256,10 @@ The ruleset's commissions replace the run's fee schedule (spread and slippage st
 run's cost schedule). Unknown costs are never treated as zero. `commissions.components` declares,
 for each of the four components (`exchange`, `clearing`, `nfa`, `other`), whether the firm's
 per-side commission contains it (`included`), excludes it (`excluded`: the amount is added from the
-`ComponentFeeSource` for the run's participant type) or does not say (`unknown`). All four keys are
-REQUIRED and there is no `all_in` shortcut: an `included` or `excluded` declaration needs a
-quotation that says so, and `commissions.evidence` records whether the commission figures themselves
-are `official_quote` or `owner_provided`. The old
+`ComponentFeeSource`, resolved through the run's participant profile) or does not say
+(`unknown`). All four keys are REQUIRED and there is no `all_in` shortcut: an `included` or
+`excluded` declaration needs a quotation that says so, and `commissions.evidence` records whether
+the commission figures themselves are `official_quote` or `owner_provided`. The old
 `commissions.includes_exchange_and_regulatory_fees` flag is REFUSED by name, with a message naming
 this block.
 
@@ -252,12 +271,44 @@ includes or the dataset already priced, an `unknown` component it prices is ADDE
 strategy), and the recorded SHA-256 names the file. Because it is a user's statement and not a firm
 value, the resulting estimate is `conditional`, never `exact`.
 
-The participant type a component is priced for is a REQUIRED run parameter as soon as a component
-is `excluded` (`--fee-participant-type`, MCP `fee_participant_type`): the ruleset never states one,
-and a member rate is not a customer rate. Using it makes the estimate `conditional` with the reason
-`participant type assumed: <x>`. The per-side amounts are resolved at the attempt's
-`start_trade_date`, and a fee change the table states inside the attempt's window is reported in
-`warnings` (one schedule per attempt, never a silent mid-window change).
+### The participant profile: classification resolved per component
+
+A fee row does not state a participant type. It states the ONE classification dimension it needs
+(`classification_dimension`) and the value it is written for (`classification_value`) — an exchange
+row `cme_membership_status = non_member`, the NFA row `nfa_assessment_eligibility = fcm_member`, a
+charge the source says is the same for everyone `none`/`all`. A run therefore declares a
+**participant profile**: an immutable, flat mapping from dimension name (an identifier matching
+`^[a-z][a-z0-9_]*$`, not a fixed enum) to value, in a YAML file
+(`crucible.data.exchange_fees.ParticipantProfile`, `load_participant_profile`,
+`--participant-profile FILE`, MCP `participant_profile` as an object):
+
+```yaml
+cme_membership_status: non_member
+nfa_assessment_eligibility: fcm_member
+```
+
+Resolution is PER COMPONENT, and it has no default:
+
+- a row whose dimension the profile does not declare, or declares `unknown`, makes that component a
+  gap whose reason is `classification <dim> not declared`;
+- a row whose stated value differs does not apply;
+- `none`/`all` rows apply to every participant and need no profile entry;
+- exactly one applicable row prices the component; two are refused as ambiguous; none is a gap.
+
+There is never a fallback to "the only row there is", and the former "an NFA row prices any
+participant" pass-through is gone. `other` is the one summing exception: two rows with different
+`charge_name`s on one date are two distinct charges and both are added.
+
+The profile is REQUIRED as soon as a component is `excluded`, and optional otherwise (recorded when
+given). Its canonical SHA-256 goes in `summary.json`, the sealed manifest and every
+`attempts.parquet` row (`participant_profile_sha256`), and it is part of the evaluation id, so two
+profiles are two artifacts. Using it makes the estimate `conditional` with the reason
+`participant profile declared by the run, not stated by the firm`: a profile is a run's declaration,
+never a firm's statement, so it never makes a cost `complete`.
+
+The per-side amounts are resolved at the attempt's `start_trade_date`, and a fee change the table
+states inside the attempt's window is reported in `warnings` (one schedule per attempt, never a
+silent mid-window change).
 
 `cash_estimate_status` is the label on the money: `exact`, `conditional` (a named cost assumption
 was used), `upper_bound` (a payout cap the sources do not state: the simulation pays what the
@@ -302,10 +353,11 @@ assertions of `tests/integration/test_futures_prop.py`.
   rule and by type in `warnings`), while every window the calendar does carry stays enforced.
 - `crucible.prop.costs.ComponentFeeSource` (Protocol) with `ComponentFeeTable`/`ComponentFeeRow`
   and `StoreComponentFees`: the per-root, per-side amounts of the components a commission charges
-  on top of itself. `simulate_attempt(fee_source=..., participant_type=...)` takes one;
-  `store_component_fees(store)` is the adapter over the stored `exchange_fees_v1` dataset
-  (imported lazily inside `costs.py`, so `crucible.prop` itself never needs the data layer to
-  import).
+  on top of itself. `simulate_attempt(fee_source=..., profile=...)` takes one;
+  `store_component_fees(store)` is the adapter over the stored `exchange_fees_v1` dataset.
+  `crucible.data.exchange_fees` owns the row contract itself: `ParticipantProfile`,
+  `load_participant_profile`, `FeeLookup`, `resolve_component_rows` (the one resolution rule, used
+  by both the stored table and an in-code `ComponentFeeTable`) and `fee_rows_as_of`.
 - `crucible.prop.costs.ComponentFeeSource`'s stored implementation takes the dataset NAME
   (`store_component_fees(store, dataset="exchange_fees_v1")`, `StoreComponentFees(dataset=None)`),
   so a consumer that pinned a version reads that version and the content hash it cites is the table
@@ -319,7 +371,9 @@ assertions of `tests/integration/test_futures_prop.py`.
 
 - A new rule kind is a new model in `rules_schema.py`, a new evaluator in `rules.py`, its branch in
   `build`, and a schema version. A firm rule that fits no kind goes into `not_modeled` with a
-  materiality.
+  materiality and, when an audit could change that materiality, a `becomes_immaterial_if` text: the
+  declared materiality stands until the audit shows the condition holds (on an immaterial entry the
+  same field states what would make it bind).
 - A different account type (a firm whose semantics differ structurally, not just numerically)
   implements `AccountOverlay` and is passed as `account=` to `simulate_futures`.
 - New firm rulesets are data, not code: add versioned YAML under a ruleset registry and point
@@ -329,10 +383,18 @@ assertions of `tests/integration/test_futures_prop.py`.
 
 - The contract limit is enforced at admission and on every candidate target; it is not re-checked
   as an invariant after a fill that must reduce exposure (a stop or a liquidation only reduces).
-- The per-side fee schedule is resolved once, at the attempt's `start_trade_date`, for one
-  participant type: a fee change inside a long attempt is reported in `warnings` but the start
+- The per-side fee schedule is resolved once, at the attempt's `start_trade_date`, against one
+  participant profile: a fee change inside a long attempt is reported in `warnings` but the start
   date's row is charged throughout (a per-date schedule would need the simulator to price each fill
-  on its own date), and a row of another participant type never prices it.
+  on its own date), and a row of another classification value never prices it.
+- The profile is a single run-level declaration, so an attempt cannot be priced as one class for
+  the exchange fee and another for the NFA assessment; a firm whose clearing chain splits the
+  classes would need a per-component profile (not built).
+- A promotion's `requires` are string comparisons on the profile: a fact the profile states in
+  another spelling (`yes` for `'true'`) does not match, so the base value stands and the reason is
+  recorded. That is the conservative direction, not a normalisation step.
+- A static threshold (`static_drawdown`) has no post-payout reset or lock: a file that wants one
+  has to express it as a locked `trailing_drawdown` (ADR-0107, amendment of 2026-11-23, section 3).
 - A row that covers several components is charged once, under the first component in report order:
   the amount is one cell the owner reported, and splitting it across the components it covers
   would be a number no source states.

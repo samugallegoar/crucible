@@ -603,7 +603,9 @@ for item in scenarios(ruleset):   # primary, then one sensitivity per conflict a
     )
     result.outcome          # pass | fail | timeout | censored (the mechanical account)
     result.mechanical_outcome, result.estimate_status   # what may be claimed, and why
-    result.practical_eligibility  # eligible | blocked_by_compliance | unknown
+    result.practical_eligibility  # eligible | eligible_conditional | blocked_by_compliance
+    result.practical_eligibility_conditions  # the obligations a condition leaves to the trader
+
     result.breached_rule    # which rule ended it, and when
     result.min_buffer_usd   # the smallest distance to a failure threshold, and where
     result.fees             # evaluation, activation, monthly (per started month) and reset
@@ -639,13 +641,32 @@ uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml    
   is shorter than the ruleset's own time limit, because the firm's limit could then never fire.
 - `--execution-mode automated|manual` is required and decides `practical_eligibility`: a firm that
   bans automated trading makes an automated strategy `blocked_by_compliance` even when the
-  mechanical account passes.
+  mechanical account passes, and a firm that allows it only under an obligation the simulation
+  cannot prove (through its API, from the trader's own device, no HFT) makes it
+  `eligible_conditional` with every condition listed.
 - `--payout-policy max_eligible|none` is the trader's choice, and `--scenarios primary|all` adds one
   sensitivity scenario per ruleset conflict.
-- `--fee-participant-type NAME` is the rate class (`non_member_customer`, `member`, …) the components
-  a commission EXCLUDES are priced for. It is required as soon as a component is `excluded`, because
-  the ruleset never states one and a member rate is not a customer rate; using it makes the cost
-  estimate `conditional`.
+- `--participant-profile FILE` is a flat YAML mapping from classification dimension to value that
+  states who the run's account is, e.g.
+
+  ```yaml
+  cme_membership_status: non_member
+  nfa_assessment_eligibility: fcm_member
+  ```
+
+  Each fee row names the ONE dimension it needs (`cme_membership_status` for the exchange and
+  clearing fees, `nfa_assessment_eligibility` for the NFA assessment), so the profile is what
+  resolves every component the firm charges on top of the commission, and it also decides the
+  PROMOTIONAL values a ruleset offers (a doubled payout cap for an account bought during an offer:
+  the profile carries dimensions such as `account_purchase: new`, `dll_selected_at_purchase: 'true'`
+  and `purchase_date: 2026-06-10`). A promotion that the profile cannot show is never applied, and
+  `summary.json` says why (`promotion <id> not applied: <reason>`). It is required as soon as a
+  component is declared `excluded`; a dimension the profile leaves out (or declares `unknown`) makes
+  that component a named gap, never a guess, and no fee is ever taken from a row whose value the
+  profile does not match. The profile's canonical SHA-256 is recorded in `summary.json`, the sealed
+  manifest and every `attempts.parquet` row, and it is part of the evaluation id, so two profiles are
+  two artifacts. Using it makes the cost estimate `conditional` (`participant profile declared by
+  the run, not stated by the firm`), never `complete`.
 - `--cost-assumption FILE` is a YAML file (not a bare name) that prices the cost gaps the sources
   leave. It is the user's own unverified statement, it prices only the root and components it lists,
   and it is recorded by SHA-256; the estimate becomes `conditional`, never complete:
@@ -660,9 +681,15 @@ uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml    
     ES:
       - covers: [exchange, clearing]
         per_side_usd: '0.77'    # SYNTHETIC value, this file is an example
+        unit: per_contract_per_side
       - covers: [nfa]
         per_side_usd: '0.02'
+        unit: per_contract_per_side
   ```
+
+  Every amount states `unit: per_contract_per_side` (a monthly or platform charge is refused: a
+  fixed charge belongs in the ruleset's fee schedule), and an amount covering `other` also gives a
+  `charge_name` — a specific one, since a generic name (`misc`, `CME other fees`) is refused.
 
   A component the file does not price stays a gap and the cash number stays `unavailable`. An
   `unknown` component it prices is ADDED (worse for the strategy), and it may not override a
@@ -676,7 +703,7 @@ Reading it, in order:
 2. **The probability and its name.** `p` is passes over COMPLETE starts (those whose H trade dates
    fit in the data). The field is `pass_probability` only when nothing qualifies it; otherwise it is
    `conditional_pass_probability` with `definitive: false` and every reason: unmodeled rules, an
-   unverified ruleset, a cost assumption, an unknown cost component, an assumed participant type, a
+   unverified ruleset, a cost assumption, an unknown cost component, a declared participant profile, a
    news-calendar gap, an unsourced session-calendar window, the counterfactual application of a
    current ruleset to pre-2025 data, or a compliance blocker. Read the reasons before the number.
    `summary.json`'s `cost_components` lists, per root, the status each component ended with and the
@@ -692,8 +719,10 @@ Reading it, in order:
 5. **The cash.** Mean net cash per attempt (payouts minus the ruleset's fees), labelled `exact`,
    `conditional`, `upper_bound` or `unavailable`. The commissions are inside the simulated equity;
    the fee columns are the ruleset's own fees.
-6. **The eligibility.** `eligible`, or `blocked_by_compliance` with `practically_valid_passes: 0`:
-   a mechanically successful attempt under a compliance blocker is never a practically valid pass.
+6. **The eligibility.** `eligible`, `eligible_conditional` (every condition is listed, and a
+   mechanical pass is a `conditionally_valid_passes`, never a `practically_valid_passes`), or
+   `blocked_by_compliance` with `practically_valid_passes: 0`: a mechanically successful attempt
+   under a compliance blocker is never a practically valid pass.
 
 The artifact is `<artifacts>/PRP-<16 hex>/` with `attempts.parquet` (one row per scenario and start),
 `summary.json`, the `ruleset.yaml` that was read and `manifest.json` with the seal. It is NOT a

@@ -63,7 +63,7 @@ and correlation, the ESTIMATE of the effective number of trials (average linkage
 `0.3/0.5/0.7/0.9`, the reasons when one pair has no valid correlation, and the null verdict. The
 defletion it supports (`dsr_effective_trials`) is supplementary: the primary `dsr` is unchanged.
 `crucible_futures_prop(config, ruleset, horizon, execution_mode, payout_policy="max_eligible",
-cost_assumption=None, fee_participant_type=None, scenarios="primary", news_dataset="econ_events_v2",
+cost_assumption=None, participant_profile=None, scenarios="primary", news_dataset="econ_events_v2",
 exchange_fees_dataset="exchange_fees_v1", store=None, home=None, artifacts=None,
 overwrite=False)` (C7b, ADR-0107) evaluates one firm's ruleset over a futures run's attempt
 sequence and returns `summary.json`: the per-scenario attempt classes (`pass`, `fail`, `timeout`,
@@ -74,7 +74,7 @@ bounds, `effective_independent_attempts`, the mean net cash per attempt, and the
 eligibility for `execution_mode` (a mechanically successful attempt under a compliance blocker is
 never a practically valid pass). `horizon` is in TRADING days and `execution_mode` is required.
 `cost_assumption` is the path of a cost-assumption YAML file (it prices the per-component cost gaps
-it names, keeps the estimate `conditional` and is recorded by SHA-256), and `fee_participant_type`
+it names, keeps the estimate `conditional` and is recorded by SHA-256), and `participant_profile`
 is the rate class the components a commission EXCLUDES are priced for — required as soon as one is
 `excluded`, because the ruleset never states one. It records no trial and states no verdict.
 All seven are thin `build_argv` + `run_cli` wrappers over

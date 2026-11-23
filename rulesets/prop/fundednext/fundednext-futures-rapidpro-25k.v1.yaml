@@ -297,6 +297,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: The profit target is quoted on closed-position P&L, but no page says when it is tested.
         The intraday default belongs to failure thresholds, where it makes enforcement stricter; for a
         pass condition the conservative reading is the end of the trade date on the closed balance, because
