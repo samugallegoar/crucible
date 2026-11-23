@@ -767,8 +767,90 @@ def _compliance_ruleset() -> PropRuleset:
 
 def test_a_critical_compliance_rule_blocks_an_automated_but_not_a_manual_strategy() -> None:
     ruleset = _compliance_ruleset()
-    assert practical_eligibility(ruleset, "automated") == "blocked_by_compliance"
-    assert practical_eligibility(ruleset, "manual") == "eligible"
+    automated = practical_eligibility(ruleset, "automated")
+    assert automated.status == "blocked_by_compliance"
+    assert automated.conditions == ()
+    assert automated.blocker == "no_bots"
+    manual = practical_eligibility(ruleset, "manual")
+    assert manual.status == "eligible"
+    assert manual.conditions == ()
+    assert manual.blocker is None
+
+
+def _conditional_ruleset(**overrides: object) -> PropRuleset:
+    """One ``effect: condition`` compliance rule (the base of the conditional-eligibility tests)."""
+    rule: dict[str, object] = {
+        "kind": "compliance",
+        "rule_id": "api_only",
+        "restriction": "automated_trading_through_the_api_only",
+        "applies_to_execution": ["automated"],
+        "materiality": "material",
+        "action": "none",
+        "effect": "condition",
+        "condition": "Order-transmitting activity must originate on the trader's own device",
+    }
+    rule.update(overrides)
+    return _ruleset([rule])
+
+
+def test_a_condition_makes_an_automated_strategy_eligible_conditional_and_lists_it() -> None:
+    """No blocker, one condition: ``eligible_conditional`` with the obligation spelled out.
+
+    The status is never ``blocked_by_compliance`` (the account may be traded this way) and never
+    plainly ``eligible`` (the simulation cannot prove the obligation). A ``manual`` run is not
+    subject to it, because the rule applies to ``automated`` only.
+    """
+    ruleset = _conditional_ruleset()
+    automated = practical_eligibility(ruleset, "automated")
+    assert automated.status == "eligible_conditional"
+    assert automated.conditions == (
+        "Order-transmitting activity must originate on the trader's own device",
+    )
+    assert automated.blocker is None
+    assert practical_eligibility(ruleset, "manual").status == "eligible"
+
+
+def test_conditions_are_listed_once_and_sorted() -> None:
+    """Two rules with the same obligation, and the list is still one sorted entry."""
+    shared = {
+        "kind": "compliance",
+        "restriction": "no_high_frequency_trading",
+        "applies_to_execution": ["automated"],
+        "materiality": "material",
+        "action": "none",
+        "effect": "condition",
+        "condition": "High-frequency trading is prohibited",
+    }
+    ruleset = _ruleset(
+        [
+            {**shared, "rule_id": "hft_one"},
+            {**shared, "rule_id": "hft_two"},
+            {
+                "kind": "compliance",
+                "rule_id": "api",
+                "restriction": "api_only",
+                "applies_to_execution": ["automated"],
+                "materiality": "material",
+                "action": "none",
+                "effect": "condition",
+                "condition": "Automated trading runs through the firm's API",
+            },
+        ]
+    )
+    assert practical_eligibility(ruleset, "automated").conditions == (
+        "Automated trading runs through the firm's API",
+        "High-frequency trading is prohibited",
+    )
+
+
+def test_a_condition_without_its_text_shape_is_refused() -> None:
+    """``effect: condition`` and the text go together, and a condition never blocks."""
+    with pytest.raises(ValueError, match="condition and the condition text go together"):
+        _conditional_ruleset(condition=None)
+    with pytest.raises(ValueError, match="condition and the condition text go together"):
+        _conditional_ruleset(effect=None)
+    with pytest.raises(ValueError, match="not a mechanical blocker"):
+        _conditional_ruleset(action="block")
 
 
 def test_estimate_status_unknown_commissions_unless_a_cost_assumption_is_named() -> None:

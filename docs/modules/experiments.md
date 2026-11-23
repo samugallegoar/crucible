@@ -631,7 +631,11 @@ of the same bars, targets, rolls and raw per-contract bars.
   cost, a news-calendar coverage gap, an unsourced session-calendar window, the counterfactual
   application of a current ruleset to pre-2025 data, and a compliance blocker.
   `practical_eligibility` is judged for the `execution_mode`: under `blocked_by_compliance`,
-  `mechanically_passes` is reported and `practically_valid_passes` is 0 with the reason.
+  `mechanically_passes` is reported and `practically_valid_passes` is 0 with the reason; under
+  `eligible_conditional` every condition the simulation cannot prove is listed (sorted) and the
+  mechanical passes are `conditionally_valid_passes`, never `practically_valid_passes`. The block
+  also carries `unmodeled_rules`: every declared `not_modeled` entry with its materiality and the
+  `becomes_immaterial_if` condition that could change it (the materiality itself never changes).
 - **Scenarios.** `scenarios="primary"` evaluates the selected ruleset only; `"all"` adds one full
   sensitivity scenario per conflict alternative (`crucible.prop.scenarios`), each a row per start
   and a scenario summary labelled `alternative_sensitivity` beside the primary's

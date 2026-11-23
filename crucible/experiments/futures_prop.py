@@ -178,7 +178,8 @@ STATISTICS: Final = ("pass_probability", "mean_net_cash_usd")
 """The two bootstrapped statistics: the pass rate and the mean net cash per attempt."""
 
 CashStatus = Literal["exact", "conditional", "upper_bound", "unavailable"]
-EligibilityStatus = Literal["eligible", "blocked_by_compliance", "unknown"]
+EligibilityStatus = Literal["eligible", "eligible_conditional", "blocked_by_compliance", "unknown"]
+"""``unknown`` is never produced by the ruleset: it is reserved for a caller that cannot judge."""
 
 _CASH_VALUES: dict[str, CashStatus] = {
     "exact": "exact",
@@ -187,6 +188,14 @@ _CASH_VALUES: dict[str, CashStatus] = {
     "unavailable": "unavailable",
 }
 _CASH_RANK: dict[str, int] = {name: rank for rank, name in enumerate(_CASH_VALUES)}
+
+_ELIGIBILITY_VALUES: dict[str, EligibilityStatus] = {
+    "eligible": "eligible",
+    "eligible_conditional": "eligible_conditional",
+    "blocked_by_compliance": "blocked_by_compliance",
+    "unknown": "unknown",
+}
+"""The only eligibility labels a summary may carry, so a new one cannot slip in unreported."""
 
 _ESTIMATE_RANK: dict[str, int] = {
     "complete": 0,
@@ -240,7 +249,8 @@ PROP_ATTEMPTS_SCHEMA: dict[str, pl.DataType] = {
     "coverage_gaps": pl.String(),  # the gaps themselves, joined by ';' ('' when none)
     "estimate_status": pl.String(),  # complete | conditional | partial | unavailable
     "estimate_reasons": pl.String(),  # why the estimate is not complete, joined by ';'
-    "practical_eligibility": pl.String(),  # eligible | blocked_by_compliance | unknown
+    "practical_eligibility": pl.String(),  # eligible | eligible_conditional | blocked | unknown
+    "practical_eligibility_conditions": pl.String(),  # what the trader must meet, ";"-joined
     "unverified_ruleset": pl.Boolean(),  # true when the ruleset has no matching verification
     "counterfactual_application": pl.Boolean(),  # data starts before the ruleset's effective_from
     "promotions_applied": pl.String(),  # promotions used, "<id>:<rule>:<field>=<v>", ";"-joined
@@ -335,13 +345,29 @@ class PropFunded(_Strict):
 
 
 class PropPracticalEligibility(_Strict):
-    """Practical eligibility for the exact execution mode, and the passes it allows."""
+    """Practical eligibility for the exact execution mode, and the passes it allows.
+
+    ``eligible_conditional`` means no critical blocker applies but at least one compliance
+    obligation the SIMULATION cannot prove does: ``conditions`` lists every one of them. A
+    mechanical pass under a condition is counted in ``conditionally_valid_passes`` and NEVER in
+    ``practically_valid_passes`` (ADR-0107 section 11, amended 2026-11-23).
+    """
 
     execution_mode: str
-    status: Literal["eligible", "blocked_by_compliance", "unknown"]
+    status: Literal["eligible", "eligible_conditional", "blocked_by_compliance", "unknown"]
+    conditions: list[str]
     mechanical_passes: int
     practically_valid_passes: int
+    conditionally_valid_passes: int
     reason: str | None
+
+
+class PropUnmodeledRule(_Strict):
+    """One declared unmodeled firm rule, its materiality and the fact that would change it."""
+
+    rule: str
+    materiality: str
+    becomes_immaterial_if: str | None
 
 
 class PropScenarioSummary(_Strict):
@@ -363,6 +389,7 @@ class PropScenarioSummary(_Strict):
     estimate_status: str
     estimate_reasons: list[str]
     practical_eligibility: PropPracticalEligibility
+    unmodeled_rules: list[PropUnmodeledRule]
     cost_components: list[PropCostComponents]
     warnings: list[str]
 
@@ -942,6 +969,36 @@ def _cost_components_document(
     return document
 
 
+def _eligibility_reason(
+    *,
+    ruleset: PropRuleset,
+    execution_mode: str,
+    status: EligibilityStatus,
+    conditions: tuple[str, ...],
+) -> str | None:
+    """Why the execution mode is not plainly eligible, in one sentence (ADR-0107 section 11).
+
+    ``blocked_by_compliance`` and ``eligible_conditional`` answer different questions: the first
+    says the account may not be traded this way at all, the second says it may, but only while the
+    trader keeps every listed obligation, which the simulation cannot prove.
+    """
+    if status == "blocked_by_compliance":
+        return (
+            f"{execution_mode} execution is blocked by a critical compliance rule of "
+            f"{ruleset.ruleset_id} v{ruleset.version}: a mechanically successful attempt under a "
+            "compliance blocker is never a practically valid pass (ADR-0107 section 11)"
+        )
+    if status == "eligible_conditional":
+        return (
+            f"{execution_mode} execution is eligible only under {len(conditions)} condition(s) "
+            f"the simulation cannot prove, listed in this block; a mechanical pass is a "
+            "conditionally valid pass, never a practically valid one, and meeting them is the "
+            "trader's responsibility, not something the ruleset's authorization guarantees "
+            "(ADR-0107 section 11)"
+        )
+    return None
+
+
 def _scenario_summary(
     scenario: RulesetScenario,
     classifications: Sequence[_Classified],
@@ -1026,14 +1083,9 @@ def _scenario_summary(
         1 for item in classifications if item.attempt.counterfactual_application
     )
     raw_eligibility = practical_eligibility(scenario.ruleset, execution_mode)
-    eligibility: EligibilityStatus = (
-        "blocked_by_compliance"
-        if raw_eligibility == "blocked_by_compliance"
-        else "eligible"
-        if raw_eligibility == "eligible"
-        else "unknown"
-    )
+    eligibility: EligibilityStatus = _ELIGIBILITY_VALUES.get(raw_eligibility.status, "unknown")
     blocked = eligibility == "blocked_by_compliance"
+    conditional = eligibility == "eligible_conditional"
     reasons = _probability_reasons(
         status=status,
         material_unmodeled=material,
@@ -1101,17 +1153,25 @@ def _scenario_summary(
         practical_eligibility=PropPracticalEligibility(
             execution_mode=execution_mode,
             status=eligibility,
+            conditions=list(raw_eligibility.conditions),
             mechanical_passes=passes_all,
-            practically_valid_passes=0 if blocked else passes_all,
-            reason=(
-                f"{execution_mode} execution is blocked by a critical compliance rule of "
-                f"{scenario.ruleset.ruleset_id} v{scenario.ruleset.version}: a mechanically "
-                "successful attempt under a compliance blocker is never a practically valid pass "
-                "(ADR-0107 section 11)"
-                if blocked
-                else None
+            practically_valid_passes=0 if (blocked or conditional) else passes_all,
+            conditionally_valid_passes=passes_all if conditional else 0,
+            reason=_eligibility_reason(
+                ruleset=scenario.ruleset,
+                execution_mode=execution_mode,
+                status=eligibility,
+                conditions=raw_eligibility.conditions,
             ),
         ),
+        unmodeled_rules=[
+            PropUnmodeledRule(
+                rule=entry.rule,
+                materiality=entry.materiality,
+                becomes_immaterial_if=entry.becomes_immaterial_if,
+            )
+            for entry in sorted(scenario.ruleset.not_modeled, key=lambda entry: entry.rule)
+        ],
         warnings=sorted(warnings),
     )
 
@@ -1169,6 +1229,7 @@ def _attempt_row(item: _Classified, horizon_trading_days: int) -> dict[str, obje
         "estimate_status": attempt.estimate_status,
         "estimate_reasons": ";".join(attempt.estimate_reasons),
         "practical_eligibility": attempt.practical_eligibility,
+        "practical_eligibility_conditions": ";".join(attempt.practical_eligibility_conditions),
         "unverified_ruleset": attempt.unverified_ruleset,
         "counterfactual_application": attempt.counterfactual_application,
         "promotions_applied": ";".join(attempt.promotions_applied),

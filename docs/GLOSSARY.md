@@ -517,9 +517,17 @@ declare `since_last_payout` count only rule-days after the previous withdrawal; 
 starts at the phase's start (ADR-0107 section 9).
 
 **Practical eligibility** — whether the exact plan may be traded by the exact execution mode:
-`eligible`, `blocked_by_compliance` (a critical compliance rule such as a ban on automated trading
-applies to this ruleset and this `execution_mode`) or `unknown`. A mechanically successful attempt
-under a blocker is never a practically valid pass (ADR-0107 section 11).
+`eligible`, `eligible_conditional` (no critical blocker, but at least one `effect: condition`
+compliance obligation the simulation cannot prove, e.g. orders only through the firm's API, each
+listed) or `blocked_by_compliance` (a critical compliance rule such as a ban on automated trading
+applies to this ruleset and this `execution_mode`). A mechanically successful attempt under a
+blocker is never a practically valid pass, and under a condition it is a `conditionally_valid_passes`
+(ADR-0107 section 11).
+
+**`becomes_immaterial_if`** — the audited fact that would change a `not_modeled` entry's materiality:
+on a `material` entry what would let it be read as immaterial, on an `immaterial` entry what would
+make it bind. It is a condition on the materiality, never a downgrade: the declared materiality
+stands until an audit establishes it (ADR-0107, amendment of 2026-11-23).
 
 **`unlimited` vs `unknown`** — `unlimited` is an explicit source value (a payout cap the firm
 states is uncapped); `unknown` is a value the sources do not give. In a rule it means the rule

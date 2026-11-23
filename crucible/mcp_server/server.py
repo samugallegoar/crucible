@@ -672,10 +672,12 @@ def build_server() -> MCPServer:
         reason. It is named `conditional_pass_probability` with `definitive: false` and every
         reason (unmodeled rules, an unverified ruleset, a cost assumption, a news or
         session-calendar coverage gap, the counterfactual application to pre-2025 data) whenever
-        anything qualifies it, and `practical_eligibility` is judged for `execution_mode`, so a
+        anything qualifies it, and `practical_eligibility` is judged for `execution_mode`: a
         mechanically successful attempt under a compliance blocker is never a practically valid
-        pass. `cost_assumption` is the path of a cost-assumption YAML file: it prices exactly the
-        per-component cost gaps it names, keeps the estimate conditional and is never a firm value.
+        pass, and one made under a condition the simulation cannot prove (`eligible_conditional`)
+        is a CONDITIONALLY valid pass, with every condition listed. `cost_assumption` is the path
+        of a cost-assumption YAML file: it prices exactly the per-component cost gaps it names,
+        keeps the estimate conditional and is never a firm value.
         `participant_profile` is a flat object mapping classification dimension to value, e.g.
         `{"cme_membership_status": "non_member", "nfa_assessment_eligibility": "fcm_member"}`. Each
         fee row states the one dimension it needs, so the profile is required as soon as a

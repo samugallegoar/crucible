@@ -2122,11 +2122,16 @@ def _prop_scenario_lines(entry: dict[str, object]) -> list[str]:
         f"  net cash:   {cash['mean_net_cash_usd'] or '-'} USD per attempt "
         f"({cash['status']}), interval {cash_interval['status']}",
         f"  eligible:   {eligibility['status']}, practically valid passes "
-        f"{eligibility['practically_valid_passes']}",
+        f"{eligibility['practically_valid_passes']}, conditionally valid passes "
+        f"{eligibility['conditionally_valid_passes']}",
         f"  estimate:   {entry['estimate_status']}",
     ]
     for reason in reasons:
         lines.append(f"    reason:   {reason}")
+    conditions = eligibility["conditions"]
+    assert isinstance(conditions, list)
+    for condition in conditions:
+        lines.append(f"    condition: {condition}")
     return lines
 
 

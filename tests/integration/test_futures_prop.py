@@ -455,6 +455,7 @@ def ruleset(
     commissions: Mapping[str, object] | None = None,
     fees: Sequence[Mapping[str, object]] = (),
     conflicts: Sequence[Mapping[str, object]] = (),
+    not_modeled: Sequence[Mapping[str, object]] = (),
     extra_rules: Sequence[Mapping[str, object]] = (),
     synthetic: bool = True,
     effective_from: str = "2024-01-01",
@@ -495,6 +496,7 @@ def ruleset(
             "reset": {"time": "17:00:00", "tz": "America/Chicago"},
             "commissions": commission_table,
             "conflicts": [dict(conflict) for conflict in conflicts],
+            "not_modeled": [{"source": source, **dict(entry)} for entry in not_modeled],
             "phases": [
                 {
                     "phase_id": "evaluation",
@@ -975,6 +977,156 @@ def test_a_mechanical_pass_under_a_compliance_blocker_is_never_a_practically_val
     assert eligible["counts"]["pass"] == 5
     assert eligible["practical_eligibility"]["status"] == "eligible"
     assert eligible["practical_eligibility"]["practically_valid_passes"] == 5
+
+
+CONDITION_API_ONLY: dict[str, object] = {
+    "kind": "compliance",
+    "rule_id": "orders_only_through_the_api",
+    "restriction": "Automated trading is permitted only through the firm's own API",
+    "applies_to_execution": ["automated"],
+    "materiality": "material",
+    "comparison": ">=",
+    "action": "none",
+    "effect": "condition",
+    "condition": "Order-transmitting activity must originate on the trader's personal device",
+}
+CONDITION_ORIGIN: dict[str, object] = {
+    "kind": "compliance",
+    "rule_id": "orders_from_the_own_device",
+    "restriction": "Order entry from a remote server is prohibited",
+    "applies_to_execution": ["automated"],
+    "materiality": "material",
+    "comparison": ">=",
+    "action": "none",
+    "effect": "condition",
+    "condition": "A VPS, VPN or remote server may not place, modify or cancel orders",
+}
+"""Two obligations the simulation cannot prove: the report must list them, never block."""
+
+UNMODELED_TWO_PERCENT: dict[str, object] = {
+    "rule": "two_percent_price_limit_restriction",
+    "description": "SYNTHETIC TEST VALUE: a band the engine does not carry",
+    "materiality": "material",
+    "becomes_immaterial_if": (
+        "an audit of the instruments and dates shows it never affected a trade"
+    ),
+}
+
+
+def test_a_condition_makes_the_passes_conditionally_valid_and_lists_every_condition(
+    store: Path, artifacts: Path
+) -> None:
+    """No blocker applies, two conditions do: five passes, none of them PRACTICALLY valid.
+
+    ``eligible_conditional`` is the honest label: the simulation cannot prove that orders come from
+    the trader's own device or through the API, so the mechanical successes are reported as
+    ``conditionally_valid_passes`` and ``practically_valid_passes`` is 0. The conditions are
+    de-duplicated and sorted, in the summary AND in ``attempts.parquet``, so a reader of either
+    artifact sees the same two obligations. The same ruleset under ``manual`` has no condition
+    (both rules apply to ``automated`` only) and keeps five practically valid passes.
+    """
+    ruleset_file = write_ruleset(
+        artifacts / "ruleset.yaml",
+        ruleset([DRAWDOWN, CONDITION_ORIGIN, CONDITION_API_ONLY], [TARGET]),
+    )
+    automated = run_prop_evaluation(
+        config(),
+        ruleset_path=ruleset_file,
+        horizon_trading_days=5,
+        execution_mode="automated",
+        store_root=store,
+        artifacts_root=artifacts / "automated",
+        overwrite=True,
+    )
+    summary = automated.summary["scenarios"][0]
+    eligibility = summary["practical_eligibility"]
+    assert summary["counts"]["pass"] == 5
+    assert eligibility["status"] == "eligible_conditional"
+    assert eligibility["conditions"] == [
+        "A VPS, VPN or remote server may not place, modify or cancel orders",
+        "Order-transmitting activity must originate on the trader's personal device",
+    ]
+    assert eligibility["mechanical_passes"] == 5
+    assert eligibility["practically_valid_passes"] == 0
+    assert eligibility["conditionally_valid_passes"] == 5
+    assert "conditionally valid pass" in eligibility["reason"]
+    frame = pl.read_parquet(automated.evaluation_dir / "attempts.parquet")
+    assert set(frame["practical_eligibility"].to_list()) == {"eligible_conditional"}
+    assert set(frame["practical_eligibility_conditions"].to_list()) == {
+        "A VPS, VPN or remote server may not place, modify or cancel orders;"
+        "Order-transmitting activity must originate on the trader's personal device"
+    }
+
+    manual = run_prop_evaluation(
+        config(),
+        ruleset_path=ruleset_file,
+        horizon_trading_days=5,
+        execution_mode="manual",
+        store_root=store,
+        artifacts_root=artifacts / "manual",
+        overwrite=True,
+    )
+    plain = manual.summary["scenarios"][0]["practical_eligibility"]
+    assert plain["status"] == "eligible"
+    assert plain["conditions"] == []
+    assert plain["practically_valid_passes"] == 5
+    assert plain["conditionally_valid_passes"] == 0
+
+
+def test_a_critical_compliance_blocker_beats_a_condition(store: Path, artifacts: Path) -> None:
+    """A block is not softened by an obligation: the status is blocked and no condition is listed.
+
+    The condition and the blocker both apply to ``automated``; the block wins because it says the
+    account may not be traded that way at all, which is a stronger statement than "you must also
+    meet this". The mechanical passes stay visible and both valid-pass counters are 0.
+    """
+    ruleset_file = write_ruleset(
+        artifacts / "ruleset.yaml",
+        ruleset([DRAWDOWN, BAN_AUTOMATION, CONDITION_API_ONLY], [TARGET]),
+    )
+    result = run_prop_evaluation(
+        config(),
+        ruleset_path=ruleset_file,
+        horizon_trading_days=5,
+        execution_mode="automated",
+        store_root=store,
+        artifacts_root=artifacts,
+        overwrite=True,
+    )
+    eligibility = result.summary["scenarios"][0]["practical_eligibility"]
+    assert eligibility["status"] == "blocked_by_compliance"
+    assert eligibility["conditions"] == []
+    assert eligibility["mechanical_passes"] == 5
+    assert eligibility["practically_valid_passes"] == 0
+    assert eligibility["conditionally_valid_passes"] == 0
+
+
+def test_an_unmodeled_rule_carries_its_condition_while_the_materiality_stays_material(
+    store: Path, artifacts: Path
+) -> None:
+    """``becomes_immaterial_if`` is reported verbatim, and the entry stays ``material``.
+
+    The fact that an audit COULD show the restriction never bit does not lower the materiality: it
+    is a condition somebody has to establish. So the ruleset's evaluation status still says
+    ``conditional_on_modeled_rules`` because of this entry, and the summary repeats both the
+    materiality and the condition.
+    """
+    result = evaluate(store, artifacts, not_modeled=[UNMODELED_TWO_PERCENT])
+    summary = result.summary["scenarios"][0]
+    assert summary["unmodeled_rules"] == [
+        {
+            "rule": "two_percent_price_limit_restriction",
+            "materiality": "material",
+            "becomes_immaterial_if": (
+                "an audit of the instruments and dates shows it never affected a trade"
+            ),
+        }
+    ]
+    assert summary["probability"]["evaluation_status"] == "conditional_on_modeled_rules"
+    assert any(
+        item.startswith("two_percent_price_limit_restriction is not modeled (material)")
+        for item in summary["warnings"]
+    )
 
 
 def test_the_attempt_fees_are_reported_by_kind_and_apart_from_the_trading_pnl(

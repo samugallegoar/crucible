@@ -163,9 +163,16 @@ and a result computed from one reports its `scenario_id`.
   Chicago days, which is why the 2023-11-24 session is caught: it opens on 2023-11-23), the estimate
   becomes `partial` with the reason `session calendar unsourced <first>..<last>`, and a warning says
   which rules are affected.
-- `practical_eligibility` is `blocked_by_compliance` when a critical compliance rule that bans the
-  exact `execution_mode` (`automated` or `manual`) applies, otherwise `eligible`. A mechanically
-  successful attempt under a compliance blocker is never reported as a practically valid pass.
+- `practical_eligibility` is `blocked_by_compliance` when a critical compliance rule with
+  `action: block` applies to the exact `execution_mode` (`automated` or `manual`); the block wins
+  over everything, because it says the account may not be traded that way at all. Otherwise, when
+  at least one `effect: condition` compliance rule applies, it is `eligible_conditional` and every
+  condition is listed (sorted, de-duplicated) in the result, `summary.json` and
+  `attempts.parquet`: a condition is an obligation the SIMULATION cannot prove (orders only through
+  the firm's API, only from the trader's own device, no HFT), so a mechanically successful attempt
+  under one is a CONDITIONALLY valid pass, never a practically valid one. With no blocker and no
+  condition it is `eligible`. `PracticalEligibility` (`status`, `conditions`, `blocker`) is what
+  `practical_eligibility(ruleset, execution_mode)` returns.
 
 ## The per-bar order (ADR-0106 section 3)
 
@@ -213,7 +220,7 @@ threshold: the fill pays the bar's open (or close) spread and slippage plus
 | `inactivity` | `max_gap`, `unit`, `rolling_window`, `action: fail` | a maximum gap between trading days |
 | `activity_requirement` | `days`, `window`, `unit: calendar_days\|trading_days`, `qualifies_if`, `observed`, `action: fail\|close_account` | at least N qualifying days in every rolling window of M days |
 | `news_restriction` | `event_types`, `instruments`, `pre_minutes`, `post_minutes`, `scope: new_entries\|holding\|all_trading`, `flatten: before_window\|none`, `effect: block\|contract_cap` (**required**, no default), `cap_contracts` (a contract WEIGHT, like `max_contracts.limit`, required when the effect is `contract_cap`), `action` | a scheduled-event trading window: block the entry or clip the size inside it |
-| `compliance` | `restriction`, `applies_to_execution: [automated\|manual]`, `materiality`, `action: block\|none` | practical eligibility, never the mechanical account |
+| `compliance` | `restriction`, `applies_to_execution: [automated\|manual]`, `materiality`, `action: block\|none`, `effect: condition` with a REQUIRED `condition` text | practical eligibility, never the mechanical account: `action: block` gates it, `effect: condition` lists an obligation the sim cannot prove |
 
 Every rule kind requires `comparison` and `action` (its state transition) explicitly, and none of
 `basis`/`hwm_basis`, the threshold, `evaluated`/`mode`/`observed`, `reset`, `comparison` or `action`
@@ -359,7 +366,9 @@ assertions of `tests/integration/test_futures_prop.py`.
 
 - A new rule kind is a new model in `rules_schema.py`, a new evaluator in `rules.py`, its branch in
   `build`, and a schema version. A firm rule that fits no kind goes into `not_modeled` with a
-  materiality.
+  materiality and, when an audit could change that materiality, a `becomes_immaterial_if` text: the
+  declared materiality stands until the audit shows the condition holds (on an immaterial entry the
+  same field states what would make it bind).
 - A different account type (a firm whose semantics differ structurally, not just numerically)
   implements `AccountOverlay` and is passed as `account=` to `simulate_futures`.
 - New firm rulesets are data, not code: add versioned YAML under a ruleset registry and point

@@ -603,7 +603,9 @@ for item in scenarios(ruleset):   # primary, then one sensitivity per conflict a
     )
     result.outcome          # pass | fail | timeout | censored (the mechanical account)
     result.mechanical_outcome, result.estimate_status   # what may be claimed, and why
-    result.practical_eligibility  # eligible | blocked_by_compliance | unknown
+    result.practical_eligibility  # eligible | eligible_conditional | blocked_by_compliance
+    result.practical_eligibility_conditions  # the obligations a condition leaves to the trader
+
     result.breached_rule    # which rule ended it, and when
     result.min_buffer_usd   # the smallest distance to a failure threshold, and where
     result.fees             # evaluation, activation, monthly (per started month) and reset
@@ -639,7 +641,9 @@ uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml    
   is shorter than the ruleset's own time limit, because the firm's limit could then never fire.
 - `--execution-mode automated|manual` is required and decides `practical_eligibility`: a firm that
   bans automated trading makes an automated strategy `blocked_by_compliance` even when the
-  mechanical account passes.
+  mechanical account passes, and a firm that allows it only under an obligation the simulation
+  cannot prove (through its API, from the trader's own device, no HFT) makes it
+  `eligible_conditional` with every condition listed.
 - `--payout-policy max_eligible|none` is the trader's choice, and `--scenarios primary|all` adds one
   sensitivity scenario per ruleset conflict.
 - `--participant-profile FILE` is a flat YAML mapping from classification dimension to value that
@@ -715,8 +719,10 @@ Reading it, in order:
 5. **The cash.** Mean net cash per attempt (payouts minus the ruleset's fees), labelled `exact`,
    `conditional`, `upper_bound` or `unavailable`. The commissions are inside the simulated equity;
    the fee columns are the ruleset's own fees.
-6. **The eligibility.** `eligible`, or `blocked_by_compliance` with `practically_valid_passes: 0`:
-   a mechanically successful attempt under a compliance blocker is never a practically valid pass.
+6. **The eligibility.** `eligible`, `eligible_conditional` (every condition is listed, and a
+   mechanical pass is a `conditionally_valid_passes`, never a `practically_valid_passes`), or
+   `blocked_by_compliance` with `practically_valid_passes: 0`: a mechanically successful attempt
+   under a compliance blocker is never a practically valid pass.
 
 The artifact is `<artifacts>/PRP-<16 hex>/` with `attempts.parquet` (one row per scenario and start),
 `summary.json`, the `ruleset.yaml` that was read and `manifest.json` with the seal. It is NOT a

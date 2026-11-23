@@ -205,6 +205,7 @@ class AttemptResult:
     estimate_status: str
     estimate_reasons: tuple[str, ...]
     practical_eligibility: str
+    practical_eligibility_conditions: tuple[str, ...]
     scenario_id: str
     commissions: CommissionApplication
     fees: FeeBreakdown
@@ -504,15 +505,53 @@ def cash_estimate(
     return ("conditional" if conditional else "exact"), tuple(reasons)
 
 
-def practical_eligibility(ruleset: PropRuleset, execution_mode: ExecutionMode) -> str:
-    """``eligible|blocked_by_compliance|unknown`` for the exact execution mode (ADR-0107 s11)."""
+@dataclass(frozen=True, slots=True)
+class PracticalEligibility:
+    """Whether the execution mode may trade the plan, and what the trader must still meet.
+
+    ``status`` is ``eligible``, ``eligible_conditional`` (no critical blocker, but at least one
+    ``effect: condition`` obligation the simulation cannot prove) or ``blocked_by_compliance`` (a
+    critical compliance rule with ``action: block`` applies). ``conditions`` lists every applicable
+    condition once, sorted; ``blocker`` names the rule that blocked, when one did.
+    """
+
+    status: str
+    conditions: tuple[str, ...]
+    blocker: str | None
+
+
+def practical_eligibility(
+    ruleset: PropRuleset, execution_mode: ExecutionMode
+) -> PracticalEligibility:
+    """``eligible|eligible_conditional|blocked_by_compliance`` for the execution mode (s11).
+
+    A critical compliance rule with ``action: block`` that applies to ``execution_mode`` wins over
+    everything: the account may not be traded that way at all. Otherwise every ``effect: condition``
+    rule that applies is an obligation the SIMULATION cannot prove, so the status is
+    ``eligible_conditional`` and the conditions are listed (sorted, de-duplicated) rather than
+    silently dropped: a mechanical pass under a condition is a CONDITIONAL valid pass, never a
+    practically valid one.
+    """
     rules = ruleset.compliance_rules()
-    if not rules:
-        return "eligible"
     relevant = [rule for rule in rules if execution_mode in rule.applies_to_execution]
-    if any(rule.materiality == "critical" and rule.action == "block" for rule in relevant):
-        return "blocked_by_compliance"
-    return "eligible"
+    blocker = next(
+        (rule for rule in relevant if rule.materiality == "critical" and rule.action == "block"),
+        None,
+    )
+    if blocker is not None:
+        return PracticalEligibility(
+            status="blocked_by_compliance",
+            conditions=(),
+            blocker=blocker.rule_id,
+        )
+    conditions = tuple(
+        sorted({str(rule.condition).strip() for rule in relevant if rule.effect == "condition"})
+    )
+    return PracticalEligibility(
+        status="eligible_conditional" if conditions else "eligible",
+        conditions=conditions,
+        blocker=None,
+    )
 
 
 def simulate_attempt(
@@ -799,6 +838,7 @@ def simulate_attempt(
         )
     payouts_usd = sum((record.net_usd for record in payouts), Decimal(0))
     passed = outcome == "pass"
+    practical = practical_eligibility(ruleset, execution_mode)
     fee_breakdown = _fees(
         ruleset,
         start_trade_date,
@@ -858,7 +898,8 @@ def simulate_attempt(
         mechanical_outcome=outcome,
         estimate_status=estimate,
         estimate_reasons=estimate_reasons,
-        practical_eligibility=practical_eligibility(ruleset, execution_mode),
+        practical_eligibility=practical.status,
+        practical_eligibility_conditions=practical.conditions,
         scenario_id=scenario_id,
         news_covered=news_covered,
         news_coverage_gaps=news_coverage_gaps,

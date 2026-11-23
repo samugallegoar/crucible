@@ -648,6 +648,59 @@ static threshold.**
   ``not_modeled`` entry), not as a static threshold. Implementing it would add a
   ``static_drawdown.lock`` vocabulary and its overlay handler; it is NOT implemented here.
 
+## Amendment (2026-11-23, owner-review round 2): conditions, and what would change a materiality
+
+Two vocabulary gaps the second pass over the Topstep packet left open (F13 and F21). Neither
+changes a rule VALUE of an existing declaration.
+
+**1. Practical eligibility gains `eligible_conditional`.**
+
+Section 11 knew two answers: the account may be traded this way (`eligible`) or a critical rule
+forbids it (`blocked_by_compliance`). A firm that allows automated trading only under obligations
+no simulation can see answers neither: Topstep permits it through its API in the Trading Combine and
+the XFA and forbids it in the Live Funded Account, prohibits high-frequency trading without stating
+a threshold, requires every order to originate on the trader's personal device, forbids VPS/VPN or
+remote-server order entry, and keeps the algorithm subject to every rule.
+
+So a `compliance` rule may declare ``effect: condition`` with a required ``condition`` text, and:
+
+- a critical rule with ``action: block`` that applies to the execution mode still wins:
+  ``blocked_by_compliance``, no conditions listed (a block is a stronger statement than "you must
+  also meet this");
+- otherwise, when at least one applicable ``condition`` exists, practical eligibility is
+  ``eligible_conditional`` and every condition is listed once, sorted, in
+  ``AttemptResult.practical_eligibility_conditions``, ``summary.json`` and
+  ``attempts.parquet``;
+- a mechanical pass under a condition is counted in ``conditionally_valid_passes`` and NEVER in
+  ``practically_valid_passes``: the simulation proved the account arithmetic, not the trader's
+  compliance;
+- ``effect: condition`` with ``action: block`` is refused (the two say opposite things about what
+  the rule does), and the effect and its text are required together.
+
+Authorization is not compliance: an API key, a subscription or an automated system is what the firm
+grants, never evidence that a strategy obeys a rule. ``practical_eligibility(ruleset,
+execution_mode)`` therefore returns a ``PracticalEligibility`` (``status``, ``conditions``,
+``blocker``) rather than a bare string.
+
+**2. An unmodeled entry states what would change its materiality.**
+
+A ``not_modeled`` entry may declare ``becomes_immaterial_if``: the audited fact that would let its
+materiality change. On a ``material`` entry it is the fact that could lower it ("an audit of the
+instruments and dates shows it never affected a trade"); on an ``immaterial`` entry the same field
+states what would make it bind ("becomes material if multiple accounts, copy trading or coordinated
+strategies are simulated").
+
+The declared materiality NEVER changes by itself: until an audit establishes the condition, the
+conservative reading stands and the entry keeps weakening the estimate. The field is a statement of
+what to check, not a self-service downgrade, and it is reported in ``rule_coverage``, in
+``summary.json`` (``unmodeled_rules``) and in the firm's ``RESEARCH.md``.
+
+**Mechanically**, the 201 unverified firm files were re-hashed in place (their dumps now carry the
+optional fields), so ``rulesets/prop/INDEX.json`` is regenerated; no version number disappears or is
+reused and no VERIFIED hash changes. ``attempts.parquet`` gains
+``practical_eligibility_conditions`` and ``summary.json`` gains the eligibility block's
+``conditions``/``conditionally_valid_passes`` plus ``unmodeled_rules``; both are additive.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

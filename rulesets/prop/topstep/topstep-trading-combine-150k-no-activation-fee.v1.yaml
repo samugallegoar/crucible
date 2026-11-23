@@ -1,9 +1,11 @@
 # Topstep / Trading Combine (No Activation Fee path, 150K) -> Express Funded Account (Standard payout path)
 # Schema version 2 from the sourced values in rulesets/prop/topstep/RESEARCH.md (raw
 # page snapshots + sha256 per attribution).
-# C7b round 2: the required commission fee flag, every lock trigger as a list (hwm,
-# and first_payout on a funded account), the news rule's effect and the per-window
-# micro contract cap, PPI and the FOMC press conference among the event types.
+# C7b round 4 (owner decisions of 2026-11-23, F10-F21): the automated-trading
+# conditions of the API Access article, the XFA scaling plan re-quoted to its own
+# page, the materialities and their conditions, the payout policy's $0.01 net-profit
+# gate, and (Labs drops) the drop's own 90-day lifespan, 30-day inactivity, 90/10
+# split and two separate payout minima.
 # verification.status is unverified: only the owner can confirm a ruleset.
 schema_version: 2
 ruleset_id: topstep-trading-combine-150k-no-activation-fee
@@ -45,19 +47,23 @@ commissions:
     exchange:
       status: included
       evidence: official_quote
-      text: 'NFA & Regulatory Fees $0.02 $0.02 Exchange Fee $2.76 $0.70 Commissions $1.00 $0.50 Total $3.78 $1.22'
+      text: NFA & Regulatory Fees $0.02 $0.02 Exchange Fee $2.76 $0.70 Commissions $1.00 $0.50 Total $3.78
+        $1.22
     clearing:
       status: unknown
       evidence: not_stated
-      text: 'the cost breakdown itemizes NFA & regulatory fees, the exchange fee and the commission only; no clearing fee is named'
+      text: the cost breakdown itemizes NFA & regulatory fees, the exchange fee and the commission only;
+        no clearing fee is named
     nfa:
       status: included
       evidence: official_quote
-      text: 'NFA & Regulatory Fees $0.02 $0.02 Exchange Fee $2.76 $0.70 Commissions $1.00 $0.50 Total $3.78 $1.22'
+      text: NFA & Regulatory Fees $0.02 $0.02 Exchange Fee $2.76 $0.70 Commissions $1.00 $0.50 Total $3.78
+        $1.22
     other:
       status: unknown
       evidence: not_stated
-      text: 'the breakdown names three components (NFA & regulatory fees, exchange fee, commission) and no other per-side charge'
+      text: the breakdown names three components (NFA & regulatory fees, exchange fee, commission) and
+        no other per-side charge
   per_side_usd:
     ES: '1.89'
     NQ: '1.89'
@@ -331,6 +337,152 @@ phases:
       section: What Is Prohibited Conduct?
       synthetic: false
     evidence: official_quote
+  - kind: compliance
+    rule_id: automated_trading_through_the_api
+    description: 'Topstep''s own answer permits custom automated strategies and bots through the TopstepX
+      / ProjectX API, subject to the standard platform rules and the HFT prohibition. The API needs a
+      ProjectX subscription linked to the TopstepX profile and an API key (the page walks through both),
+      which is a fact about the trader''s setup that no simulation can see. Authorization is not compliance:
+      an API key is what Topstep grants the trader, never evidence that the strategy obeys a rule.'
+    restriction: Automated trading is permitted through the TopstepX / ProjectX API in the Trading Combine
+      and the Express Funded Account
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: none
+    effect: condition
+    condition: The algorithm trades only through a linked TopstepX / ProjectX API subscription, in a Trading
+      Combine or an Express Funded Account
+    source:
+      url: https://help.topstep.com/en/articles/11187768-topstepx-api-access
+      snapshot_sha256: 876d2214d867d09136fa4dd6ff3abf97a91f575a582aa0afe5470f0c8dc3788e
+      retrieved_at: '2026-11-23T05:32:44Z'
+      quote: Custom automated strategies and bots are allowed via the TopstepX / ProjectX API, subject
+        to standard platform rules and our prohibition on highfrequency trading (HFT).
+      section: FAQ — Can I build and use my own custom trading bot with the TopstepX / ProjectX API?
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: no_api_trading_in_the_live_funded_account
+    description: 'The API gateway exists only for the simulated environment: a Live Funded Account may
+      not trade through it. This ruleset models a Combine and its XFA, so the restriction cannot bite
+      inside the simulation, but a trader who takes the same bot to a Live Funded Account would break
+      it, which is exactly the kind of obligation the report lists rather than assumes away.'
+    restriction: API trading is not available in the Live Funded Account
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: none
+    effect: condition
+    condition: The strategy is never pointed at a Live Funded Account, where the ProjectX API does not
+      exist
+    source:
+      url: https://help.topstep.com/en/articles/11187768-topstepx-api-access
+      snapshot_sha256: 876d2214d867d09136fa4dd6ff3abf97a91f575a582aa0afe5470f0c8dc3788e
+      retrieved_at: '2026-11-23T05:32:44Z'
+      quote: No, Live funded accounts are not allowed to trade through the ProjectX API. The API Gateway
+        is built for the simulated environment and isn't available on Live.
+      section: FAQ — Can I use the ProjectX API if I'm in a Live Funded Account?
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: high_frequency_trading_prohibited
+    description: 'Automated trading is allowed expressly ''subject to ... our prohibition on highfrequency
+      trading (HFT)'', and no Topstep page states a message rate, an order count or a latency bound that
+      would make HFT a testable number. It therefore stays a condition on the trader instead of an invented
+      threshold: nothing in the simulation measures it.'
+    restriction: High-frequency trading (HFT) is prohibited
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: none
+    effect: condition
+    condition: The strategy does not engage in high-frequency trading; the page states no numeric threshold,
+      so the boundary is Topstep's judgement and never a limit this file could test
+    source:
+      url: https://help.topstep.com/en/articles/11187768-topstepx-api-access
+      snapshot_sha256: 876d2214d867d09136fa4dd6ff3abf97a91f575a582aa0afe5470f0c8dc3788e
+      retrieved_at: '2026-11-23T05:32:44Z'
+      quote: Custom automated strategies and bots are allowed via the TopstepX / ProjectX API, subject
+        to standard platform rules and our prohibition on highfrequency trading (HFT).
+      section: FAQ — Can I build and use my own custom trading bot with the TopstepX / ProjectX API?
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: orders_originate_on_the_personal_device
+    description: 'The page states the origin rule outright: all trading activity must come from the trader''s
+      personal device. A bar-by-bar simulation has no way to see where an order was sent from, so this
+      is an obligation the trader meets, and the report says so instead of calling a mechanically passing
+      account practically valid.'
+    restriction: All trading activity must originate from the trader's personal device
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: none
+    effect: condition
+    condition: Every order is transmitted from the trader's own personal device, not from a hosted environment
+    source:
+      url: https://help.topstep.com/en/articles/11187768-topstepx-api-access
+      snapshot_sha256: 876d2214d867d09136fa4dd6ff3abf97a91f575a582aa0afe5470f0c8dc3788e
+      retrieved_at: '2026-11-23T05:32:44Z'
+      quote: All trading activity must originate from your personal device.
+      section: VPNs, VPS, and Remote Servers
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: no_order_entry_from_a_vps_vpn_or_remote_server
+    description: 'Topstep''s not-allowed column is explicit: placing, modifying, or cancelling orders
+      from a server, plus any automated trigger that can reach the order endpoints, and routing or relaying
+      orders on the trader''s behalf. Reading and recording is fine (''your server can watch and record,
+      but it cannot trade''), and running automation on a VPS ''can result in account suspension or removal
+      from the program''. An order simulation cannot see the network path, so the line is declared as
+      a condition.'
+    restriction: A VPS, a VPN or a remote server may not place, modify or cancel an order
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: none
+    effect: condition
+    condition: No VPS, VPN or remote server places, modifies or cancels an order; a private server may
+      only read, record and backtest
+    source:
+      url: https://help.topstep.com/en/articles/11187768-topstepx-api-access
+      snapshot_sha256: 876d2214d867d09136fa4dd6ff3abf97a91f575a582aa0afe5470f0c8dc3788e
+      retrieved_at: '2026-11-23T05:32:44Z'
+      quote: The use of VPS, VPNs, and remote servers is prohibited by Topstep's Terms of Use.
+      section: VPNs, VPS, and Remote Servers (allowed and not-allowed table)
+      synthetic: false
+    evidence: official_quote
+  - kind: compliance
+    rule_id: the_algorithm_remains_subject_to_every_rule
+    description: 'The page closes the loophole a bot might claim: a rule violation is treated the same
+      whether it comes from manual trading or third-party automation, and API orders are final with no
+      review or reversal. So the modeled rules bind an automated strategy too, and an API authorization
+      never certifies that the strategy complies.'
+    restriction: An algorithm remains subject to every trading rule and policy of the plan
+    applies_to_execution:
+    - automated
+    materiality: material
+    comparison: '>='
+    action: none
+    effect: condition
+    condition: The algorithm stays subject to every trading rule and policy of the plan, exactly as manual
+      trading is
+    source:
+      url: https://help.topstep.com/en/articles/11187768-topstepx-api-access
+      snapshot_sha256: 876d2214d867d09136fa4dd6ff3abf97a91f575a582aa0afe5470f0c8dc3788e
+      retrieved_at: '2026-11-23T05:32:44Z'
+      quote: All trading activity remains subject to Topstep's Trading Guidelines regardless of which
+        platform executes the trades. A rule violation is treated the same whether it originates from
+        manual trading or third-party automation.
+      section: Important Disclaimers
+      synthetic: false
+    evidence: official_quote
   pass_conditions:
   - kind: profit_target
     rule_id: profit_target
@@ -462,7 +614,10 @@ phases:
     rule_id: payout_standard
     description: 'Standard payout path: five winning days of at least $150 net P&L each, not necessarily
       consecutive and counted since the last payout, a $5000 per-request cap, at most 50% of the account
-      balance, a $125 minimum and a 90/10 split.'
+      balance, a $125 minimum and a 90/10 split. The current payout policy adds a gate this file declares:
+      "Positive net profit since your last Payout. You must have earned at least $0.01 since your last
+      Payout. Your first Payout is exempt.", so min_profit_since_last_usd is 0.01; the first payout is
+      exempt because the balance requirement already implies a profit.'
     min_days_since_last: 0
     min_profitable_days: 5
     min_traded_days: 0
@@ -482,9 +637,11 @@ phases:
       snapshot_sha256: 22aa745f92b0aa44947e8f0521ad7b7a55bdb7a2175c525e78fc5b2e9d0ad1f6
       retrieved_at: '2026-11-22T01:36:32Z'
       quote: $150K $5,000 $6,000
-      section: 'Payout caps table (this account size: current cap, cap with a DLL)'
+      section: 'Payout caps table (this account size: current cap, cap with a DLL) (and the path block
+        for the $0.01 net-profit gate)'
       synthetic: false
     evidence: official_quote
+    min_profit_since_last_usd: '0.01'
   - kind: flat_by
     rule_id: flat_by_1510_ct
     description: 'Day-trading program: every position must be closed by 3:10 PM CT, five days a week,
@@ -585,13 +742,13 @@ phases:
     evidence: official_quote
   - kind: inactivity
     rule_id: xfa_inactivity
-    description: 'An Express Funded Account with no trading activity for more than 30 calendar days
-      may be closed: the page says the account "may be closed", never that it is closed
-      automatically. Modelled as a hard fail at the start of the 31st calendar day after the last
-      trade date, i.e. once 30 full days have elapsed, which is the rule-day transition (17:00
-      America/Chicago) the overlay counts inactivity on: the account cannot be counted as surviving
-      a month of silence. The reading is pessimistic and provisional over a soft statement, never a
-      description of a guaranteed automatic close (owner decision 2026-11-23).'
+    description: 'An Express Funded Account with no trading activity for more than 30 calendar days may
+      be closed: the page says the account "may be closed", never that it is closed automatically. Modelled
+      as a hard fail at the start of the 31st calendar day after the last trade date, i.e. once 30 full
+      days have elapsed, which is the rule-day transition (17:00 America/Chicago) the overlay counts inactivity
+      on: the account cannot be counted as surviving a month of silence. The reading is pessimistic and
+      provisional over a soft statement, never a description of a guaranteed automatic close (owner decision
+      2026-11-23).'
     max_gap: 30
     unit: calendar_days
     rolling_window: true
@@ -609,34 +766,41 @@ phases:
     assumption:
       name: xfa_inactivity_may_be_closed_on_day_31
       assumption_kind: provisional_conservative
-      rationale: 'The page says the account may be closed after 30 days without trading: a soft
-        statement, not a guaranteed automatic close. The pessimistic reading, kept provisional,
-        closes the account at the start of the 31st calendar day after the last trade date (30 full
-        days of silence), the rule-day transition the overlay counts inactivity on. Owner decision
-        of 2026-11-23: keep this reading as provisional_conservative.'
+      rationale: 'The page says the account may be closed after 30 days without trading: a soft statement,
+        not a guaranteed automatic close. The pessimistic reading, kept provisional, closes the account
+        at the start of the 31st calendar day after the last trade date (30 full days of silence), the
+        rule-day transition the overlay counts inactivity on. Owner decision of 2026-11-23: keep this
+        reading as provisional_conservative.'
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null
   fees: []
 not_modeled:
 - rule: xfa_scaling_plan_ladder
-  description: Material. The Express Funded Account's maximum position size follows a Scaling Plan ladder
-    of balance -> max contracts. The ladder is published only as images, so no contract number for a funded
-    account can be quoted from the saved bytes. The funded phase therefore declares no contract limit,
-    which overstates the size a real XFA may hold and gives a funded account credit the firm's Scaling
-    Plan would cap.
+  description: 'Material. The Express Funded Account''s maximum position size follows the Scaling Plan:
+    ''The Scaling Plan is an Express Funded Account® (XFA) objective. It sets your Maximum Position Size
+    — the max contracts you can hold at one time — based on your current account balance'', and the max
+    contracts ''do not increase mid-session''. The ladder itself is published only as an image, saved
+    at prop_snapshots/topstep/20261123_hc_scaling-plan-xfa-charts.png (sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd),
+    so this file quotes no contract number from it and the funded phase''s own contract limit is NOT declared:
+    the omission is this declared gap, never a firm rule, and the Trading Combine''s maximum is never
+    substituted for it. A funded account therefore gets credit the plan would cap, which overstates the
+    size it may hold.'
   materiality: material
   source:
     url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
     snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
     retrieved_at: '2026-11-22T01:36:34Z'
-    quote: As your balance grows, so does your buying power
-    section: How It Works
+    quote: The Scaling Plan is an Express Funded Account® (XFA) objective. It sets your Maximum Position
+      Size — the max contracts you can hold at one time — based on your current account balance.
+    section: Overview (the plan is an XFA objective and sets the maximum position size by balance); the
+      ladder itself is the saved image 20261123_hc_scaling-plan-xfa-charts.png (sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd)
     synthetic: false
 - rule: news_full_position_size_prohibited
-  description: Material. Purposefully trading the full Maximum Position Size directly into a scheduled
-    major news event is prohibited. It is a discretionary judgement with no numeric threshold, so no rule
-    can decide it; the simulator will happily trade the window with full size.
+  description: 'Material and discretionary. ''Purposefully trading your full Maximum Position Size directly
+    into a scheduled major news event.'' is a judgement with no numeric threshold: no window, size or
+    event list makes it decidable, and inventing one would be inventing a firm rule. The simulator will
+    happily trade a news window at full size, so the entry stays material.'
   materiality: material
   source:
     url: https://help.topstep.com/en/articles/10305426-prohibited-trading-strategies-at-topstep
@@ -646,9 +810,13 @@ not_modeled:
     section: Prohibited Trading Strategies
     synthetic: false
 - rule: sub_minute_holding_and_micro_scalping
-  description: Material. Topstep treats hundreds of trades a day with average durations measured in seconds
-    as systematic SIM abuse. The simulator works on one-minute bars, so it cannot see intra-bar holding
-    time and cannot fail an account for holding seconds.
+  description: 'Material for a one-minute bar. The published prohibition is on ALGORITHMIC scalping that
+    exploits unrealistic simulator fills (''Running scalping algorithms designed to exploit unrealistic
+    SIM fills''), and the page describes the behavior as ''intentional and systematic — usually hundreds
+    or thousands of trades per day, with average durations measured in seconds, not minutes''. The seconds
+    are an ILLUSTRATION of that pattern, not a universal threshold: a hold shorter than 60 seconds is
+    not by itself a violation, and this file never fails an account for one. What no engine can see on
+    one-minute bars is the intra-bar holding time and the trade cadence the judgement rests on.'
   materiality: material
   source:
     url: https://help.topstep.com/en/articles/10305426-prohibited-trading-strategies-at-topstep
@@ -658,9 +826,11 @@ not_modeled:
     section: The Do's and Don'ts of SIM Fills
     synthetic: false
 - rule: cross_account_hedging
-  description: Immaterial for one simulated account. Holding opposite positions across multiple accounts
-    simultaneously is prohibited; a single account cannot hedge itself, so the rule constrains how many
-    accounts a person runs, not how one account trades.
+  description: 'Immaterial for ONE isolated simulated account. ''Cross-account hedging (single-user) —
+    holding opposite positions across multiple accounts simultaneously'' is a rule about how many accounts
+    a person runs; a single account cannot hedge itself. The condition on the materiality is declared
+    rather than assumed: it becomes material when more than one account, copy trading or coordinated strategies
+    are simulated.'
   materiality: immaterial
   source:
     url: https://help.topstep.com/en/articles/10296582-prohibited-conduct
@@ -669,12 +839,15 @@ not_modeled:
     quote: Cross-account hedging (single-user) — holding opposite positions across multiple accounts simultaneously
     section: What Is Prohibited Conduct?
     synthetic: false
+  becomes_immaterial_if: becomes material if multiple accounts, copy trading or coordinated strategies
+    are simulated
 - rule: two_percent_price_limit_restriction
-  description: Immaterial for this instrument set. Holding a position within 2% of a product's price lock
-    limit is prohibited. The engine carries no CME price-limit band, and the equity index products' limit
-    bands sit far outside any one-minute bar the simulator sees, so the restriction cannot bind on this
-    data.
-  materiality: immaterial
+  description: Material. 'Holding a position within 2% of a product' of its price-limit band is prohibited.
+    The engine carries no CME price-limit band and no per-product limit schedule, so no rule can test
+    it; the prohibition is hard and discretionary, and a run that silently ignored it would claim more
+    than it can show. It stays material until an audit of the instruments and dates shows it never affected
+    a trade.
+  materiality: material
   source:
     url: https://help.topstep.com/en/articles/10296582-prohibited-conduct
     snapshot_sha256: e40fa8e3c14e7137540bbe0eb2ae384d1bbb9c0410bf72ed8bac2f2edf0b15c7
@@ -682,15 +855,23 @@ not_modeled:
     quote: Holding a position within 2% of a product
     section: What Is Prohibited Conduct?
     synthetic: false
+  becomes_immaterial_if: an audit of the instruments and dates shows it never affected a trade
 - rule: volatility_position_limit_tightening
-  description: Immaterial for this instrument set. Topstep may temporarily tighten position limits during
-    extreme volatility, but the published restrictions cover energies, metals and Micro Bitcoin only;
-    ES, NQ, YM, RTY, NKD and their micros are not restricted.
-  materiality: immaterial
+  description: Material. During extreme volatility Topstep 'may temporarily tighten position limits on
+    affected products', its adjustments being 'Micro Contract Limits' and 'Mini Contract Restrictions'
+    ('Trading on mini-sized contracts or larger may be temporarily halted for affected products'). No
+    rule in the file could follow a limit the firm changes by announcement, and the published 'Current
+    Restrictions' table lists energies (RB, HO, CL, MCL, QM), metals (GC, MGC, SI, SIL, HG, MHG, PL) and
+    Micro Bitcoin (MBT) only — none of the nine equity-index roots this ruleset carries—so the tightening
+    cannot bind on the evaluated instrument set as published, and an audit of the evaluated dates and
+    sizes is what would make this entry immaterial.
+  materiality: material
   source:
     url: https://help.topstep.com/en/articles/13613539-risk-adjustments-high-risk-high-volatility
     snapshot_sha256: 8b56d11af75c1e8cc26ba265357ce5ff9d085b6c163ef5985c65c2314a10b2fc
     retrieved_at: '2026-11-22T01:37:25Z'
-    quote: During extreme volatility, we may temporarily tighten position limits on affected products.
-    section: Position Limit Adjustments
+    quote: Trading on mini-sized contracts or larger may be temporarily halted for affected products
+    section: How Position Limits Are Adjusted (Micro Contract Limits / Mini Contract Restrictions); the
+      'Current Restrictions' table lists energies, metals and Micro Bitcoin only
     synthetic: false
+  becomes_immaterial_if: shown not to affect the evaluated universe, dates and sizes

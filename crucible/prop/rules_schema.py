@@ -37,7 +37,18 @@ declaration (ADR-0107 sections 7-13):
 - ``commissions.components``: REQUIRED, with all four keys (``exchange``, ``clearing``, ``nfa``,
   ``other``), each ``{status: included|excluded|unknown, evidence, text}``. A component declared
   ``included`` or ``excluded`` needs a quotation that says so; ``unknown`` is never a zero cost.
+- ``commissions.components``: REQUIRED, with all four keys (``exchange``, ``clearing``, ``nfa``,
+  ``other``), each ``{status: included|excluded|unknown, evidence, text}``. A component declared
+  ``included`` or ``excluded`` needs a quotation that says so; ``unknown`` is never a zero cost.
   The old ``includes_exchange_and_regulatory_fees`` flag is refused by name.
+
+The owner-review round 2 adds, additively (ADR-0107, amendment of 2026-11-23):
+
+- ``compliance.effect: condition`` with a REQUIRED ``condition`` text: an obligation the simulation
+  cannot prove and the trader must meet. Practical eligibility becomes ``eligible_conditional`` and
+  every condition is listed; a mechanical pass is then a CONDITIONAL valid pass.
+- ``not_modeled.becomes_immaterial_if``: the audited fact that would change an entry's materiality.
+  The declared materiality is unchanged by it.
 """
 
 from __future__ import annotations
@@ -195,12 +206,34 @@ class Instrument(_Frozen):
 
 
 class NotModeled(_Frozen):
-    """A firm rule the vocabulary cannot express. Declared, never silently dropped."""
+    """A firm rule the vocabulary cannot express. Declared, never silently dropped.
+
+    ``becomes_immaterial_if`` names the audited fact that would change the entry's materiality: on a
+    ``material`` (or ``critical``) entry the fact that would let it be read as immaterial, on an
+    ``immaterial`` entry the fact that would make it bind. It is a CONDITION, never a downgrade: the
+    declared ``materiality`` stays exactly as written until an audit shows the condition holds, so a
+    ``material`` entry keeps weakening the estimate (ADR-0107, amendment of 2026-11-23).
+    """
 
     rule: str
     description: str
     materiality: Materiality
     source: Attribution
+    becomes_immaterial_if: str | None = None
+
+    @field_validator("becomes_immaterial_if")
+    @classmethod
+    def _condition(cls, value: str | None) -> str | None:
+        """A condition is text a reviewer can check, never an empty marker."""
+        if value is None:
+            return None
+        if not value.strip():
+            msg = (
+                "not_modeled.becomes_immaterial_if is empty: either name the audited fact that "
+                "would change the materiality, or omit the field"
+            )
+            raise ValueError(msg)
+        return value
 
 
 class CostComponentDeclaration(_Frozen):
@@ -1008,7 +1041,15 @@ class ActivityRequirementRule(_Rule):
 
 
 class ComplianceRule(_Rule):
-    """A conduct restriction that gates practical eligibility, not the mechanical account."""
+    """A conduct restriction that gates practical eligibility, not the mechanical account.
+
+    ``effect`` says HOW the restriction limits eligibility: ``block`` is the mechanical reading (a
+    rule the run cannot satisfy at all), while ``condition`` is an obligation the SIMULATION cannot
+    prove and the trader must meet (automated trading only through the firm's API, orders placed
+    from the trader's own device, no VPS/VPN order entry, high-frequency trading prohibited). A
+    ``condition`` rule carries the ``condition`` text, which is listed verbatim in the report, and
+    it never blocks: the ruleset's practical eligibility becomes ``eligible_conditional``.
+    """
 
     kind: Literal["compliance"] = "compliance"
     restriction: str
@@ -1016,6 +1057,8 @@ class ComplianceRule(_Rule):
     materiality: Materiality
     comparison: Comparison
     action: Literal["block", "none"]
+    effect: Literal["condition"] | None = None
+    condition: str | None = None
 
     @model_validator(mode="after")
     def _text(self) -> ComplianceRule:
@@ -1024,6 +1067,28 @@ class ComplianceRule(_Rule):
             raise ValueError(msg)
         if not self.applies_to_execution:
             msg = f"compliance {self.rule_id} needs at least one execution mode"
+            raise ValueError(msg)
+        if self.restriction.strip() == str(self.condition or "").strip():
+            msg = (
+                f"compliance {self.rule_id}: condition repeats restriction; the condition is the "
+                "obligation the trader must meet, in words the report can list"
+            )
+            raise ValueError(msg)
+        if (self.effect == "condition") != (self.condition is not None):
+            msg = (
+                f"compliance {self.rule_id}: effect: condition and the condition text go "
+                "together: a condition nobody states is not a condition, and a text without the "
+                "effect is not a declaration"
+            )
+            raise ValueError(msg)
+        if self.condition is not None and not self.condition.strip():
+            msg = f"compliance {self.rule_id}: the condition text is empty"
+            raise ValueError(msg)
+        if self.effect == "condition" and self.action == "block":
+            msg = (
+                f"compliance {self.rule_id}: a rule with effect: condition is an obligation the "
+                "simulation cannot prove, not a mechanical blocker; declare action: none"
+            )
             raise ValueError(msg)
         return self
 
