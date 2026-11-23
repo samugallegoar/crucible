@@ -18,6 +18,7 @@ You are working on **Crucible**, a quant backtesting engine designed to be drive
 
 - Python ≥ 3.12, `uv` for everything. Never `pip install` directly.
 - `uv sync` — install. `uv run pytest` — tests. `uv run ruff check . && uv run ruff format crucible tests examples tools` — lint/format. `uv run mypy --strict crucible examples tools` — types.
+- `uv run python -m tools.check_shards` — prove that the CI shards add up to the suite (ADR-0109); CI runs it in the `shard-union` job, on the artifacts the shard jobs upload, and it fails the PR on a gap or a duplicate.
 - `uv run python -m tools.lint_imports` — the layering rule (`docs/ARCHITECTURE.md`, "Layering rule"). `uv run python -m tools.docgen --write` — regenerate the generated docs (`docs/INVENTORY.md`, `docs/SCHEMAS.md`, `docs/adr/README.md`); `--check` fails if they are stale.
 - Format only `crucible tests examples tools`; formatting the repository root rewrites the Markdown code blocks under `docs/` and corrupts them.
 - `uv run crucible --help` — CLI.
@@ -153,6 +154,7 @@ uv run mypy --strict crucible examples tools
 uv run ruff check . && uv run ruff format --check crucible tests examples tools
 uv run python -m tools.lint_imports   # layering rule
 uv run python -m tools.docgen --check   # generated docs are current (--write to fix)
+uv run python -m tools.check_shards      # the CI shards add up to the suite (ADR-0109)
 ```
 
 - **Where things are:** what exists in `docs/INVENTORY.md` and `docs/EXTENSION_POINTS.md`; where a change belongs in `docs/WHERE_THINGS_GO.md`; module contracts in `docs/modules/<module>.md`; decisions in `docs/adr/` (index in `docs/adr/README.md`); invariants in `docs/INVARIANTS.md` ↔ `crucible/core/invariants.py`; call order in `docs/TIMING.md`; units and errors in `docs/CONVENTIONS.md`; column-level formats in `docs/SCHEMAS.md`; how to run and read a result in `docs/USAGE.md`; what may change and how to record it in `docs/COMPATIBILITY.md`; vocabulary in `docs/GLOSSARY.md`.

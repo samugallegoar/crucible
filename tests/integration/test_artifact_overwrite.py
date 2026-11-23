@@ -73,9 +73,22 @@ def test_the_code_fingerprint_changes_with_an_uncommitted_edit(
     checkout = tmp_path / "checkout"
     _checkout(checkout)
     monkeypatch.setattr(runner, "_resolution_root", lambda: checkout)
+    # the harness pins the fingerprint for a session (ADR-0109); this test is about the
+    # computation, so it takes the pin away and gets the real, uncached behaviour
+    monkeypatch.delenv(runner.CODE_FINGERPRINT_ENV, raising=False)
     before = _code_fingerprint()
     (checkout / "module.py").write_text("VALUE = 2\n", encoding="utf-8")
     assert _code_fingerprint() != before
+
+
+def test_the_harness_pin_replaces_the_git_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pin is read only from the environment the test harness sets (ADR-0109): three git
+    subprocesses per backtest, ~150 backtests a session, and production sees none of it."""
+    monkeypatch.setenv(runner.CODE_FINGERPRINT_ENV, "pinned-value")
+    monkeypatch.setattr(
+        runner, "_compute_code_fingerprint", lambda: pytest.fail("the pin must not run git")
+    )
+    assert _code_fingerprint() == "pinned-value"
 
 
 def _write_manifest(root: Path, exp_id: str, **fields: object) -> Path:

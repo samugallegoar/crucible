@@ -269,6 +269,42 @@ The CI job (`.github/workflows/ci.yml`) runs `ruff`, `mypy --strict`, the layeri
 generator's `--check` and the full `pytest -q`, all from a locked install. Set `CI=true` locally to
 reproduce its derandomized hypothesis profile.
 
+## Sharding in CI, and the check that the shards add up (ADR-0109)
+
+CI does not run one suite per OS any more: it runs `pytest-split` shards of it. One job per
+`--splits N --group i` per OS (6 on ubuntu and macOS, 8 on Windows), each job on its own runner and
+still on `-n auto --dist loadscope` inside (ADR-0075). The shards are a distribution of the suite,
+never a selection of it, and two things enforce that on every PR:
+
+- `tests/unit/test_ci_shard_plan.py` — the matrix in `.github/workflows/ci.yml` and `SHARD_PLAN` in
+  `tools/check_shards.py` are the same plan, every group 1..N runs exactly once, both commands of a
+  shard carry the same `--splits/--group`, xdist and the `single_os` cut (ADR-0076).
+- the `shard-union` job (`uv run python -m tools.check_shards --from-artifacts <dir>`) — each shard
+  job uploads what it collected (`shard-ids.txt`) and what it ran (`junit.xml`); the job demands
+  that, per OS, the union of the collections **is** the whole suite (no gap, no duplicate) and that
+  each shard ran exactly what it collected. A `-k` or `--deselect` added to a run step alone fails
+  it. Locally, `uv run python -m tools.check_shards` runs the same comparison from the plan.
+
+`.test_durations` is what balances the shards; it is a hint, not a filter, so a stale file only makes
+the shards uneven. Refresh it from a real ubuntu run, never by hand:
+
+```bash
+gh workflow run CI            # the `durations` job (workflow_dispatch only) runs the whole suite
+gh run download --name test-durations --dir /tmp/durations
+cp /tmp/durations/.test_durations .test_durations
+```
+
+Job budgets (`timeout-minutes` in `ci.yml`; a budget fails the job, it does not widen a limit), at
+about 2x the measured p95 after ADR-0109:
+
+| Job | Budget | What it does |
+|-----|--------|--------------|
+| `checks` | 8 min | ruff, `ruff format --check`, `mypy --strict` (cold), layering, generated docs, CLI smoke |
+| `tests` (each shard) | 6 min | setup (~25 s) + ~60 s of tests + the collection it uploads |
+| `shard-union` | 6 min | downloads 20 artifacts, collects the suite per OS, compares |
+| `clean-install` | 6 min | builds the wheel, installs it with runtime deps only, imports every entry point |
+| `durations` | 20 min | `workflow_dispatch` only: the whole suite with `--store-durations` |
+
 ## Running in parallel (ADR-0075)
 
 `python -m tools.check` and CI run the suite on worker processes (pytest-xdist,

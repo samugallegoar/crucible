@@ -1,13 +1,23 @@
 name: CI
 
+# A PR runs this once. `push` is limited to main: the old `on: [push, pull_request]` ran every PR
+# branch twice, and the branch copy told nobody anything the PR copy did not (ADR-0109).
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch: # refresh .test_durations (the `durations` job below) or re-run on demand
+
+# One run per branch/PR: a new push cancels the run it supersedes instead of queueing behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # budget: 2x the measured p95 of this job (setup + ruff + mypy cold + layering + docgen + CLI)
+    timeout-minutes: 8
     env:
       CI: "true"
     steps:
@@ -28,15 +38,44 @@ jobs:
       - name: CLI smoke
         run: uv run crucible --help
 
-  # The full suite on every OS: the golden fixtures pin byte-identical artifacts, so a green run
-  # on all three is the continuous proof of ADR-0055's cross-platform determinism (ADR-0070).
+  # The full suite on every OS, split into duration-balanced shards (pytest-split, ADR-0109). Each
+  # shard is one runner of its own, still on `-n auto --dist loadscope` inside, so the suite still
+  # runs once, in full, for every PR -- it just runs in parallel across runners instead of across
+  # cores. Nothing reaches main without this job: the repository has no merge queue.
   tests:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # ubuntu 320 s, macOS 340 s, Windows 466 s (p50, 4 workers per job): 6/6/8 shards keep a
+        # shard at ~55-60 s of tests. The numbers are the plan in tools/check_shards.py, and
+        # tests/unit/test_ci_shard_plan.py fails when the two disagree.
+        # `extra` is the per-OS marker cut (ADR-0076) and the only argument the two commands of a
+        # shard share: keep them identical, they are what the `shard-union` job compares.
+        include:
+          - { os: ubuntu-latest, splits: 6, group: 1, extra: "" }
+          - { os: ubuntu-latest, splits: 6, group: 2, extra: "" }
+          - { os: ubuntu-latest, splits: 6, group: 3, extra: "" }
+          - { os: ubuntu-latest, splits: 6, group: 4, extra: "" }
+          - { os: ubuntu-latest, splits: 6, group: 5, extra: "" }
+          - { os: ubuntu-latest, splits: 6, group: 6, extra: "" }
+          - { os: macos-latest, splits: 6, group: 1, extra: '-m "not single_os"' }
+          - { os: macos-latest, splits: 6, group: 2, extra: '-m "not single_os"' }
+          - { os: macos-latest, splits: 6, group: 3, extra: '-m "not single_os"' }
+          - { os: macos-latest, splits: 6, group: 4, extra: '-m "not single_os"' }
+          - { os: macos-latest, splits: 6, group: 5, extra: '-m "not single_os"' }
+          - { os: macos-latest, splits: 6, group: 6, extra: '-m "not single_os"' }
+          - { os: windows-latest, splits: 8, group: 1, extra: '-m "not single_os"' }
+          - { os: windows-latest, splits: 8, group: 2, extra: '-m "not single_os"' }
+          - { os: windows-latest, splits: 8, group: 3, extra: '-m "not single_os"' }
+          - { os: windows-latest, splits: 8, group: 4, extra: '-m "not single_os"' }
+          - { os: windows-latest, splits: 8, group: 5, extra: '-m "not single_os"' }
+          - { os: windows-latest, splits: 8, group: 6, extra: '-m "not single_os"' }
+          - { os: windows-latest, splits: 8, group: 7, extra: '-m "not single_os"' }
+          - { os: windows-latest, splits: 8, group: 8, extra: '-m "not single_os"' }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # budget (2x the measured p95 of a shard job: setup + ~60 s of tests). A shard that needs more
+    # than this is broken or unbalanced, not merely slow -- and .test_durations is what balances it.
+    timeout-minutes: 6
     env:
       CI: "true"
       PYTHONUTF8: "1"
@@ -47,18 +86,91 @@ jobs:
           python-version: "3.12"
       - name: Sync (locked)
         run: uv sync --locked --all-extras
-      - name: Tests
-        # every core of the runner (3-4), a module or class per worker (ADR-0075); Windows and
-        # macOS skip the OS-independent plumbing marked single_os, which Ubuntu runs (ADR-0076)
+      - name: Record what this shard collects
+        # The same selection as the run below; `shard-union` compares the union of these with the
+        # whole suite, so a test in no shard (or in two) fails the PR.
         run: >-
-          uv run pytest -q -n auto --dist loadscope
-          ${{ matrix.os != 'ubuntu-latest' && '-m "not single_os"' || '' }}
+          uv run pytest --collect-only -q --color=no
+          --splits ${{ matrix.splits }} --group ${{ matrix.group }}
+          -n auto --dist loadscope ${{ matrix.extra }}
+          > shard-ids.txt
+      - name: Tests (shard ${{ matrix.group }}/${{ matrix.splits }} on ${{ matrix.os }})
+        # Windows and macOS skip the OS-independent plumbing marked single_os, which Ubuntu runs
+        # (ADR-0076). `--splits/--group` read `.test_durations`; a stale file only unbalances the
+        # shards, it never drops a test (pytest-split assigns every collected item to exactly one
+        # group, and the `shard-union` job below proves it on every run). The JUnit report is what
+        # lets `shard-union` check that this step ran what the step above collected.
+        run: >-
+          uv run pytest -q --splits ${{ matrix.splits }} --group ${{ matrix.group }}
+          -n auto --dist loadscope --junitxml=junit.xml
+          ${{ matrix.extra }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.os }}-${{ matrix.group }}
+          path: |
+            shard-ids.txt
+            junit.xml
+          retention-days: 3
+
+  # The shards must add up to the suite: every test exactly once, no gap. `pytest-split` cannot
+  # drop a test by itself (it assigns every collected item), but a wrong matrix, a wrong count or
+  # an option that stops being passed could, and then a PR would reach main with a hole in it.
+  # `python -m tools.check_shards` collects the suite and every shard (after deselection) and
+  # compares the union with the whole, per OS; it names what differs and exits 1.
+  shard-union:
+    needs: tests
+    runs-on: ubuntu-latest
+    # budget: 2x the measured p95 (download 20 artifacts + 3 suite collections in one process)
+    timeout-minutes: 6
+    env:
+      CI: "true"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Sync (locked)
+        run: uv sync --locked --all-extras
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          path: shards
+      - name: The shards add up to the whole suite
+        run: uv run python -m tools.check_shards --from-artifacts shards
+
+  # Refreshes `.test_durations`, the sharding hint, from a real ubuntu run: dispatch this workflow
+  # from the Actions tab (or `gh workflow run CI`), download the artifact, commit the file. It is
+  # a hint only -- see the `tests` job: a stale file unbalances the shards and nothing else.
+  durations:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Sync (locked)
+        run: uv sync --locked --all-extras
+      - name: Record the durations of the whole suite
+        run: >-
+          uv run pytest -q -n auto --dist loadscope --store-durations
+          --durations-path .test_durations
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-durations
+          path: .test_durations
 
   # The published wheel with runtime dependencies only (no dev or test tools): catches a runtime
   # import of a package that is not declared in [project.dependencies] (ADR-0070).
   clean-install:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # budget: 2x the measured p95 (wheel build + a fresh install + imports)
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

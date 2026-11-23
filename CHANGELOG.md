@@ -8,6 +8,23 @@ kind of change is recorded).
 
 ## Unreleased
 
+### CI shape: shard the suite across runners, prove the shards add up (ADR-0109)
+- **One run per change.** `on: push: branches: [main]` plus `pull_request` (a PR branch used to run
+  the whole workflow twice) with `concurrency` + `cancel-in-progress`, so a superseded push stops
+  instead of queueing.
+- **The suite is sharded across runners, not only across cores.** `pytest-split` gives 6 shards on
+  ubuntu and macOS and 8 on Windows, each on `-n auto --dist loadscope`; every shard is a runner of
+  its own, so the full suite still runs on every OS for every PR.
+- **`tools/check_shards.py` and the `shard-union` job prove it**: the union of what the shards
+  collected is the whole suite (no gap, no duplicate), and each shard's JUnit report holds one case
+  per collected id, so a `-k` on the run step alone cannot hide a test either. Fails the PR.
+- **`.test_durations`** is committed and refreshed from ubuntu by a `workflow_dispatch` job; a stale
+  file only unbalances the shards.
+- **The code fingerprint is pinned once per test session** (0.143 s per backtest, ~21 s of the serial
+  suite). Production behaviour is unchanged and the overwrite guard still catches an edit between two
+  runs.
+- Each job's `timeout-minutes` is a budget at about 2x its measured p95, not a widened limit.
+
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**
   - Files `rulesets/prop/<firm>/` cover Topstep, Apex, MyFundedFutures, Lucid, FTMO and FundedNext.

@@ -124,3 +124,29 @@ def _throwaway_crucible_home(tmp_path_factory: pytest.TempPathFactory) -> Iterat
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _pinned_code_fingerprint() -> Iterator[None]:
+    """One git call for the whole session instead of three per backtest (ADR-0109).
+
+    Every run records a ``code_fingerprint`` (SHA-256 over ``HEAD``, ``git status`` and the
+    working-tree diff, three git subprocesses, ~0.15 s) so the overwrite guard can refuse to
+    replace a finished experiment with numbers from different code (ADR-0079). The suite runs
+    ~150 backtests against a checkout that does not change while it runs, so the harness pins the
+    value once, in the environment variable production never sets
+    (``crucible.experiments.runner.CODE_FINGERPRINT_ENV``); the product still computes it per run.
+
+    A test that exercises the computation itself (an edit between two runs) deletes the variable
+    with ``monkeypatch.delenv`` and gets the real behaviour back.
+    """
+    from crucible.experiments.runner import CODE_FINGERPRINT_ENV, _compute_code_fingerprint
+
+    if os.environ.get(CODE_FINGERPRINT_ENV):
+        yield
+        return
+    os.environ[CODE_FINGERPRINT_ENV] = _compute_code_fingerprint()
+    try:
+        yield
+    finally:
+        os.environ.pop(CODE_FINGERPRINT_ENV, None)
