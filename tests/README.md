@@ -249,6 +249,10 @@ Fixtures live in `tests/fixtures/prop/`: synthetic rulesets ("SyntheticFirm A",
 `example.invalid` URLs, invented values, every attribution `synthetic: true`), a registry with two
 versions, and the refusals (a duplicate version, a synthetic `verified` ruleset, a bad kind). Every
 money number in the tests is written out as arithmetic.
+`synthetic_c_scaling_plan_balance.yaml` is the balance-keyed ladder (a $0 starting balance, a
+floor rung at 2 lots, 3 above $1,500 and 5 above $2,000, boundary in the lower rung), which is what the
+XFA scaling-plan tests drive; `tests/unit/test_prop_image_transcription.py` builds its own written
+attributions in a temporary snapshots folder, so no real snapshot is read by the suite.
 
 ## 8. Running subsets
 

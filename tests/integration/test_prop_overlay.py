@@ -550,6 +550,68 @@ def test_scaling_plan_raises_the_limit_the_day_after_the_qualifying_close() -> N
     ]
 
 
+def test_xfa_balance_tier_rises_at_the_next_session_and_never_inside_one() -> None:
+    """A balance ladder: floor 2 lots, 3 above 1,500.00, 5 above 2,000.00, boundary in the lower
+    rung. The XFA starts at $0 (the phase's starting balance, so the floor rung applies), and the
+    tier is read from the BALANCE at the close, never from an unrealized mark.
+
+    Day 1: the target 1 fills at 5,000.00 (cost 20.75, balance -20.75) and the target 0 closes it
+    at 5,040.00 (price P&L 40 x 50 = 2,000.00, cost 20.75): balance 1,958.50 at the day-1 close,
+    above 1,500.00 and below 2,000.00, so day 2's limit is 3. Day 2: the target 3 fills at
+    5,040.00 (3 x 20.75 = 62.25, balance 1,896.25). The target 5 later in the SAME session is
+    clipped to 3 - the tier does not follow the book inside a session - so nothing trades and the
+    resize is recorded.
+    """
+    bars = _bars(
+        [
+            (5000, 5000, 5000, 5000),
+            (5000, 5040, 5000, 5040),
+            (5040, 5040, 5040, 5040),
+            (5040, 5040, 5040, 5040),
+            (5040, 5050, 5040, 5050),
+        ],
+        [0, 1, 2, 481, 482],
+    )
+    result, overlay = _run(
+        load_ruleset(FIXTURES / "synthetic_c_scaling_plan_balance.yaml"),
+        bars,
+        [1, 0, 3, 5, 5],
+        close_bars=(2, 4),
+        capital="0",
+    )
+    assert _fills(result) == [
+        ("signal", 1, Decimal("5000")),
+        ("signal", -1, Decimal("5040")),
+        ("signal", 3, Decimal("5040")),
+    ]
+    assert result.bars["position"].to_list() == [0, 1, 0, 3, 3]
+    assert _balance(result) == Decimal("1896.25")
+    assert [(e.kind, e.bar, e.requested, e.allowed) for e in overlay.events] == [
+        ("resize", 4, 5, 3)
+    ]
+
+
+def test_xfa_micro_contracts_weigh_a_tenth_so_a_two_lot_tier_allows_twenty() -> None:
+    """The ladder counts MINI equivalents (1 mini = 10 micros), so a 2-lot tier on a $0 XFA is
+    2 / 0.1 = 20 micros: a target of 25 MES is clipped to 20, each costing 2.00 + 1.5 x 1.25 =
+    3.875, so the balance is -77.50.
+    """
+    bars = _bars([(5000, 5000, 5000, 5000), (5000, 5000, 5000, 5000)], [0, 1])
+    result, overlay = _run(
+        load_ruleset(FIXTURES / "synthetic_c_scaling_plan_balance.yaml"),
+        bars,
+        [25, 25],
+        close_bars=(1,),
+        spec=MES,
+        root="MES",
+        tick_micro=1_250_000,
+        capital="0",
+    )
+    assert _fills(result) == [("signal", 20, Decimal("5000"))]
+    assert _balance(result) == Decimal("-77.50")
+    assert [(e.kind, e.requested, e.allowed) for e in overlay.events] == [("resize", 25, 20)]
+
+
 # -------------------------------------------------------------------------------- test 12
 
 

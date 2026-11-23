@@ -49,12 +49,30 @@ The owner-review round 2 adds, additively (ADR-0107, amendment of 2026-11-23):
   every condition is listed; a mechanical pass is then a CONDITIONAL valid pass.
 - ``not_modeled.becomes_immaterial_if``: the audited fact that would change an entry's materiality.
   The declared materiality is unchanged by it.
+
+The XFA scaling-plan round adds, additively (ADR-0107, amendment of 2026-11-23, owner delegation):
+
+- ``evidence: official_image_transcription`` with ``Attribution.image_snapshot_sha256``,
+  ``image_path``, ``transcription``, ``transcribed_by`` and ``transcribed_at``: a value that is
+  printed only inside an image. The transcription is checked against nothing but itself (there IS
+  no page text to compare it with); the image FILE is verified by its sha256
+  (``crucible.prop.sources``).
+- ``_Rule.supporting_sources``: the attributions that support a rule's basis, timing or units
+  without carrying its value, so a page quote never hides inside a ``description``.
+- ``_Rule.assumptions``: further NAMED assumptions the one declared value depends on (the tier
+  boundary, the negative-balance reading, the excess action), alongside the single ``assumption``
+  that makes a value itself an assumption.
+- ``scaling_plan`` tiers read from the BALANCE: ``ScalingStep.min_balance_usd`` (the ladder key),
+  the first rung may omit its threshold (the floor rung, so a negative balance has a tier), and
+  the rung's boundary is the rule's own ``comparison`` (``>=`` keeps the boundary in the upper
+  rung, ``>`` puts it in the lower one).
 """
 
 from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from pathlib import PurePosixPath
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -65,7 +83,16 @@ _HEX64 = r"^[0-9a-f]{64}$"
 SENTINEL_FLOOR_USD = Decimal(1_000_000)
 """A capability above this is a sentinel, not a firm rule; ``unlimited`` says it instead."""
 
-Evidence = Literal["official_quote", "owner_provided", "assumption", "conflict_resolution"]
+Evidence = Literal[
+    "official_quote",
+    "owner_provided",
+    "assumption",
+    "conflict_resolution",
+    "official_image_transcription",
+]
+"""How a rule's value is evidenced. ``official_image_transcription`` is an official page whose
+value is printed only inside a saved image: the transcription carries the printed values and the
+image's own sha256 lets the self-check verify the FILE (ADR-0107, amendment of 2026-11-23)."""
 AssumptionKind = Literal["section7_default", "provisional_conservative", "owner_decision"]
 """What KIND of default an assumption is: a documented ADR-0107 section 7 default, a provisional
 conservative reading of a silent or soft source, or the owner's own decision on it."""
@@ -104,6 +131,13 @@ class Attribution(_Frozen):
     ``provided_by: owner`` is the owner-supplied evidence: the URL is optional (the owner may
     have read a PDF or a mailbox) but the quotation and the hash of the saved text are required.
     ``synthetic`` marks invented test data, and a synthetic attribution can never verify.
+
+    A value that is printed only inside an IMAGE carries the image block as well: the file's own
+    sha256 (``image_snapshot_sha256``), its path relative to the private snapshots root
+    (``image_path``), the values exactly as printed (``transcription``) and who transcribed them
+    when (``transcribed_by``, ``transcribed_at``). All five are present together or absent
+    together, and the self-check verifies the image FILE by its hash; nothing compares a
+    transcription against page text, because there is none (ADR-0107, amendment of 2026-11-23).
     """
 
     url: str | None = None
@@ -113,6 +147,11 @@ class Attribution(_Frozen):
     section: str | None = None
     synthetic: bool = False
     provided_by: Literal["owner"] | None = None
+    image_snapshot_sha256: str | None = Field(default=None, pattern=_HEX64)
+    image_path: str | None = None
+    transcription: str | None = None
+    transcribed_by: str | None = None
+    transcribed_at: dt.datetime | None = None
 
     @model_validator(mode="after")
     def _utc(self) -> Attribution:
@@ -132,6 +171,57 @@ class Attribution(_Frozen):
             msg = "attribution needs a non-empty quote: an unsourced value is not a rule"
             raise ValueError(msg)
         return self
+
+    @model_validator(mode="after")
+    def _image(self) -> Attribution:
+        """The image block is all-or-nothing, relative, and dated."""
+        present = {
+            name: getattr(self, name)
+            for name in (
+                "image_snapshot_sha256",
+                "image_path",
+                "transcription",
+                "transcribed_by",
+                "transcribed_at",
+            )
+        }
+        declared = [name for name, value in present.items() if value not in (None, "")]
+        if not declared:
+            return self
+        if len(declared) != len(present):
+            missing = sorted(set(present) - set(declared))
+            msg = (
+                "an image attribution is all-or-nothing: declare image_snapshot_sha256, "
+                f"image_path, transcription, transcribed_by and transcribed_at together (missing "
+                f"{missing})"
+            )
+            raise ValueError(msg)
+        assert self.image_path is not None
+        path = PurePosixPath(self.image_path)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or "\\" in self.image_path
+            or ":" in self.image_path
+        ):
+            msg = (
+                f"attribution.image_path {self.image_path!r} must be relative to the private "
+                "snapshots root, with '/' separators and no '..'"
+            )
+            raise ValueError(msg)
+        assert self.transcribed_at is not None
+        if self.transcribed_at.tzinfo is None:
+            msg = (
+                "attribution.transcribed_at must carry a UTC offset: a naive timestamp cannot say "
+                "when the transcription was made"
+            )
+            raise ValueError(msg)
+        return self
+
+    @property
+    def has_image(self) -> bool:
+        """Whether this attribution carries a transcribed image."""
+        return self.image_snapshot_sha256 is not None
 
     @property
     def complete(self) -> bool:
@@ -514,6 +604,13 @@ class _Rule(_Frozen):
     source: Attribution
     evidence: Evidence = "official_quote"
     assumption: Assumption | None = None
+    assumptions: tuple[Assumption, ...] = ()
+    """Further NAMED assumptions the one declared value depends on (a tier boundary, a reading of a
+    silent case). ``assumption`` is the single one that makes the value itself an assumption; both
+    are reported to the owner and both are cited by name."""
+    supporting_sources: tuple[Attribution, ...] = ()
+    """The attributions that support a rule's basis, timing or units WITHOUT carrying its value, so
+    a page quote never hides inside a free-text description and the self-check covers it."""
     promotions: tuple[Promotion, ...] = ()
     """Promotional values this rule may take, each applied only when the run qualifies for it."""
     effective_from: dt.date | None = None
@@ -527,6 +624,30 @@ class _Rule(_Frozen):
                 "is required"
             )
             raise ValueError(msg)
+        if self.evidence == "official_image_transcription" and not self.source.has_image:
+            msg = (
+                f"rule {self.rule_id}: evidence is official_image_transcription, so source must "
+                "carry image_snapshot_sha256, image_path, transcription, transcribed_by and "
+                "transcribed_at: the value is printed only inside that image"
+            )
+            raise ValueError(msg)
+        if self.source.has_image and self.evidence != "official_image_transcription":
+            msg = (
+                f"rule {self.rule_id}: source carries an image transcription but evidence is "
+                f"{self.evidence!r}; an image-only value must say so, use "
+                "evidence: official_image_transcription"
+            )
+            raise ValueError(msg)
+        names = [item.name for item in self.assumptions]
+        if self.assumption is not None:
+            names.append(self.assumption.name)
+        if len(names) != len(set(names)):
+            msg = f"rule {self.rule_id}: assumption names must be unique, got {sorted(names)}"
+            raise ValueError(msg)
+        for item in self.assumptions:
+            if not item.name.strip() or not item.rationale.strip():
+                msg = f"rule {self.rule_id}: every assumption needs a non-empty name and rationale"
+                raise ValueError(msg)
         if (
             self.effective_to is not None
             and self.effective_from is not None
@@ -535,6 +656,15 @@ class _Rule(_Frozen):
             msg = f"rule {self.rule_id}: effective_to is before effective_from"
             raise ValueError(msg)
         return self
+
+    def all_assumptions(self) -> tuple[Assumption, ...]:
+        """Every named assumption the rule carries, the single one first (report order)."""
+        head = () if self.assumption is None else (self.assumption,)
+        return (*head, *self.assumptions)
+
+    def all_sources(self) -> tuple[Attribution, ...]:
+        """The value's attribution first, then every supporting one (report order)."""
+        return (self.source, *self.supporting_sources)
 
 
 # --------------------------------------------------------------------------- rule kinds
@@ -700,12 +830,41 @@ class MaxContractsRule(_Rule):
 
 
 class ScalingStep(_Frozen):
-    min_profit_usd: _MONEY
+    """One rung of a scaling ladder.
+
+    Exactly one threshold key names what the rung is read against: ``min_profit_usd`` (profit since
+    the phase's start, the original form) or ``min_balance_usd`` (the absolute balance at the
+    rule-day's close). The ladder's FIRST rung may omit both: it is the floor rung, the tier that
+    applies when no threshold is met, which is how a negative or sub-threshold balance has a size.
+    """
+
+    min_profit_usd: _MONEY | None = None
+    min_balance_usd: _MONEY | None = None
     max_contracts: Decimal = Field(gt=0, decimal_places=6)
+
+    @model_validator(mode="after")
+    def _one_threshold(self) -> ScalingStep:
+        present = [self.min_profit_usd is not None, self.min_balance_usd is not None]
+        if sum(present) > 1:
+            msg = (
+                "a scaling_plan step declares min_profit_usd or min_balance_usd, never both: the "
+                "two are read against different quantities"
+            )
+            raise ValueError(msg)
+        return self
 
 
 class ScalingPlanRule(_Rule):
-    """The contract limit for the next rule-day, from the rule-day's end-of-day basis."""
+    """The contract limit for the next rule-day, from the rule-day's end-of-day basis.
+
+    A ladder keyed on ``min_profit_usd`` keeps the original reading: the rung applies when the
+    basis has reached at least its threshold (``>=``), and a balance below the first rung's
+    threshold gets no contracts. A ladder keyed on ``min_balance_usd`` reads the balance at the
+    close, needs ``evaluated: eod`` and ``basis: balance``, and takes its rung boundary from
+    ``comparison``: ``>=`` keeps a balance exactly on a threshold in the UPPER rung, ``>`` puts it
+    in the LOWER one (the conservative reading a firm's "below $X" column states). In both forms
+    the chosen rung applies to the WHOLE next rule-day and never rises mid-session.
+    """
 
     kind: Literal["scaling_plan"] = "scaling_plan"
     steps: tuple[ScalingStep, ...]
@@ -719,11 +878,60 @@ class ScalingPlanRule(_Rule):
         if not self.steps:
             msg = "scaling_plan needs at least one step"
             raise ValueError(msg)
-        profits = [step.min_profit_usd for step in self.steps]
-        if profits != sorted(profits):
-            msg = f"scaling_plan steps must be sorted by min_profit_usd, got {profits}"
+        balance = [step.min_balance_usd is not None for step in self.steps]
+        profit = [step.min_profit_usd is not None for step in self.steps]
+        if any(balance) and any(profit):
+            msg = (
+                "scaling_plan steps mix min_balance_usd and min_profit_usd: one ladder is read "
+                "against ONE quantity"
+            )
             raise ValueError(msg)
+        thresholds: list[Decimal] = []
+        floor: list[int] = []
+        for index, step in enumerate(self.steps):
+            threshold = (
+                step.min_balance_usd if step.min_balance_usd is not None else step.min_profit_usd
+            )
+            if threshold is None:
+                floor.append(index)
+            else:
+                thresholds.append(threshold)
+        if thresholds != sorted(thresholds):
+            msg = f"scaling_plan steps must be sorted by their threshold, got {thresholds}"
+            raise ValueError(msg)
+        if floor and floor != [0]:
+            msg = (
+                "a scaling_plan step with no threshold is the FLOOR rung: only the first step "
+                f"may omit it, found the gap at {floor}"
+            )
+            raise ValueError(msg)
+        if any(balance):
+            if self.comparison not in (">", ">="):
+                msg = (
+                    f"scaling_plan comparison {self.comparison!r} cannot read a balance ladder "
+                    "that ascends: use '>=' (a balance exactly on the threshold is in the upper "
+                    "rung) or '>' (it stays in the lower one)"
+                )
+                raise ValueError(msg)
+            if self.basis != "balance":
+                msg = (
+                    f"scaling_plan steps are keyed on min_balance_usd but basis is {self.basis!r}: "
+                    "a balance ladder is read against the balance"
+                )
+                raise ValueError(msg)
+            if self.evaluated != "eod":
+                msg = (
+                    f"scaling_plan steps are keyed on min_balance_usd and evaluated is "
+                    f"{self.evaluated!r}: the tier is read at the rule-day's close and applies to "
+                    "the whole next rule-day, so declare evaluated: eod"
+                )
+                raise ValueError(msg)
         return self
+
+    @property
+    def balance_ladder(self) -> bool:
+        """Whether this ladder is read against the closing BALANCE (``min_balance_usd``)."""
+        return any(step.min_balance_usd is not None for step in self.steps)
 
 
 class FlatByRule(_Rule):

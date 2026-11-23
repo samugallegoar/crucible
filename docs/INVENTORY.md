@@ -42,7 +42,7 @@
 | `crucible promote` | `<config> --artifacts --execution --json --level --lookback --out --override --run` | Turn a vectorized config into an event-driven config at Level 2+ (ADR-0037) |
 | `crucible prop confirm` | `<ruleset> --json` | The OWNER's interactive verification: prints every rule, asks for the content hash prefix and writes the sidecar. Refused without a TTY; never exposed over MCP |
 | `crucible prop list` | `--firm --json --root` | List every ruleset under rulesets/prop with its hash, evidence counts, conflicts, unmodeled rules by materiality and verification status |
-| `crucible prop validate` | `<ruleset> --json` | Check a ruleset file: identity, content hash, verification, evidence, conflicts, commissions, scenarios, rule coverage and warnings. Changes no file |
+| `crucible prop validate` | `<ruleset> --json --snapshots-root` | Check a ruleset file: identity, content hash, verification, evidence, conflicts, commissions, scenarios, rule coverage and warnings. Changes no file |
 | `crucible report` | `<experiment_id> --artifacts --json` | Re-render the report for a finished experiment |
 | `crucible results` | `--home --json --limit` | List earlier one-step backtests, newest first |
 | `crucible run` | `<config> --artifacts --checkpoint --checkpoint-every --detail --json --override --overwrite --resume --runtime --stop-at` | Run an experiment from a YAML config |

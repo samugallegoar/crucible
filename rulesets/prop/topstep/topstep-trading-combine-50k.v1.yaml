@@ -6,6 +6,10 @@
 # page, the materialities and their conditions, the payout policy's $0.01 net-profit
 # gate, and (Labs drops) the drop's own 90-day lifespan, 30-day inactivity, 90/10
 # split and two separate payout minima.
+# C7b round 5 (owner delegation of 2026-11-23): the XFA scaling-plan ladder modelled
+# from the official image (evidence: official_image_transcription) with the tier
+# boundary in the lower rung, a floor tier for a zero or negative balance, and clip on
+# excess; the Trading Combine maximum is never the XFA limit.
 # verification.status is unverified: only the owner can confirm a ruleset.
 schema_version: 2
 ruleset_id: topstep-trading-combine-50k
@@ -770,6 +774,112 @@ phases:
         at the start of the 31st calendar day after the last trade date (30 full days of silence), the
         rule-day transition the overlay counts inactivity on. Owner decision of 2026-11-23: keep this
         reading as provisional_conservative.'
+  - kind: scaling_plan
+    rule_id: xfa_max_contracts
+    description: 'The Express Funded Account''s maximum position size is the Scaling Plan: ''The Scaling Plan
+      is an Express Funded Account® (XFA) objective. It sets your Maximum Position Size — the max contracts
+      you can hold at one time — based on your current account balance'', and the max contracts ''do not increase
+      mid-session''. The ladder itself is printed only inside the saved image (20261123_hc_scaling-plan-xfa-charts.png,
+      sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd), transcribed into this rule:
+      for a $50K account, below $1,500 is 2 lots, above each printed threshold the next tier, and above $2,000
+      it is 5 lots. Lots are MINI-contract equivalents (''Limits are based on mini-contract equivalents'',
+      ''1 Mini = 10 Micro contracts''), so the weight limit is the mini count and micros share it at 10:1.
+      The tier is read from the balance at the rule-day''s close (17:00 America/Chicago) and applies to the
+      WHOLE next rule-day: it never rises mid-session, which is what the page''s ''Your max contracts do not
+      increase mid-session. Hit the threshold to release more buying power? Wait for the next session.'' states.
+      A balance exactly on a printed boundary is the LOWER tier (comparison ''>''): 1,500.00 is 2 lots and
+      1,500.01 the next one (assumption scaling_plan_boundary_belongs_to_the_lower_tier). A balance below
+      zero takes the same lowest tier (assumption scaling_plan_negative_balance_uses_the_floor_tier). An excess
+      is CLIPPED rather than recorded as a breach: the page ignores an excess corrected in under 10 seconds
+      and only reviews the account after 10+, which a one-minute bar cannot time (assumption scaling_plan_excess_is_clipped_not_a_breach).
+      The plan applies to the XFA only - ''The Scaling Plan does not apply to the Live Funded Account®.''
+      - so it is declared in the funded phase and nowhere else, and the Trading Combine''s own maximum position
+      size is NEVER substituted for it. The three decisions above were taken by the coordinator under the
+      owner''s delegation of 2026-11-23; every file stays unverified until the owner confirms it.'
+    steps:
+    - max_contracts: '2'
+    - min_balance_usd: '1500'
+      max_contracts: '3'
+    - min_balance_usd: '2000'
+      max_contracts: '5'
+    evaluated: eod
+    basis: balance
+    comparison: '>'
+    action: clip
+    source:
+      url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
+      quote: The Scaling Plan is an Express Funded Account® (XFA) objective. It sets your Maximum Position
+        Size — the max contracts you can hold at one time — based on your current account balance.
+      snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
+      retrieved_at: '2026-11-22T01:36:34Z'
+      section: Overview (the plan is an XFA objective and sets the maximum position size by the current account
+        balance); the ladder itself is the saved image 20261123_hc_scaling-plan-xfa-charts.png
+      synthetic: false
+      image_snapshot_sha256: 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd
+      image_path: topstep/20261123_hc_scaling-plan-xfa-charts.png
+      transcription: '$50K: Below $1,500 -> 2 Lots; $1,500 - $2,000 -> 3 Lots; Above $2,000 -> 5 Lots. $100K:
+        Below $1,500 -> 3 Lots; $1,500 - $2,000 -> 4 Lots; $2,000 - $3,000 -> 5 Lots; Above $3,000 -> 10 Lots.
+        $150K: Below $1,500 -> 3 Lots; $1,500 - $2,000 -> 4 Lots; $2,000 - $3,000 -> 5 Lots; $3,000 - $4,500
+        -> 10 Lots; Above $4,500 -> 15 Lots.'
+      transcribed_by: the coordinator (Claude), from the image itself
+      transcribed_at: '2026-11-23T00:32:00Z'
+    evidence: official_image_transcription
+    supporting_sources:
+    - url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
+      quote: Your XFA starts at a $0 balance
+      snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
+      retrieved_at: '2026-11-22T01:36:34Z'
+      section: How It Works (the XFA starts at a $0 balance)
+      synthetic: false
+    - url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
+      quote: Your max contracts do not increase mid-session. Hit the threshold to release more buying power?
+        Wait for the next session.
+      snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
+      retrieved_at: '2026-11-22T01:36:34Z'
+      section: 'How It Works (Key rule: the max contracts do not increase mid-session)'
+      synthetic: false
+    - url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
+      quote: 1 Mini = 10 Micro contracts Limits are based on mini-contract equivalents
+      snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
+      retrieved_at: '2026-11-22T01:36:34Z'
+      section: 'Micros and Minis (10:1 ratio: 1 Mini = 10 Micro contracts; limits are based on mini-contract
+        equivalents)'
+      synthetic: false
+    - url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
+      quote: Errors corrected in under 10 seconds are ignored. Leave too many contracts on for 10+ seconds
+        and your account may be reviewed.
+      snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
+      retrieved_at: '2026-11-22T01:36:34Z'
+      section: Scaling Plan FAQs (what happens if the limit is exceeded briefly)
+      synthetic: false
+    - url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
+      quote: The Scaling Plan does not apply to the Live Funded Account®.
+      snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
+      retrieved_at: '2026-11-22T01:36:34Z'
+      section: Overview callout (the plan does not apply to the LFA)
+      synthetic: false
+    assumptions:
+    - name: scaling_plan_boundary_belongs_to_the_lower_tier
+      assumption_kind: owner_decision
+      rationale: The image prints three columns of balance and lots and never says which side an exact boundary
+        falls on. The coordinator, under the owner's delegation of 2026-11-23 (decision 1, delegated), read
+        a balance exactly on a printed boundary as the LOWER tier - the conservative reading, because the
+        lower tier is the smaller size - so a $50K account at 1,500.00 holds 2 lots and at 1,500.01 holds
+        3. The file declares it as comparison '>'; the owner may reverse it at confirmation.
+    - name: scaling_plan_negative_balance_uses_the_floor_tier
+      assumption_kind: owner_decision
+      rationale: The first column reads 'Below $1,500'. The coordinator, under the owner's delegation of 2026-11-23
+        (decision 2, delegated), read it as including every balance below zero, so the lowest tier is the
+        size at a negative balance; the engine's floor rung (the first step with no threshold) is what states
+        it, and the tier is never zero contracts unless the firm prints such a column.
+    - name: scaling_plan_excess_is_clipped_not_a_breach
+      assumption_kind: owner_decision
+      rationale: 'The page ignores an excess corrected in under 10 seconds and says the account ''may be reviewed''
+        after 10+ seconds. A one-minute bar cannot see a 10-second correction, so the engine never lets a
+        position exceed the tier: the ladder''s action is clip. The coordinator, under the owner''s delegation
+        of 2026-11-23 (decision 4, delegated), chose that direction as the conservative one - the simulation
+        never claims a size the firm''s own tolerance would allow, and it never records a review it cannot
+        time.'
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null
@@ -792,26 +902,6 @@ phases:
       synthetic: false
     evidence: official_quote
 not_modeled:
-- rule: xfa_scaling_plan_ladder
-  description: 'Material. The Express Funded Account''s maximum position size follows the Scaling Plan:
-    ''The Scaling Plan is an Express Funded Account® (XFA) objective. It sets your Maximum Position Size
-    — the max contracts you can hold at one time — based on your current account balance'', and the max
-    contracts ''do not increase mid-session''. The ladder itself is published only as an image, saved
-    at prop_snapshots/topstep/20261123_hc_scaling-plan-xfa-charts.png (sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd),
-    so this file quotes no contract number from it and the funded phase''s own contract limit is NOT declared:
-    the omission is this declared gap, never a firm rule, and the Trading Combine''s maximum is never
-    substituted for it. A funded account therefore gets credit the plan would cap, which overstates the
-    size it may hold.'
-  materiality: material
-  source:
-    url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
-    snapshot_sha256: 90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce
-    retrieved_at: '2026-11-22T01:36:34Z'
-    quote: The Scaling Plan is an Express Funded Account® (XFA) objective. It sets your Maximum Position
-      Size — the max contracts you can hold at one time — based on your current account balance.
-    section: Overview (the plan is an XFA objective and sets the maximum position size by balance); the
-      ladder itself is the saved image 20261123_hc_scaling-plan-xfa-charts.png (sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd)
-    synthetic: false
 - rule: news_full_position_size_prohibited
   description: 'Material and discretionary. ''Purposefully trading your full Maximum Position Size directly
     into a scheduled major news event.'' is a judgement with no numeric threshold: no window, size or

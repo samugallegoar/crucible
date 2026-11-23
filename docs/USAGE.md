@@ -564,6 +564,7 @@ kinds, never a firm. Check one before using it:
 ```bash
 uv run crucible prop validate path/to/ruleset.yaml          # identity, hash, evidence, scenarios
 uv run crucible prop validate path/to/ruleset.yaml --json   # the same document
+uv run crucible prop validate ruleset.yaml --snapshots-root DIR   # + the evidence self-check
 uv run crucible prop list --firm <firm> --json              # every ruleset, hash and evidence
 uv run crucible prop confirm path/to/ruleset.yaml           # OWNER ONLY: interactive TTY
 uv run crucible schema --kind prop-ruleset                  # the file's JSON Schema
@@ -577,7 +578,12 @@ every rule with its quotation and URL, asks for the first 12 hex of the content 
 `<file>.verification.yaml`. It is never exposed over MCP. `rulesets/prop/INDEX.json` is generated
 by `uv run python -m tools.docgen --write` and is append-only.
 
-`prop validate` changes no file. It reports the ruleset's `ruleset_sha256`, its verification status
+`prop validate` changes no file. With `--snapshots-root DIR` it also runs the evidence self-check
+(`crucible.prop.sources`): every attribution's `snapshot_sha256` must resolve to a saved file under
+`DIR` and its quote must appear in THAT file, and an image transcription must resolve `image_path` to
+a file whose sha256 is `image_snapshot_sha256` (a mismatch is refused, and the report line reads
+`N attribution(s), M image(s), 0 synthetic ... every quote and every hash verified`). It reports the
+ruleset's `ruleset_sha256`, its verification status
 (only the owner can confirm a ruleset, and a synthetic one can never be `verified`), one
 `rule_coverage` row per rule, the `evaluation_status` (`complete`, `conditional_on_modeled_rules`
 or `blocked`) and the warnings those gaps imply. A ruleset marked `unverified` makes every result
