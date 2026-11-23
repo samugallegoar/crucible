@@ -1606,16 +1606,33 @@ migration message, never silently upgraded. The required fields:
 Every rule, pass condition, fee and `not_modeled` entry carries `source`: `url` (null only with
 `provided_by: owner`), `quote`, `snapshot_sha256` (64 hex), `retrieved_at` (a UTC timestamp),
 optional `section`, `synthetic`, `provided_by`; and `evidence: official_quote | owner_provided |
-assumption | conflict_resolution`, with `assumption {name, rationale, assumption_kind}` required
-when the value is an assumption (`assumption_kind` is one of `section7_default`,
-`provisional_conservative` or `owner_decision`). A rule may carry `promotions`: a list of
+assumption | conflict_resolution | official_image_transcription`, with `assumption {name,
+rationale, assumption_kind}` required when the value is an assumption (`assumption_kind` is one of
+`section7_default`, `provisional_conservative` or `owner_decision`).
+
+A `source` may also carry the **image block** of a value that is printed only inside a saved picture
+(`official_image_transcription`): `image_snapshot_sha256` (the image file's sha256, 64 hex),
+`image_path` (relative to the private snapshots root: no absolute path, no `..`, `/` separators),
+`transcription` (the values exactly as printed), `transcribed_by`, `transcribed_at` (UTC). All five
+are present together or absent together, the evidence class and the block must agree in both
+directions, and `crucible prop validate <file> --snapshots-root DIR` verifies the FILE by its hash
+(a wrong sha256 is refused). The transcription is never compared with page text: the values exist
+only in the image (`docs/modules/prop.md`, "sources.py"). A rule may also carry
+`supporting_sources` (attributions that support its basis, timing or units without carrying its
+value, held to the same self-check) and `assumptions` (further NAMED readings the one value depends
+on, each `{name, rationale, assumption_kind}`, names unique per rule). A rule may carry
+`promotions`: a list of
 `{id, field, value | multiplier, starts_on, ends_on: <date>|unknown, purchase_on_or_after, requires,
 source}`, each applied only when the run's participant profile declares every `requires` entry and
 its `purchase_date` falls in the offer window (ADR-0107, amendment of 2026-11-23). A rule may
 declare its own `effective_from`/`effective_to`. A rule is a
 discriminated union on `kind`; the parameters of each kind are in `docs/modules/prop.md`
 ("The rule kinds"), and `evaluated` (`intraday`, `eod` or `on_request`) is required on every
-threshold rule.
+threshold rule. A `scaling_plan` step is `{min_profit_usd | min_balance_usd, max_contracts}`: the
+first key says which quantity the ladder is read against (profit since the phase's start, or the
+absolute balance at the rule-day's close), the first step may omit it as the FLOOR rung, and a
+balance ladder requires `basis: balance`, `evaluated: eod` and a rung boundary in `comparison`
+(`>=` upper rung, `>` lower rung).
 
 `ruleset_sha256` is the canonical JSON hash of the content **excluding** `verification` (not a
 field in the file): confirming a ruleset never changes its identity, and the loader refuses two

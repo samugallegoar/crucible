@@ -537,6 +537,25 @@ terms allow and the payouts and cash statistics are labelled `upper_bound`. `unk
 read as `unlimited` and never as zero. A numeric sentinel (>= 1,000,000 USD for a cap) is refused
 (ADR-0107 section 7).
 
+**Image transcription (`official_image_transcription`)** — an evidence type for a firm value that is
+printed only inside a saved picture (Topstep's XFA scaling-plan ladder is the first): the attribution
+carries the image's own sha256, its path under the private snapshots root, the values exactly as
+printed, and who transcribed them when. The self-check (`crucible.prop.sources`, `crucible prop
+validate --snapshots-root`) verifies the image FILE by its hash and never compares the transcription
+with page text, because the numbers are only in the image. A transcription is a named person's
+reading, so it is checked for existence and for the file's bytes — the owner still confirms the
+ruleset (ADR-0107, amendment of 2026-11-23).
+
+**Supporting source** — an attribution on a rule that supports its basis, timing or units WITHOUT
+carrying its value (the page sentence that says a tier is read at the session close). Held to the
+same self-check as the value's own source, so a quote never hides inside a description.
+
+**Floor rung** — the first rung of a `scaling_plan` ladder when it declares no threshold: the size
+for every balance below the second rung's threshold, which is how a zero or negative balance has a
+tier instead of none. A ladder keyed on `min_balance_usd` reads the closing BALANCE and takes its
+boundary from its own `comparison` (`>=` keeps a balance exactly on a threshold in the upper rung,
+`>` keeps it in the lower one).
+
 **`upper_bound`** — the label on a cash number computed against a value the sources do not state
 (`cash_estimate_status: upper_bound`, `PayoutRecord.bound: upper_bound`): the payout paid as much
 as every other term allowed, so the real amount can only be lower. The attempt's `estimate_status`

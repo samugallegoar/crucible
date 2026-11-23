@@ -78,6 +78,15 @@ from crucible.prop.ruleset import (
     write_verification_sidecar,
 )
 from crucible.prop.scenarios import RulesetScenario, scenario, scenarios
+from crucible.prop.sources import (
+    SourceCheck,
+    SourceProblem,
+    check_sources,
+    file_hashes,
+    normalise,
+    page_text,
+    verify_sources,
+)
 from crucible.prop.validate import (
     attempt_json_schema,
     ruleset_document,
@@ -122,6 +131,8 @@ __all__ = [
     "PropRuleset",
     "RuleCoverageRow",
     "RulesetScenario",
+    "SourceCheck",
+    "SourceProblem",
     "StoreComponentFees",
     "Transition",
     "Verification",
@@ -129,11 +140,13 @@ __all__ = [
     "attempt_json_schema",
     "build_index",
     "cash_estimate",
+    "check_sources",
     "counterfactual_application",
     "coverage_covers",
     "coverage_warnings",
     "estimate_status",
     "evaluation_status",
+    "file_hashes",
     "is_pass_condition",
     "list_document",
     "load_cost_assumption",
@@ -141,6 +154,8 @@ __all__ = [
     "load_registry",
     "load_ruleset",
     "material_unmodeled",
+    "normalise",
+    "page_text",
     "practical_eligibility",
     "price_components",
     "read_verification_sidecar",
@@ -155,5 +170,6 @@ __all__ = [
     "simulate_attempt",
     "store_component_fees",
     "validate_ruleset_document",
+    "verify_sources",
     "write_verification_sidecar",
 ]

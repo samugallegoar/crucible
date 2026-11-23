@@ -701,6 +701,63 @@ reused and no VERIFIED hash changes. ``attempts.parquet`` gains
 ``practical_eligibility_conditions`` and ``summary.json`` gains the eligibility block's
 ``conditions``/``conditionally_valid_passes`` plus ``unmodeled_rules``; both are additive.
 
+## Amendment (2026-11-23, owner delegation, scaling-plan round): values printed only in an image
+
+A firm publishes a rule the text never states. Topstep's XFA Scaling Plan is exactly that: the
+article says the plan "sets your Maximum Position Size — the max contracts you can hold at one time
+— based on your current account balance", and the ladder itself (balance bands against lots, per
+account size) exists only inside a picture the page serves. Section 7's evidence vocabulary could
+only say `not_modeled`, which is what the first four rounds did: a MATERIAL gap that overstated the
+size a funded account may hold, in every file.
+
+**1. `evidence: official_image_transcription`.** A rule whose value is printed only in an image
+declares that evidence, and its `source` carries the image block: `image_snapshot_sha256` (the
+file's own sha256), `image_path` (relative to the private snapshots root — absolute paths and `..`
+are refused), `transcription` (the values exactly as printed, never a paraphrase of the page),
+`transcribed_by` and `transcribed_at` (UTC). All five or none; the evidence and the block must agree
+in both directions, so an image-only value can never be labelled `official_quote`.
+
+**2. The self-check verifies the FILE, never the transcription.** `crucible.prop.sources` hashes the
+snapshots folder, so every attribution's `snapshot_sha256` must resolve to a saved page and its
+`quote` must appear in THAT page's text, and an image transcription's `image_path` must hash to
+`image_snapshot_sha256`. A wrong hash is REFUSED (`DataQualityError`), not warned about, and
+`crucible prop validate --snapshots-root DIR` runs the check. Nothing compares a transcription with
+page text: there is none, which is the whole reason the type exists. A transcription is a named
+person's reading of a picture, so it is checked for existence, completeness and the image's bytes —
+the reading itself stays the owner's to confirm.
+
+**3. `supporting_sources`, and `assumptions` as a list of named readings.** A rule carried ONE
+`source`, so the page quotes that settle its basis, timing or units had nowhere to live: they ended
+up paraphrased into a `description`, where the self-check could not see them. `supporting_sources`
+is a list of attributions that support a rule WITHOUT carrying its value, held to the same standard.
+And where one value depends on several named readings (a tier boundary, a silent case, an excess
+action), `assumptions` carries each one by name beside the single `assumption` that makes a value
+itself an assumption; `all_assumptions()` reports them, and names must be unique per rule.
+
+**4. Balance tiers in `scaling_plan`.** The kind could only express profit rungs at `>=`, with a
+lockout below the first rung — not an ABSOLUTE balance band, not a boundary that belongs to the
+lower band, not a floor for a negative balance. It now can, additively:
+
+- a step is keyed on `min_profit_usd` (the original form) or `min_balance_usd` (the absolute balance
+  at the rule-day's close); a ladder may not mix them;
+- the FIRST step may omit its threshold and is then the FLOOR rung: the size for every balance below
+  the next threshold, which is how a negative or zero balance has a size instead of none;
+- a balance ladder REQUIRES `basis: balance` and `evaluated: eod` (the tier is read at one close and
+  applies to the whole next rule-day, so a mid-session reading would be a different rule) and takes
+  its boundary from `comparison`: `>=` keeps a balance exactly on a threshold in the upper rung, `>`
+  keeps it in the lower one. `<=` / `<` on an ascending ladder is refused by name;
+- the profit form is untouched, INCLUDING its vestigial `comparison` (112 shipped rulesets declare
+  `<=` while the engine has always applied `>=`): honouring it there would silently change every one
+  of them, so the module's known gaps state that the field is meaningful only on a balance ladder.
+
+The tier still changes only at `new_day`, so "the limit never rises mid-session" is structural, not
+an assumption.
+
+**Mechanically**, three additive fields (`supporting_sources`, `assumptions`, the image block on
+`Attribution`) and one optional step key change no existing declaration of the 201 firm files; only
+the 24 Topstep Trading Combine files gained a rule, and each was re-hashed in place, so
+`rulesets/prop/INDEX.json` is regenerated and no verified hash changes.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

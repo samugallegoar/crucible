@@ -927,6 +927,13 @@ def build_parser() -> argparse.ArgumentParser:
         "commissions, scenarios, rule coverage and warnings. Changes no file",
     )
     prop_validate.add_argument("ruleset", help="Path to a prop-firm ruleset YAML")
+    prop_validate.add_argument(
+        "--snapshots-root",
+        default=None,
+        help="Folder holding the saved page and image snapshots (one per firm). With it, every "
+        "citation is verified against those bytes: each quote must appear in the page its own "
+        "sha256 names, and an image transcription's file must hash to image_snapshot_sha256",
+    )
     _add_json(prop_validate)
     prop_list = prop_sub.add_parser(
         "list",
@@ -2348,7 +2355,7 @@ def _cmd_prop(args: argparse.Namespace) -> int:
         return 0
     from crucible.prop.validate import validate_ruleset_document
 
-    document = validate_ruleset_document(Path(args.ruleset))
+    document = validate_ruleset_document(Path(args.ruleset), args.snapshots_root)
     if args.json:
         machine.emit(document)
         return 0
@@ -2375,6 +2382,9 @@ def _cmd_prop(args: argparse.Namespace) -> int:
             f"{', '.join(rules) or 'no rules'}"
         )
     lines.extend(f"warning: {warning}" for warning in warnings)
+    check = cast(dict[str, object] | None, document.get("evidence_check"))
+    if check is not None:
+        lines.append(f"evidence:     {check['summary']}")
     sys.stdout.write(chr(10).join(lines) + chr(10))
     return 0
 

@@ -28,7 +28,12 @@ _ATTEMPT_ADAPTER: TypeAdapter[AttemptResult] = TypeAdapter(AttemptResult)
 
 
 def attribution_document(source: Attribution) -> dict[str, object]:
-    """One attribution as JSON-ready values (the snapshot hash is the evidence)."""
+    """One attribution as JSON-ready values (the snapshot hash is the evidence).
+
+    An image attribution carries its own block: the image's sha256, its path under the private
+    snapshots root, the transcription and who made it when. The transcription is the evidence for
+    a value that is printed only in the image, so a report that dropped it would drop the value.
+    """
     return {
         "url": source.url,
         "provided_by": source.provided_by,
@@ -37,6 +42,13 @@ def attribution_document(source: Attribution) -> dict[str, object]:
         "retrieved_at": source.retrieved_at.isoformat(),
         "section": source.section,
         "synthetic": source.synthetic,
+        "image_snapshot_sha256": source.image_snapshot_sha256,
+        "image_path": source.image_path,
+        "transcription": source.transcription,
+        "transcribed_by": source.transcribed_by,
+        "transcribed_at": (
+            None if source.transcribed_at is None else source.transcribed_at.isoformat()
+        ),
     }
 
 
@@ -174,9 +186,30 @@ def listing_document(ruleset: PropRuleset) -> dict[str, object]:
     }
 
 
-def validate_ruleset_document(path: str | Path) -> dict[str, object]:
-    """Load and report one ruleset file. A file that does not validate is refused."""
-    return ruleset_document(load_ruleset(Path(path)))
+def validate_ruleset_document(
+    path: str | Path, snapshots_root: str | Path | None = None
+) -> dict[str, object]:
+    """Load and report one ruleset file. A file that does not validate is refused.
+
+    With ``snapshots_root`` the evidence self-check runs too (``crucible.prop.sources``): every
+    citation must resolve to the saved bytes under that folder, and an image transcription's file
+    must hash to its declared sha256. A citation that does not resolve refuses the validation.
+    """
+    ruleset = load_ruleset(Path(path))
+    document = ruleset_document(ruleset)
+    if snapshots_root is not None:
+        from crucible.prop.sources import verify_sources
+
+        check = verify_sources(ruleset, snapshots_root)
+        document["evidence_check"] = {
+            "root": check.root,
+            "attributions": check.attributions,
+            "images": check.images,
+            "synthetic": check.synthetic,
+            "snapshots": check.snapshots,
+            "summary": check.summary(),
+        }
+    return document
 
 
 def ruleset_json_schema() -> dict[str, object]:

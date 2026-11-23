@@ -489,23 +489,53 @@ class MaxContracts(Evaluator):
 
 
 class ScalingPlan(Evaluator):
-    """The weighted contract limit for the next rule-day, from the rule-day's end-of-day basis."""
+    """The weighted contract limit for the next rule-day, from the rule-day's end-of-day basis.
+
+    A ladder keyed on ``min_balance_usd`` reads the closing BALANCE (absolute tiers, a floor rung
+    for everything below the first threshold) and takes its boundary from the rule's
+    ``comparison``; a ladder keyed on ``min_profit_usd`` keeps the original reading (profit since
+    the phase's start, ``>=`` on every rung). The limit chosen at a close holds for the whole next
+    rule-day: nothing here reads the basis again until that day's close.
+    """
 
     rule: ScalingPlanRule
 
     def __init__(self, rule: ScalingPlanRule, start_micro: int, weight: Decimal) -> None:
         super().__init__(rule, start_micro, weight)
-        limits = [step.max_contracts for step in rule.steps]
-        self.limit = limits[0] if rule.steps[0].min_profit_usd <= 0 else Decimal(0)
+        self.balance_ladder = rule.balance_ladder
+        # a balance ladder takes its rung boundary from its own ``comparison``; the original
+        # profit ladder keeps the engine's ``>=`` reading it has always had, because 112 shipped
+        # files declare ``<=`` there (a vestigial declaration, see the module's known gaps)
+        self.inclusive = not self.balance_ladder or rule.comparison == ">="
+        # the first rule-day: a balance ladder reads the phase's starting balance (an XFA starts at
+        # $0, so the floor rung applies), a profit ladder starts from zero profit
+        self.limit = self._rung(start_micro if self.balance_ladder else 0)
         self.next_limit = self.limit
 
-    def close_of_day(self, marks: AccountMarks) -> None:
-        profit = basis_at(marks, marks.close_ticks, self.rule.basis) - self.start_micro
+    def _rung(self, value_micro: int) -> Decimal:
         chosen = Decimal(0)
         for step in self.rule.steps:
-            if profit >= micro(step.min_profit_usd, "scaling_plan.min_profit_usd"):
+            if self.balance_ladder:
+                threshold = step.min_balance_usd
+                where = "scaling_plan.min_balance_usd"
+            else:
+                threshold = step.min_profit_usd
+                where = "scaling_plan.min_profit_usd"
+            if threshold is None:
+                # the floor rung: the tier for everything below the next threshold, which is how
+                # a zero or negative balance still has a size (it is overridden by every rung hit)
                 chosen = step.max_contracts
-        self.next_limit = chosen
+                continue
+            level = micro(threshold, where)
+            if (value_micro >= level) if self.inclusive else (value_micro > level):
+                chosen = step.max_contracts
+        return chosen
+
+    def close_of_day(self, marks: AccountMarks) -> None:
+        value = basis_at(marks, marks.close_ticks, self.rule.basis)
+        if not self.balance_ladder:
+            value -= self.start_micro
+        self.next_limit = self._rung(value)
 
     def new_day(self, day: int, marks: AccountMarks) -> None:
         self.limit = self.next_limit

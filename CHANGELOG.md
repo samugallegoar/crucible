@@ -75,6 +75,36 @@ kind of change is recorded).
   - The Labs drops declare the page's own 90-calendar-day lifespan and 30-calendar-day inactivity
     in the evaluation phase, counting executed trades only, and no funded-phase inactivity the
     page does not publish.
+- **Values printed only inside an image (ADR-0107 amendment, 2026-11-23).**
+  - New evidence type `official_image_transcription`: a rule whose value is printed only in a saved
+    picture carries the image's own sha256, its path under the private snapshots root, the values
+    exactly as printed, and who transcribed them when. The evidence and the block must agree in both
+    directions, and the block is all-or-nothing.
+  - `crucible.prop.sources`: the evidence self-check as code. Every attribution's page hash must
+    resolve to a saved file and its quote must appear in THAT page; an image transcription's file must
+    hash to its declared sha256. `crucible prop validate <file> --snapshots-root DIR` runs it and
+    refuses a mismatch (no more "the quotes verify" as a paragraph in a review). A transcription is
+    never compared with page text: the numbers exist only in the picture.
+  - `supporting_sources` on a rule (attributions that support its basis, timing or units without
+    carrying its value) and `assumptions` (further named readings the one value depends on, each
+    reported with the value).
+- **`scaling_plan` balance tiers.** A step may be keyed on `min_balance_usd` (the absolute balance at
+  the rule-day's close) instead of `min_profit_usd`; the first step may omit its threshold and is then
+  the floor rung (so a zero or negative balance has a size); a balance ladder requires `basis:
+  balance` and `evaluated: eod` and takes its rung boundary from its own `comparison` (`>=` upper
+  rung, `>` lower rung). The profit form is unchanged, including its vestigial `comparison`.
+- **Topstep XFA scaling-plan ladder (24 Trading Combine files, still unverified).**
+  - The funded phase declares `xfa_max_contracts`, the ladder transcribed from the official image for
+    its own size (50K: 2/3/5 lots; 100K: 3/4/5/10; 150K: 3/4/5/10/15), keyed on the balance, with the
+    boundary in the LOWER rung, a floor tier for a zero or negative balance, and `clip` on excess.
+  - The page quotes for the basis ("Your XFA starts at a $0 balance"), the timing ("Your max
+    contracts do not increase mid-session"), the 10:1 mini/micro ratio and the 10-second excess
+    tolerance are `supporting_sources`; three delegated decisions (boundary, negative balance, clip)
+    are `assumption_kind: owner_decision` assumptions naming the delegation of 2026-11-23.
+  - `xfa_scaling_plan_ladder` leaves `not_modeled` in those 24 files and stays in the 2 Labs files,
+    where the article's table is not extrapolated to the Labs XFA.
+  - The Trading Combine's maximum position size is never the XFA limit, and nothing in a funded
+    phase changes size mid-session.
 
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**
