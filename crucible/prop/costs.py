@@ -19,6 +19,13 @@ construction and the estimate stays ``conditional``.
 row states; a row that covers several components is charged once. The engine never maps a CME
 product bucket to a root.
 
+**A file says what its amounts CLAIM.** ``kind: point_estimate`` is the owner's best single
+figure; ``kind: upper_bound`` is an explicit, versioned ceiling that fills only the gaps the
+sources leave, for a preliminary analysis across firms. Under an upper-bound file the cost is
+labelled ``upper`` and the net cash ``lower_bound``: the real cost can only come down, so the
+probability is pessimistic. The file is never a firm's value, and it never prices a component the
+firm includes, one the dataset priced, or a commission the firm states.
+
 **The classification is the run's participant PROFILE, resolved per component.** A fee row names
 the one profile dimension it needs (``cme_membership_status`` for an exchange row,
 ``nfa_assessment_eligibility`` for the NFA assessment) and the value it is written for. The run
@@ -88,8 +95,41 @@ PARTICIPANT_PROFILE_REASON = "participant profile declared by the run, not state
 run input, and a firm never states which rate class its accounts fall in (ADR-0107, second
 2026-11-22 amendment)."""
 
+POINT_ESTIMATE_KIND = "point_estimate"
+UPPER_BOUND_KIND = "upper_bound"
+ASSUMPTION_KINDS: tuple[str, ...] = (POINT_ESTIMATE_KIND, UPPER_BOUND_KIND)
+"""What an assumption's amounts CLAIM. ``point_estimate`` is the owner's best single figure;
+``upper_bound`` is a ceiling that fills only the gaps a firm's sources leave, so every cost priced
+through it is the most the account can pay and every cash statistic is a lower bound. The kinds are
+different claims, not different amounts: a run says which one it used (ADR-0107, 2026-11-23
+owner-decision amendment)."""
+
+UPPER_BOUND_COST_LABEL = "upper"
+"""The ``cost_bound`` label an upper-bound file puts on the artifact: the cost is a ceiling."""
+
+UPPER_BOUND_CASH_LABEL = "lower_bound"
+"""The label of the cash statistic under an upper-bound cost: the net cash can only be worse."""
+
+UPPER_BOUND_REASON = (
+    "costs are an upper bound: the probability and the net cash are pessimistic (lower bounds) "
+    "under it"
+)
+"""Why a pass probability and a cash statistic computed under an upper-bound file are not point
+estimates: the cost can only come down, so the probability can only rise."""
+
+UPPER_BOUND_COMPARABILITY_NOTE = (
+    "firms with fewer sourced cost components receive more of the bound, so cross-firm comparisons "
+    "under it are pessimistic for the less documented firms"
+)
+"""The note every report under an upper-bound file carries: the bound fills only gaps, so a firm
+with fewer sourced components is charged more of it than a firm that states its costs."""
+
+COST_ASSUMPTIONS_DIRNAME = "cost_assumptions"
+"""The directory of the versioned cost-assumption files under ``rulesets/prop``."""
+
 _ASSUMPTION_KEYS: tuple[str, ...] = (
     "name",
+    "kind",
     "description",
     "provided_by",
     "status",
@@ -539,6 +579,11 @@ class CostAssumption:
     root), it may not override a component the ruleset declares ``included`` or one the dataset
     already priced, and an ``unknown`` component it prices is ADDED — worse for the strategy, which
     is the pessimistic direction.
+
+    ``kind`` says what the amounts CLAIM (``docs/GLOSSARY.md``, "Upper-bound cost assumption"): a
+    ``point_estimate`` is the owner's best single figure, while an ``upper_bound`` is a ceiling that
+    fills only the gaps the sources leave — so under it the cost is ``upper``, the net cash is a
+    ``lower_bound`` and the pass probability can only rise once real data arrive.
     """
 
     name: str
@@ -549,8 +594,16 @@ class CostAssumption:
     amounts: Mapping[str, tuple[AssumptionAmount, ...]]
     sha256: str
     source_path: str
+    kind: str = POINT_ESTIMATE_KIND
 
     def __post_init__(self) -> None:
+        if self.kind not in ASSUMPTION_KINDS:
+            msg = (
+                f"cost assumption {self.name!r}: kind must be one of {list(ASSUMPTION_KINDS)}, "
+                f"got {self.kind!r}. A file that fills gaps with a ceiling says 'upper_bound'; "
+                "one that states a best single figure says 'point_estimate'"
+            )
+            raise ConfigurationError(msg)
         if self.status != "unverified":
             msg = (
                 f"cost assumption {self.name!r}: status must be 'unverified' (a file cannot "
@@ -566,6 +619,16 @@ class CostAssumption:
         if not self.amounts:
             msg = f"cost assumption {self.name!r} declares no root: it prices nothing"
             raise ConfigurationError(msg)
+
+    @property
+    def is_upper_bound(self) -> bool:
+        """Whether the file's amounts are ceilings rather than a best single point figure."""
+        return self.kind == UPPER_BOUND_KIND
+
+    @property
+    def cost_bound(self) -> str | None:
+        """``upper`` when the amounts are ceilings (the cost label), otherwise ``None``."""
+        return UPPER_BOUND_COST_LABEL if self.is_upper_bound else None
 
     def amount_for(self, root: str, component: str) -> AssumptionAmount | None:
         """The entry pricing ``root``'s ``component``, or ``None`` when the file does not."""
@@ -607,6 +670,7 @@ def load_cost_assumption(path: Path) -> CostAssumption:
     .. code-block:: yaml
 
         name: owner-estimate-2026-11-22
+        kind: point_estimate
         description: the owner's working all-in figure, composition unknown
         provided_by: owner
         status: unverified
@@ -620,8 +684,9 @@ def load_cost_assumption(path: Path) -> CostAssumption:
               per_side_usd: "0.41"
               unit: per_contract_per_side
 
-    Every key is required and no other key is accepted, ``status`` must be ``unverified``, the
-    roots are upper-case and the ``covers`` names are cost components. Every amount carries
+    Every key is required and no other key is accepted, ``status`` must be ``unverified``, ``kind``
+    is ``point_estimate`` or ``upper_bound``, the roots are upper-case and the ``covers`` names are
+    cost components. Every amount carries
     ``unit: per_contract_per_side`` (any other unit is refused: a monthly or platform charge is a
     fixed charge, not a per-side execution cost), and an amount that covers ``other`` names the
     charge (``charge_name``) in the same terms a fee row does. An amount applies only to its own
@@ -661,6 +726,14 @@ def load_cost_assumption(path: Path) -> CostAssumption:
         msg = f"cost assumption {path}: amounts must be a mapping root -> list of entries"
         raise ConfigurationError(msg)
     amounts: dict[str, tuple[AssumptionAmount, ...]] = {}
+    kind = str(document["kind"]).strip()
+    if kind not in ASSUMPTION_KINDS:
+        msg = (
+            f"cost assumption {path}: kind must be one of {list(ASSUMPTION_KINDS)}, got "
+            f"{kind!r}. A file that fills gaps with a ceiling says 'upper_bound'; one that "
+            "states a best single figure says 'point_estimate'"
+        )
+        raise ConfigurationError(msg)
     for root, entries in raw_amounts.items():
         root_text = str(root).strip()
         if not root_text or root_text != root_text.upper():
@@ -729,6 +802,7 @@ def load_cost_assumption(path: Path) -> CostAssumption:
         amounts=amounts,
         sha256=sha,
         source_path=str(path),
+        kind=kind,
     )
 
 
@@ -797,6 +871,22 @@ class CostPricing:
         return self.schedule.fees_per_side
 
     @property
+    def cost_bound(self) -> str | None:
+        """``upper`` when the assumption's amounts are ceilings, otherwise ``None``.
+
+        The label an artifact carries (``summary.json``, every ``attempts.parquet`` row), so a
+        reader of a run that used an upper-bound file never mistakes its cost for a point figure.
+        """
+        if self.assumption is not None and self.assumption.is_upper_bound:
+            return UPPER_BOUND_COST_LABEL
+        return None
+
+    @property
+    def assumption_kind(self) -> str | None:
+        """What the file's amounts claimed (``point_estimate``/``upper_bound``), or ``None``."""
+        return None if self.assumption is None else self.assumption.kind
+
+    @property
     def reasons(self) -> tuple[str, ...]:
         """Why the cost is not exact, in the vocabulary of the attempt's cash statistic."""
         out: list[str] = []
@@ -815,6 +905,8 @@ class CostPricing:
             out.append(label)
         if self.profile_priced:
             out.append(PARTICIPANT_PROFILE_REASON)
+        if self.assumption is not None and self.assumption.is_upper_bound:
+            out.append(UPPER_BOUND_REASON)
         return tuple(out)
 
 
@@ -846,6 +938,12 @@ def price_components(
     needed, ``conditional`` when an assumption or the profile supplied a value, and ``unavailable``
     when any gap remains. ``excluded`` components need a ``profile``: it is refused when missing,
     because a fee row prices a stated classification and the ruleset never states one.
+
+    A ``point_estimate`` file names the costs it estimates, so an amount that lands on a component
+    the firm already has (``included``, priced by the dataset, or a stated commission) is a
+    contradiction and is REFUSED. An ``upper_bound`` file is a table over every root and component
+    instead: an amount that lands on such a component is skipped, never charged and never an error,
+    because the bound fills only the gaps a firm's own sources leave.
 
     A gap is never charged as zero: the returned schedule keeps no amount for it, and the caller
     must not present the total as complete.
@@ -984,13 +1082,25 @@ def price_components(
                 charge = charges.get(covered)
                 if charge is None:
                     continue
-                if charge.status in ("included", "excluded_priced", "known"):
-                    msg = (
-                        f"cost assumption {assumption.name!r} prices {root} {covered}, but the "
-                        f"ruleset already has it ({charge.status}: {charge.detail}). An "
-                        "assumption may not override a declared or dataset-priced cost"
-                    )
-                    raise ConfigurationError(msg)
+                if charge.status not in (
+                    "included",
+                    "excluded_priced",
+                    "covered_by_row",
+                    "known",
+                ):
+                    continue
+                if assumption.is_upper_bound:
+                    # a bound is a table over every root and component, and a firm keeps what its
+                    # own sources state: an amount that lands on a cost the firm already has is
+                    # never charged, never an error, and never a reason the cost is conditional
+                    continue
+                msg = (
+                    f"cost assumption {assumption.name!r} prices {root} {covered}, but the "
+                    f"ruleset already has it ({charge.status}: {charge.detail}). An "
+                    "assumption may not override a declared or dataset-priced cost (an "
+                    "upper_bound file may list it: it fills only the gaps)"
+                )
+                raise ConfigurationError(msg)
 
     def _amount(component: str) -> Decimal:
         """What the component adds; the run's own commission is the unknown placeholder."""
@@ -1032,10 +1142,18 @@ def price_components(
 
 
 __all__ = [
+    "ASSUMPTION_KINDS",
     "COMPONENTS_WITH_COMMISSION",
+    "COST_ASSUMPTIONS_DIRNAME",
     "FEE_SOURCE_DATASET",
     "PARTICIPANT_PROFILE_REASON",
+    "POINT_ESTIMATE_KIND",
     "SCHEDULE_FIELD",
+    "UPPER_BOUND_CASH_LABEL",
+    "UPPER_BOUND_COMPARABILITY_NOTE",
+    "UPPER_BOUND_COST_LABEL",
+    "UPPER_BOUND_KIND",
+    "UPPER_BOUND_REASON",
     "AssumptionAmount",
     "ComponentCharge",
     "ComponentFeeRow",

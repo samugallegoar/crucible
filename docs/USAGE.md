@@ -679,6 +679,7 @@ uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml    
 
   ```yaml
   name: owner-estimate-2026-11-22
+  kind: point_estimate        # or upper_bound: see "a preliminary analysis across firms" below
   description: the owner's working per-side figure, composition unknown
   provided_by: owner
   status: unverified            # the only accepted value
@@ -699,7 +700,49 @@ uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml    
 
   A component the file does not price stays a gap and the cash number stays `unavailable`. An
   `unknown` component it prices is ADDED (worse for the strategy), and it may not override a
-  component the ruleset declares `included` or the fee dataset already priced.
+  component the ruleset declares `included` or the fee dataset already priced. `kind` says what the
+  amounts CLAIM: a `point_estimate` names the costs it estimates (an amount on a cost the firm
+  already has is refused), and an `upper_bound` is a table that fills only the gaps (an amount on
+  such a cost is skipped).
+
+### A preliminary analysis across firms (the upper-bound cost file)
+
+While the per-firm cost-component table is still being filled with sourced data, a run across EVERY
+firm can use the versioned upper bound instead of waiting for every gap to close:
+
+```bash
+uv run crucible futures prop \
+  --config examples/futures/es_sma_cross.yaml \
+  --ruleset rulesets/prop/topstep/topstep-trading-combine-50k.v1.yaml \
+  --horizon 20 --execution-mode automated \
+  --cost-assumption rulesets/prop/cost_assumptions/upper_bound_v1.yaml \
+  --store D:/proyectos/crucible/data/processed --artifacts experiments
+```
+
+`rulesets/prop/cost_assumptions/upper_bound_v1.yaml` is the owner's explicit, unverified ceiling per
+root and component (ES/NQ/YM/RTY: exchange 2.00, clearing 0.50, NFA 0.02, other 0.50 per contract per
+side; NKD: 3.00, 0.50, 0.02, 0.50; MES/MNQ/MYM/M2K: 0.60, 0.25, 0.02, 0.25). It **fills only the
+gaps**: a component a firm's page states as `included`, one the fee dataset priced and a commission
+the firm states are never priced from it, so a firm with sourced costs keeps them. Its values are
+subject to change when the real data arrive.
+
+Read the labels it puts on the artifact:
+
+- `summary.json` carries `cost_bound: upper` (top level and in every scenario) and the
+  `comparability_note`; every `attempts.parquet` row carries the same `cost_bound` column;
+- the cash statistic is `lower_bound` (`cash.status`, `cash_estimate_status` per attempt): the cost
+  is a ceiling, so the real net cash can only be higher, never lower;
+- the pass probability's reasons include `costs are an upper bound: the probability and the net cash
+  are pessimistic (lower bounds) under it`, so the field is `conditional_pass_probability`;
+- the comparability note says it out loud: *firms with fewer sourced cost components receive more of
+  the bound, so cross-firm comparisons under it are pessimistic for the less documented firms*. Two
+  firms' probabilities under this file are not a like-for-like ranking;
+- the estimate stays `conditional` (never `complete`), and a root the file does not price stays a
+  named gap, never an extrapolated amount.
+
+The file is hashed like a ruleset: its `sha256` is in `rulesets/prop/INDEX.json`, `summary.json`, the
+sealed manifest and every attempt row, and it is part of the evaluation id. A change is a NEW version
+(`upper_bound_v2.yaml`), never an edit in place once merged.
 - `--json` prints `summary.json` itself (the text rendering says the same numbers).
 
 Reading it, in order:

@@ -624,9 +624,24 @@ gap (`classification <dim> not declared`), and there is no default and no fallba
 there is.
 
 **Cost-assumption file** — the YAML a user passes to price the cost gaps the sources leave
-(`--cost-assumption FILE`): `name`, `description`, `provided_by`, `status: unverified`, `evidence`
-and `amounts` keyed by root, each root a list of `{covers, per_side_usd}`. It prices only the root
-and components it names (no extrapolation), an `unknown` component it prices is ADDED (the
-pessimistic direction), it may not override an `included` or an already-priced `excluded` component,
-and it never turns a gap into a complete cost: the estimate is `conditional`, and the file's SHA-256
-plus the gaps it priced and the gaps it left are recorded in the artifact.
+(`--cost-assumption FILE`): `name`, `kind`, `description`, `provided_by`, `status: unverified`,
+`evidence` and `amounts` keyed by root, each root a list of `{covers, per_side_usd, unit}`. It
+prices only the root and components it names (no extrapolation), an `unknown` component it prices
+is ADDED (the pessimistic direction), it may not override an `included` or an already-priced
+`excluded` component, and it never turns a gap into a complete cost: the estimate is `conditional`,
+and the file's SHA-256 plus the gaps it priced and the gaps it left are recorded in the artifact.
+`kind` states what the amounts CLAIM: a `point_estimate` is the owner's best single figure (an
+amount on a cost the firm already has is refused), an `upper_bound` is a ceiling that fills only the
+gaps (an amount on such a cost is skipped).
+
+**Upper-bound cost assumption** — a cost-assumption file with `kind: upper_bound`: an explicit,
+versioned CEILING per root and component that prices only the gaps a firm's own sources leave, so a
+preliminary analysis can run across every firm before the per-firm cost table is complete
+(`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`). It is never a firm's value, it prices no
+commission the firm states, and it labels what it claims: `cost_bound: upper` in `summary.json` and
+every `attempts.parquet` row, the cash statistic `lower_bound` (the cost is a ceiling, so the net
+cash can only rise), the pass probability's reason `costs are an upper bound: the probability and
+the net cash are pessimistic (lower bounds) under it`, and the comparability note *firms with fewer
+sourced cost components receive more of the bound, so cross-firm comparisons under it are
+pessimistic for the less documented firms*. It is hashed like a ruleset and versioned by whole file:
+a change is `upper_bound_v2.yaml`, never an edit in place once merged.

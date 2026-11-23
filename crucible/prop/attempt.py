@@ -24,7 +24,9 @@ run's participant type. A component the sources do not state is a gap. Any gap l
 ``cash_estimate_status`` ``unavailable`` unless a ``CostAssumption`` FILE covers every one of
 them, which makes it ``conditional`` and never ``complete``. A payout cap the source does not
 state (``unknown``) is a third case: the cash numbers are paid as the other terms allow and
-labelled ``upper_bound``.
+labelled ``upper_bound``. An assumption file of kind ``upper_bound`` is a fourth: its amounts are
+ceilings, so the attempt's ``cost_bound`` is ``upper`` and the cash statistic is labelled
+``lower_bound`` (the cost can only come down, so the net cash can only rise).
 """
 
 from __future__ import annotations
@@ -49,6 +51,10 @@ from crucible.execution.interfaces import OverlayEvent
 from crucible.prop import rules as rl
 from crucible.prop.costs import (
     PARTICIPANT_PROFILE_REASON,
+    UPPER_BOUND_CASH_LABEL,
+    UPPER_BOUND_COST_LABEL,
+    UPPER_BOUND_KIND,
+    UPPER_BOUND_REASON,
     ComponentCharge,
     ComponentFeeSource,
     ComponentFeeTable,
@@ -145,7 +151,8 @@ class CommissionApplication:
     ``participant_profile_sha256`` is the canonical hash of the run's participant profile: the
     profile is a RUN input, because the ruleset never states one, and using it keeps the cost
     ``conditional``. ``cost_assumption``/``cost_assumption_sha256`` name the file that priced a
-    gap, and ``priced_by_assumption`` lists which components it priced.
+    gap, ``priced_by_assumption`` lists which components it priced, and
+    ``cost_assumption_kind`` says what that file claimed (``point_estimate`` or ``upper_bound``).
     """
 
     status: str
@@ -160,6 +167,14 @@ class CommissionApplication:
     cost_assumption: str | None = None
     cost_assumption_sha256: str | None = None
     priced_by_assumption: tuple[str, ...] = ()
+    cost_assumption_kind: str | None = None
+
+    @property
+    def cost_bound(self) -> str | None:
+        """``upper`` when the cost-assumption file's amounts are ceilings, else ``None``."""
+        if self.cost_assumption_kind == UPPER_BOUND_KIND:
+            return UPPER_BOUND_COST_LABEL
+        return None
 
     @property
     def priced_from_dataset(self) -> bool:
@@ -177,7 +192,11 @@ class CommissionApplication:
 
 @dataclass(frozen=True, slots=True)
 class AttemptResult:
-    """One attempt: outcome, phases, breach, buffer, costs, coverage and identity (ADR-0106 s5)."""
+    """One attempt: outcome, phases, breach, buffer, costs, coverage and identity (ADR-0106 s5).
+
+    ``cost_bound`` is ``upper`` when the run's cost-assumption file states ceilings (the cost is the
+    most the account can pay, the cash statistic a ``lower_bound``) and ``""`` otherwise.
+    """
 
     outcome: Outcome
     phase_outcomes: tuple[PhaseOutcome, ...]
@@ -197,6 +216,7 @@ class AttemptResult:
     net_cash_usd: Decimal
     cash_estimate_status: str
     cash_estimate_reasons: tuple[str, ...]
+    cost_bound: str
     overlay_events: tuple[OverlayEvent, ...]
     rule_coverage: tuple[RuleCoverageRow, ...]
     evaluation_status: EvaluationStatus
@@ -361,6 +381,7 @@ def _commissions_for(
             cost_assumption=None if cost_assumption is None else cost_assumption.name,
             cost_assumption_sha256=None if cost_assumption is None else cost_assumption.sha256,
             priced_by_assumption=pricing.priced_by_assumption,
+            cost_assumption_kind=pricing.assumption_kind,
         ),
     )
 
@@ -469,8 +490,9 @@ def cash_estimate(
     cost_assumption: str | None,
     participant_profile: str | None = None,
     fees_incomplete: str | None = None,
+    cost_assumption_kind: str | None = None,
 ) -> tuple[str, tuple[str, ...]]:
-    """``exact | conditional | upper_bound | unavailable`` for the payout and net-cash numbers.
+    """``exact | conditional | lower_bound | upper_bound | unavailable`` for payouts and net cash.
 
     A cash number needs every cost the account pays, so ``cost_status`` decides first:
     ``unavailable`` (any component is a gap) makes the cash ``unavailable`` unless a
@@ -479,9 +501,14 @@ def cash_estimate(
     and no declared participant profile was needed; either one keeps the number ``conditional``,
     never
     ``complete``. A payout cap the sources do not state does not stop the number: the payouts are
-    paid as the other terms allow and the statistic is an ``upper_bound``.
+    paid as the other terms allow and the statistic is an ``upper_bound``. An assumption of kind
+    ``upper_bound`` makes the COST a ceiling, so the net cash is its floor: the statistic is
+    ``lower_bound`` and carries :data:`UPPER_BOUND_REASON`, which wins over the cap's
+    ``upper_bound`` label because it applies to every attempt of the run and the per-payout label
+    still says ``upper_bound``.
     """
     reasons: list[str] = []
+    upper_bound_costs = cost_assumption_kind == UPPER_BOUND_KIND
     if not payouts_modeled:
         reasons.append("the ruleset declares no payout rule, so no withdrawal is modeled")
     if cost_status == "unavailable":
@@ -500,6 +527,10 @@ def cash_estimate(
         reasons.append(PARTICIPANT_PROFILE_REASON)
     if payout_cap_unknown:
         reasons.append(PAYOUT_CAP_UNKNOWN)
+    if upper_bound_costs:
+        reasons.append(UPPER_BOUND_REASON)
+        return UPPER_BOUND_CASH_LABEL, tuple(reasons)
+    if payout_cap_unknown:
         return "upper_bound", tuple(reasons)
     conditional = cost_status == "conditional" or cost_assumption is not None
     return ("conditional" if conditional else "exact"), tuple(reasons)
@@ -869,6 +900,7 @@ def simulate_attempt(
             commission.participant_profile_sha256 if commission.priced_from_dataset else None
         ),
         fees_incomplete=commission.fees_incomplete,
+        cost_assumption_kind=commission.cost_assumption_kind,
     )
     return AttemptResult(
         outcome=outcome,
@@ -891,6 +923,7 @@ def simulate_attempt(
         net_cash_usd=payouts_usd - fee_breakdown.total_usd,
         cash_estimate_status=cash_status,
         cash_estimate_reasons=cash_reasons,
+        cost_bound=commission.cost_bound or "",
         overlay_events=tuple(events),
         rule_coverage=coverage,
         evaluation_status=evaluation_status(coverage),
