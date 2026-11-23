@@ -64,14 +64,16 @@ class ShardPlan:
 
 
 SHARD_PLAN: tuple[ShardPlan, ...] = (
-    # 5/5/6 = 16 shard jobs, plus `checks`, `clean-install` and `shard-union`: 19 jobs at once,
+    # 5/4/6 = 15 shard jobs, plus `checks`, `clean-install` and `shard-union`: 18 jobs at once,
     # under the workflow's ~20-job concurrency ceiling, so every shard starts in the same wave.
-    # The counts come from the per-OS durations files: ubuntu ~615 s, macOS ~800 s, Windows ~900 s
-    # of estimated suite, so a shard holds 120-150 s of it, about 45-60 s on four workers. The
-    # matrix in `.github/workflows/ci.yml` carries the same numbers, and
+    # The counts come from the per-OS durations files (ubuntu 718 s, macOS 599 s, Windows 773 s of
+    # estimated suite): 145/150/130 s per shard, an even tail. macOS gets fewer shards than its
+    # suite would allow because macOS runners are the scarce ones -- a fifth macOS job has waited
+    # 5-10 minutes for a runner while every ubuntu and Windows shard started in 2-3 s. The matrix
+    # in `.github/workflows/ci.yml` carries the same numbers, and
     # `tests/unit/test_ci_shard_plan.py` fails when the two disagree.
     ShardPlan("ubuntu-latest", 5),
-    ShardPlan("macos-latest", 5, ("-m", "not single_os")),
+    ShardPlan("macos-latest", 4, ("-m", "not single_os")),
     ShardPlan("windows-latest", 6, ("-m", "not single_os")),
 )
 
