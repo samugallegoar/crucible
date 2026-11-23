@@ -9,19 +9,18 @@ A stale `.test_durations` only worsens the balance -- `pytest-split` assigns eve
 exactly one group and can never drop one -- but a plan, a matrix or an option can, and nothing else
 in the pipeline compares what CI *ran* with what the suite *contains*.
 
-Three things are demanded, and each is a hole nothing else would catch:
-
-1. **The union of the shards is the whole suite** -- no gap, no duplicate -- collected with the same
-   selectors the jobs use (`-m "not single_os"` off ubuntu, ADR-0076).
-2. **Each shard ran what it collected**: its JUnit report holds one case per collected id, so a
-   `-k`/`--deselect` added to the run step (and not to the collection) is caught too. Without it the
-   union of the collections would be silent about a test the job silently stopped running.
-3. The checks are per OS, because each OS selects a different suite.
+The property demanded is the one that matters: **the union of what the shards RAN is the whole
+suite, exactly once** -- no gap, no duplicate -- with each OS compared against the suite that OS
+selects (`-m "not single_os"` off ubuntu, ADR-0076).
 
 `--from-artifacts` reads the root `actions/download-artifact` produced: one directory per shard,
-named ``shard-<os>-<group>``, holding ``shard-ids.txt`` (the collected ids, one per line) and
-``junit.xml`` (the run). Without it the tool collects the shards itself in this process's child
-processes, which is what a developer runs before pushing.
+named ``shard-<os>-<group>``, holding the shard's ``junit.xml``. A JUnit report is written by pytest
+itself, holds one case per test the job ran or skipped (whatever it deselected is absent), and names
+each one ``<dotted module>.<test>`` -- so the union of the reports says exactly which tests ran
+where, with nothing to keep in sync by hand.
+
+Without ``--from-artifacts`` the tool collects the suite and every shard here, which is what a
+developer runs before pushing; it proves the same union for the plan, one collection earlier.
 """
 
 from __future__ import annotations
@@ -111,28 +110,34 @@ def _parse_ids(stdout: str, arguments: Sequence[str]) -> list[str]:
     return ids
 
 
-def read_artifact(directory: Path) -> tuple[str, int, list[str], int]:
-    """``(os, group, collected ids, cases in the JUnit report)`` for one shard's artifact."""
+def junit_ids(junit_file: Path) -> list[str]:
+    """The tests a shard ran or skipped, as ``path::test`` node ids, from its JUnit report."""
+    ids: list[str] = []
+    for case in ElementTree.parse(junit_file).getroot().iter("testcase"):
+        classname = case.get("classname") or ""
+        name = case.get("name") or ""
+        module = classname.replace(".", "/")
+        ids.append(f"{module}.py::{name}")
+    return ids
+
+
+def read_artifact(directory: Path) -> tuple[str, int, list[str]]:
+    """``(os, group, the ids the shard ran)`` for one shard's artifact."""
     match = _ARTIFACT.match(directory.name)
     if match is None:
         msg = f"{directory.name} is not a shard artifact (shard-<os>-<group>)"
         raise SystemExit(msg)
-    ids_file = directory / "shard-ids.txt"
     junit_file = directory / "junit.xml"
-    for path in (ids_file, junit_file):
-        if not path.is_file():
-            msg = f"{path} is missing: the shard job uploads both (ADR-0109)"
-            raise SystemExit(msg)
-    ids = _parse_ids(ids_file.read_text(encoding="utf-8"), [str(ids_file)])
-    cases = sum(1 for _ in ElementTree.parse(junit_file).getroot().iter("testcase"))
-    return match.group("os"), int(match.group("group")), ids, cases
+    if not junit_file.is_file():
+        msg = f"{junit_file} is missing: the shard job uploads its JUnit report (ADR-0109)"
+        raise SystemExit(msg)
+    return match.group("os"), int(match.group("group")), junit_ids(junit_file)
 
 
 def verify(
     plans: Sequence[ShardPlan],
     whole: dict[str, list[str]],
     shards: dict[str, dict[int, list[str]]],
-    ran: dict[str, dict[int, int]] | None = None,
     *,
     out: object = print,
 ) -> list[str]:
@@ -153,29 +158,19 @@ def verify(
         extra = sorted(set(counted) - set(whole[plan.os]))
         if duplicated:
             problems.append(
-                f"{plan.os}: {len(duplicated)} test(s) collected by more than one shard, e.g. "
+                f"{plan.os}: {len(duplicated)} test(s) ran in more than one shard, e.g. "
                 f"{duplicated[:3]}"
             )
         if missing:
             problems.append(
-                f"{plan.os}: {len(missing)} test(s) in no shard, e.g. {missing[:3]} -- the shards "
-                "would run less than the suite"
+                f"{plan.os}: {len(missing)} test(s) ran in no shard, e.g. {missing[:3]} -- the "
+                "shards ran less than the suite"
             )
         if extra:
             problems.append(
-                f"{plan.os}: {len(extra)} test(s) collected by a shard but not by the whole suite, "
+                f"{plan.os}: {len(extra)} test(s) ran in a shard but are not in the whole suite, "
                 f"e.g. {extra[:3]}"
             )
-        if ran is not None:
-            for group in sorted(per_shard):
-                collected_here = len(per_shard[group])
-                cases = ran[plan.os][group]
-                if cases != collected_here:
-                    problems.append(
-                        f"{plan.os} shard {group}/{plan.splits}: the job collected "
-                        f"{collected_here} test(s) but its report holds {cases} case(s) -- the run "
-                        "step selects something the collection step does not"
-                    )
         if not problems:
             out(  # type: ignore[operator]
                 f"{plan.os}: {plan.splits} shards cover the whole suite exactly "
@@ -208,7 +203,7 @@ def check_plan(plans: Sequence[ShardPlan], *, workers: int = 4) -> list[str]:
 
 
 def check_artifacts(root: Path, *, out: object = print) -> list[str]:
-    """Check what the CI shard jobs collected and ran against the whole suite, per OS."""
+    """Check what the CI shard jobs ran against the whole suite, per OS."""
     directories = sorted(
         path for path in root.iterdir() if path.is_dir() and path.name.startswith("shard-")
     )
@@ -217,19 +212,17 @@ def check_artifacts(root: Path, *, out: object = print) -> list[str]:
         raise SystemExit(msg)
     wanted = {plan.os: plan for plan in SHARD_PLAN}
     shards: dict[str, dict[int, list[str]]] = {}
-    ran: dict[str, dict[int, int]] = {}
     for directory in directories:
-        os_name, group, ids, cases = read_artifact(directory)
+        os_name, group, ids = read_artifact(directory)
         if os_name not in wanted:
             msg = f"{directory.name} belongs to {os_name}, which is not in the shard plan"
             raise SystemExit(msg)
         shards.setdefault(os_name, {})[group] = ids
-        ran.setdefault(os_name, {})[group] = cases
     plans = [plan for plan in SHARD_PLAN if plan.os in shards]
     with ThreadPoolExecutor(max_workers=len(plans)) as pool:
         collected = list(pool.map(collect, [plan.select for plan in plans]))
     whole = {plan.os: ids for plan, ids in zip(plans, collected, strict=True)}
-    return verify(plans, whole, shards, ran, out=out)
+    return verify(plans, whole, shards, out=out)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

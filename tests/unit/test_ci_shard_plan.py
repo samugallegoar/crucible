@@ -74,24 +74,19 @@ def test_the_matrix_carries_the_os_cut_the_plan_expects() -> None:
         )
 
 
-def test_each_shard_collects_and_runs_the_same_selection() -> None:
-    """`shard-union` compares the collections with the runs: the two commands must agree."""
+def test_each_shard_runs_the_whole_shard_selection() -> None:
+    """`shard-union` reads what each shard RAN: one pytest command, reporting every case."""
     runs_text = [str(step.get("run", "")) for step in _workflow()["jobs"]["tests"]["steps"]]
-    collects = [text for text in runs_text if "collect-only" in text]
-    runs = [text for text in runs_text if "pytest" in text and "collect-only" not in text]
-    assert len(collects) == 1, collects
+    runs = [text for text in runs_text if "pytest" in text]
     assert len(runs) == 1, runs
-    shard = "--splits ${{ matrix.splits }} --group ${{ matrix.group }}"
-    for command in (collects[0], runs[0]):
-        assert shard in command
-        assert "${{ matrix.extra }}" in command, "the OS cut comes from the matrix"
+    assert "--splits ${{ matrix.splits }} --group ${{ matrix.group }}" in runs[0]
+    assert "${{ matrix.extra }}" in runs[0], "the OS cut comes from the matrix"
     assert "-n auto --dist loadscope" in runs[0], "a shard still parallelises its own tests"
-    assert "-n" not in collects[0], (
-        "xdist does not change which tests are collected, and collecting through it pays every "
-        "worker's imports (30-44 s on macOS instead of 6 s)"
-    )
     assert "--junitxml=junit.xml" in runs[0], "the run has to report what it ran"
-    assert "> shard-ids.txt" in collects[0], "the collection has to be uploaded for the union job"
+    assert not any("collect-only" in text for text in runs_text), (
+        "a second collection per shard is 13-43 s of every job, and the JUnit report already says "
+        "which tests ran"
+    )
 
 
 def test_every_shard_uploads_what_the_union_check_needs() -> None:
@@ -102,8 +97,10 @@ def test_every_shard_uploads_what_the_union_check_needs() -> None:
     assert spec["name"] == "shard-${{ matrix.os }}-${{ matrix.group }}", (
         "the artifact name is what tools/check_shards parses back into (os, group)"
     )
-    assert "shard-ids.txt" in spec["path"]
-    assert "junit.xml" in spec["path"]
+    assert spec["path"] == "junit.xml", (
+        "the JUnit report is the shard's evidence: one case per test it ran or skipped, which "
+        "the union job compares with the whole suite"
+    )
 
 
 def test_the_union_job_runs_the_checker_on_the_shard_artifacts() -> None:
@@ -140,40 +137,36 @@ def test_every_job_has_a_budget() -> None:
 # --------------------------------------------------------------------------- the union checker
 
 
-def _artifact(
-    root: Path, os_name: str, group: int, ids: list[str], cases: int | None = None
-) -> Path:
-    """One shard artifact as `actions/upload-artifact` lays it out (ADR-0109)."""
+def _artifact(root: Path, os_name: str, group: int, ids: list[str]) -> Path:
+    """One shard artifact as `actions/upload-artifact` lays it out: its JUnit report (ADR-0109)."""
     directory = root / f"shard-{os_name}-{group}"
     directory.mkdir(parents=True)
-    (directory / "shard-ids.txt").write_text("\n".join(ids) + "\n", encoding="utf-8")
-    count = len(ids) if cases is None else cases
-    suites = "".join(f'<testcase classname="c" name="n{i}"/>' for i in range(count))
+    cases = "".join(
+        f'<testcase classname="{nodeid.rsplit("::", 1)[0].removesuffix(".py").replace("/", ".")}"'
+        f' name="{nodeid.rsplit("::", 1)[1]}"/>'
+        for nodeid in ids
+    )
     (directory / "junit.xml").write_text(
-        f'<?xml version="1.0"?><testsuites><testsuite>{suites}</testsuite></testsuites>',
+        f'<?xml version="1.0"?><testsuites><testsuite>{cases}</testsuite></testsuites>',
         encoding="utf-8",
     )
     return directory
 
 
-def test_the_checker_reads_a_shard_artifact(tmp_path: Path) -> None:
+def test_the_checker_reads_a_shard_from_its_junit_report(tmp_path: Path) -> None:
     from tools.check_shards import read_artifact
 
-    directory = _artifact(tmp_path, "windows-latest", 3, ["a.py::test_a", "b.py::test_b"])
-    assert read_artifact(directory) == (
-        "windows-latest",
-        3,
-        ["a.py::test_a", "b.py::test_b"],
-        2,
-    )
+    ids = ["tests/unit/test_errors.py::test_a[1]", "tests/lookahead/test_x.py::test_b"]
+    directory = _artifact(tmp_path, "windows-latest", 3, ids)
+    assert read_artifact(directory) == ("windows-latest", 3, ids)
 
 
-def test_the_checker_refuses_an_artifact_without_its_files(tmp_path: Path) -> None:
+def test_the_checker_refuses_an_artifact_without_its_report(tmp_path: Path) -> None:
     from tools.check_shards import read_artifact
 
     directory = tmp_path / "shard-ubuntu-latest-1"
     directory.mkdir()
-    with pytest.raises(SystemExit, match=r"shard-ids\.txt"):
+    with pytest.raises(SystemExit, match=r"junit\.xml"):
         read_artifact(directory)
 
 
@@ -206,16 +199,15 @@ def test_a_duplicate_or_a_gap_is_reported() -> None:
     assert any("in no shard" in problem for problem in gap)
 
 
-def test_a_shard_that_ran_less_than_it_collected_is_reported() -> None:
-    """A `-k` on the run step alone keeps the collections exact and still ships a hole."""
+def test_a_shard_that_ran_less_than_the_suite_is_a_hole() -> None:
+    """A `-k` on a shard's run step drops those tests from its report: the union then has a gap."""
     from tools.check_shards import ShardPlan, verify
 
     plan = ShardPlan("ubuntu-latest", 2)
     problems = verify(
         [plan],
         {"ubuntu-latest": ["a", "b"]},
-        {"ubuntu-latest": {1: ["a"], 2: ["b"]}},
-        {"ubuntu-latest": {1: 1, 2: 0}},
+        {"ubuntu-latest": {1: ["a"], 2: []}},
         out=lambda _: None,
     )
-    assert any("collected 1 test(s) but its report holds 0" in problem for problem in problems)
+    assert any("ran in no shard" in problem for problem in problems)

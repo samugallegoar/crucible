@@ -15,9 +15,9 @@ kind of change is recorded).
 - **The suite is sharded across runners, not only across cores.** `pytest-split` gives 6 shards on
   ubuntu and macOS and 8 on Windows, each on `-n auto --dist loadscope`; every shard is a runner of
   its own, so the full suite still runs on every OS for every PR.
-- **`tools/check_shards.py` and the `shard-union` job prove it**: the union of what the shards
-  collected is the whole suite (no gap, no duplicate), and each shard's JUnit report holds one case
-  per collected id, so a `-k` on the run step alone cannot hide a test either. Fails the PR.
+- **`tools/check_shards.py` and the `shard-union` job prove it**: each shard uploads the JUnit report
+  of what it ran, and the union of those reports must *be* the whole suite, per OS (no gap, no
+  duplicate). A `-k`/`--deselect` on a shard fails the PR.
 - **`.test_durations`** is committed and refreshed from ubuntu by a `workflow_dispatch` job; a stale
   file only unbalances the shards.
 - **The code fingerprint is pinned once per test session** (0.143 s per backtest, ~21 s of the serial

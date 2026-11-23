@@ -86,21 +86,13 @@ jobs:
           python-version: "3.12"
       - name: Sync (locked)
         run: uv sync --locked --all-extras
-      - name: Record what this shard collects
-        # The same selection as the run below; `shard-union` compares the union of these with the
-        # whole suite, so a test in no shard (or in two) fails the PR. No `-n`: xdist changes how
-        # the tests run, not which ones are collected, and a collection through `-n auto` pays the
-        # imports of every worker (30-44 s on macOS instead of 6 s).
-        run: >-
-          uv run pytest --collect-only -q --color=no
-          --splits ${{ matrix.splits }} --group ${{ matrix.group }} ${{ matrix.extra }}
-          > shard-ids.txt
       - name: Tests (shard ${{ matrix.group }}/${{ matrix.splits }} on ${{ matrix.os }})
         # Windows and macOS skip the OS-independent plumbing marked single_os, which Ubuntu runs
         # (ADR-0076). `--splits/--group` read `.test_durations`; a stale file only unbalances the
         # shards, it never drops a test (pytest-split assigns every collected item to exactly one
-        # group, and the `shard-union` job below proves it on every run). The JUnit report is what
-        # lets `shard-union` check that this step ran what the step above collected.
+        # group, and the `shard-union` job below proves it on every run). The JUnit report is the
+        # shard's evidence: one case per test it ran (or skipped), which `shard-union` unions and
+        # compares with the whole suite.
         run: >-
           uv run pytest -q --splits ${{ matrix.splits }} --group ${{ matrix.group }}
           -n auto --dist loadscope --junitxml=junit.xml
@@ -108,16 +100,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: shard-${{ matrix.os }}-${{ matrix.group }}
-          path: |
-            shard-ids.txt
-            junit.xml
+          path: junit.xml
           retention-days: 3
 
-  # The shards must add up to the suite: every test exactly once, no gap. `pytest-split` cannot
-  # drop a test by itself (it assigns every collected item), but a wrong matrix, a wrong count or
-  # an option that stops being passed could, and then a PR would reach main with a hole in it.
-  # `python -m tools.check_shards` collects the suite and every shard (after deselection) and
-  # compares the union with the whole, per OS; it names what differs and exits 1.
+  # The shards must add up to the suite: every test exactly once, no gap. `pytest-split` cannot drop
+  # a test by itself (it assigns every collected item), but a wrong matrix, a wrong count or an
+  # option that stops being passed could, and then a PR would reach main with a hole in it.
+  # `python -m tools.check_shards --from-artifacts` unions what the shard jobs actually RAN (their
+  # JUnit reports), collects the whole suite per OS, and demands the two be the same set; it names
+  # what differs and exits 1.
   shard-union:
     needs: tests
     runs-on: ubuntu-latest

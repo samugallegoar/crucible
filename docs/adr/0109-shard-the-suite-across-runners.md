@@ -33,13 +33,15 @@ the suite runs paid 0.15 s for three git subprocesses computing the code fingerp
    or missing file only makes the shards unbalanced — `pytest-split` assigns every collected item to
    exactly one group, so it cannot drop a test by construction.
 4. **Every run proves the shards add up** (`shard-union` job, `tools/check_shards.py
-   --from-artifacts`). Each shard job uploads what it collected (`shard-ids.txt`, from the same
-   selection as its run) and what it ran (`junit.xml`). The union job then demands, per OS:
-   the union of the collected ids **is** the whole suite (no gap, no duplicate), and each shard's
-   JUnit report holds one case per collected id. The second half matters as much as the first: a
-   `-k`/`--deselect` added to the run step alone would leave the collections perfect while the shard
-   quietly stopped running tests. `tools/check_shards` also runs the same comparison locally from the
-   plan (no CI needed) — `uv run python -m tools.check_shards`.
+   --from-artifacts`). Each shard job uploads the JUnit report of its run (one case per test it ran
+   or skipped; whatever was deselected is absent), and the job demands, per OS, that the union of
+   those reports **is** the whole suite — no gap, no duplicate. Because the evidence is what each
+   job *ran*, not what it would collect, a `-k`/`--deselect` added to a shard (or to the matrix's
+   `extra`) shows up as missing tests rather than being silently accepted. Reading the report instead
+   of collecting each shard also keeps a shard job honest about its cost: a second
+   `pytest --collect-only` per job was 13 s (ubuntu), 25 s (Windows) and 36-43 s (macOS) of every
+   shard — as much as the tests themselves. `tools/check_shards` runs the same comparison locally
+   from the plan, one collection earlier and without CI: `uv run python -m tools.check_shards`.
 5. **The code fingerprint is pinned once per test session** (`CRUCIBLE_CODE_FINGERPRINT`, read only
    when the test harness sets it, `tests/conftest.py`). Production is unchanged: an unset variable
    computes the fingerprint per run exactly as before, and the guard test that edits a file between

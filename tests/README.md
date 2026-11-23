@@ -280,10 +280,10 @@ never a selection of it, and two things enforce that on every PR:
   `tools/check_shards.py` are the same plan, every group 1..N runs exactly once, both commands of a
   shard carry the same `--splits/--group`, xdist and the `single_os` cut (ADR-0076).
 - the `shard-union` job (`uv run python -m tools.check_shards --from-artifacts <dir>`) — each shard
-  job uploads what it collected (`shard-ids.txt`) and what it ran (`junit.xml`); the job demands
-  that, per OS, the union of the collections **is** the whole suite (no gap, no duplicate) and that
-  each shard ran exactly what it collected. A `-k` or `--deselect` added to a run step alone fails
-  it. Locally, `uv run python -m tools.check_shards` runs the same comparison from the plan.
+  job uploads the JUnit report of what it ran (one case per test, skips included); the job demands
+  that, per OS, the union of those reports **is** the whole suite (no gap, no duplicate), so a `-k`
+  or a `--deselect` added to a shard fails it. Locally, `uv run python -m tools.check_shards` runs
+  the same comparison from the plan.
 
 `.test_durations` is what balances the shards; it is a hint, not a filter, so a stale file only makes
 the shards uneven. Refresh it from a real ubuntu run, never by hand:
