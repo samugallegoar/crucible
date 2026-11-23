@@ -211,3 +211,22 @@ def test_a_shard_that_ran_less_than_the_suite_is_a_hole() -> None:
         out=lambda _: None,
     )
     assert any("ran in no shard" in problem for problem in problems)
+
+
+def test_a_class_based_test_keeps_its_class(tmp_path: Path) -> None:
+    """pytest reports `classname` = dotted module + class, and no file: the class must survive."""
+    from tools.check_shards import junit_ids
+
+    report = tmp_path / "junit.xml"
+    report.write_text(
+        '<?xml version="1.0"?><testsuites><testsuite>'
+        '<testcase classname="tests.integration.test_phase3_null_acceptance.TestGenuineEdge"'
+        ' name="test_the_edge_survives"/>'
+        '<testcase classname="tests.unit.test_errors" name="test_plain"/>'
+        "</testsuite></testsuites>",
+        encoding="utf-8",
+    )
+    assert junit_ids(report) == [
+        "tests/integration/test_phase3_null_acceptance.py::TestGenuineEdge::test_the_edge_survives",
+        "tests/unit/test_errors.py::test_plain",
+    ]

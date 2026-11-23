@@ -110,15 +110,29 @@ def _parse_ids(stdout: str, arguments: Sequence[str]) -> list[str]:
     return ids
 
 
-def junit_ids(junit_file: Path) -> list[str]:
-    """The tests a shard ran or skipped, as ``path::test`` node ids, from its JUnit report."""
+def junit_ids(junit_file: Path, root: Path = ROOT) -> list[str]:
+    """The tests a shard ran or skipped, as ``path::test`` node ids, from its JUnit report.
+
+    pytest reports a case as ``classname`` (the dotted module, then any class) and ``name``; it
+    writes no file attribute. The module is therefore the longest dotted prefix that is a file in
+    the checkout: ``tests.integration.test_x.TestEdge`` becomes
+    ``tests/integration/test_x.py::TestEdge``.
+    """
     ids: list[str] = []
     for case in ElementTree.parse(junit_file).getroot().iter("testcase"):
-        classname = case.get("classname") or ""
-        name = case.get("name") or ""
-        module = classname.replace(".", "/")
-        ids.append(f"{module}.py::{name}")
+        classname = (case.get("classname") or "").strip()
+        name = (case.get("name") or "").strip()
+        ids.append(_nodeid(classname, name, root))
     return ids
+
+
+def _nodeid(classname: str, name: str, root: Path) -> str:
+    parts = [part for part in classname.split(".") if part]
+    for cut in range(len(parts), 0, -1):
+        path = "/".join(parts[:cut]) + ".py"
+        if (root / path).is_file():
+            return "::".join([path, *parts[cut:], name])
+    return f"{'/'.join(parts)}.py::{name}"
 
 
 def read_artifact(directory: Path) -> tuple[str, int, list[str]]:
