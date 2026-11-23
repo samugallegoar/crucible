@@ -113,6 +113,18 @@ def test_the_union_job_runs_the_checker_on_the_shard_artifacts() -> None:
     assert job.get("needs") == "tests", "it compares the shards, so it runs after them"
 
 
+def test_the_durations_upload_includes_a_hidden_file() -> None:
+    """`.test_durations` is hidden: `upload-artifact@v4` skips hidden files unless told not to."""
+    uploads = [
+        step
+        for step in _workflow()["jobs"]["durations"]["steps"]
+        if str(step.get("uses", "")).startswith("actions/upload")
+    ]
+    assert len(uploads) == 1, uploads
+    assert uploads[0]["with"]["path"] == ".test_durations"
+    assert uploads[0]["with"]["include-hidden-files"] is True
+
+
 def test_a_pr_runs_once_and_a_superseded_run_is_cancelled() -> None:
     document = _workflow()
     # `on` is a YAML 1.1 boolean, so PyYAML hands it back as True

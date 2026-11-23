@@ -156,6 +156,8 @@ jobs:
         with:
           name: test-durations
           path: .test_durations
+          # `.test_durations` is a hidden file: without this the upload silently finds nothing
+          include-hidden-files: true
 
   # The published wheel with runtime dependencies only (no dev or test tools): catches a runtime
   # import of a package that is not declared in [project.dependencies] (ADR-0070).
