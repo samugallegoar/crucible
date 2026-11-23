@@ -95,7 +95,7 @@ jobs:
         # compares with the whole suite.
         run: >-
           uv run pytest -q --splits ${{ matrix.splits }} --group ${{ matrix.group }}
-          -n auto --dist loadscope --junitxml=junit.xml --deselect tests/unit/test_errors.py
+          -n auto --dist loadscope --junitxml=junit.xml
           ${{ matrix.extra }}
       - uses: actions/upload-artifact@v4
         with:
