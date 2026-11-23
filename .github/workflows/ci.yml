@@ -54,7 +54,7 @@ jobs:
         include:
           - { os: ubuntu-latest, splits: 6, group: 1, extra: "" }
           - { os: ubuntu-latest, splits: 6, group: 2, extra: "" }
-          - { os: ubuntu-latest, splits: 6, group: 3, extra: '--deselect tests/unit/test_errors.py' }
+          - { os: ubuntu-latest, splits: 6, group: 3, extra: "" }
           - { os: ubuntu-latest, splits: 6, group: 4, extra: "" }
           - { os: ubuntu-latest, splits: 6, group: 5, extra: "" }
           - { os: ubuntu-latest, splits: 6, group: 6, extra: "" }
@@ -95,7 +95,7 @@ jobs:
         # compares with the whole suite.
         run: >-
           uv run pytest -q --splits ${{ matrix.splits }} --group ${{ matrix.group }}
-          -n auto --dist loadscope --junitxml=junit.xml
+          -n auto --dist loadscope --junitxml=junit.xml --deselect tests/unit/test_errors.py
           ${{ matrix.extra }}
       - uses: actions/upload-artifact@v4
         with:
