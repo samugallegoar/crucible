@@ -396,6 +396,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: 'The pages state the profit target amount but never its observation frequency. The conservative
         default for a pass condition is the end of the trade date on the closed balance: the trader passes
         no earlier than the end of the trade date, so a later same-day breach still counts.'
@@ -527,6 +528,7 @@ phases:
       synthetic: false
     assumption:
       name: payout_split_taken_from_firm_payout_policy
+      assumption_kind: section7_default
       rationale: The drop page states the buffer, the $250 minimum and the $1,500 cap but not the 90/10
         split, so the firm-wide Express Funded Account split is taken from https://help.topstep.com/en/articles/8284233-topstep-payout-policy
         for the Topstep Labs $50K Daily Payouts+ drop's funded account.
@@ -563,6 +565,7 @@ phases:
       synthetic: false
     assumption:
       name: labs_five_winning_days_minimum_from_firm_policy
+      assumption_kind: section7_default
       rationale: The drop page states no minimum for the 5 Winning Days path, so the firm-wide Express
         Funded Account minimum ($125) is taken from https://help.topstep.com/en/articles/8284233-topstep-payout-policy
         for the Topstep Labs $50K Daily Payouts+ drop.

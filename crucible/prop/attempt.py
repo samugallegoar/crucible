@@ -72,6 +72,7 @@ from crucible.prop.news import (
     unknown_time_gaps,
 )
 from crucible.prop.overlay import Outcome, PropAccountOverlay
+from crucible.prop.promotions import resolve_promotions
 from crucible.prop.rules_schema import ExecutionMode
 from crucible.prop.ruleset import PropRuleset
 
@@ -223,6 +224,7 @@ class AttemptResult:
     data_first_trade_date: dt.date
     data_last_trade_date: dt.date
     counterfactual_application: bool
+    promotions_applied: tuple[str, ...] = ()
     semantics: str = SEMANTICS
     liquidation_assumptions: str = LIQUIDATION_ASSUMPTIONS
 
@@ -552,6 +554,12 @@ def simulate_attempt(
     next bar with the require-signal-reset re-entry block in force at the decided target in force,
     so the strategy re-enters only after its decided target changes.
 
+    ``profile`` also decides the PROMOTIONAL values the ruleset offers (a doubled payout cap for
+    an account bought during an offer): a promotion applies only when the profile declares what it
+    requires and the purchase date falls in its window, and every promotion that does not apply is
+    reported by name and reason (``crucible.prop.promotions``). The ruleset's own bytes and content
+    hash never change: the promoted value is a property of the run.
+
     ``execution_mode`` is required: a compliance rule that bans automated trading makes an
     automated strategy ``blocked_by_compliance`` even when the mechanical account passes.
     ``news_events``/``news_coverage`` are the economic calendar's rows and the covered periods;
@@ -569,6 +577,10 @@ def simulate_attempt(
     if max_horizon_days < 1:
         msg = f"max_horizon_days must be >= 1, got {max_horizon_days}"
         raise ConfigurationError(msg)
+    # the promotional values are a property of the RUN, never of the file: the promoted phases feed
+    # the overlay, while every identity the result cites (``ruleset_sha256``, verification) is read
+    # from the ruleset the file defines
+    promoted_ruleset, promotions = resolve_promotions(ruleset, profile)
     close_ns, dates, eligible, touched_sessions = _window(
         calendar, bars, start_trade_date, max_horizon_days
     )
@@ -640,7 +652,7 @@ def simulate_attempt(
     blocked_target: int | None = None
     first = window_first
     last = window_last
-    for phase in ruleset.phases:
+    for phase in promoted_ruleset.phases:
         if first > last:
             outcome = "censored"
             break
@@ -857,6 +869,7 @@ def simulate_attempt(
         ruleset_sha256=ruleset.ruleset_sha256,
         verification_status=ruleset.verification.status,
         unverified_ruleset=unverified,
+        promotions_applied=promotions.applied,
         ruleset_as_of=ruleset.as_of,
         effective_from=ruleset.effective_from,
         effective_to=ruleset.effective_to,

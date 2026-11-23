@@ -640,7 +640,9 @@ of the same bars, targets, rolls and raw per-contract bars.
   `PROP_ATTEMPTS_SCHEMA`), `summary.json` (`PropEvaluationSummary`, the statistics, the bootstrap
   record and the coverage), `ruleset.yaml` (the exact bytes read) and `manifest.json` with the run
   id basis, the candidate id (ADR-0103), the ruleset id/version/sha256/verification status, H, the
-  execution mode, the payout policy, the cost assumption and every dataset hash. `PRP-` is a pure
+  execution mode, the payout policy, the cost assumption, the participant profile and its
+  canonical SHA-256, the promotions applied and NOT applied (each `promotion <id> not applied:
+  <reason>`), and every dataset hash. `PRP-` is a pure
   function of the inputs (`evaluation_basis`, `evaluation_id_of`), so the same inputs reproduce the
   same directory and the same bytes; the seal (`seal_artifact`) covers the three result files.
   A prop evaluation is NOT a submission: it records no trial and changes neither

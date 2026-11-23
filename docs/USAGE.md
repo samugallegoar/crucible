@@ -652,7 +652,11 @@ uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml    
 
   Each fee row names the ONE dimension it needs (`cme_membership_status` for the exchange and
   clearing fees, `nfa_assessment_eligibility` for the NFA assessment), so the profile is what
-  resolves every component the firm charges on top of the commission. It is required as soon as a
+  resolves every component the firm charges on top of the commission, and it also decides the
+  PROMOTIONAL values a ruleset offers (a doubled payout cap for an account bought during an offer:
+  the profile carries dimensions such as `account_purchase: new`, `dll_selected_at_purchase: 'true'`
+  and `purchase_date: 2026-06-10`). A promotion that the profile cannot show is never applied, and
+  `summary.json` says why (`promotion <id> not applied: <reason>`). It is required as soon as a
   component is declared `excluded`; a dimension the profile leaves out (or declares `unknown`) makes
   that component a named gap, never a guess, and no fee is ever taken from a row whose value the
   profile does not match. The profile's canonical SHA-256 is recorded in `summary.json`, the sealed

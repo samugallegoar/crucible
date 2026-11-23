@@ -1606,8 +1606,13 @@ migration message, never silently upgraded. The required fields:
 Every rule, pass condition, fee and `not_modeled` entry carries `source`: `url` (null only with
 `provided_by: owner`), `quote`, `snapshot_sha256` (64 hex), `retrieved_at` (a UTC timestamp),
 optional `section`, `synthetic`, `provided_by`; and `evidence: official_quote | owner_provided |
-assumption | conflict_resolution`, with `assumption {name, rationale}` required when the value is
-an assumption. A rule may declare its own `effective_from`/`effective_to`. A rule is a
+assumption | conflict_resolution`, with `assumption {name, rationale, assumption_kind}` required
+when the value is an assumption (`assumption_kind` is one of `section7_default`,
+`provisional_conservative` or `owner_decision`). A rule may carry `promotions`: a list of
+`{id, field, value | multiplier, starts_on, ends_on: <date>|unknown, purchase_on_or_after, requires,
+source}`, each applied only when the run's participant profile declares every `requires` entry and
+its `purchase_date` falls in the offer window (ADR-0107, amendment of 2026-11-23). A rule may
+declare its own `effective_from`/`effective_to`. A rule is a
 discriminated union on `kind`; the parameters of each kind are in `docs/modules/prop.md`
 ("The rule kinds"), and `evaluated` (`intraday`, `eod` or `on_request`) is required on every
 threshold rule.
@@ -1693,6 +1698,7 @@ the manifest records `trial_recorded: false` and no trial registry row is writte
 | `practical_eligibility` | `String` | no | eligible \| blocked_by_compliance \| unknown |
 | `unverified_ruleset` | `Boolean` | no | true when the ruleset has no matching verification |
 | `counterfactual_application` | `Boolean` | no | data starts before the ruleset's effective_from |
+| `promotions_applied` | `String` | no | promotions used, "<id>:<rule>:<field>=<v>", ";"-joined |
 
 <!-- END GENERATED: artifact-prop-attempts -->
 

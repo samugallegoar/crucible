@@ -565,6 +565,89 @@ incomplete, explicitly conditional cost beats an apparently complete one.
   writes the dimension and the value, and an `other` charge now has to be named and quoted twice
   (what it is, and why it applies).
 
+## Amendment (2026-11-23): promotions, and what kind of default an assumption is
+
+Two vocabulary gaps the Topstep review left open (F5, F6, F15). Neither changes a rule VALUE.
+
+**1. A promotional value applies only when the run can show it bought that offer.**
+
+The doubled per-request payout caps of the twelve daily-loss-limit files rest on a limited-time
+offer. The offer is not the ruleset's value and it is not inferable: it depends on what the
+participant bought. So a rule may carry ``promotions``, and each one states:
+
+- ``id``; ``field`` (the numeric field it replaces: ``max_usd``, ``max_usd_by_payout[0]``,
+  ``amount_usd``); exactly one of ``value`` or ``multiplier`` (the base value times it);
+- ``starts_on`` and ``ends_on`` (``<date>`` or ``unknown``); ``purchase_on_or_after``;
+- ``requires``, a mapping of participant-profile dimension to value, checked against the RUN's
+  profile — account dimensions such as ``account_purchase: new``, ``dll_selected_at_purchase:
+  'true'`` or ``purchase_date: YYYY-MM-DD`` are ordinary profile entries;
+- ``source`` (an ``Attribution``), so the offer sentence is quoted like any other value.
+
+Resolution is a pure function of the ruleset and the profile
+(``crucible.prop.promotions.resolve_promotions``): a promotion applies only when EVERY requirement
+is declared in the profile and matches, and the declared ``purchase_date`` falls in
+``[starts_on, ends_on]``. ``ends_on: unknown`` is never assumed to continue past the ruleset's
+``as_of``, so a purchase dated after it does not qualify. A missing, ``unknown`` or non-matching
+fact leaves the BASE value in place — eligibility that cannot be shown is never assumed — and the
+summary lists ``promotion <id> not applied: <reason>``. Two applicable promotions on one field are
+refused (the value would depend on declaration order).
+
+The promoted value is a property of the RUN, not of the file: the artifact still cites the
+ruleset's own content hash, and ``attempts.parquet`` gains ``promotions_applied``
+(``<id>:<rule>:<field>=<value>``, ``;``-joined, empty when none), with the applied and the skipped
+lists in ``summary.json`` and the manifest.
+
+For the Topstep files, the owner's decision is: the doubled cap applies ONLY when the account is a
+NEW Trading Combine purchase, the daily-loss-limit add-on was selected at that purchase, and the
+purchase date is on or after the offer start (2026-06-02); otherwise the standard cap applies. The
+files themselves are not edited by this amendment — the promotion is declared where a file carries
+the offer, and an ineligible run simply gets the standard cap with the reason recorded.
+
+**2. Every assumption declares what KIND of default it is.**
+
+An ``assumption`` entry gains a REQUIRED ``assumption_kind``: ``section7_default`` (the documented
+default of ADR-0107 section 7), ``provisional_conservative`` (the source is silent or soft and the
+pessimistic reading is temporary, open to being tightened) or ``owner_decision`` (the owner ruled
+on it). A default that does not say what kind of default it is cannot be reviewed: the owner has to
+re-check a "conservative" reading when the page softens, and never has to re-check a decision.
+
+The owner ruled on the two Topstep readings:
+
+- the ``profit_target`` EOD assumption (``unspecified_target_frequency_is_eod``) is
+  ``provisional_conservative``: the page states the target without an observation frequency;
+- the XFA inactivity close on day 31 is ``provisional_conservative``: the page says the account
+  "may be closed", which is not a guaranteed automatic close. (No Topstep file carries this as an
+  ``assumption`` entry: the rule is quoted and its pessimistic reading is in its description, so
+  there is nothing to migrate for it. Reported, not edited.)
+
+Mechanically every one of the 201 files was migrated: `section7_default` everywhere except the 98
+``profit_target`` ``unspecified_target_frequency_is_eod`` entries, which are
+``provisional_conservative``. No other value and no verification status changed. Because the files
+are unverified and unmerged, their content hashes change in place and
+``rulesets/prop/INDEX.json`` is regenerated; the append-only rule that matters is unchanged: a
+version number never disappears or is reused, and a VERIFIED file's hash never changes (which is
+what the lock test now asserts, as ADR-0107 section 1 states).
+
+**3. Static threshold with an exact post-payout reset (reported, not built).**
+
+Asked whether the engine supports a threshold that is static (never moving with equity highs or
+daily closes) with an exact post-payout reset or lock, the answer is: **partly, and not for a
+static threshold.**
+
+- A static threshold exists (``static_drawdown``: ``start - amount``, never trailing) and is tested
+  intraday and/or at the close like any other.
+- Trail-freezing exists on the TRAILING rule: ``trailing_drawdown.lock`` with ``on: [hwm,
+  first_payout]``, a trigger level (``at_balance_usd``/``at_offset_usd``) and an exact frozen level
+  (``locked_threshold_usd``/``locked_offset_usd``), plus a payout-level override
+  (``payout.threshold_after_payout: set_threshold`` with ``set_threshold_to: start |
+  start_plus_usd:<x> | zero_balance_offset:<x>``).
+- What is missing: a post-payout reset or lock ON a ``static_drawdown``. The payout's
+  ``threshold_after_payout`` handler only reaches ``TrailingDrawdown`` instances, so a file that
+  wants "static $2,000, reset to the start after a payout" has to express it as a trailing rule
+  locked at the firm's form (which is what the Labs static file does today, flagged in its
+  ``not_modeled`` entry), not as a static threshold. Implementing it would add a
+  ``static_drawdown.lock`` vocabulary and its overlay handler; it is NOT implemented here.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

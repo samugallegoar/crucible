@@ -78,6 +78,15 @@
   economic-calendar dataset doc under `docs/data/`).
 - **`scenarios.py`**: `scenarios(ruleset) -> list[RulesetScenario]` (the primary plus one per
   conflict alternative, deterministic order) and `scenario(ruleset, id)`.
+- **`promotions.py`**: `resolve_promotions(ruleset, profile) -> (promoted, PromotionOutcome)` and
+  `promotion_reason`. A rule may carry `promotions` (a better value for a limited offer: a doubled
+  payout cap for an account bought during the offer), each naming the numeric `field` it replaces,
+  its `value` or `multiplier`, the offer window and the profile facts it `requires`. Resolution is
+  per RUN: a promotion applies only when every requirement is declared and matches and the
+  profile's `purchase_date` falls in `[starts_on, ends_on]` (`ends_on: unknown` never continues
+  past the ruleset's `as_of`); anything missing or `unknown` leaves the base value and is reported
+  (`promotion <id> not applied: <reason>`). A promoted value never changes the file's hash:
+  `simulate_attempt` builds its phases from the promoted copy and cites the original.
 - **`costs.py`**: the per-COMPONENT execution cost. `FeeRow {component, per_side_usd,
   record_sha256}`, `ComponentFeeRow {root, fee_type, classification_dimension,
   classification_value, covers, per_side_usd, effective_from, effective_to, charge_name}` (one row
@@ -167,10 +176,10 @@ The simulator calls the overlay at fixed points of every bar:
 | 1 | `begin_bar` | the rule-day transition (the reset clock): the daily-loss reference resets, soft locks lift, the scaling plan takes the limit its last close chose, inactivity counts |
 | 2 | `begin_bar` (gap test) | equity at the bar's open with the position carried in; a threshold already crossed liquidates at the open |
 | 3 | `forced_flat` | the first bar reaching a `flat_by` instant (absolute or session-relative) or a news window that flattens liquidates at its open; no entry until the reopen time — for the session-relative form that reopen IS the session's scheduled close, so the block lasts from the flat instant to the close |
-| 4 | `admit` | the target the account allows: contract limit and scaling plan by contract weight (`clip` or `reject`), a lock, a closed account, the forced-flat window, an active news window |
+| 4 | `admit` | the target the account allows. Each rule that REFUSES the entry is recorded under its own id and reason first (`session_entry_block` for a session-close `flat_by` window, `news_entry_block` for a news window, `entry_blocked` for a lock), then the contract limit and scaling plan by contract weight (`clip` or `reject`) — a `resize` under the size rule only when the SIZE limit changed the size |
 | 5 | `favorable` | the bar's favourable extreme in equity terms (high for a long, low for a short) updates the high-water marks **first** |
 | 6 | `breach_prices` | each active threshold's breach price, merged with the touched lot stops, recomputed after every stop |
-| 7 | `breach_filled`, `fill` | the breach consequence (hard closes, soft locks), every fill for the day statistics and inactivity |
+| 7 | `breach_filled`, `fill` | the breach consequence (hard closes, soft locks); on every fill the day statistics and inactivity, AND each `evaluated: intraday` loss threshold tested against the POST-fill basis at the fill's own price, flat included: a crossing fails at that instant and a position still open is liquidated at that fill's price (ADR-0106, amendment of 2026-11-23) |
 | 8 | `end_bar` | the close mark; on the rule-day's last scheduled bar the EOD rules, an `activity_requirement` short of its qualifying days in a full rolling window (it closes the account **before** the pass conditions), the time limit, the daily profit cap, the payouts and the pass conditions. An EOD breach liquidates **at that close**; a pass with a position open flattens it **at that close** as `phase_flatten`. The time limit is tested **before** the pass conditions, so a firm's own limit ending the phase on the same close wins (the pessimistic direction). **Pass conditions are split by their declaration** (`crucible.prop.rules.pass_frequency`): an `evaluated: eod` target is tested ONLY here, on the closed trade date, and an `evaluated: intraday` one at every bar's close (its touch counts at the bar's favourable extreme) |
 | 9 | `finish` | the end of the data: an unresolved attempt whose data ends inside a rule-day is `censored` |
 
@@ -367,6 +376,11 @@ assertions of `tests/integration/test_futures_prop.py`.
 - The profile is a single run-level declaration, so an attempt cannot be priced as one class for
   the exchange fee and another for the NFA assessment; a firm whose clearing chain splits the
   classes would need a per-component profile (not built).
+- A promotion's `requires` are string comparisons on the profile: a fact the profile states in
+  another spelling (`yes` for `'true'`) does not match, so the base value stands and the reason is
+  recorded. That is the conservative direction, not a normalisation step.
+- A static threshold (`static_drawdown`) has no post-payout reset or lock: a file that wants one
+  has to express it as a locked `trailing_drawdown` (ADR-0107, amendment of 2026-11-23, section 3).
 - A row that covers several components is charged once, under the first component in report order:
   the amount is one cell the owner reported, and splitting it across the components it covers
   would be a number no source states.

@@ -1011,9 +1011,17 @@ def test_the_index_lists_every_ruleset_file_and_is_append_only() -> None:
                 entry.get("ruleset_id"),
                 entry.get("version"),
             )
-            # a released version is immutable data, verified or not: a correction is a new version
-            if "ruleset_sha256" in entry:
+            # a RELEASED and VERIFIED version is immutable data: its hash may never change. An
+            # unverified file may still be corrected in place while the branch is unmerged
+            # (ADR-0107 section 1, and the amendment of 2026-11-23 that added assumption_kind):
+            # the version number and the path may never disappear or be reused.
+            if "ruleset_sha256" in entry and entry.get("verification") == "verified":
                 assert current["ruleset_sha256"] == entry["ruleset_sha256"]
+            if entry.get("verification") != "verified":
+                assert (
+                    current["verification"] != "verified"
+                    or current["ruleset_sha256"] == (entry["ruleset_sha256"])
+                )
 
 
 def test_a_payout_group_pays_at_most_once_per_close_and_takes_the_largest_net() -> None:
@@ -1216,7 +1224,10 @@ def test_a_known_news_window_is_still_enforced_when_another_event_has_no_time() 
     assert result.news_coverage_gaps == ("unknown-1",)
     assert result.estimate_status == "partial"
     blocked = [
-        event for event in result.overlay_events if event.kind == "resize" and event.bar == 3
+        event
+        for event in result.overlay_events
+        if event.kind == "news_entry_block" and event.bar == 3
     ]
     assert blocked
     assert (blocked[0].requested, blocked[0].allowed) == (1, 0)
+    assert blocked[0].note.startswith("entry blocked: news window of ")

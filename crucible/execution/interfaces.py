@@ -213,8 +213,10 @@ class AccountOverlay(Protocol):
        after each fill on the adverse walk.
     6. ``breach_filled(i, marks, price_ticks, rule_id, hard)``: after the simulator liquidates
        at a breach price (``marks`` are the pre-fill marks).
-    7. ``fill(i, marks, quantity, price_ticks, kind)``: after every fill the simulator books
-       (not roll legs), so a rule that counts trades can count them.
+    7. ``fill(i, marks, quantity, price_ticks, kind, time_ns)``: after every fill the simulator
+       books, roll legs included, with the fill's own timestamp and the POST-fill marks: a rule
+       that counts trades counts them, and an intraday loss threshold the account is now past
+       fails at that instant, flat or not (ADR-0106 amendment of 2026-11-23).
     8. ``end_bar(i, marks) -> action | None``: the close mark, the rule-day's last-bar end-of-day
        rules (known from the calendar's scheduled session end) and the pass conditions. An
        action is executed AT THIS BAR'S CLOSE with the close cost tables: an EOD-evaluated breach
@@ -248,8 +250,23 @@ class AccountOverlay(Protocol):
     ) -> None: ...
 
     def fill(
-        self, i: int, marks: AccountMarks, quantity: int, price_ticks: int, kind: str
+        self,
+        i: int,
+        marks: AccountMarks,
+        quantity: int,
+        price_ticks: int,
+        kind: str,
+        time_ns: int,
     ) -> None: ...
+
+    def take_pending_liquidation(self) -> BreachPrice | None:
+        """The breach the last fill caused with a position still open, consumed once.
+
+        A fill can move the basis of an intraday loss threshold past the threshold while a
+        position remains; the simulator liquidates the rest at that fill's price. ``None`` when
+        the account was flat (nothing to liquidate).
+        """
+        ...
 
     def end_bar(self, i: int, marks: AccountMarks) -> OverlayAction | None: ...
 

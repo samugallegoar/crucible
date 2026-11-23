@@ -121,6 +121,7 @@ from crucible.prop.coverage import (
     rule_coverage,
 )
 from crucible.prop.news import Coverage, NewsEvent
+from crucible.prop.promotions import resolve_promotions
 from crucible.prop.ruleset import PropRuleset, load_ruleset
 from crucible.prop.scenarios import (
     PRIMARY_SCENARIO_ID,
@@ -242,6 +243,7 @@ PROP_ATTEMPTS_SCHEMA: dict[str, pl.DataType] = {
     "practical_eligibility": pl.String(),  # eligible | blocked_by_compliance | unknown
     "unverified_ruleset": pl.Boolean(),  # true when the ruleset has no matching verification
     "counterfactual_application": pl.Boolean(),  # data starts before the ruleset's effective_from
+    "promotions_applied": pl.String(),  # promotions used, "<id>:<rule>:<field>=<v>", ";"-joined
 }
 """``attempts.parquet``: one row per (scenario, start), sorted by scenario then start date."""
 
@@ -433,6 +435,8 @@ class PropEvaluationSummary(_Strict):
     payout_policy: str
     cost_assumption: PropCostAssumption | None
     cost_components: list[PropCostComponents]
+    promotions_applied: list[str]
+    promotions_not_applied: list[str]
     participant_profile: dict[str, str] | None
     participant_profile_sha256: str | None
     scenarios_requested: Literal["primary", "all"]
@@ -1167,6 +1171,7 @@ def _attempt_row(item: _Classified, horizon_trading_days: int) -> dict[str, obje
         "practical_eligibility": attempt.practical_eligibility,
         "unverified_ruleset": attempt.unverified_ruleset,
         "counterfactual_application": attempt.counterfactual_application,
+        "promotions_applied": ";".join(attempt.promotions_applied),
     }
 
 
@@ -1624,6 +1629,18 @@ def run_prop_evaluation(
             )
         ),
         cost_components=_cost_components_document(classifications),
+        promotions_applied=sorted(
+            {entry for item in classifications for entry in item.attempt.promotions_applied}
+        ),
+        promotions_not_applied=sorted(
+            {
+                reason
+                for scenario in chosen
+                for reason in resolve_promotions(scenario.ruleset, participant_profile)[
+                    1
+                ].not_applied
+            }
+        ),
         participant_profile=(
             None if participant_profile is None else participant_profile.as_mapping()
         ),
@@ -1709,6 +1726,8 @@ def run_prop_evaluation(
             None if assumption is None else summary.model_dump(mode="json")["cost_assumption"]
         ),
         "cost_components": summary.model_dump(mode="json")["cost_components"],
+        "promotions_applied": summary.model_dump(mode="json")["promotions_applied"],
+        "promotions_not_applied": summary.model_dump(mode="json")["promotions_not_applied"],
         "participant_profile": summary.model_dump(mode="json")["participant_profile"],
         "participant_profile_sha256": summary.model_dump(mode="json")["participant_profile_sha256"],
         "scenarios_requested": scenarios,

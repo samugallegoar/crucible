@@ -354,6 +354,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: 'The pages state the profit target amount but never its observation frequency. The conservative
         default for a pass condition is the end of the trade date on the closed balance: the trader passes
         no earlier than the end of the trade date, so a later same-day breach still counts.'
@@ -399,6 +400,7 @@ phases:
     evidence: assumption
     assumption:
       name: trading_day_is_a_trade_date_with_at_least_one_trade
+      assumption_kind: section7_default
       rationale: 'The pages state a two-day minimum but never define a qualifying day. ADR-0107 section
         7 default: a trading day is a trade date with at least one executed trade.'
   max_calendar_days: null

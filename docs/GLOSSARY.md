@@ -557,6 +557,29 @@ contains it (`included`), charges it on top (`excluded`) or does not say (`unkno
 the sources do not state is a GAP, never a zero, and the cost total is never presented as complete
 while one is unknown or unpriced.
 
+**Promotion** — a better value a firm publishes for a limited offer (`promotions` on a rule:
+`id`, `field`, `value` or `multiplier`, `starts_on`, `ends_on`, `requires`, `purchase_on_or_after`,
+`source`). It applies only when every requirement is declared in the run's participant profile and
+matches and the declared `purchase_date` falls in the window; `ends_on: unknown` never continues
+past the ruleset's `as_of`; anything missing or `unknown` leaves the base value and is reported
+(`promotion <id> not applied: <reason>`). The promoted value is a property of the run, recorded per
+attempt in `promotions_applied`, never of the file.
+
+**Assumption kind** — what KIND of default a rule assumption is: `section7_default` (the documented
+ADR-0107 section 7 default), `provisional_conservative` (the source is silent or soft and the
+pessimistic reading is temporary) or `owner_decision` (the owner ruled on it). REQUIRED on every
+assumption entry, so a review knows what to re-check when a page changes.
+
+**Breach on fill** — an `evaluated: intraday` loss threshold crossed by realized P&L or by the
+costs of a fill is a breach at THAT fill's timestamp, flat or not: the basis tested is the
+post-fill one, the fill's own commission, spread and slippage included, and a position still open
+is liquidated at that fill's price (ADR-0106, amendment of 2026-11-23).
+
+**session_entry_block** — the overlay event recorded when a session-close `flat_by` window refuses
+an entry: the flat_by rule's own id and a reason (`entry blocked: flat_by_1510_ct until 17:00 CT`).
+A `news_entry_block` is the same for a news window and `entry_blocked` for a lock;
+`resize` under the size rule is reserved for a size limit that actually clipped.
+
 **Participant profile** — the run's immutable declaration of who its account is, as a flat mapping
 from classification dimension to value (`cme_membership_status: non_member`,
 `nfa_assessment_eligibility: fcm_member`). A ruleset never states one, so it is a RUN input
