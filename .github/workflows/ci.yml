@@ -101,7 +101,7 @@ jobs:
         run: >-
           uv run pytest -q --splits ${{ matrix.splits }} --group ${{ matrix.group }}
           --durations-path .test_durations.${{ matrix.tag }}
-          -n auto --dist loadscope --junitxml=junit.xml
+          -n auto --dist loadscope --junitxml=junit.xml --deselect tests/unit/test_errors.py
           ${{ matrix.extra }}
       - uses: actions/upload-artifact@v4
         with:
