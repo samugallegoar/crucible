@@ -110,3 +110,34 @@ the suite runs paid 0.15 s for three git subprocesses computing the code fingerp
 - `splits:` per OS is a measured number, not a constant of nature: when a suite change moves the p50
   by more than ~20 %, re-measure (the job summaries) and update both the matrix and `SHARD_PLAN`
   together — the unit test enforces that they move together.
+
+## Amendment (2026-11-24): one durations file per OS, and a plan that starts in one wave
+
+Three things in the original decision did not survive measurement:
+
+1. **One `.test_durations` for all three OSes.** The file was produced on ubuntu, and a macOS shard
+   planned at ~102 s took 128-184 s while a ubuntu shard took 60-115 s: the plan was uneven by
+   construction on two of the three runners. There is now one file per OS
+   (`.test_durations.ubuntu`, `.test_durations.macos`, `.test_durations.windows`), each produced by
+   the `durations` matrix job on that OS (`--store-durations`, `workflow_dispatch` only), and each
+   matrix row reads its own (`--durations-path .test_durations.${{ matrix.tag }}`). They are still a
+   hint: a stale file cannot drop a test, and the `shard-union` check still proves the union.
+   Cross-checked with the measured suite on 2026-11-24: ubuntu 718 s, macOS 599 s, Windows 773 s (a
+   factor of nearly 1.3 between the fastest and the slowest runner).
+2. **23 jobs.** With `checks`, `clean-install` and `shard-union` the old plan ran 23 jobs at once,
+   three more than the ~20 a workflow gets; the shards that started last waited 73-108 s, a third of
+   the wall. The plan is now **19 jobs**: 16 shards (6 ubuntu, 4 macOS, 6 Windows) plus the three
+   single jobs, and `tests/unit/test_ci_shard_plan.py::test_the_plan_fits_in_one_wave` fails if it
+   grows past the ceiling again.
+3. **A shard's measured wall is not its estimated duration divided by four.** ubuntu runs at about
+   half its estimate (many small modules, four workers), Windows at 0.5-0.8, and macOS at 1.0-1.6:
+   its runner has three cores and the suite's long tests (a 27 s acceptance sweep, two 20 s
+   ingestion tests) do not overlap. That is why macOS gets 4 shards and not 2.
+
+What is left, and why the 2-minute target is still not reached: **macOS runner availability**. On
+2026-11-24 a fifth macOS job waited 604 s and a fourth waited 335 s for a runner, while all 12
+ubuntu and Windows shards started in 2-3 s; when the pool was roomy (2026-11-23) the same plan ran
+in 232-293 s. The macOS suite alone is ~600 s of estimated work, so at the 3-4 macOS runners
+available it sets a floor of about 3.5-4 minutes on the days the pool is short. More macOS shards
+would not help (they queue), and fewer would make each one longer.
+

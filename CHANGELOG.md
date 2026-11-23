@@ -96,6 +96,12 @@ kind of change is recorded).
   3:52 / 4:22 / 4:53 (median 4:22). The 2-minute target is not met; ADR-0109 records why (one
   durations file for three different runners, the ~20-job concurrency ceiling, per-job fixed cost,
   and the union job's tail).
+- **Amendment (ADR-0109): one durations file per OS, and a plan that fits in one wave.** The single
+  ubuntu-derived file left macOS and Windows shards 1.2-1.8x over plan; there are now three
+  (`.test_durations.ubuntu|macos|windows`, one `durations` matrix job each) and 6/4/6 shards, so the
+  workflow runs 19 jobs at once instead of 23 and no shard waits for a slot. macOS gets the smaller
+  count because macOS runners are the scarce resource: measured waits of 335-604 s for a fifth macOS
+  job while every ubuntu and Windows shard started in 2-3 s.
 
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**

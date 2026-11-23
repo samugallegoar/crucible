@@ -297,11 +297,13 @@ gh run download <run-id> --pattern "test-durations-*" --dir /tmp/durations
 cp /tmp/durations/test-durations-ubuntu/.test_durations.ubuntu    /tmp/durations/test-durations-macos/.test_durations.macos    /tmp/durations/test-durations-windows/.test_durations.windows .
 ```
 
-The plan is 5 shards on ubuntu, 5 on macOS and 6 on Windows: 16 shard jobs plus `checks`,
+The plan is 6 shards on ubuntu, 4 on macOS and 6 on Windows: 16 shard jobs plus `checks`,
 `clean-install` and `shard-union` is **19 jobs at once**, under the workflow's ~20-job concurrency
 ceiling, so every shard starts in the same wave (a 20th job waits for a slot, and a waited-for shard
 is what puts the tail on the workflow). `tests/unit/test_ci_shard_plan.py` fails if the plan stops
-fitting in one wave.
+fitting in one wave. macOS gets fewer shards than its own durations would allow: a fifth macOS job
+has waited 5-10 minutes for a runner while every ubuntu and Windows shard started in 2-3 s, so the
+macOS shards are cut to what the macOS pool gives at once.
 
 Job budgets (`timeout-minutes` in `ci.yml`; a budget fails the job, it does not widen a limit), at
 about 2x the measured p95 after ADR-0109:
