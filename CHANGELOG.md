@@ -24,6 +24,10 @@ kind of change is recorded).
   suite). Production behaviour is unchanged and the overwrite guard still catches an edit between two
   runs.
 - Each job's `timeout-minutes` is a budget at about 2x its measured p95, not a widened limit.
+- Measured on three green runs: the workflow went from 7.2 min p50 / 12.4 min p95 to
+  3:52 / 4:22 / 4:53 (median 4:22). The 2-minute target is not met; ADR-0109 records why (one
+  durations file for three different runners, the ~20-job concurrency ceiling, per-job fixed cost,
+  and the union job's tail).
 
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**

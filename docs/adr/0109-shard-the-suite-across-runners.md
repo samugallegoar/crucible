@@ -70,8 +70,38 @@ the suite runs paid 0.15 s for three git subprocesses computing the code fingerp
 
 ## Consequences
 
-- A PR gets its result in the time of its slowest job instead of the sum of three suites: measured
-  before/after in `CHANGELOG.md` and the PR that introduced this.
+- **Measured on three green runs of the PR** (`gh run view --json jobs`), against a baseline of
+  7.2 min p50 / 12.4 min p95 for the whole workflow:
+
+  | | baseline | after (232 / 262 / 293 s) |
+  |---|---|---|
+  | workflow wall | 7.2 min p50 | **3:52 / 4:22 / 4:53**, median 4:22 |
+  | tests job (one OS, one runner) | 320 / 340 / 466 s | gone: 20 shard jobs of 60-184 s |
+  | shard, ubuntu | — | 60-115 s |
+  | shard, macOS | — | 75-184 s |
+  | shard, Windows | — | 56-157 s |
+  | `checks` | — | 42-51 s |
+  | `shard-union` | — | 25-30 s |
+  | `clean-install` | — | 16-17 s |
+
+  Note the second run on the *same* commit shape took 293 s and the third 232 s: shared runners
+  vary by ~25 %.
+- **The 2-minute target is not met, and these are the reasons**, in order of the seconds they cost:
+  1. **macOS and Windows shards are 1.2-1.8x their planned share** because there is one
+     `.test_durations` (from ubuntu) for three very different runners: a macOS shard is planned at
+     ~102 s of estimated duration and takes 128-184 s. Per-OS durations files (`--durations-path`
+     per OS) are the next lever; they cannot fix it alone (the slowest OS still sets the wall).
+  2. **The workflow's concurrency ceiling is about 20 jobs.** With 23 jobs, the shards that start
+     last wait 73-108 s — up to a third of the wall — and the queue is not FIFO-fair. Reducing the
+     shard count would raise each shard's work by more than the wait it saves (a 5-shard Windows
+     would need ~170 s each).
+  3. **Fixed cost per job**: setup + checkout + `uv sync` is 8-12 s, and every xdist worker pays
+     ~6 s of imports, so a shard's 60 s of tests sits on ~20 s of overhead.
+  4. **`shard-union` can only start after the last shard** (it compares all of them), so it adds its
+     25-30 s to the wall rather than overlapping.
+- What it does buy: the p95 collapsed (12.4 min → under 5), a superseded push stops instead of
+  queueing, a PR branch no longer runs the workflow twice, and the suite is proven complete on every
+  run rather than assumed.
 - The suite still runs, in full, on every OS for every PR; the shards are a distribution of it, not
   a selection, and the `shard-union` job fails the PR if that ever stops being true.
 - Costs: 20 test jobs instead of 3 (GitHub's per-workflow concurrency limit is 20 for a free/team
