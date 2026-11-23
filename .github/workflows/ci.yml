@@ -8,7 +8,8 @@ on:
   pull_request:
   workflow_dispatch: # refresh .test_durations (the `durations` job below) or re-run on demand
 
-# One run per branch/PR: a new push cancels the run it supersedes instead of queueing behind it.
+# One run per branch/PR: a new push cancels the run it supersedes instead of queueing behind it,
+# and the whole workflow stays inside the ~20 concurrent jobs GitHub gives a workflow run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
