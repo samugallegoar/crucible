@@ -9,7 +9,7 @@ a firm's commission may or may not contain:
 | `exchange` | the exchange's own trading fee | only an owner file: CME Group publishes product buckets, not root tickers |
 | `clearing` | the clearing fee | only an owner file |
 | `nfa` | the NFA assessment fee | the official bylaw page, fetched and parsed |
-| `other` | any other per-side charge the source states | only an owner file |
+| `other` | any other NAMED per-side charge the source states | only an owner file, with the charge's own evidence |
 
 Built by `crucible/data/exchange_fees.py`. This page records one uncomfortable fact first: the
 dataset holds **the NFA fee only**. No exchange, clearing or other row is stored, because CME Group
@@ -20,10 +20,46 @@ caller reports, never a zero. The decision, and the alternatives considered, are
 `docs/adr/0107-firm-rulesets-and-attempt-statistics.md` (section 10 and its amendment); nothing here
 was fetched from `cmegroup.com` or copied from an archive of it.
 
-**No universal fee, and no extrapolation.** A row prices exactly its `root`, `participant_type` and
-date range, and it states which components its amount covers (`covers`). There is no product-bucket
-to root mapping anywhere in this repository, and no fee is carried across roots, products or
-participant types: the engine never invents one.
+**No universal fee, and no extrapolation.** A row prices exactly its `root` and date range, for the
+CLASSIFICATION it declares. It states which components its amount covers (`covers`). There is no
+product-bucket to root mapping anywhere in this repository, and no fee is carried across roots,
+products or classifications: the engine never invents one.
+
+## Classification: a dimension and a value per row, resolved against the run's profile
+
+A row does not carry a participant type. It carries **the one classification dimension it needs**
+(`classification_dimension`) and the value it is written for (`classification_value`):
+
+| Row | `classification_dimension` | `classification_value` | Why that dimension |
+|---|---|---|---|
+| `exchange` | `cme_membership_status` | `non_member` | CME's schedule prints a Non-Members column; the owner file says which column it read |
+| `clearing` | `cme_membership_status` | `non_member` | the same schedule, the same column |
+| `nfa` | `nfa_assessment_eligibility` | `fcm_member` | Bylaw 1301(b)(i)(A) assesses the **FCM member** per contract; a customer sees it passed through |
+| `other` | `none` / `all`, or a dimension the source states | `all`, or the stated value | a charge the source says is the same for everyone needs no profile entry |
+
+Dimension names are not an enum: each row brings its own, and every name must match
+`^[a-z][a-z0-9_]*$`. A run declares a **participant profile** — a flat mapping from dimension to
+value, e.g. `cme_membership_status: non_member` and `nfa_assessment_eligibility: fcm_member` — and
+`fee_rows_as_of` resolves **each component** through it:
+
+1. take the rows that cover the component, for the exact root, with the date inside their
+   effective range;
+2. for each, look its dimension up in the profile:
+   - missing, or the value `unknown` → the component is a **gap** whose reason is
+     `classification <dim> not declared`;
+   - a different value → the row does not apply;
+   - the same value, or `none`/`all` → the row applies;
+3. exactly one applicable row prices the component; **two are refused as ambiguous**; none is a gap.
+
+There is **never a default classification**, and never a fallback to "the only row there is". The
+`nfa` component therefore needs `nfa_assessment_eligibility` in the profile: the former
+"an NFA row prices any participant type" pass-through is gone, because it was a classification the
+run never declared.
+
+**`other` is the one exception, and it sums.** Two `` other `` rows with **different**
+`charge_name`s covering one date are two distinct charges, each with its own evidence, and both are
+charged: the `other` component is their sum. Two `other` rows with the **same** `charge_name`, root
+and classification that overlap in dates are refused — that is one charge written twice.
 
 ## Sources
 
@@ -52,12 +88,12 @@ Three things the row states, and nothing inferred:
   $0.01 through 2027-06-30 and $0.02 from 2027-07-01. Both rows are written: the sentence states the
   second amount and its start.
 - **`covers = nfa`.** The assessment is the regulatory component and nothing else.
-- **`participant_type = fcm_member_assessment`.** The bylaw assesses the *FCM member* per contract;
-  a customer sees it passed through. It is therefore not a customer rate class, and
-  `fee_rows_as_of` prices an `nfa` row for **any requested participant type** (that is the one
-  stated exception to the exact-match rule, and it is why a run's `--fee-participant-type
-  non_member_customer` can price the NFA component while a member row cannot price a customer's
-  exchange fee).
+- **`classification_dimension = nfa_assessment_eligibility`, `classification_value =
+  fcm_member`.** The bylaw assesses the *FCM member* per contract; a customer sees it passed
+  through. The dimension and the value are the bylaw's own subject, so the row states them and the
+  run's profile has to declare them: a profile without `nfa_assessment_eligibility` leaves the
+  `nfa` component a gap (`classification nfa_assessment_eligibility not declared`), never a priced
+  pass-through and never a fallback.
 
 ### CME Group exchange and clearing fees — **not sourced, on purpose**
 
@@ -98,16 +134,17 @@ The observable consequence is deliberate and tested
 **zero** `exchange`, `clearing` or `other` rows, `BuildReport.unpriced_components` names all three,
 and `fee_rows_as_of` returns no amount for them.
 
-### Owner-provided fee file — how the CME rows get in
+### Owner-provided fee file - how the CME rows get in
 
 A person who holds the exchange fee schedule supplies a CSV; the loader records who supplied it,
 the file's own SHA-256, and the exact cell text as the row's evidence. That is the only route an
 exchange or clearing fee has into this dataset. Header (order is free, extra columns are refused):
 
 ```csv
-root,fee_type,participant_type,covers,per_side_usd,effective_from,source_url,quote,venue,effective_to
-ES,exchange,non_member_customer,exchange;clearing,0.00,2026-01-01,https://www.cmegroup.com/company/clearing-fees/historical-fees.html,"SYNTHETIC EXAMPLE: the exact cell text for ES, e.g. the product row and the Non-Members column",CME,
-MES,nfa,non_member_customer,nfa,0.00,2026-01-01,https://www.nfa.futures.org/rulebooksql/rules.aspx?Section=3&SubSection=13,"SYNTHETIC EXAMPLE: the bylaw sentence",CME,
+root,fee_type,classification_dimension,classification_value,covers,per_side_usd,unit,effective_from,source_url,quote,venue,effective_to,charge_name,applies_quote,distinct_from
+ES,exchange,cme_membership_status,non_member,exchange;clearing,0.00,per_contract_per_side,2026-01-01,https://www.cmegroup.com/company/clearing-fees/historical-fees.html,"SYNTHETIC EXAMPLE: the exact cell text for ES, e.g. the product row and the Non-Members column",CME,,,,
+NQ,nfa,nfa_assessment_eligibility,fcm_member,nfa,0.00,per_contract_per_side,2026-01-01,https://www.nfa.futures.org/rulebooksql/rules.aspx?Section=3&SubSection=13,"SYNTHETIC EXAMPLE: the bylaw sentence",CME,,,,
+MES,other,none,all,other,0.00,per_contract_per_side,2026-01-01,https://www.cmegroup.com/company/clearing-fees.html,"SYNTHETIC EXAMPLE: the line naming the charge and its amount",CME,,SYNTHETIC EXAMPLE: the charge's own name,SYNTHETIC EXAMPLE: the text showing it applies per contract per side to this product,SYNTHETIC EXAMPLE: what it is if it is not the exchange, clearing or NFA fee
 ```
 
 Every value above is an **obviously synthetic placeholder**: `0.00` and the words
@@ -118,66 +155,116 @@ rate appears anywhere in this repository (a test enforces it).
 |---|---|
 | `root` | one of ES, NQ, YM, RTY, NKD, MES, MNQ, MYM, M2K |
 | `fee_type` | `exchange`, `clearing`, `nfa` or `other`: the component the amount is typed as. **It must appear in `covers`** |
-| `participant_type` | who the rate is for: `non_member_customer`, `member`, `fcm_member_assessment`, … No extrapolation: a row prices its own type only |
-| `covers` | **mandatory**: the components the amount covers, `;`-separated. A CME "Exchange Fees for Clearing & Trading" cell is `fee_type=exchange`, `covers=exchange;clearing`, and it is charged ONCE for both |
+| `classification_dimension` | **mandatory**: the one participant-profile dimension this row needs (`cme_membership_status`, `nfa_assessment_eligibility`, ...), matching `^[a-z][a-z0-9_]*$`; `none` for a charge that is the same for every participant |
+| `classification_value` | **mandatory**: the value that dimension must have (`non_member`, `fcm_member`, ...); `all` with dimension `none` |
+| `covers` | **mandatory**: the components the amount covers, `;`-separated. A CME "Exchange Fees for Clearing & Trading" cell is `fee_type=exchange`, `covers=exchange;clearing`, and it is charged ONCE for both. An `other` row's `covers` is exactly `other` |
+| `unit` | **mandatory on every row type**: exactly `per_contract_per_side`. This table is a per-side execution cost, so a monthly, platform, subscription or account charge is refused |
 | `per_side_usd` | USD per contract per side, a decimal string (parsed as `Decimal`, never a float) |
 | `effective_from` | `YYYY-MM-DD`, the first date the rate applies |
 | `effective_to` | optional, `YYYY-MM-DD`, the last date; empty = open-ended |
 | `venue` | optional; defaults from `VENUE_OF[root]` and must agree with it (ES/NQ/RTY/NKD/MES/MNQ/M2K = CME, YM/MYM = CBOT) |
-| `source_url` | **mandatory**: the document the cell came from — one of the two CME pages above, or the NFA bylaw page |
+| `source_url` | **mandatory**: the document the cell came from - one of the two CME pages above, or the NFA bylaw page. An `other` row's host must be `www.cmegroup.com` |
 | `quote` | **mandatory**: the exact text the rate was read from (the cell, the row, the sentence) |
+| `charge_name` | **required on an `other` row**: the charge's specific name or identifier |
+| `applies_quote` | **required on an `other` row**: the exact text showing the charge applies to this execution (product and participant) |
+| `distinct_from` | **required on an `other` row**: the text stating why the charge is not part of the exchange, clearing or NFA fee |
 
-Refusals, each with a message that says what to fix:
+### What an `other` row must prove
+
+A row typed `other` may not be a catch-all. It is refused, with a message that says what to fix,
+when any of the following is missing or empty:
+
+- `charge_name` - a specific name. Generic names are refused case-insensitively after punctuation
+  is stripped: `other`, `others`, `misc`, `miscellaneous`, `fees`, `other fees`, `cme other fees`,
+  `additional fees`, `charges`, and any name made only of those words plus `cme`, `exchange` or
+  `fee`/`fees` (so `Other`, `misc.`, `CME other fees` and `exchange fees` are all refused);
+- `unit` - must be exactly `per_contract_per_side`; monthly, platform, subscription and account
+  charges are refused, and the message says a fixed charge belongs in the ruleset's fee schedule,
+  separate from execution costs;
+- `source_url` - an official source, on `www.cmegroup.com` for a CME Group root;
+- `quote`, `applies_quote`, `distinct_from`, `root`, `effective_from`,
+  `classification_dimension` and `classification_value`. The classification is required unless the
+  source states the charge is the same for every participant; then it is
+  `classification_dimension=none`, `classification_value=all`, which needs no profile entry.
+
+Further rules for `other`:
+
+- `covers` must be exactly `other` for an `other` row;
+- a row whose `fee_type` is `exchange`, `clearing` or `nfa` may **not** list `other` in `covers`
+  (the message is *an exchange fee cannot cover other components*) - an `exchange` row may still
+  cover `exchange;clearing` when the owner's source names both;
+- two `other` rows with the same `charge_name`, root and classification that overlap in dates are
+  refused (one charge written twice);
+- two `other` rows with **different** names covering the same date are both charged: they are
+  distinct charges, each with its own evidence, and the `other` component is their sum.
+
+Refusals common to every row type, each with a message that says what to fix:
 
 - an empty `quote` (a rate nobody can point at), a missing `source_url`, a missing supplier, an
   unknown or misspelled column, a root outside `ROOTS`, a `venue` that disagrees with `VENUE_OF`,
   a non-numeric or negative amount, `effective_to` before `effective_from`;
+- a `unit` that is not `per_contract_per_side`;
 - **a `covers` list that does not contain the row's own `fee_type`** (a row prices the component it
   is typed as), an empty `covers`, or a `covers` name that is not a component;
-- **two rows that start on the same date for one `(root, participant_type, component)`**, and
-- **overlapping rows for the same `(root, participant_type, component)`** — a component covered
-  twice on one date by different rows, including one row that covers `exchange;clearing` and
-  another that covers `clearing` alone. A date must map to one amount per component, never to a
-  row order.
+- a `classification_dimension` that is not an identifier, an empty `classification_value`, `none`
+  without `all`, or `all` with a real dimension;
+- **two rows that start on the same date for one `(root, classification_dimension,
+  classification_value, component)`**, and
+- **overlapping rows for the same key** - a component covered twice on one date by rows of the same
+  classification, including one row that covers `exchange;clearing` and another that covers
+  `clearing` alone. A date must map to one amount per component, never to a row order. (The one
+  exception is `other`, which sums distinct names; the same name twice is the refusal above.)
 
 ## Schema
 
-`crucible/data/exchange_fees.py::EXCHANGE_FEE_SCHEMA`, stored sort order `root`, `participant_type`,
-`fee_type`, `effective_from`, `covers` (columns in `docs/SCHEMAS.md` §1.7).
+`crucible/data/exchange_fees.py::EXCHANGE_FEE_SCHEMA`, stored sort order `root`,
+`classification_dimension`, `classification_value`, `fee_type`, `effective_from`, `covers` (columns
+in `docs/SCHEMAS.md` section 1.7).
 
 ## Lookup
 
 ```python
-fee_rows_as_of(store, "ES", dt.date(2024, 7, 1),
-               participant_type="non_member_customer",
-               components=("exchange", "clearing", "nfa", "other"))
-# -> {"exchange": (Decimal("0.77"), "<record sha256>"), "clearing": (...), "nfa": (Decimal("0.01"), ...)}
+profile = ParticipantProfile.from_mapping({
+    "cme_membership_status": "non_member",
+    "nfa_assessment_eligibility": "fcm_member",
+})
+found = fee_rows_as_of(store, "ES", dt.date(2026, 8, 3),
+                       profile=profile,
+                       components=("exchange", "clearing", "nfa", "other"))
+# -> FeeLookup(priced={"nfa": (Decimal("0.01"), "<record sha256>")},
+#              gaps={"exchange": "no fee row covers ES exchange on 2026-08-03",
+#                    "clearing": "no fee row covers ES clearing on 2026-08-03",
+#                    "other": "no fee row covers ES other on 2026-08-03"})
 ```
 
 - **Only the root asked for is priced.** An owner file that prices ES alone is usable; the nine
   roots are no longer demanded at once.
-- A component with no covering row is **absent** from the result: the caller reports it as a gap,
-  never as zero.
+- Every requested component comes back in **exactly one** of `priced` and `gaps`: an unpriced
+  component is a gap with its reason, never a zero.
 - A row that covers several components is charged once (the attempt's pricing groups the components
   by the row's record hash, and the first component in report order carries the amount while the
   others say they are inside it).
-- `participant_type` matches exactly — with the one stated exception of `nfa` rows, which are the
-  FCM member's pass-through assessment and price any requested type.
-- Two rows covering one component on one date raise, by name: no amount is chosen from a
-  contradiction.
+- The classification is resolved per component against the profile: an undeclared (or `unknown`)
+  dimension is `classification <dim> not declared`; a different value is `no fee row for <root>
+  <component> on <date> matches the declared classification (...)`; and `none`/`all` rows apply to
+  every participant.
+- Two rows that both apply to one component on one date raise, by name: no amount is chosen from a
+  contradiction. (`other` is the exception: distinct named charges sum.)
 - A root outside `ROOTS` raises. The engine never maps a CME product bucket to a root.
 
 ## Assumptions
 
-- **`participant_type`.** CME's schedule does not say which class a prop firm's customer accounts
-  fall into, and a ruleset never states one either. The run passes the participant type
-  (`--fee-participant-type`, MCP `fee_participant_type`) and the estimate becomes `conditional`
-  with the reason `participant type assumed: <x>`. `non_member_customer` is the class the exchange
-  rows of an owner file normally carry — **confirm it against the firm's clearing agreement**
-  before a fee-driven result is relied on; an owner file that states another class wins, because it
-  says so in `participant_type`.
+- **The participant profile.** CME's schedule does not say which class a prop firm's customer
+  accounts fall into, and a ruleset never states one either, so the run declares a profile
+  (`--participant-profile FILE`, MCP `participant_profile`) and the estimate becomes `conditional`
+  with the reason `participant profile declared by the run, not stated by the firm`. The profile is
+  recorded by its canonical SHA-256 in the manifest, the summary and every `attempts.parquet` row,
+  and it is part of the evaluation id, so two profiles are two artifacts. `non_member` is the value
+  the exchange rows of an owner file normally carry - **confirm it against the firm's clearing
+  agreement** before a fee-driven result is relied on; an owner file that states another value wins,
+  because it says so in `classification_value`.
 - **Per side.** Every component is stored per side (`per_side_usd`): a round trip is
-  `2 × per_side_usd`. The NFA figure is halved from the bylaw's round-turn amount for exactly this
+  `2 x per_side_usd`. The NFA figure is halved from the bylaw's round-turn amount for exactly this
   reason.
 - **`available_at = event_time = 00:00 UTC of effective_from`.** Neither source states when its
   rate became public (NFA names the last amendment date of the bylaw, not of the rate), so the row
@@ -248,13 +335,15 @@ uv run python -c "from pathlib import Path; from crucible.data.exchange_fees imp
     Path('D:/proyectos/databases/exchange_fees/raw'), \
     Path('D:/proyectos/crucible/data/processed')); print(r)"
 
-# 3. read the components one root has for one date
+# 3. read the components one root has for one date, through the run's participant profile
 uv run python -c "import datetime as dt; from pathlib import Path; \
     from crucible.data.store import ParquetDataStore; from crucible.data.exchange_fees import \
-    fee_rows_as_of; print(fee_rows_as_of(ParquetDataStore( \
+    ParticipantProfile, fee_rows_as_of; \
+    profile = ParticipantProfile.from_mapping({'cme_membership_status': 'non_member', \
+    'nfa_assessment_eligibility': 'fcm_member'}); print(fee_rows_as_of(ParquetDataStore( \
     Path('D:/proyectos/crucible/data/processed')), 'ES', dt.date(2026, 11, 21), \
-    participant_type='non_member_customer', components=('exchange', 'nfa')))"
+    profile=profile, components=('exchange', 'nfa')))"
 ```
 
-Step 3 prints only `nfa` for this build: the exchange component is absent, and the caller reports it
-as a gap.
+Step 3 prints `nfa` priced and `exchange` in `gaps` for this build: the exchange component is
+absent, and the caller reports it as a gap.

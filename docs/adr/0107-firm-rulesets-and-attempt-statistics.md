@@ -461,6 +461,110 @@ binding rules.
   content hashes change in place. The index stays append-only in the two senses that still hold: no
   version disappears, no version number is reused, and a `verified` ruleset's hash never changes.
 
+## Amendment (2026-11-22, second): participant profile and other-fee evidence
+
+The first amendment replaced one all-in flag with four cost components, and gave each fee row a
+single `participant_type`. Two things were still wrong. A participant type is not one fact: the
+exchange fee depends on CME membership, the NFA assessment depends on the bylaw's own subject (the
+FCM member), and a charge can be the same for everyone. And an "other" row could be a catch-all: a
+row typed `other` with a name like "misc" could add money nobody could point at, or a monthly
+platform charge could arrive as a per-side execution cost. The owner ruled both out. This amendment
+replaces the participant type with a run-level PROFILE resolved per component, and makes an `other`
+row carry its own evidence.
+
+**1. The run declares a participant profile; the classification is resolved per component.**
+
+- A run declares an immutable `participant_profile`: a flat mapping from dimension name to value,
+  e.g. `cme_membership_status: non_member` and `nfa_assessment_eligibility: fcm_member`.
+- Dimension names are NOT an enum. Each row brings its own, and every name matches
+  `^[a-z][a-z0-9_]*$`. Values are non-empty strings; the literal `unknown` is allowed and means
+  *unknown*.
+- A fee row declares the classification it needs: `classification_dimension` plus
+  `classification_value`. They replace `participant_type`, and different components may need
+  different dimensions (an exchange row `cme_membership_status=non_member`, the NFA row
+  `nfa_assessment_eligibility=fcm_member`). A row that is the same for every participant uses
+  `classification_dimension=none` / `classification_value=all`, which needs no profile entry.
+- The former "an NFA row prices any participant type" pass-through is REMOVED: the profile must
+  declare `nfa_assessment_eligibility`, or the `nfa` component is a gap. A classification the run
+  never declared is not a classification the engine may assume.
+- Resolution for an `excluded` component on `(root, date)`:
+  1. take the rows that cover the component, for the exact root, with the date inside their
+     effective range;
+  2. look each row's dimension up in the profile: missing or `unknown` makes the component a gap
+     whose reason is `classification <dim> not declared`; a different value means the row does not
+     apply;
+  3. exactly one applicable row prices the component; two are a refusal (ambiguous); none is a gap.
+- There is never a default classification, and never a fallback to the only row available.
+- The profile's canonical SHA-256 goes in the manifest, `summary.json` and every
+  `attempts.parquet` row (`participant_profile_sha256`), and it is part of the evaluation id, so
+  two profiles give two artifacts.
+- The profile is the CLI's `--participant-profile FILE` (a flat YAML mapping) and the MCP tool's
+  `participant_profile` object. It is required only when some component is `excluded`, and recorded
+  when given either way.
+- The estimate stays `conditional`, with the reason `participant profile declared by the run, not
+  stated by the firm`. A profile is the run's declaration, never the firm's, so it never makes a
+  cost `complete`.
+
+**2. An `other` row must prove what it is.**
+
+A row may carry `fee_type=other` ONLY with all of the following, each refused when missing or
+empty:
+
+- `charge_name`: a specific name or identifier. Generic names are refused case-insensitively after
+  punctuation is stripped: `other`, `others`, `misc`, `miscellaneous`, `fees`, `other fees`,
+  `cme other fees`, `additional fees`, `charges`, and any name made only of those words plus `cme`,
+  `exchange` or `fee`/`fees`.
+- `unit`: exactly `per_contract_per_side`. Monthly, platform, subscription and account charges are
+  refused, with a message saying a fixed charge belongs in the ruleset's fee schedule, separate
+  from execution costs.
+- `source_url`: an official source; for a CME Group root, the host must be `www.cmegroup.com`.
+- `quote`: the exact text naming the charge and its amount.
+- `applies_quote`: the exact text showing the charge applies to this execution (product and
+  participant).
+- `distinct_from`: why the charge is not part of the exchange, clearing or NFA fee.
+- `root`, `effective_from`, `classification_dimension` and `classification_value` — the
+  classification being required unless the source states the charge is the same for every
+  participant, in which case `none`/`all` needs no profile entry.
+
+Further rules:
+
+- `covers` must be exactly `other` for an `other` row.
+- A row whose `fee_type` is `exchange`, `clearing` or `nfa` may NOT list `other` in `covers`: *an
+  exchange fee cannot cover other components*. An `exchange` row may still cover
+  `exchange;clearing` when the owner's source names both (CME's "Clearing & Trading").
+- Two `other` rows with the same `charge_name`, root and classification that overlap in dates are
+  refused: that is one charge written twice.
+- Two `other` rows with DIFFERENT names covering the same date are both charged. They are distinct
+  charges, each with its own evidence, and the `other` component is their sum — the one stated
+  exception to "one row per component".
+- `unit` is required on every row type, and only `per_contract_per_side` is accepted in this
+  per-side table.
+
+**3. Cost-assumption entries state their unit too.**
+
+- Every amount entry now requires `unit: per_contract_per_side`; anything else is refused.
+- An entry covering `other` also gives a `charge_name`, under the same generic-name refusal.
+
+**4. What "all-in" can mean.**
+
+`complete` is reached only when every applicable component is identified, quantified and backed by
+evidence or an explicit assumption file. A profile-only resolution stays `conditional`. An
+incomplete, explicitly conditional cost beats an apparently complete one.
+
+**Consequences of the amendment.**
+
+- `exchange_fees_v1`'s row contract changes shape (`participant_type` out;
+  `classification_dimension`, `classification_value`, `unit`, `charge_name`, `applies_quote`,
+  `distinct_from` in), and so does its stored sort order. The dataset is unreleased, so no committed
+  artifact changes; see `docs/COMPATIBILITY.md`.
+- `fee_rows_as_of` returns a `FeeLookup` (priced components plus a named reason per gap) instead of
+  a bare mapping, because "absent" was a gap with no explanation and a gap must say what is missing.
+- No ruleset changes: `commissions.components` already declares the four components, and the
+  classification is a run input, not a firm value. `rulesets/prop/INDEX.json` is unchanged.
+- The owner's fee file gains required columns: a supplier who used to write a participant type now
+  writes the dimension and the value, and an `other` charge now has to be named and quoted twice
+  (what it is, and why it applies).
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

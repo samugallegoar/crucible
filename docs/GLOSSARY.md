@@ -557,12 +557,21 @@ contains it (`included`), charges it on top (`excluded`) or does not say (`unkno
 the sources do not state is a GAP, never a zero, and the cost total is never presented as complete
 while one is unknown or unpriced.
 
-**Participant type** — the rate class a fee row prices (`non_member_customer`, `member`, …) and the
-class a run passes to price the components a commission excludes (`--fee-participant-type`, MCP
-`fee_participant_type`). A ruleset never states one, so it is a RUN parameter; no fee is carried
-across participant types, with one stated exception: an `nfa` row is the FCM member's pass-through
-assessment (`fcm_member_assessment`) and prices any requested type. Using an assumed participant type
-keeps the cost estimate `conditional` (`participant type assumed: <x>`).
+**Participant profile** — the run's immutable declaration of who its account is, as a flat mapping
+from classification dimension to value (`cme_membership_status: non_member`,
+`nfa_assessment_eligibility: fcm_member`). A ruleset never states one, so it is a RUN input
+(`--participant-profile FILE`, MCP `participant_profile`); it is required as soon as a commission
+declares a component `excluded`, its canonical SHA-256 is recorded in the artifact and is part of the
+evaluation id, and using it keeps the cost estimate `conditional` (`participant profile declared by
+the run, not stated by the firm`) — never `complete`.
+
+**Classification dimension** — the one name a fee row uses to say whom it is written for
+(`cme_membership_status`, `nfa_assessment_eligibility`, …). Dimension names are identifiers
+(`^[a-z][a-z0-9_]*$`), not a fixed enum, and each row brings its own; `none` marks a charge the
+source says is the same for every participant (with value `all`). A component is priced only when
+the profile declares the row's dimension and matches its value: a missing or `unknown` value is a
+gap (`classification <dim> not declared`), and there is no default and no fallback to the only row
+there is.
 
 **Cost-assumption file** — the YAML a user passes to price the cost gaps the sources leave
 (`--cost-assumption FILE`): `name`, `description`, `provided_by`, `status: unverified`, `evidence`

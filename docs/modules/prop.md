@@ -79,15 +79,18 @@
 - **`scenarios.py`**: `scenarios(ruleset) -> list[RulesetScenario]` (the primary plus one per
   conflict alternative, deterministic order) and `scenario(ruleset, id)`.
 - **`costs.py`**: the per-COMPONENT execution cost. `FeeRow {component, per_side_usd,
-  record_sha256}`, `ComponentFeeRow {root, fee_type, participant_type, covers, per_side_usd,
-  effective_from, effective_to}` (one row prices exactly its root, participant type and dates, and
-  a row that covers several components is charged once), `ComponentFeeTable {rows, source_sha256}`
-  (rows for one key may not overlap) and the `ComponentFeeSource` Protocol: `rows_for(root, when,
-  participant_type=..., components=[...])` returns only the components it can price — an absent
-  component is a reported gap and never a zero fee. `store_component_fees(store)` returns the
-  `StoreComponentFees` adapter over the stored `exchange_fees_v1` dataset, whose every read goes
-  through `crucible.data.exchange_fees.fee_rows_as_of` (per root, per participant type, per
-  component; an owner file that prices ES alone is usable).
+  record_sha256}`, `ComponentFeeRow {root, fee_type, classification_dimension,
+  classification_value, covers, per_side_usd, effective_from, effective_to, charge_name}` (one row
+  prices exactly its root, its own classification and its dates; a row that covers several
+  components is charged once; an `other` row carries its own `charge_name`),
+  `ComponentFeeTable {rows, source_sha256}` (rows for one key may not overlap) and the
+  `ComponentFeeSource` Protocol: `lookup(root, when, profile=..., components=[...]) ->
+  FeeLookup{priced, gaps}` returns only the components it can price — a component in neither map
+  was not asked for, and a component it cannot price is a reported gap with its reason, never a
+  zero fee. `store_component_fees(store)` returns the `StoreComponentFees` adapter over the stored
+  `exchange_fees_v1` dataset, whose every read goes through
+  `crucible.data.exchange_fees.fee_rows_as_of` (per root, per participant profile, per component;
+  an owner file that prices ES alone is usable).
   `CostPricing`/`ComponentCharge` are the result: one charge per component (`included`,
   `excluded_priced`, `excluded_unpriced`, `unknown`, `assumption`, and `known`/`unknown` for the
   commission), the charged USD, the gaps, and the cost status `complete | conditional |
@@ -232,10 +235,10 @@ The ruleset's commissions replace the run's fee schedule (spread and slippage st
 run's cost schedule). Unknown costs are never treated as zero. `commissions.components` declares,
 for each of the four components (`exchange`, `clearing`, `nfa`, `other`), whether the firm's
 per-side commission contains it (`included`), excludes it (`excluded`: the amount is added from the
-`ComponentFeeSource` for the run's participant type) or does not say (`unknown`). All four keys are
-REQUIRED and there is no `all_in` shortcut: an `included` or `excluded` declaration needs a
-quotation that says so, and `commissions.evidence` records whether the commission figures themselves
-are `official_quote` or `owner_provided`. The old
+`ComponentFeeSource`, resolved through the run's participant profile) or does not say
+(`unknown`). All four keys are REQUIRED and there is no `all_in` shortcut: an `included` or
+`excluded` declaration needs a quotation that says so, and `commissions.evidence` records whether
+the commission figures themselves are `official_quote` or `owner_provided`. The old
 `commissions.includes_exchange_and_regulatory_fees` flag is REFUSED by name, with a message naming
 this block.
 
@@ -247,12 +250,44 @@ includes or the dataset already priced, an `unknown` component it prices is ADDE
 strategy), and the recorded SHA-256 names the file. Because it is a user's statement and not a firm
 value, the resulting estimate is `conditional`, never `exact`.
 
-The participant type a component is priced for is a REQUIRED run parameter as soon as a component
-is `excluded` (`--fee-participant-type`, MCP `fee_participant_type`): the ruleset never states one,
-and a member rate is not a customer rate. Using it makes the estimate `conditional` with the reason
-`participant type assumed: <x>`. The per-side amounts are resolved at the attempt's
-`start_trade_date`, and a fee change the table states inside the attempt's window is reported in
-`warnings` (one schedule per attempt, never a silent mid-window change).
+### The participant profile: classification resolved per component
+
+A fee row does not state a participant type. It states the ONE classification dimension it needs
+(`classification_dimension`) and the value it is written for (`classification_value`) — an exchange
+row `cme_membership_status = non_member`, the NFA row `nfa_assessment_eligibility = fcm_member`, a
+charge the source says is the same for everyone `none`/`all`. A run therefore declares a
+**participant profile**: an immutable, flat mapping from dimension name (an identifier matching
+`^[a-z][a-z0-9_]*$`, not a fixed enum) to value, in a YAML file
+(`crucible.data.exchange_fees.ParticipantProfile`, `load_participant_profile`,
+`--participant-profile FILE`, MCP `participant_profile` as an object):
+
+```yaml
+cme_membership_status: non_member
+nfa_assessment_eligibility: fcm_member
+```
+
+Resolution is PER COMPONENT, and it has no default:
+
+- a row whose dimension the profile does not declare, or declares `unknown`, makes that component a
+  gap whose reason is `classification <dim> not declared`;
+- a row whose stated value differs does not apply;
+- `none`/`all` rows apply to every participant and need no profile entry;
+- exactly one applicable row prices the component; two are refused as ambiguous; none is a gap.
+
+There is never a fallback to "the only row there is", and the former "an NFA row prices any
+participant" pass-through is gone. `other` is the one summing exception: two rows with different
+`charge_name`s on one date are two distinct charges and both are added.
+
+The profile is REQUIRED as soon as a component is `excluded`, and optional otherwise (recorded when
+given). Its canonical SHA-256 goes in `summary.json`, the sealed manifest and every
+`attempts.parquet` row (`participant_profile_sha256`), and it is part of the evaluation id, so two
+profiles are two artifacts. Using it makes the estimate `conditional` with the reason
+`participant profile declared by the run, not stated by the firm`: a profile is a run's declaration,
+never a firm's statement, so it never makes a cost `complete`.
+
+The per-side amounts are resolved at the attempt's `start_trade_date`, and a fee change the table
+states inside the attempt's window is reported in `warnings` (one schedule per attempt, never a
+silent mid-window change).
 
 `cash_estimate_status` is the label on the money: `exact`, `conditional` (a named cost assumption
 was used), `upper_bound` (a payout cap the sources do not state: the simulation pays what the
@@ -297,10 +332,11 @@ assertions of `tests/integration/test_futures_prop.py`.
   rule and by type in `warnings`), while every window the calendar does carry stays enforced.
 - `crucible.prop.costs.ComponentFeeSource` (Protocol) with `ComponentFeeTable`/`ComponentFeeRow`
   and `StoreComponentFees`: the per-root, per-side amounts of the components a commission charges
-  on top of itself. `simulate_attempt(fee_source=..., participant_type=...)` takes one;
-  `store_component_fees(store)` is the adapter over the stored `exchange_fees_v1` dataset
-  (imported lazily inside `costs.py`, so `crucible.prop` itself never needs the data layer to
-  import).
+  on top of itself. `simulate_attempt(fee_source=..., profile=...)` takes one;
+  `store_component_fees(store)` is the adapter over the stored `exchange_fees_v1` dataset.
+  `crucible.data.exchange_fees` owns the row contract itself: `ParticipantProfile`,
+  `load_participant_profile`, `FeeLookup`, `resolve_component_rows` (the one resolution rule, used
+  by both the stored table and an in-code `ComponentFeeTable`) and `fee_rows_as_of`.
 - `crucible.prop.costs.ComponentFeeSource`'s stored implementation takes the dataset NAME
   (`store_component_fees(store, dataset="exchange_fees_v1")`, `StoreComponentFees(dataset=None)`),
   so a consumer that pinned a version reads that version and the content hash it cites is the table
@@ -324,10 +360,13 @@ assertions of `tests/integration/test_futures_prop.py`.
 
 - The contract limit is enforced at admission and on every candidate target; it is not re-checked
   as an invariant after a fill that must reduce exposure (a stop or a liquidation only reduces).
-- The per-side fee schedule is resolved once, at the attempt's `start_trade_date`, for one
-  participant type: a fee change inside a long attempt is reported in `warnings` but the start
+- The per-side fee schedule is resolved once, at the attempt's `start_trade_date`, against one
+  participant profile: a fee change inside a long attempt is reported in `warnings` but the start
   date's row is charged throughout (a per-date schedule would need the simulator to price each fill
-  on its own date), and a row of another participant type never prices it.
+  on its own date), and a row of another classification value never prices it.
+- The profile is a single run-level declaration, so an attempt cannot be priced as one class for
+  the exchange fee and another for the NFA assessment; a firm whose clearing chain splits the
+  classes would need a per-component profile (not built).
 - A row that covers several components is charged once, under the first component in report order:
   the amount is one cell the owner reported, and splitting it across the components it covers
   would be a number no source states.

@@ -44,6 +44,7 @@ from crucible.data.contracts import (
     ROLL_SORT_KEYS,
 )
 from crucible.data.econ_events import ECON_EVENT_SCHEMA, ECON_EVENT_SORT_KEYS
+from crucible.data.exchange_fees import ParticipantProfile
 from crucible.data.store import ParquetDataStore, build_dataset
 from crucible.experiments.artifact_id import verify_artifact
 from crucible.experiments.futures_config import FuturesRunConfig, parse_futures_config
@@ -291,11 +292,18 @@ def build_store(root: Path, *, exchange_fees: bool | None = None) -> Path:
     return root
 
 
+PROFILE = ParticipantProfile.from_mapping(
+    {"cme_membership_status": "non_member", "nfa_assessment_eligibility": "fcm_member"}
+)
+"""The run's participant profile: it resolves the synthetic exchange and NFA rows."""
+
+
 def _fee_row(
     root: str,
     fee_type: str,
     amount: str,
-    participant_type: str,
+    dimension: str,
+    value: str,
     covers: str,
     source_kind: str,
 ) -> dict:
@@ -308,8 +316,11 @@ def _fee_row(
         "root": root,
         "venue": ef.VENUE_OF[root],
         "fee_type": fee_type,
-        "participant_type": participant_type,
+        "classification_dimension": dimension,
+        "classification_value": value,
         "covers": covers,
+        "charge_name": None,
+        "unit": ef.UNIT_PER_CONTRACT_PER_SIDE,
         "per_side_usd": amount,
         "effective_from": day,
         "effective_to": None,
@@ -318,6 +329,8 @@ def _fee_row(
         "source_url": "https://example.invalid/synthetic-fees",
         "snapshot_sha256": "0" * 64,
         "quote": "SYNTHETIC TEST VALUE: a fee row invented for a test",
+        "applies_quote": None,
+        "distinct_from": None,
         "event_time": stamp,
         "available_at": stamp,
         "dataset_version": ef.DATASET_VERSION,
@@ -331,7 +344,15 @@ def _write_fee_table(root: Path, *, exchange: bool) -> None:
     from crucible.data import exchange_fees as ef
 
     rows = [
-        _fee_row(name, "nfa", "0.02", ef.PARTICIPANT_TYPE_NFA, "nfa", ef.SOURCE_KIND_OFFICIAL)
+        _fee_row(
+            name,
+            "nfa",
+            "0.02",
+            ef.NFA_CLASSIFICATION_DIMENSION,
+            ef.NFA_CLASSIFICATION_VALUE,
+            "nfa",
+            ef.SOURCE_KIND_OFFICIAL,
+        )
         for name in ef.ROOTS
     ]
     if exchange:
@@ -340,7 +361,8 @@ def _write_fee_table(root: Path, *, exchange: bool) -> None:
                 name,
                 "exchange",
                 "1.25",
-                ef.PARTICIPANT_TYPE_EXCHANGE,
+                ef.EXCHANGE_CLASSIFICATION_DIMENSION,
+                ef.EXCHANGE_CLASSIFICATION_VALUE,
                 "exchange;clearing",
                 ef.SOURCE_KIND_OWNER,
             )
@@ -515,7 +537,17 @@ def write_cost_assumption(
         "provided_by": "owner",
         "status": "unverified",
         "evidence": "SYNTHETIC TEST VALUE: no document states this split",
-        "amounts": {root: [{"covers": list(covers), "per_side_usd": amount}]},
+        "amounts": {
+            root: [
+                {
+                    "covers": list(covers),
+                    "per_side_usd": amount,
+                    "unit": "per_contract_per_side",
+                    # an amount covering ``other`` must name the charge
+                    "charge_name": "SYNTHETIC TEST VALUE: a named per-side charge",
+                }
+            ]
+        },
     }
     path.write_text(yaml.safe_dump(document, sort_keys=True), encoding="utf-8", newline="\n")
     return path
@@ -536,7 +568,7 @@ def evaluate(
     ruleset_options = {
         key: value
         for key, value in options.items()
-        if key not in ("cost_assumption", "fee_participant_type")
+        if key not in ("cost_assumption", "participant_profile")
     }
     ruleset_file = write_ruleset(
         artifacts / "ruleset.yaml",
@@ -549,7 +581,7 @@ def evaluate(
         execution_mode="manual",
         scenarios=scenarios,
         cost_assumption=options.get("cost_assumption"),  # type: ignore[arg-type]
-        fee_participant_type=options.get("fee_participant_type"),  # type: ignore[arg-type]
+        participant_profile=options.get("participant_profile"),  # type: ignore[arg-type]
         store_root=store,
         artifacts_root=artifacts,
         overwrite=True,
@@ -1089,8 +1121,8 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
         "platform": None,
         "source": _source(),
     }
-    # the participant type is a run parameter: without it an excluded component is refused
-    with pytest.raises(ConfigurationError, match="fee_participant_type"):
+    # the participant profile is a run input: without it an excluded component is refused
+    with pytest.raises(ConfigurationError, match="participant profile"):
         evaluate(
             build_store(tmp_path / "refuse", exchange_fees=True),
             tmp_path / "refused",
@@ -1102,11 +1134,11 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
         blind_store,
         tmp_path / "blind",
         commissions=excluding,
-        fee_participant_type="non_member_customer",
+        participant_profile=PROFILE,
     )
     cash = blind.summary["scenarios"][0]["cash"]
     assert cash["status"] == "unavailable"
-    assert any("no exchange row for ES" in reason for reason in cash["reasons"])
+    assert any("no fee row covers ES exchange" in reason for reason in cash["reasons"])
     frame = pl.read_parquet(blind.evaluation_dir / "attempts.parquet")
     assert set(frame["cash_estimate_status"].to_list()) == {"unavailable"}
     assert set(frame["exchange_status"].to_list()) == {"excluded_unpriced"}
@@ -1117,7 +1149,7 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
         priced_store,
         tmp_path / "priced_art",
         commissions=excluding,
-        fee_participant_type="non_member_customer",
+        participant_profile=PROFILE,
     )
     cash = priced.summary["scenarios"][0]["cash"]
     assert cash["status"] == "unavailable"  # clearing and other stay unknown
@@ -1126,7 +1158,35 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
     frame = pl.read_parquet(priced.evaluation_dir / "attempts.parquet")
     assert set(frame["exchange_status"].to_list()) == {"excluded_priced"}
     assert set(frame["exchange_usd"].to_list()) == {Decimal("1.250000")}
-    assert set(frame["fee_participant_type"].to_list()) == {"non_member_customer"}
+    assert set(frame["participant_profile_sha256"].to_list()) == {PROFILE.sha256}
+    # the profile is recorded as declared (dimensions and values) and by its canonical hash, in
+    # the summary AND in the sealed manifest, so a reader can tell which account was priced
+    assert priced.summary["participant_profile"] == {
+        "cme_membership_status": "non_member",
+        "nfa_assessment_eligibility": "fcm_member",
+    }
+    assert priced.summary["participant_profile_sha256"] == PROFILE.sha256
+    import json
+
+    manifest = json.loads((priced.evaluation_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["participant_profile"] == priced.summary["participant_profile"]
+    assert manifest["participant_profile_sha256"] == PROFILE.sha256
+    assert f"participant_profile={PROFILE.sha256}" in manifest["evaluation_basis"]
+    # a member profile is a DIFFERENT run: its own evaluation id, its own artifact
+    member = ParticipantProfile.from_mapping(
+        {"cme_membership_status": "member", "nfa_assessment_eligibility": "fcm_member"}
+    )
+    other = evaluate(
+        priced_store,
+        tmp_path / "member_art",
+        commissions=excluding,
+        participant_profile=member,
+    )
+    assert other.evaluation_id != priced.evaluation_id
+    assert other.summary["participant_profile_sha256"] == member.sha256
+    # the member row does not exist, so the exchange component is a gap, not the non-member rate
+    member_frame = pl.read_parquet(other.evaluation_dir / "attempts.parquet")
+    assert set(member_frame["exchange_status"].to_list()) == {"excluded_unpriced"}
 
 
 # ----------------------------------------------------------------------------------- 5. the news

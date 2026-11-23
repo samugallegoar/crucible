@@ -48,6 +48,7 @@ from crucible.execution.futures_sim import (
 from crucible.execution.interfaces import OverlayEvent
 from crucible.prop import rules as rl
 from crucible.prop.costs import (
+    PARTICIPANT_PROFILE_REASON,
     ComponentCharge,
     ComponentFeeSource,
     ComponentFeeTable,
@@ -76,6 +77,7 @@ from crucible.prop.ruleset import PropRuleset
 
 if TYPE_CHECKING:
     from crucible.data.cme_sessions import SessionCalendar, TradeDateSession
+    from crucible.data.exchange_fees import ParticipantProfile
     from crucible.data.futures_specs import FuturesContractSpec
 
 SEMANTICS = "high_before_low_conservative"
@@ -139,10 +141,10 @@ class CommissionApplication:
     ``cost_status`` is ``complete``, ``conditional`` (a cost assumption or an assumed participant
     type supplied a value) or ``unavailable``.
 
-    ``participant_type`` is the rate class the ``excluded`` components were priced for: it is a RUN
-    parameter, because the ruleset never states one, and using it keeps the cost ``conditional``.
-    ``cost_assumption``/``cost_assumption_sha256`` name the file that priced a gap, and
-    ``priced_by_assumption`` lists which components it priced.
+    ``participant_profile_sha256`` is the canonical hash of the run's participant profile: the
+    profile is a RUN input, because the ruleset never states one, and using it keeps the cost
+    ``conditional``. ``cost_assumption``/``cost_assumption_sha256`` name the file that priced a
+    gap, and ``priced_by_assumption`` lists which components it priced.
     """
 
     status: str
@@ -153,7 +155,7 @@ class CommissionApplication:
     cost_gaps: tuple[str, ...]
     fees_incomplete: str | None
     cost_status: str = "unavailable"
-    participant_type: str | None = None
+    participant_profile_sha256: str | None = None
     cost_assumption: str | None = None
     cost_assumption_sha256: str | None = None
     priced_by_assumption: tuple[str, ...] = ()
@@ -308,21 +310,22 @@ def _commissions_for(
     cost_assumption: CostAssumption | None,
     *,
     fee_source: ComponentFeeSource | None = None,
-    participant_type: str | None = None,
+    profile: ParticipantProfile | None = None,
     when: dt.date,
 ) -> tuple[CostSchedule, CommissionApplication]:
     """The ruleset's commission replaces the run's fee schedule; every component is priced.
 
     An unknown commission is never treated as zero: the run's own schedule is kept as a labelled
     placeholder and the cost statistics stay unavailable. Each component the firm charges ON TOP of
-    the commission is added from ``fee_source`` for the run's ``participant_type``; a component the
-    sources do not state, or one the source cannot price for this root and date, is a named gap. A
+    the commission is added from ``fee_source`` as the run's ``profile`` resolves each component's
+    classification; a component the sources do not state, one the source cannot price for this root
+    and date, and one whose classification the profile does not declare are named gaps. A
     ``cost_assumption`` FILE prices exactly the gaps it names for exactly this root — it may not
     override a component the ruleset includes or the dataset already priced.
 
     The returned ``CommissionApplication.cost_status`` is ``complete`` (nothing is missing, no
-    assumption and no assumed participant type was needed), ``conditional`` (an assumption or the
-    participant type supplied a value) or ``unavailable`` (a gap remains). The schedule carries the
+    assumption and no declared participant profile was needed), ``conditional`` (an assumption or
+    the profile supplied a value) or ``unavailable`` (a gap remains). The schedule carries the
     priced amounts; a gap contributes nothing, and the caller must not present the total as
     complete.
     """
@@ -336,7 +339,7 @@ def _commissions_for(
         when=when,
         costs=costs,
         fee_source=fee_source,
-        participant_type=participant_type,
+        profile=profile,
         assumption=cost_assumption,
     )
     gaps = pricing.gaps
@@ -351,7 +354,7 @@ def _commissions_for(
             cost_gaps=gaps,
             fees_incomplete=pricing.gap_text,
             cost_status=pricing.status,
-            participant_type=participant_type,
+            participant_profile_sha256=None if profile is None else profile.sha256,
             cost_assumption=None if cost_assumption is None else cost_assumption.name,
             cost_assumption_sha256=None if cost_assumption is None else cost_assumption.sha256,
             priced_by_assumption=pricing.priced_by_assumption,
@@ -401,7 +404,7 @@ def estimate_status(
     session_calendar_gaps: tuple[str, ...] = (),
     fees_incomplete: str | None = None,
     payout_cap_unknown: bool = False,
-    participant_type: str | None = None,
+    participant_profile: str | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     """``complete|conditional|partial|unavailable`` and its reasons (ADR-0107 section 11).
 
@@ -409,7 +412,8 @@ def estimate_status(
     assumption, or a cost component has no source and no assumption; ``partial`` when a material
     rule (including an uncovered news window or a payout cap the sources do not state) is
     unmodeled; ``conditional`` when the ruleset is unverified, a cost assumption was used, or the
-    participant type that priced the excluded components had to be assumed.
+    run's participant profile priced the excluded components (``participant_profile`` is then the
+    profile's canonical SHA-256).
     """
     reasons: list[str] = []
     critical = [row.rule for row in coverage if not row.modeled and row.materiality == "critical"]
@@ -426,8 +430,8 @@ def estimate_status(
         reasons.append("commissions are unknown and no cost assumption was given")
     elif cost_assumption is not None:
         reasons.append(f"cost assumption {cost_assumption!r} was used")
-    if participant_type is not None:
-        reasons.append(f"participant type assumed: {participant_type}")
+    if participant_profile is not None:
+        reasons.append(PARTICIPANT_PROFILE_REASON)
     if payout_cap_unknown:
         reasons.append(PAYOUT_CAP_UNKNOWN)
     if (
@@ -449,7 +453,7 @@ def estimate_status(
         return "unavailable", tuple(reasons)
     if material or news_coverage_gaps or session_calendar_gaps or payout_cap_unknown:
         return "partial", tuple(reasons)
-    if not verified or cost_assumption is not None or participant_type is not None:
+    if not verified or cost_assumption is not None or participant_profile is not None:
         return "conditional", tuple(reasons)
     return "complete", tuple(reasons)
 
@@ -460,7 +464,7 @@ def cash_estimate(
     payout_cap_unknown: bool,
     cost_status: str,
     cost_assumption: str | None,
-    participant_type: str | None = None,
+    participant_profile: str | None = None,
     fees_incomplete: str | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     """``exact | conditional | upper_bound | unavailable`` for the payout and net-cash numbers.
@@ -469,7 +473,8 @@ def cash_estimate(
     ``unavailable`` (any component is a gap) makes the cash ``unavailable`` unless a
     ``cost_assumption`` file covered EVERY gap — then it is ``conditional`` and the attempt says
     which file, and which gaps it priced. ``complete`` costs are ``exact`` only when no assumption
-    and no assumed participant type was needed; either one keeps the number ``conditional``, never
+    and no declared participant profile was needed; either one keeps the number ``conditional``,
+    never
     ``complete``. A payout cap the sources do not state does not stop the number: the payouts are
     paid as the other terms allow and the statistic is an ``upper_bound``.
     """
@@ -488,8 +493,8 @@ def cash_estimate(
         )
     elif cost_assumption is not None:
         reasons.append(f"cost assumption {cost_assumption!r} was used")
-    if cost_status != "unavailable" and participant_type is not None:
-        reasons.append(f"participant type assumed: {participant_type}")
+    if cost_status != "unavailable" and participant_profile is not None:
+        reasons.append(PARTICIPANT_PROFILE_REASON)
     if payout_cap_unknown:
         reasons.append(PAYOUT_CAP_UNKNOWN)
         return "upper_bound", tuple(reasons)
@@ -528,7 +533,7 @@ def simulate_attempt(
     news_coverage: Coverage | None = None,
     fee_source: ComponentFeeSource | None = None,
     cost_assumption: CostAssumption | None = None,
-    participant_type: str | None = None,
+    profile: ParticipantProfile | None = None,
     resets_purchased: int = 0,
     scenario_id: str = "primary",
 ) -> AttemptResult:
@@ -553,10 +558,11 @@ def simulate_attempt(
     a news rule whose event types the calendar does not carry is ``not_modeled`` for this attempt
     (reported), and every window the calendar does carry is still enforced.
     ``fee_source`` is the ``ComponentFeeSource`` the components the firm charges ON TOP of the
-    commission are priced from, for ``participant_type`` (a run parameter, because the ruleset never
-    states one; it is refused when a component is excluded and it is missing). Without a source, an
-    uncovered row or an ``unknown`` component, that cost is a named gap and the cash statistic is
-    ``unavailable`` — or ``conditional`` when ``cost_assumption`` prices every remaining gap. The
+    commission are priced from, resolved through the run's ``profile`` — the participant profile is
+    a run input, because the ruleset never states one, and it is refused when a component is
+    excluded and it is missing. Without a source, an uncovered row, a classification the profile
+    does not declare, or an ``unknown`` component, that cost is a named gap and the cash statistic
+    is ``unavailable`` — or ``conditional`` when ``cost_assumption`` prices every remaining gap. The
     amounts are resolved at ``start_trade_date``; a fee change inside the attempt's window is
     reported in ``warnings``, never applied silently.
     """
@@ -613,7 +619,7 @@ def simulate_attempt(
         spec.root,
         cost_assumption,
         fee_source=fee_source,
-        participant_type=participant_type,
+        profile=profile,
         when=start_trade_date,
     )
     cost_status = commission.cost_status
@@ -798,14 +804,18 @@ def simulate_attempt(
         session_calendar_gaps=schedule_gaps,
         fees_incomplete=commission.fees_incomplete,
         payout_cap_unknown=payout_cap_unknown,
-        participant_type=participant_type if commission.priced_from_dataset else None,
+        participant_profile=(
+            commission.participant_profile_sha256 if commission.priced_from_dataset else None
+        ),
     )
     cash_status, cash_reasons = cash_estimate(
         payouts_modeled=_payout_modeled(ruleset),
         payout_cap_unknown=payout_cap_unknown,
         cost_status=cost_status,
         cost_assumption=None if cost_assumption is None else cost_assumption.name,
-        participant_type=participant_type if commission.priced_from_dataset else None,
+        participant_profile=(
+            commission.participant_profile_sha256 if commission.priced_from_dataset else None
+        ),
         fees_incomplete=commission.fees_incomplete,
     )
     return AttemptResult(

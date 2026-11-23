@@ -655,17 +655,21 @@ point-in-time read hides each event until the instant it happens. Its consumer i
 Per-side, per-contract USD amounts over and above commission, split into the components a firm's
 commission may or may not contain (ingestion record in `docs/data/cme-exchange-fees.md`).
 Hand-written here for the same reason as `1.6`: the rows are reference data keyed by a date range,
-not bars. Stored sort order: `root`, `participant_type`, `fee_type`, `effective_from`, `covers`.
-Built by `crucible.data.exchange_fees.build_exchange_fees`; read per root and per component through
-`fee_rows_as_of(store, root, date, participant_type=..., components=...)`.
+not bars. Stored sort order: `root`, `classification_dimension`, `classification_value`, `fee_type`,
+`effective_from`, `covers`. Built by `crucible.data.exchange_fees.build_exchange_fees`; read per
+root and per component through
+`fee_rows_as_of(store, root, date, profile=ParticipantProfile..., components=...)`.
 
 | Column | Dtype | Nullable | Unit / meaning |
 |---|---|---|---|
 | `root` | `String` | no | product root: ES, NQ, YM, RTY, NKD, MES, MNQ, MYM or M2K |
 | `venue` | `String` | no | the exchange the root trades on: `CME` or `CBOT` |
 | `fee_type` | `String` | no | the component the row is typed as: `exchange`, `clearing`, `nfa` or `other`; it must appear in `covers` |
-| `participant_type` | `String` | no | who the amount is for: `non_member_customer` (the assumed customer class), `member`, `fcm_member_assessment` (the NFA row), … A row prices its own type only; an `nfa` row prices any requested type, because the assessment is the FCM member's pass-through |
+| `classification_dimension` | `String` | no | the ONE participant-profile dimension this row needs (`cme_membership_status`, `nfa_assessment_eligibility`, …), matching `^[a-z][a-z0-9_]*$`; `none` for a charge the source says is the same for every participant. A run's `ParticipantProfile` must declare it, or the component is a gap — there is no default and no pass-through |
+| `classification_value` | `String` | no | the value that dimension must have (`non_member`, `fcm_member`, …); `all` with dimension `none` |
 | `covers` | `String` | no | `;`-separated components the amount covers; it must contain `fee_type`. A CME "Exchange Fees for Clearing & Trading" cell is `exchange` / `exchange;clearing`, and the caller charges that row ONCE for both |
+| `charge_name` | `String` | yes | `other` rows only and REQUIRED there: the charge's specific name. A generic name (`other`, `misc`, `CME other fees`, `charges`, …) is refused |
+| `unit` | `String` | no | `per_contract_per_side`: the only unit this per-side table holds. A monthly, platform, subscription or account charge is refused |
 | `per_side_usd` | `String` | no | USD per contract per side as a **Decimal string** (a float would round the money); a round trip is `2 x` this |
 | `effective_from` | `Date` | no | first calendar date the rate applies to |
 | `effective_to` | `Date` | yes | last date it applies to; `null` = open-ended, as the source states it |
@@ -674,6 +678,8 @@ Built by `crucible.data.exchange_fees.build_exchange_fees`; read per root and pe
 | `source_url` | `String` | no | the page fetched or the document the owner's cell came from (the current or historical CME fee page, the NFA bylaw). Required: a rate nobody can point at is not a fee |
 | `snapshot_sha256` | `String` | no | SHA-256 of the bytes the row was read from (the page or the owner's file) |
 | `quote` | `String` | no | the exact text the rate was read from: the bylaw sentence or the cell text. Evidence, never a summary |
+| `applies_quote` | `String` | yes | `other` rows only and REQUIRED there: the exact text showing the charge applies to this execution (product and participant) |
+| `distinct_from` | `String` | yes | `other` rows only and REQUIRED there: why the charge is not part of the exchange, clearing or NFA fee |
 | `event_time` | `Int64` | no | UTC ns: first instant of `effective_from` |
 | `available_at` | `Int64` | no | UTC ns the rate was knowable; equals `event_time` (no source states a publication instant) |
 | `record_sha256` | `String` | no | SHA-256 of this row's other fields in canonical JSON; two components one row covers share it, which is how the pricing charges that row once |
@@ -683,8 +689,10 @@ One difference from a bar dataset: `event_time` is a **calendar date**, not an i
 activity, so a rate is visible from the start of the day it takes effect and never before. The
 dataset intentionally holds no `exchange`, `clearing` or `other` row in this build (CME Group's fee
 is not attributable to a root from its published document; `docs/data/cme-exchange-fees.md`), and
-`fee_rows_as_of` returns no amount for a component it cannot price — a gap the caller reports, never
-a zero.
+`fee_rows_as_of` returns a `FeeLookup` whose `gaps` name every component it cannot price — a gap the
+caller reports, never a zero. An `other` row whose `covers` is not exactly `other`, or that lists
+`other` from another `fee_type`, is refused: a per-side charge that is not the exchange, clearing or
+NFA fee is its own row with its own evidence.
 
 ## 2. Output artifacts
 
@@ -1581,7 +1589,7 @@ migration message, never silently upgraded. The required fields:
 |-------|------|---------|
 | `schema_version` | `2` | the ruleset file's format version |
 | `reset` | `{time, tz}` | the ruleset's rule-day boundary; no default, a firm declares it |
-| `commissions` | `{status: known\|unknown, components: {exchange, clearing, nfa, other each {status: included\|excluded\|unknown, evidence: official_quote\|owner_provided\|not_stated, text}}, per_side_usd: {ROOT: decimal}, platform, evidence, source}` | per-side commissions; unknown is never zero and a sentinel is refused. `components` is **required with all four keys and no default** (a missing key is refused): `included` means the firm's commission contains the component (and needs a quotation that says so), `excluded` means it is charged on top (also quoted, and the run then needs a participant type and a fee dataset), `unknown` means the sources do not say (`evidence: not_stated` plus a note naming what was checked) and is a gap, never a zero. The old `includes_exchange_and_regulatory_fees` flag is refused BY NAME. `commissions.evidence` is `official_quote` or `owner_provided` for the figures themselves |
+| `commissions` | `{status: known\|unknown, components: {exchange, clearing, nfa, other each {status: included\|excluded\|unknown, evidence: official_quote\|owner_provided\|not_stated, text}}, per_side_usd: {ROOT: decimal}, platform, evidence, source}` | per-side commissions; unknown is never zero and a sentinel is refused. `components` is **required with all four keys and no default** (a missing key is refused): `included` means the firm's commission contains the component (and needs a quotation that says so), `excluded` means it is charged on top (also quoted, and the run then needs a participant profile and a fee dataset), `unknown` means the sources do not say (`evidence: not_stated` plus a note naming what was checked) and is a gap, never a zero. The old `includes_exchange_and_regulatory_fees` flag is refused BY NAME. `commissions.evidence` is `official_quote` or `owner_provided` for the figures themselves |
 | `conflicts` | list (optional) | `{conflict_id, rule_id, field, selected_value, alternatives [{value, source}], selected_source, rationale, applicability_checked: true}` |
 | `ruleset_id` | string | the program's stable id; `(ruleset_id, version)` is the ruleset's identity |
 | `version` | integer >= 1 | a released version is immutable: a change is a new number |
@@ -1623,7 +1631,7 @@ prints its JSON Schema. The fields:
 | `min_buffer_usd`, `min_buffer_bar`, `min_buffer_time_ns`, `min_buffer_rule` | decimal / integer / integer / string or null | the smallest basis-minus-threshold over every failure threshold, at each bar's conservative extreme, and where it happened |
 | `fees_usd`, `fees`, `payouts_usd`, `payouts`, `payout_policy`, `payout_modeled`, `net_cash_usd` | decimal / `{evaluation_usd, activation_usd, monthly_usd, reset_usd, total_usd}` / decimal / list of `{time_ns, gross_usd, net_usd, rule_id, bound}` / `max_eligible` or `none` / boolean / decimal | attempt costs broken out (monthly is per started calendar month); the trader's net payouts, the choice that produced them and whether withdrawals are modeled; `net_cash_usd = payouts_usd - fees_usd`. `bound` is `exact` or `upper_bound` (a payout cap the sources do not state) |
 | `mechanical_outcome`, `estimate_status`, `estimate_reasons`, `practical_eligibility`, `scenario_id` | outcome / `complete\|conditional\|partial\|unavailable` / list of strings / `eligible\|blocked_by_compliance\|unknown` / string | what the simulated account did, what the evidence allows it to claim (and why), whether the exact execution mode may trade the plan, and which scenario ran |
-| `commissions`, `news_covered`, `news_coverage_gaps`, `session_calendar_gaps`, `cash_estimate_status`, `cash_estimate_reasons` | `{status, per_side_usd, root, source, components: [{component, status, usd, detail}], cost_gaps, fees_incomplete, cost_status, participant_type, cost_assumption, cost_assumption_sha256, priced_by_assumption}` / boolean or null / list of event ids / list of `"<first>..<last>"` / `exact\|conditional\|upper_bound\|unavailable` / list of strings | the commission table applied and every component's outcome (`included`, `excluded_priced`, `covered_by_row`, `excluded_unpriced`, `unknown`, `assumption`; `known`/`unknown`/`assumption` for the commission), with the USD it adds, the gaps that remain (`cost_gaps`) and the cost status `complete\|conditional\|unavailable`. The run's fee schedule is replaced, spread/slippage kept; a component the firm charges on top is added per side from the fee dataset for the run's `participant_type`, and a `cost_assumption` file (recorded by its SHA-256, with `priced_by_assumption` naming what it priced) is the only route from a gap to a number. Also: whether the calendar covered the attempt; the events whose release TIME is unknown (`time_known: false`), whose whole trade date is therefore outside coverage, while timed events keep their windows enforced; the unsourced CME session-calendar windows the attempt trades through (`"<first>..<last>"`, which makes the estimate `partial` with the reason `session calendar unsourced <first>..<last>`); what the payout and net-cash numbers are allowed to claim and why (`upper_bound` when a payout cap is unknown) |
+| `commissions`, `news_covered`, `news_coverage_gaps`, `session_calendar_gaps`, `cash_estimate_status`, `cash_estimate_reasons` | `{status, per_side_usd, root, source, components: [{component, status, usd, detail}], cost_gaps, fees_incomplete, cost_status, participant_profile_sha256, cost_assumption, cost_assumption_sha256, priced_by_assumption}` / boolean or null / list of event ids / list of `"<first>..<last>"` / `exact\|conditional\|upper_bound\|unavailable` / list of strings | the commission table applied and every component's outcome (`included`, `excluded_priced`, `covered_by_row`, `excluded_unpriced`, `unknown`, `assumption`; `known`/`unknown`/`assumption` for the commission), with the USD it adds, the gaps that remain (`cost_gaps`) and the cost status `complete\|conditional\|unavailable`. The run's fee schedule is replaced, spread/slippage kept; a component the firm charges on top is added per side from the fee dataset as the run's participant profile resolves its classification `classification_dimension`/`classification_value`, and a `cost_assumption` file (recorded by its SHA-256, with `priced_by_assumption` naming what it priced) is the only route from a gap to a number. Also: whether the calendar covered the attempt; the events whose release TIME is unknown (`time_known: false`), whose whole trade date is therefore outside coverage, while timed events keep their windows enforced; the unsourced CME session-calendar windows the attempt trades through (`"<first>..<last>"`, which makes the estimate `partial` with the reason `session calendar unsourced <first>..<last>`); what the payout and net-cash numbers are allowed to claim and why (`upper_bound` when a payout cap is unknown) |
 | `overlay_events` | list of `{kind, bar, time_ns, rule_id, requested, allowed, note}` | resizes, rejections, locks, unlocks, breaches, forced flats, payouts, pass, timeout, censored |
 | `rule_coverage` | list of `{rule, description, modeled, materiality, source}` | one row per rule, then one per `not_modeled` entry |
 | `evaluation_status`, `material_unmodeled`, `warnings` | `complete` / `conditional_on_modeled_rules` / `blocked`, list of strings, list of strings | what the declared gaps allow a result to claim |
@@ -1677,7 +1685,7 @@ the manifest records `trial_recorded: false` and no trial registry row is writte
 | `cost_status` | `String` | no | complete \| conditional \| unavailable (see cost_gaps) |
 | `cost_gaps` | `String` | no | components no source could price, joined by ';' ('' when none) |
 | `cost_assumption_sha256` | `String` | yes | SHA-256 of the cost-assumption file used |
-| `fee_participant_type` | `String` | yes | rate class the excluded components used |
+| `participant_profile_sha256` | `String` | yes | canonical sha256 of the run's profile |
 | `coverage_gap_count` | `Int64` | no | news and session-calendar coverage gaps of the attempt |
 | `coverage_gaps` | `String` | no | the gaps themselves, joined by ';' ('' when none) |
 | `estimate_status` | `String` | no | complete \| conditional \| partial \| unavailable |

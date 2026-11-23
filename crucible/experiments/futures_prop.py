@@ -83,6 +83,7 @@ from crucible.data.econ_events import (
 from crucible.data.econ_events import (
     coverage as econ_calendar_coverage,
 )
+from crucible.data.exchange_fees import ParticipantProfile
 from crucible.data.store import ParquetDataStore
 from crucible.data.vault import refuse_protected_window
 from crucible.experiments.artifact_id import read_seal, seal_artifact, write_manifest
@@ -233,7 +234,7 @@ PROP_ATTEMPTS_SCHEMA: dict[str, pl.DataType] = {
     "cost_status": pl.String(),  # complete | conditional | unavailable (see cost_gaps)
     "cost_gaps": pl.String(),  # components no source could price, joined by ';' ('' when none)
     "cost_assumption_sha256": pl.String(),  # nullable: SHA-256 of the cost-assumption file used
-    "fee_participant_type": pl.String(),  # nullable: rate class the excluded components used
+    "participant_profile_sha256": pl.String(),  # nullable: canonical sha256 of the run's profile
     "coverage_gap_count": pl.Int64(),  # news and session-calendar coverage gaps of the attempt
     "coverage_gaps": pl.String(),  # the gaps themselves, joined by ';' ('' when none)
     "estimate_status": pl.String(),  # complete | conditional | partial | unavailable
@@ -384,7 +385,7 @@ class PropCostComponents(_Strict):
     """The per-component cost status of one root: declared, and how the attempts priced it."""
 
     root: str
-    participant_type: str | None
+    participant_profile_sha256: str | None
     components: dict[str, str]
     cost_status: str
     gaps: list[str]
@@ -432,7 +433,8 @@ class PropEvaluationSummary(_Strict):
     payout_policy: str
     cost_assumption: PropCostAssumption | None
     cost_components: list[PropCostComponents]
-    fee_participant_type: str | None
+    participant_profile: dict[str, str] | None
+    participant_profile_sha256: str | None
     scenarios_requested: Literal["primary", "all"]
     start_dates: dict[str, object]
     ruleset: PropRulesetReference
@@ -915,8 +917,8 @@ def _cost_components_document(
             entries.setdefault(charge.component, set()).add(charge.status)
         gaps.setdefault(root, set()).update(application.cost_gaps)
         statuses.setdefault(root, set()).add(application.cost_status)
-        if application.participant_type is not None:
-            participant[root] = application.participant_type
+        if application.participant_profile_sha256 is not None:
+            participant[root] = application.participant_profile_sha256
     document: list[PropCostComponents] = []
     for root in sorted(seen):
         components = {
@@ -927,7 +929,7 @@ def _cost_components_document(
         document.append(
             PropCostComponents(
                 root=root,
-                participant_type=participant.get(root),
+                participant_profile_sha256=participant.get(root),
                 components=components,
                 cost_status=(next(iter(cost_statuses)) if len(cost_statuses) == 1 else "mixed"),
                 gaps=sorted(gaps.get(root, set())),
@@ -1157,7 +1159,7 @@ def _attempt_row(item: _Classified, horizon_trading_days: int) -> dict[str, obje
         "cost_status": application.cost_status,
         "cost_gaps": ";".join(application.cost_gaps),
         "cost_assumption_sha256": application.cost_assumption_sha256,
-        "fee_participant_type": application.participant_type,
+        "participant_profile_sha256": application.participant_profile_sha256,
         "coverage_gap_count": len(gaps),
         "coverage_gaps": ";".join(gaps),
         "estimate_status": attempt.estimate_status,
@@ -1308,7 +1310,7 @@ def evaluation_basis(
     news_hash: str,
     exchange_fees_dataset: str,
     exchange_fees_hash: str,
-    participant_type: str | None = None,
+    participant_profile_sha256: str | None = None,
 ) -> str:
     """The text the evaluation id hashes: every input that can change a number or a label."""
     return "|".join(
@@ -1320,7 +1322,7 @@ def evaluation_basis(
             f"payout_policy={payout_policy}",
             f"cost_assumption={cost_assumption.name if cost_assumption else ''}"
             f":{cost_assumption.sha256 if cost_assumption else ''}",
-            f"fee_participant_type={participant_type or ''}",
+            f"participant_profile={participant_profile_sha256 or ''}",
             f"scenarios={scenarios_requested}",
             f"news={news_dataset}:{news_hash}",
             f"exchange_fees={exchange_fees_dataset}:{exchange_fees_hash}",
@@ -1348,14 +1350,14 @@ def _needs_exchange_fees(rulesets: Iterable[PropRuleset]) -> bool:
     return any(bool(ruleset.commissions.excluded_components) for ruleset in rulesets)
 
 
-def _refuse_missing_participant_type(
-    rulesets: Iterable[PropRuleset], *, selected: PropRuleset, value: str | None
+def _refuse_missing_profile(
+    rulesets: Iterable[PropRuleset], *, selected: PropRuleset, value: ParticipantProfile | None
 ) -> None:
-    """Refuse ``fee_participant_type is None`` when a ruleset prices a component on top.
+    """Refuse a missing participant profile when a ruleset prices a component on top.
 
-    The participant type is a RUN parameter because a ruleset never states one, and the fee dataset
-    prices a rate class: without it an ``excluded`` component cannot be priced at all, so the run
-    stops here instead of reporting every attempt as a gap.
+    The profile is a RUN input because a ruleset never states one, and every fee row states the
+    classification it is written for: without a profile an ``excluded`` component cannot be priced
+    at all, so the run stops here instead of reporting every attempt as a gap.
     """
     excluded = sorted(
         {name for ruleset in rulesets for name in ruleset.commissions.excluded_components}
@@ -1363,9 +1365,10 @@ def _refuse_missing_participant_type(
     if excluded and value is None:
         msg = (
             f"ruleset {selected.ruleset_id} v{selected.version} declares {excluded} charged on top "
-            "of the commission, so the run needs fee_participant_type (--fee-participant-type), "
-            "e.g. non_member_customer: the fee dataset prices a participant type and the ruleset "
-            "never states one"
+            "of the commission, so the run needs a participant profile (--participant-profile "
+            "FILE), e.g. 'cme_membership_status: non_member' and "
+            "'nfa_assessment_eligibility: fcm_member': each fee row states the classification it "
+            "is written for and the ruleset never states one"
         )
         raise ConfigurationError(msg)
 
@@ -1409,7 +1412,7 @@ def run_prop_evaluation(
     execution_mode: ExecutionMode,
     payout_policy: str = "max_eligible",
     cost_assumption: str | Path | None = None,
-    fee_participant_type: str | None = None,
+    participant_profile: ParticipantProfile | None = None,
     scenarios: str = "primary",
     news_dataset: str = "econ_events_v2",
     exchange_fees_dataset: str = "exchange_fees_v1",
@@ -1428,9 +1431,14 @@ def run_prop_evaluation(
     choice between taking every eligible payout and none. ``cost_assumption`` is the PATH of a
     cost-assumption YAML file (``crucible.prop.costs.load_cost_assumption``): the user's explicit,
     unverified statement that prices the exact cost gaps it names, without which the cash statistics
-    are ``unavailable``. ``fee_participant_type`` is the rate class the components the firm charges
-    on top of the commission are priced for; the ruleset never states one, so it is required as soon
-    as a component is declared ``excluded``, and using it keeps the cost ``conditional``.
+    are ``unavailable``. ``participant_profile`` is the run's declaration of who its account is — a
+    flat mapping from classification dimension to value
+    (``crucible.data.exchange_fees.ParticipantProfile``), e.g.
+    ``{cme_membership_status: non_member, nfa_assessment_eligibility: fcm_member}``. Each fee row
+    names the one dimension it needs, so a component the firm charges on top of the commission is
+    required-resolvable through the profile: it is required as soon as a component is declared
+    ``excluded``, and the profile that priced anything is recorded by its canonical SHA-256 in the
+    manifest, the summary and every attempts row.
 
     ``scenarios``: ``primary`` evaluates the selected ruleset only; ``all`` adds one full
     sensitivity scenario per conflict alternative (ADR-0107 section 7), reported beside the
@@ -1498,8 +1506,8 @@ def run_prop_evaluation(
         fee_source = store_component_fees(store, dataset=exchange_fees_dataset)
     fees_hash = _content_hash(store, exchange_fees_dataset) if fee_source is not None else None
     news_hash = _content_hash(store, news_dataset)
-    _refuse_missing_participant_type(
-        (item.ruleset for item in chosen), selected=chosen[0].ruleset, value=fee_participant_type
+    _refuse_missing_profile(
+        (item.ruleset for item in chosen), selected=chosen[0].ruleset, value=participant_profile
     )
 
     run_basis = run_id_basis(config, prepared.refs, _session_table_hash(calendar))
@@ -1516,7 +1524,9 @@ def run_prop_evaluation(
         news_hash=news_hash or "",
         exchange_fees_dataset=exchange_fees_dataset,
         exchange_fees_hash=fees_hash or "",
-        participant_type=fee_participant_type,
+        participant_profile_sha256=(
+            None if participant_profile is None else participant_profile.sha256
+        ),
     )
     evaluation_id = evaluation_id_of(basis)
     evaluation_dir = artifacts_root / evaluation_id
@@ -1544,7 +1554,7 @@ def run_prop_evaluation(
                 news_coverage=news_coverage,
                 fee_source=fee_source,
                 cost_assumption=assumption,
-                participant_type=fee_participant_type,
+                profile=participant_profile,
                 scenario_id=scenario.scenario_id,
             )
             classifications.append(
@@ -1614,7 +1624,12 @@ def run_prop_evaluation(
             )
         ),
         cost_components=_cost_components_document(classifications),
-        fee_participant_type=fee_participant_type,
+        participant_profile=(
+            None if participant_profile is None else participant_profile.as_mapping()
+        ),
+        participant_profile_sha256=(
+            None if participant_profile is None else participant_profile.sha256
+        ),
         scenarios_requested=_scenario_mode(scenarios),
         start_dates={
             "count": len(plan.start_dates),
@@ -1694,7 +1709,8 @@ def run_prop_evaluation(
             None if assumption is None else summary.model_dump(mode="json")["cost_assumption"]
         ),
         "cost_components": summary.model_dump(mode="json")["cost_components"],
-        "fee_participant_type": fee_participant_type,
+        "participant_profile": summary.model_dump(mode="json")["participant_profile"],
+        "participant_profile_sha256": summary.model_dump(mode="json")["participant_profile_sha256"],
         "scenarios_requested": scenarios,
         "ruleset": {
             "file": ruleset_file.name,

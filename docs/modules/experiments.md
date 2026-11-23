@@ -317,7 +317,7 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   refuses an H shorter than any phase's own limit (a `time_limit` rule included, a calendar-day
   limit converted per start), and runs `crucible.prop.attempt.simulate_attempt` for every
   (scenario, start) with the rule's news events and its coverage, the `ComponentFeeSource` the
-  commission's excluded components need, the run's `fee_participant_type` and the
+  commission's excluded components need, the run's `participant_profile` and the
   `cost_assumption` FILE. It then classifies every attempt
   (`classify_attempt`: `pass | fail | timeout | horizon | censored`, evaluation phases only) and
   writes the statistics (section "Prop evaluation" below), the labels and the sealed artifact
