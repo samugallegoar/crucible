@@ -211,7 +211,8 @@ commissions and fees?":
   it is the page's own wording for the same fact.
 - What happens at attempt time: with the flag `false` the engine adds the per-side amount of the run's
   `ComponentFeeSource` (an `ComponentFeeTable`, or the stored `exchange_fees_v1` dataset through
-  `store_component_fees`) to each fill's commission, for the run's `fee_participant_type`. The stored
+  `store_component_fees`) to each fill's commission, for the run's participant profile (`--participant-profile`). The
+  stored
   dataset today holds **no exchange or clearing rows** (the NFA rows only,
   `docs/data/cme-exchange-fees.md`), so the lookup returns no amount for them, the
   attempt reports `exchange fees unknown: ...`, and the cash statistic is **unavailable** rather
@@ -360,7 +361,7 @@ mechanical account):
 | removed id | what models it now | why it is no longer a gap |
 |---|---|---|
 | `min_new_profit_50_pct_of_request` | `funded_payout.min_new_profit_share_of_request: '0.5'` | the payout kind now has the new-profit-share gate the page describes ("at least 50% of the requested amount must represent new profit generated during the current payout cycle"), so a request is bounded by twice the new profit since the last payout. No assumption and no approximation: the field is the rule. |
-| `exchange_and_nfa_fees_not_published` | `commissions.components` (`exchange`/`nfa` `excluded`) + the run's `ComponentFeeSource` and `fee_participant_type` | the commissions block now declares that the per-side amounts exclude the exchange and NFA fees, so the engine adds them or reports each unpriced component as a gap. The gap stopped being a silent understatement with a materiality label and became a named, reported one (`exchange: the commission excludes it and the fee dataset has no exchange row ...`, cash `unavailable`). The FTMO sentence and the CME dataset's empty exchange and clearing coverage are recorded in section 5 and in `docs/data/cme-exchange-fees.md`. |
+| `exchange_and_nfa_fees_not_published` | `commissions.components` (`exchange`/`nfa` `excluded`) + the run's `ComponentFeeSource` and participant profile | the commissions block now declares that the per-side amounts exclude the exchange and NFA fees, so the engine adds them or reports each unpriced component as a gap. The gap stopped being a silent understatement with a materiality label and became a named, reported one (`exchange: the commission excludes it and the fee dataset has no exchange row ...`, cash `unavailable`). The FTMO sentence and the CME dataset's empty exchange and clearing coverage are recorded in section 5 and in `docs/data/cme-exchange-fees.md`. |
 
 Owner-flagged items that FTMO does **not** state, and which are therefore not declared at all:
 there is no minimum holding time and no micro-scalping ban anywhere on FTMO's pages (the overview
@@ -673,7 +674,7 @@ evaluation-vs-funded mismatch, simulation artefacts, HFT detection, concurrent a
 | `nfa` | `excluded` | `official_quote` | the same sentence |
 | `other` | `unknown` | `not_stated` | the page names three parts of the trading cost and no other per-side charge |
 
-An `excluded` component needs a participant type at RUN time (`--fee-participant-type`): the ruleset never states one, and using it makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
+An `excluded` component needs the run's participant PROFILE (`--participant-profile`): each fee row names the one classification dimension it needs (`cme_membership_status`, `nfa_assessment_eligibility`, ...), a dimension the profile leaves out makes that component a gap, and using the profile makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
 
 Owner questions, one per component the files declare `unknown`:
 

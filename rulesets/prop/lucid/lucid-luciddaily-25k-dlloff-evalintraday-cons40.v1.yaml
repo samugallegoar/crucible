@@ -167,6 +167,7 @@ phases:
     evidence: assumption
     assumption:
       name: session_close_taken_from_firm_wide_page
+      assumption_kind: section7_default
       rationale: 'taken from Allowed Trading Times (section ''LucidPro, LucidFlex and LucidDirect Accounts'')
         for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET
         reopen is the only session clock the firm publishes.'
@@ -212,6 +213,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: 'The firm states the profit target amount and never says when it is measured. A target
         tested no earlier than the end of the trade date on closed balance is the conservative reading:
         the trader passes no earlier, and a later same-day breach still counts.'
@@ -302,6 +304,7 @@ phases:
     evidence: assumption
     assumption:
       name: session_close_taken_from_firm_wide_page
+      assumption_kind: section7_default
       rationale: 'taken from Allowed Trading Times (section ''LucidPro, LucidFlex and LucidDirect Accounts'')
         for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET
         reopen is the only session clock the firm publishes.'
@@ -412,6 +415,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: section7_default
       rationale: 'The firm states the profit target amount and never says when it is measured. A target
         tested no earlier than the end of the trade date on closed balance is the conservative reading:
         the trader passes no earlier, and a later same-day breach still counts.'

@@ -22,10 +22,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
+import tempfile
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+
+import yaml
 
 from crucible.core.errors import ConfigurationError
 from crucible.mcp_server.invoke import ToolRefusal, ainvoke
@@ -648,7 +652,7 @@ def build_server() -> MCPServer:
         execution_mode: Literal["automated", "manual"],
         payout_policy: Literal["max_eligible", "none"] = "max_eligible",
         cost_assumption: str | None = None,
-        fee_participant_type: str | None = None,
+        participant_profile: dict[str, str] | None = None,
         scenarios: Literal["primary", "all"] = "primary",
         news_dataset: str = "econ_events_v2",
         exchange_fees_dataset: str = "exchange_fees_v1",
@@ -668,12 +672,18 @@ def build_server() -> MCPServer:
         reason. It is named `conditional_pass_probability` with `definitive: false` and every
         reason (unmodeled rules, an unverified ruleset, a cost assumption, a news or
         session-calendar coverage gap, the counterfactual application to pre-2025 data) whenever
-        anything qualifies it, and `practical_eligibility` is judged for `execution_mode`, so a
+        anything qualifies it, and `practical_eligibility` is judged for `execution_mode`: a
         mechanically successful attempt under a compliance blocker is never a practically valid
-        pass. `cost_assumption` is the path of a cost-assumption YAML file: it prices exactly the
-        per-component cost gaps it names, keeps the estimate conditional and is never a firm value.
-        `fee_participant_type` is the rate class the fees a commission EXCLUDES are priced for, and
-        is required as soon as a component is declared excluded. `scenarios="all"` adds one
+        pass, and one made under a condition the simulation cannot prove (`eligible_conditional`)
+        is a CONDITIONALLY valid pass, with every condition listed. `cost_assumption` is the path
+        of a cost-assumption YAML file: it prices exactly the per-component cost gaps it names,
+        keeps the estimate conditional and is never a firm value.
+        `participant_profile` is a flat object mapping classification dimension to value, e.g.
+        `{"cme_membership_status": "non_member", "nfa_assessment_eligibility": "fcm_member"}`. Each
+        fee row states the one dimension it needs, so the profile is required as soon as a
+        component is declared excluded; it is recorded by its canonical SHA-256 in the artifact, and
+        `"unknown"` is an allowed value that makes the component a gap rather than a guess.
+        `scenarios="all"` adds one
         sensitivity scenario per conflict alternative beside the primary. Not a submission: no
         trial is recorded. No threshold, no verdict."""
         options: dict[str, Option] = {
@@ -691,15 +701,29 @@ def build_server() -> MCPServer:
         }
         if cost_assumption is not None:
             options["cost_assumption"] = absolute(cost_assumption) or cost_assumption
-        if fee_participant_type is not None:
-            options["fee_participant_type"] = fee_participant_type
         if home is not None:
             options["home"] = absolute(home)
         if artifacts is not None:
             options["artifacts"] = absolute(artifacts)
         if home is None and artifacts is None:
             options["artifacts"] = _home_paths()[0]
-        return await run_cli(build_argv(["futures", "prop"], [], options))
+        if participant_profile is None:
+            return await run_cli(build_argv(["futures", "prop"], [], options))
+        # the CLI takes a FILE (a flat YAML mapping), so an object argument is written to a
+        # temporary one: the profile's identity is the canonical hash of its CONTENT, which the
+        # artifact records, so the temporary path never affects the result
+        directory = tempfile.mkdtemp(prefix="crucible-participant-profile-")
+        try:
+            path = Path(directory) / "participant-profile.yaml"
+            path.write_text(
+                yaml.safe_dump(dict(participant_profile), sort_keys=True),
+                encoding="utf-8",
+                newline=chr(10),
+            )
+            options["participant_profile"] = str(path)
+            return await run_cli(build_argv(["futures", "prop"], [], options))
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
 
     # ---------------------------------------------------------------- the holdout vault tools
     #

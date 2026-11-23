@@ -271,6 +271,62 @@ verdict exists in C7a or C7b.** The verdict is C7e.
 - Running an attempt from a futures run config and the attempt artifacts are C7b, where the start
   sequence gives them meaning. C7a's `simulate_attempt` is a library function, tested by hand.
 
+## Amendment (2026-11-23): breach on fill and cost postings
+
+The Topstep review (E2, F3/F4) found two engine behaviours the rules do not support. Both are
+fixed here; neither changes a ruleset value.
+
+**1. A threshold crossed by realized P&L or by costs fails at that instant, even when flat.**
+
+The breach test solved the PRICE at which an open position's equity touches a loss threshold. In
+the reference run a round turn's exit fill and its costs left the FLAT account at 47,992.40,
+below the 48,000.00 maximum loss limit, and no breach was recorded: a flat book has no price to
+solve. The account kept trading and failed eight minutes later on the next position's adverse
+extreme. A loss the account has already taken is not a loss it may still trade through.
+
+- Every loss threshold declared ``evaluated: intraday`` (trailing, static or daily loss, on any
+  basis that includes realized P&L or costs) is now tested immediately after every fill and every
+  cost or fee posting, FLAT OR NOT: the basis is the post-fill one, the fill's own commissions,
+  spread and slippage included.
+- A crossing, with the rule's own comparison (``<=`` for a floor, so equality breaches), is a
+  breach at that fill's timestamp. The breached value is the post-fill basis at that instant.
+- When flat, nothing is liquidated: the account simply takes no further entries. When a position
+  remains, it is liquidated at the fill's own price — the instant the account crossed — with the
+  fill's costs, through the existing breach path (``pending_liquidation`` in the overlay, consumed
+  by the simulator right after the fill that set it).
+- ``evaluated: eod`` thresholds are unchanged: still tested at the rule-day's close alone, so an
+  intraday dip that recovers is not a breach.
+- Consequences of pessimism (AGENTS.md section 1.4): the earliest provable instant wins, so an
+  attempt that used to fail on a later bar now fails on the fill that crossed the threshold; and
+  ``min_buffer`` records the post-fill basis, which is why a breach liquidation now reports the
+  liquidation's own costs as the worst the account got (``test_intraday_trailing_joint_pessimism``:
+  -20.75 rather than the pre-cost 0).
+- ``AccountOverlay.fill`` gained the fill's own ``time_ns`` and the simulation calls
+  ``take_pending_liquidation()`` after booking a fill. With ``account=None`` nothing changes: the
+  plain simulation is byte-identical.
+
+**2. A blocked entry names the rule that blocked it.**
+
+Inside the 15:10-17:00 CT ``flat_by`` window an entry was recorded as ``resize requested 1,
+allowed 0`` under ``maximum_position_size``. The account was kept out correctly but the event named
+the wrong rule, so an artifact read "the size limit clipped" where the truth was "the session's
+close window refused the entry".
+
+- ``admit`` now collects the rules that REFUSE the entry, and records one event per rule, sorted by
+  rule id: ``session_entry_block`` for a session-close ``flat_by`` window (the owner's name), with
+  the window's own id and a reason (``entry blocked: flat_by_1510_ct until 17:00 CT``);
+  ``news_entry_block`` for a news window (``block``, or ``all_trading`` which freezes any change);
+  ``entry_blocked`` for a lock.
+- The blocking logic (``_entry_blockers``) and the rejection reason are separate: the logic answers
+  which rules refuse, the reason says why in the firm's own terms.
+- ``maximum_position_size`` (any contract limit or scaling plan) is recorded only when the SIZE
+  limit itself changed the size, as a ``resize`` under that rule. A legal size refused by a window
+  never appears under the size rule again.
+
+**What this does not change.** The breach order (a breach touched in a bar beats a pass in the same
+bar), the EOD timing, the pessimistic gap test at the open, the liquidation cost tables, and every
+golden fixture of the plain simulation.
+
 ## Alternatives considered
 
 - **Post-process the simulator output (the ADR-0090 plan).** Rejected by the owner. A breach,

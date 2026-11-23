@@ -101,6 +101,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
+      assumption_kind: section7_default
       rationale: The firm states the max-loss amount and the mark it trails from, and never says whether
         open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified
         observation frequency of a failure threshold as intraday, which is the stricter reading.
@@ -148,6 +149,7 @@ phases:
     evidence: assumption
     assumption:
       name: est_means_america_new_york
+      assumption_kind: section7_default
       rationale: The page writes the cutoff in 'EST'. ADR-0107 section 7 reads a bare US Eastern label
         as America/New_York including daylight saving, which keeps the 4:45 PM ET close at 4:45 PM local
         all year; a literal UTC-5 clock would shift the cutoff an hour in summer.
@@ -193,6 +195,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: 'The firm states the profit target amount and never says when it is measured. A target
         tested no earlier than the end of the trade date on closed balance is the conservative reading:
         the trader passes no earlier, and a later same-day breach still counts.'
@@ -246,6 +249,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
+      assumption_kind: section7_default
       rationale: The firm states the max-loss amount and the mark it trails from, and never says whether
         open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified
         observation frequency of a failure threshold as intraday, which is the stricter reading.
@@ -306,6 +310,7 @@ phases:
     evidence: assumption
     assumption:
       name: est_means_america_new_york
+      assumption_kind: section7_default
       rationale: The page writes the cutoff in 'EST'. ADR-0107 section 7 reads a bare US Eastern label
         as America/New_York including daylight saving, which keeps the 4:45 PM ET close at 4:45 PM local
         all year; a literal UTC-5 clock would shift the cutoff an hour in summer.

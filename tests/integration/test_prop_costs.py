@@ -10,10 +10,10 @@ The rules of the game, each pinned by a test below:
 - a component the sources do not state is a gap, never a zero, and the cost is ``unavailable``;
 - a cost-assumption file prices exactly the root and components it names — never another root —
   and only that makes the number ``conditional``, never ``complete``;
-- the participant type that prices an ``excluded`` component is a run parameter, and using it is a
-  reason the estimate is not complete;
-- a row covers only its exact root, participant type and dates, and a row covering several
-  components is charged once.
+- the participant PROFILE that prices an ``excluded`` component is a run input, resolved per
+  component, and using it is a reason the estimate is not complete;
+- a row covers only its exact root, its own classification and its dates, and a row covering
+  several components is charged once.
 """
 
 from __future__ import annotations
@@ -27,9 +27,17 @@ import pytest
 import yaml
 
 from crucible.core.errors import ConfigurationError
+from crucible.data.exchange_fees import (
+    EXCHANGE_CLASSIFICATION_DIMENSION,
+    EXCHANGE_CLASSIFICATION_VALUE,
+    NFA_CLASSIFICATION_DIMENSION,
+    NFA_CLASSIFICATION_VALUE,
+    ParticipantProfile,
+)
 from crucible.execution.futures_sim import CostSchedule
 from crucible.prop.attempt import cash_estimate, estimate_status
 from crucible.prop.costs import (
+    PARTICIPANT_PROFILE_REASON,
     ComponentCharge,
     ComponentFeeRow,
     ComponentFeeTable,
@@ -43,8 +51,10 @@ if TYPE_CHECKING:
 
 WHEN = dt.date(2024, 1, 8)
 """The attempt date every pricing test resolves at."""
-PARTICIPANT = "non_member_customer"
-"""The rate class the synthetic dataset prices."""
+PROFILE = ParticipantProfile.from_mapping(
+    {"cme_membership_status": "non_member", "nfa_assessment_eligibility": "fcm_member"}
+)
+"""The run's participant profile: it resolves the synthetic exchange row and the NFA row."""
 
 COMPONENT_NAMES = ("exchange", "clearing", "nfa", "other")
 
@@ -98,11 +108,12 @@ def fee_table(*rows: ComponentFeeRow, sha: str = "1") -> ComponentFeeTable:
 
 
 def nfa_row(amount: str = "0.02", root: str = "ES") -> ComponentFeeRow:
-    """The NFA assessment row: the FCM member's pass-through charge."""
+    """The NFA assessment row: the assessment the bylaw makes on the FCM member."""
     return ComponentFeeRow(
         root=root,
         fee_type="nfa",
-        participant_type="fcm_member_assessment",
+        classification_dimension=NFA_CLASSIFICATION_DIMENSION,
+        classification_value=NFA_CLASSIFICATION_VALUE,
         covers=("nfa",),
         per_side_usd=Decimal(amount),
         effective_from=dt.date(2023, 1, 1),
@@ -121,12 +132,17 @@ def exchange_row(
     return ComponentFeeRow(
         root=root,
         fee_type="exchange",
-        participant_type=PARTICIPANT,
+        classification_dimension=EXCHANGE_CLASSIFICATION_DIMENSION,
+        classification_value=EXCHANGE_CLASSIFICATION_VALUE,
         covers=covers,
         per_side_usd=Decimal(amount),
         effective_from=effective_from,
         effective_to=effective_to,
     )
+
+
+OTHER_CHARGE = "SYNTHETIC TEST VALUE: per-side connectivity charge"
+"""The specific name an assumption covering ``other`` must give (a generic word is refused)."""
 
 
 def write_assumption(
@@ -142,7 +158,11 @@ def write_assumption(
         "provided_by": "owner",
         "status": "unverified",
         "evidence": "SYNTHETIC TEST VALUE: no document states this split",
-        "amounts": amounts,
+        # every amount states its unit: the file prices a per-side execution cost
+        "amounts": {
+            root: [{"unit": "per_contract_per_side", **entry} for entry in entries]
+            for root, entries in amounts.items()
+        },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(document, sort_keys=True), encoding="utf-8", newline="\n")
@@ -165,7 +185,7 @@ def price(
     *,
     root: str = "ES",
     fee_source: ComponentFeeTable | None = None,
-    participant_type: str | None = PARTICIPANT,
+    profile: ParticipantProfile | None = PROFILE,
     assumption: object = None,
     when: dt.date = WHEN,
 ):
@@ -178,7 +198,7 @@ def price(
         when=when,
         costs=cost_schedule(),
         fee_source=fee_source,
-        participant_type=participant_type if table.excluded_components else None,
+        profile=profile if table.excluded_components else None,
         assumption=assumption,  # type: ignore[arg-type]
     )
 
@@ -258,7 +278,7 @@ def test_an_assumption_covering_every_component_makes_the_cost_conditional(
                     {"covers": ["exchange"], "per_side_usd": "0.40"},
                     {"covers": ["clearing"], "per_side_usd": "0.11"},
                     {"covers": ["nfa"], "per_side_usd": "0.02"},
-                    {"covers": ["other"], "per_side_usd": "0.00"},
+                    {"covers": ["other"], "per_side_usd": "0.00", "charge_name": OTHER_CHARGE},
                 ]
             },
         )
@@ -295,9 +315,9 @@ def ftmo_like() -> Commissions:
     )
 
 
-def test_an_excluded_component_needs_the_run_participant_type() -> None:
-    """The ruleset never states a participant type, so the run must: refused when it is missing."""
-    with pytest.raises(ConfigurationError, match="fee_participant_type"):
+def test_an_excluded_component_needs_the_run_participant_profile() -> None:
+    """The ruleset never states who the account is, so the run must: refused when it is missing."""
+    with pytest.raises(ConfigurationError, match="participant profile"):
         price_components(
             components=ftmo_like().components,
             commission_status="known",
@@ -306,7 +326,7 @@ def test_an_excluded_component_needs_the_run_participant_type() -> None:
             when=WHEN,
             costs=cost_schedule(),
             fee_source=fee_table(nfa_row()),
-            participant_type=None,
+            profile=None,
         )
 
 
@@ -344,18 +364,19 @@ def test_a_row_covering_exchange_and_clearing_is_charged_once_and_other_stays_un
     assert pricing.fees_per_side == Decimal("0.50") + Decimal("0.77") + Decimal("0.02")
 
 
-def test_an_assumption_for_the_last_gap_makes_it_conditional_with_the_participant_type(
+def test_an_assumption_for_the_last_gap_makes_it_conditional_with_the_profile(
     tmp_path: Path,
 ) -> None:
     """Pricing ``other`` at 0.00 closes the last gap: 0.50 + 0.77 + 0.02 + 0.00 = 1.29 per side.
 
     The estimate is ``conditional`` for TWO reasons that must both be visible: the assumption file,
-    and the ``participant type assumed: non_member_customer`` the excluded components were priced
-    for. It is never reported as complete.
+    and the participant profile the excluded components were resolved through. It is never
+    reported as complete.
     """
     assumption = load_cost_assumption(
         write_assumption(
-            tmp_path / "other.yaml", {"ES": [{"covers": ["other"], "per_side_usd": "0"}]}
+            tmp_path / "other.yaml",
+            {"ES": [{"covers": ["other"], "per_side_usd": "0", "charge_name": OTHER_CHARGE}]},
         )
     )
     table = fee_table(exchange_row(covers=("exchange", "clearing")), nfa_row())
@@ -363,16 +384,16 @@ def test_an_assumption_for_the_last_gap_makes_it_conditional_with_the_participan
     assert pricing.gaps == ()
     assert pricing.status == "conditional"
     assert pricing.fees_per_side == Decimal("1.29")
-    assert "participant type assumed: non_member_customer" in pricing.reasons
+    assert PARTICIPANT_PROFILE_REASON in pricing.reasons
     status, reasons = cash_estimate(
         payouts_modeled=True,
         payout_cap_unknown=False,
         cost_status=pricing.status,
         cost_assumption="synthetic-owner-estimate",
-        participant_type=PARTICIPANT,
+        participant_profile=PROFILE.sha256,
     )
     assert status == "conditional"
-    assert any("participant type assumed: non_member_customer" in reason for reason in reasons)
+    assert any(PARTICIPANT_PROFILE_REASON in reason for reason in reasons)
 
 
 def test_a_firm_that_leaves_clearing_unknown_never_gets_a_complete_cost() -> None:
@@ -426,31 +447,46 @@ def test_a_row_prices_only_its_own_root() -> None:
     carry comes back with no amount at all, which the caller reports as a gap.
     """
     table = fee_table(exchange_row("0.77"))
-    assert table.rows_for("ES", WHEN, participant_type=PARTICIPANT, components=("exchange",))[
-        "exchange"
-    ].per_side_usd == Decimal("0.77")
-    assert table.rows_for("NQ", WHEN, participant_type=PARTICIPANT, components=("exchange",)) == {}
+    found = table.lookup("ES", WHEN, profile=PROFILE, components=("exchange",))
+    assert found.priced["exchange"][0] == Decimal("0.77")
+    missing = table.lookup("NQ", WHEN, profile=PROFILE, components=("exchange",))
+    assert missing.priced == {}
+    assert "no fee row covers" in missing.gaps["exchange"]
     with pytest.raises(ConfigurationError, match="overlap"):
         fee_table(exchange_row("0.51", effective_to=dt.date(2024, 6, 30)), exchange_row("0.63"))
 
 
-def test_a_member_row_does_not_price_a_non_member_request() -> None:
-    """No extrapolation across participant types; the NFA row is the FCM member's pass-through."""
+def test_a_member_row_does_not_price_a_non_member_profile() -> None:
+    """No extrapolation across classification values; the NFA row needs its own dimension."""
     member = ComponentFeeRow(
         root="ES",
         fee_type="exchange",
-        participant_type="member",
+        classification_dimension=EXCHANGE_CLASSIFICATION_DIMENSION,
+        classification_value="member",
         covers=("exchange",),
         per_side_usd=Decimal("0.31"),
         effective_from=dt.date(2023, 1, 1),
     )
     table = fee_table(member, nfa_row())
-    exclusive = table.rows_for(
-        "ES", WHEN, participant_type="proprietary_trader", components=("exchange", "nfa")
+    # a profile that declares no cme_membership_status leaves the exchange a gap AND the nfa one
+    exclusive = table.lookup(
+        "ES",
+        WHEN,
+        profile=ParticipantProfile.from_mapping({"trading_class": "proprietary"}),
+        components=("exchange", "nfa"),
     )
-    assert exclusive.keys() == {"nfa"}
-    exact = table.rows_for("ES", WHEN, participant_type="member", components=("exchange",))
-    assert exact["exchange"].per_side_usd == Decimal("0.31")
+    assert exclusive.priced == {}
+    assert exclusive.gaps["exchange"] == ("classification cme_membership_status not declared")
+    assert exclusive.gaps["nfa"] == ("classification nfa_assessment_eligibility not declared")
+    exact = table.lookup(
+        "ES",
+        WHEN,
+        profile=ParticipantProfile.from_mapping(
+            {"cme_membership_status": "member", "nfa_assessment_eligibility": "fcm_member"}
+        ),
+        components=("exchange",),
+    )
+    assert exact.priced["exchange"][0] == Decimal("0.31")
 
 
 # ------------------------------------------------------------------------- 4. the refusals
@@ -575,7 +611,8 @@ def test_overlapping_rows_and_a_covers_cell_without_its_own_fee_type_are_refused
         ComponentFeeRow(
             root="ES",
             fee_type="exchange",
-            participant_type=PARTICIPANT,
+            classification_dimension=EXCHANGE_CLASSIFICATION_DIMENSION,
+            classification_value=EXCHANGE_CLASSIFICATION_VALUE,
             covers=("clearing",),
             per_side_usd=Decimal("0.77"),
             effective_from=dt.date(2023, 1, 1),
@@ -602,7 +639,7 @@ def test_an_all_in_firm_has_complete_costs_but_unverified_labels() -> None:
         other="unknown",
     )
     # ``other`` is unknown for the firm that names three components and no fourth
-    pricing = price(table, participant_type=None)
+    pricing = price(table, profile=None)
     assert pricing.gaps == ("other",)
     assert pricing.status == "unavailable"
 
@@ -613,13 +650,13 @@ def test_an_all_in_firm_has_complete_costs_but_unverified_labels() -> None:
         nfa="included",
         other="included",
     )
-    complete = price(full, participant_type=None)
+    complete = price(full, profile=None)
     assert complete.gaps == ()
     assert complete.status == "complete"
     assert complete.fees_per_side == Decimal("2.88")
     assert [item.status for item in complete.charges] == ["known"] + ["included"] * 4
-    # a participant type the run supplies but nothing needs is not an assumption: it priced no
-    # component, so it neither appears on the cost nor makes it conditional
+    # a profile the run declares but nothing needs is not an assumption: it resolved no component,
+    # so it neither appears on the cost nor makes it conditional
     unused = price_components(
         components=full.components,
         commission_status=full.status,
@@ -628,9 +665,9 @@ def test_an_all_in_firm_has_complete_costs_but_unverified_labels() -> None:
         when=WHEN,
         costs=cost_schedule(),
         fee_source=fee_table(nfa_row()),
-        participant_type="member",
+        profile=ParticipantProfile.from_mapping({"cme_membership_status": "member"}),
     )
-    assert unused.participant_type is None
+    assert unused.profile_priced is False
     assert unused.status == "complete"
     status, reasons = cash_estimate(
         payouts_modeled=True,

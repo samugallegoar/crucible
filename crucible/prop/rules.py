@@ -188,6 +188,17 @@ class Evaluator:
         """Failure thresholds active inside the bar."""
         return []
 
+    def observed(self, marks: AccountMarks, price_ticks: int) -> list[BreachPrice]:
+        """A threshold the account is ALREADY past at ``price_ticks`` (ADR-0106 amendment).
+
+        Tested by the overlay immediately after every fill and every cost posting, flat or not:
+        a fill moves the realized balance and with it the basis a loss threshold is measured on, so
+        a threshold can be crossed with no position left to solve a breach price from. Only an
+        ``evaluated: intraday`` threshold is tested this way; an EOD-evaluated one is still tested
+        at the rule-day's close alone.
+        """
+        return []
+
     def eod(self, marks: AccountMarks) -> list[BreachPrice]:
         """Failure thresholds evaluated at the rule-day close."""
         return []
@@ -239,9 +250,15 @@ class StaticDrawdown(Evaluator):
         price = breach_price(marks, self.threshold)
         return [] if price is None else [BreachPrice(price, self.rule_id, True)]
 
+    def observed(self, marks: AccountMarks, price_ticks: int) -> list[BreachPrice]:
+        if self.rule.evaluated != "intraday":
+            return []
+        value = basis_at(marks, price_ticks, self.rule.basis)
+        return [BreachPrice(price_ticks, self.rule_id, True)] if value <= self.threshold else []
+
     def eod(self, marks: AccountMarks) -> list[BreachPrice]:
         # an EOD-evaluated threshold is only tested at the rule-day's close; a balance basis only
-        # moves on fills, so its check belongs to the close even when declared intraday
+        # moves on fills, so its close check stays even when declared intraday
         if self.rule.evaluated == "intraday" and self.rule.basis == "equity":
             return []
         value = basis_at(marks, marks.close_ticks, self.rule.basis)
@@ -337,6 +354,12 @@ class TrailingDrawdown(Evaluator):
         price = breach_price(marks, self.threshold)
         return [] if price is None else [BreachPrice(price, self.rule_id, True)]
 
+    def observed(self, marks: AccountMarks, price_ticks: int) -> list[BreachPrice]:
+        if self.rule.evaluated != "intraday":
+            return []
+        value = basis_at(marks, price_ticks, self.rule.basis)
+        return [BreachPrice(price_ticks, self.rule_id, True)] if value <= self.threshold else []
+
     def eod(self, marks: AccountMarks) -> list[BreachPrice]:
         if self.rule.mode == "eod":
             self._observe(marks, marks.close_ticks)
@@ -426,6 +449,14 @@ class DailyLoss(Evaluator):
             return []
         price = breach_price(marks, self.threshold)
         return [] if price is None else [BreachPrice(price, self.rule_id, self.hard)]
+
+    def observed(self, marks: AccountMarks, price_ticks: int) -> list[BreachPrice]:
+        if self.rule.evaluated != "intraday":
+            return []
+        value = basis_at(marks, price_ticks, self.rule.basis)
+        return (
+            [BreachPrice(price_ticks, self.rule_id, self.hard)] if value <= self.threshold else []
+        )
 
     def eod(self, marks: AccountMarks) -> list[BreachPrice]:
         if self.rule.evaluated == "intraday" and self.rule.basis == "equity":

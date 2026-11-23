@@ -15,7 +15,8 @@ Nothing on the site was logged into, submitted or purchased.
 - Quote verification: decode the saved bytes as UTF-8, unescape HTML entities, collapse all
   whitespace, search for the quote normalised the same way; a value that lives in a table row is
   found after also stripping tags. `check_quotes2.py` performs both passes over every attribution of
-  every file (last run: **759 attributions, 759 hashes matched, 0 quotes missing**).
+  every file (last run, 2026-11-23, round 4: **928 attributions, 928 hashes matched, 0 quotes
+  missing** — 497 strict, 431 found after stripping tags).
 - No value is taken from a page that was not saved. No number is guessed: a value the pages do not
   state is `not_modeled`, never a default that looks like a rule.
 
@@ -71,6 +72,143 @@ express everything the vocabulary does now. This pass (same retrieval set, no ne
    ("$2,000 static"), so the previous "the page does not say" entry became a declared conservative
    substitution (`static_xfa_drawdown_taken_as_trailing`).
 
+### Round 3 — the owner's decisions (2026-11-23, binding)
+
+The owner reviewed the C7b packet (`internal/reviews/topstep.md`, questions F1-F21) and ruled on
+2026-11-23. The rulings below are applied to the files; every file stays `unverified`, no sidecar
+exists, and each ruling is recorded as an `assumption` (`assumption_kind: owner_decision` or
+`provisional_conservative`) or as a `conflict_resolution`, never as a quote of a value the page does
+not state.
+
+**Scope (owner decision, D7).**
+
+- **Platform: TopstepX only.** No per-side commission table is published for another platform, so a
+  ruleset for one would be a new file, not a different value here.
+- **The current data universe, with metals excluded**: ES, NQ, YM, RTY, NKD at weight 1 and MES,
+  MNQ, MYM, M2K at weight 0.1. GC, SI, HG, PL and their micros are outside the set and stay
+  unmodelled, as the news rules' own descriptions say.
+- **Ruleset as of 2026-11-22**, keeping the URLs, the verbatim quotes, the snapshot `sha256` and the
+  retrieval times exactly as cited.
+- **Not a historical reproduction of the 2024 conditions** of any Topstep program: the files model
+  the pages as they read at that `as_of`, nothing else.
+
+**The rules that changed (D1-D5).**
+
+1. **Clearing and other stay `unknown`** in all 26 files (D1): not inferred to sit inside the
+   commission, not filled with a generic value. Both remain declared gaps, so the cash statistic
+   stays `unavailable` unless a cost-assumption file prices them.
+2. **The doubled DLL payout cap is a `promotion` on the standard cap** (D2). `max_usd` returns to the
+   STANDARD cap of its size and path (2,000/3,000/5,000 standard, 3,000/4,000/6,000 consistency) and
+   `promotions: [dll_doubled_payout_cap]` states `field: max_usd`, `multiplier: 2`, `starts_on`
+   2026-06-02 (the offer began at 3:30 PM CT that day), `purchase_on_or_after` 2026-06-02,
+   `ends_on: unknown` (no end date is published as of 2026-11-22, and the promotion is never assumed
+   to continue past the ruleset's `as_of`) and `requires: {account_purchase: new,
+   dll_selected_at_purchase: 'true'}` plus the profile's `purchase_date`. The source quote is the
+   payout page's own answer: "Yes! All Traders who make a new Trading Combine purchase and add a
+   Daily Loss Limit (DLL) at checkout will receive the increased Payout cap, during this limited time
+   offering beginning at 3:30 PM CT on Tuesday, June 2nd.", with "No. Only if you already added the
+   DLL when you purchased your Trading Combine. Adding it at the XFA stage doesn't unlock the higher
+   cap." A run that cannot show those facts keeps the standard cap and records
+   `promotion dll_doubled_payout_cap not applied: <reason>`.
+3. **The profit target stays EOD on the closed balance** as `provisional_conservative` (D3), never
+   intraday, and its separation from the intraday MLL treatment stays.
+4. **`minimum_trading_days` counts a day with at least one EXECUTED trade** (D3). Checked rather than
+   changed: `unit: trading_days` counts the 17:00 America/Chicago rule-day and `day_counts_if:
+   min_trades: 1` counts executed fills, never a submitted order and never a roll leg
+   (`crucible/prop/overlay.py` step 7); the rule-day and the Topstep session (5:00 PM CT to 3:10 PM
+   CT) span the same tradable hours because nothing may trade between 15:10 and 17:00 CT. Payout
+   qualifying days keep their own gates (`min_profitable_days`, `min_traded_days`,
+   `min_day_profit_usd`) and never read `day_counts_if`.
+5. **XFA inactivity is now an assumption entry** (D3): `xfa_inactivity_may_be_closed_on_day_31`,
+   `assumption_kind: provisional_conservative`, with the page's own "may be closed" quoted in the
+   rationale. The close happens at the start of the 31st calendar day after the last trade date, and
+   the description no longer reads as a guaranteed automatic close. **The two Labs files do not
+   borrow it**: their own drop page states the closure ("If there are no trades placed for 30 days,
+   the account will close."), so those two close at the start of day 31 on that quote instead.
+6. **The static Labs drop's funded drawdown is `not_modeled` critical** (D4). The trailing
+   substitution and its assumption are REMOVED: the page states "$2,000 static, non-trailing" AND
+   "After first Payout, MLL sets to $0", and `static_drawdown` has no post-payout reset or lock, so
+   the funded phase declares no loss limit rather than an approximation. The evaluation phase's
+   static $2,000 stays exact.
+7. **The Labs payout minimum conflict stands** (D5): $250 primary, $125 as sensitivity scenario
+   `labs_daily_payout_minimum#0`, both sources kept, nothing verified.
+
+8. **The FOMC press conference** keeps its coverage gap (D6): the 5-minute window applies wherever a
+   reliable timestamp exists, and a missing time gaps only its own trade date, never a whole-day
+   block.
+
+### Round 4 — owner decisions F10-F21 (2026-11-23, binding)
+
+The owner answered the questions round 3 left open. Every file stays `unverified`, no sidecar
+exists, and each ruling is carried by a quotation, an `assumption_kind: owner_decision` note or a
+declared condition, never by a value the page does not state.
+
+**F21 — practical eligibility is `eligible_conditional` for an automated strategy.** Six
+`compliance` rules with `effect: condition` sit in the evaluation phase of every file, each quoted
+from the TopstepX API Access article (snapshot `20261123_hc_topstepx-api-access.html`, sha256
+`876d2214d867d09136fa4dd6ff3abf97a91f575a582aa0afe5470f0c8dc3788e`, retrieved 2026-11-23T05:32:44Z):
+
+| rule_id | condition the trader must meet | quote |
+|---|---|---|
+| `automated_trading_through_the_api` | trades only through a linked TopstepX / ProjectX API subscription, in a Combine or an XFA | "Custom automated strategies and bots are allowed via the TopstepX / ProjectX API, subject to standard platform rules and our prohibition on highfrequency trading (HFT)." |
+| `no_api_trading_in_the_live_funded_account` | never pointed at a Live Funded Account, where the API does not exist | "No, Live funded accounts are not allowed to trade through the ProjectX API. The API Gateway is built for the simulated environment and isn't available on Live." |
+| `high_frequency_trading_prohibited` | no HFT; no page states a threshold, so the boundary is Topstep's judgement | the same API answer ("... our prohibition on highfrequency trading (HFT)") |
+| `orders_originate_on_the_personal_device` | every order transmitted from the trader's own device | "All trading activity must originate from your personal device." |
+| `no_order_entry_from_a_vps_vpn_or_remote_server` | no VPS, VPN or remote server places, modifies or cancels an order | "The use of VPS, VPNs, and remote servers is prohibited by Topstep's Terms of Use." |
+| `the_algorithm_remains_subject_to_every_rule` | the algorithm obeys every rule exactly as manual trading does | "All trading activity remains subject to Topstep's Trading Guidelines regardless of which platform executes the trades. A rule violation is treated the same whether it originates from manual trading or third-party automation." |
+
+HFT has **no stated threshold** in any saved Topstep page (the article prohibits it by name and
+nothing more), so it is a condition, never a modeled limit. The not-allowed half of the VPS table is
+worth quoting in the report: placing, modifying, or cancelling orders from a server, any automated
+trigger that can reach the order endpoints, and routing or relaying orders on the trader's behalf;
+"your server can watch and record, but it cannot trade". **Authorization is not compliance:** an
+API key and a subscription are what Topstep grants the trader, and the page itself says orders via
+the API are final and that a rule violation counts the same for a bot.
+
+**F11 — the XFA scaling plan stays `material` and stops reading as a limit that does not exist.**
+The entry is re-quoted to the article's own statement that the plan IS an XFA objective ("The
+Scaling Plan is an Express Funded Account® (XFA) objective. It sets your Maximum Position Size —
+the max contracts you can hold at one time — based on your current account balance"), names the
+saved ladder image and its sha256, and says plainly that the funded phase's own contract limit is
+NOT declared because the ladder is image-only — never that an XFA has no limit, and never the
+Combine's maximum. Every file's text was checked for the old "declares no contract limit" wording.
+
+**F12/F13 — the materialities, each with the condition that would change it.**
+
+- `news_full_position_size_prohibited`: `material`, discretionary, no invented window.
+- `sub_minute_holding_and_micro_scalping`: `material` for one-minute granularity. The published ban
+  is on algorithmic scalping that exploits unrealistic SIM fills; the page's "average durations
+  measured in seconds, not minutes" describes that pattern, so the seconds are an example and never
+  a universal threshold. No file fails an account for holding under 60 seconds.
+- `cross_account_hedging`: `immaterial` for one isolated account, `becomes_immaterial_if`:
+  "becomes material if multiple accounts, copy trading or coordinated strategies are simulated".
+- `two_percent_price_limit_restriction`: `material`, `becomes_immaterial_if`: "an audit of the
+  instruments and dates shows it never affected a trade".
+- `volatility_position_limit_tightening`: `material`, `becomes_immaterial_if`: "shown not to affect
+  the evaluated universe, dates and sizes", quoting "Trading on mini-sized contracts or larger may
+  be temporarily halted for affected products" (the page's own "Micro Contract Limits / Mini
+  Contract Restrictions" adjustments).
+
+**F10 — the Labs drops.** The 90/10 split is re-sourced to the drop page itself ("Profit Split
+90/10", in the `Choose your Payout path` columns), which also states min, max, 50% of balance and
+frequency in one contiguous run; the `payout_split_taken_from_firm_payout_policy` assumption is
+gone. The Daily Payout path keeps the $250 minimum as the primary reading with $125 as sensitivity
+scenario `labs_daily_payout_minimum#0`; the 5 Winning Days path keeps its own **$125** as an
+`owner_decision` assumption over the firm-wide policy's general minimum, and the Daily path's $250
+is never used there. Each variant keeps its own maxima ($1,500 daily; $4,000 EOD / $8,000 Static on
+the 5 Winning Days path).
+
+**Labs lifespan and inactivity, from the drop's own page only.** The Challenge table publishes
+`Lifespan 90 days` and `Inactivity 30 days`, and the drop's FAQ states "The account will expire and
+close after 90 days." and "If there are no trades placed for 30 days, the account will close." The
+evaluation phase therefore declares a `time_limit` of 90 calendar days from the attempt start and
+an `inactivity` rule of 30 calendar days that only an EXECUTED trade resets (an unfilled order does
+not). The Phase 2 Express Funded Account table publishes no inactivity of its own, so the funded
+phase declares none: the old funded `xfa_inactivity` moved to the evaluation phase rather than being
+repeated, and nothing here is extrapolated to a standard Topstep product.
+
+**F16 — the current payout policy, and the superseded page.** See section 7.
+
 ## 2. Snapshots used
 
 All saved bytes in the private snapshot folder, with the hash every attribution cites:
@@ -96,12 +234,20 @@ All saved bytes in the private snapshot folder, with the hash every attribution 
 | `20261122_hc_trading-combine-subscriptions.html` | https://help.topstep.com/en/articles/8284121-trading-combine-subscriptions | `36eac6f0ca51dff01b685218b4f063c2e0c3f4deb3f7772306e997a93b8d6ed6` | 2026-11-22T01:37:19Z |
 | `20261122_hc_trading_combine_parameters.html` | https://help.topstep.com/en/articles/8284197-trading-combine-parameters | `d1a55343b8d97e05866c1e9e7b1ba476dd94dfb3c3e449199974710ec1f12143` | 2026-11-22T01:36:12Z |
 | `20261122_hc_what-is-a-reset.html` | https://help.topstep.com/en/articles/8284128-what-is-a-reset | `608a9157ca9fca1211940b762a93a8d3aa276b662c2da87fb37a42deadde93f9` | 2026-11-22T01:37:21Z |
+| `20261123_hc_topstepx-api-access.html` | https://help.topstep.com/en/articles/11187768-topstepx-api-access | `876d2214d867d09136fa4dd6ff3abf97a91f575a582aa0afe5470f0c8dc3788e` | 2026-11-23T05:32:44Z |
 | `20261122_hc_what-is-the-scaling-plan.html` | https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan | `90a50f76af9363f786e18104d8612998a62a1fba54f027d3da48cee13e50c2ce` | 2026-11-22T01:36:34Z |
 | `20261122_hc_when-and-what-products-can-i-trade.html` | https://help.topstep.com/en/articles/8284206-when-and-what-products-can-i-trade | `9e4331b99755e8feceb5bbfde851c7d7f081fa7a5e09c50eec8f464aecb90b24` | 2026-11-22T01:36:35Z |
 | `20261122_labs.html` | https://www.topstep.com/labs | `16651d0ab93044e1ba504088dddc5494ffc309432adef35a0b040fa1e8744960` | 2026-11-22T01:53:08Z |
 | `20261122_live_funded_rules.html` | https://www.topstep.com/live-funded-account-rules | `e4e401323d6ffe45784eb6e7f23ca6568c9d30968649cea3bd7d8dcb3bfdaf7f` | 2026-11-22T01:35:39Z |
 | `20261122_our_program.html` | https://www.topstep.com/our-program | `a59e010934573b2a6e5029fefdb7ee00c478bb39e975faa161de5be039843b8a` | 2026-11-22T01:35:38Z |
 | `20261122_topstep_prop.html` | https://www.topstep.com/topstep-prop | `3821e4b3decdb7e79da48689b95e9d1b175bfaa10ffd4e0ea0f86cd915fb6d7e` | 2026-11-22T01:35:38Z |
+The scaling plan's ladder is published as an image, saved byte-for-byte beside the pages:
+`20261123_hc_scaling-plan-xfa-charts.png` (PNG, 5515x2474, sha256
+`55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd`, from
+`https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan`, the `XFA charts - hc.png` the
+page serves). It is **not transcribed here**: the images are the owner's to read, and no contract
+number in a ruleset may come from a reading of them.
+
 The commissions page (`8284213`) was fetched in this pass; it was not in the first draft's snapshot
 set, which is why the drafts carried no commission table.
 
@@ -136,8 +282,13 @@ table cannot drift from them.
 | `topstep-trading-combine-150k-no-activation-fee-daily-loss-limit.v1.yaml` | $150,000 | yes | $9,000 | $4,500 lock 154500->150000 | 15 | 2 | 0.55 pass | $4,500 lock@ 4500 -> 0 (hwm, first_payout) | standard | 5d>=$150 / 0 traded, buf $0 | $10,000 and 50% of balance | 0.9 | $229 per_month |
 | `topstep-trading-combine-150k-no-activation-fee-consistency-payout.v1.yaml` | $150,000 | - | $9,000 | $4,500 lock 154500->150000 | 15 | 2 | 0.55 pass | $4,500 lock@ 4500 -> 0 (hwm, first_payout) | consistency | 0d>=$0 / 3 traded, buf $0 | $6,000 and 50% of balance | 0.9 | $229 per_month |
 | `topstep-trading-combine-150k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml` | $150,000 | yes | $9,000 | $4,500 lock 154500->150000 | 15 | 2 | 0.55 pass | $4,500 lock@ 4500 -> 0 (hwm, first_payout) | consistency | 0d>=$0 / 3 traded, buf $0 | $12,000 and 50% of balance | 0.9 | $229 per_month |
-| `topstep-labs-daily-payouts-plus-50k.v1.yaml` | $50,000 | yes | $3,000 | $2,000 eod, no lock | 5 | - | 0.55 pass | $2,000 lock@ 2000 -> 0 (hwm, first_payout) | daily+five_winning_days | 0d>=$0 buf $2,000 | 5d>=$150 buf $0 | $1,500 / $4,000 | 0.9 | $149 at_start |
-| `topstep-labs-daily-payouts-plus-50k-static.v1.yaml` | $50,000 | yes | $4,000 | static $2,000 | 5 | - | 0.55 pass | $2,000 lock@ 2000 -> 0 (hwm, first_payout) | daily+five_winning_days | 0d>=$0 buf $2,000 | 5d>=$150 buf $0 | $1,500 / $8,000 | 0.9 | $149 at_start |
+| `topstep-labs-daily-payouts-plus-50k.v1.yaml` | $50,000 | yes | $3,000 | $2,000 eod, no lock | 5 | - | 0.55 pass | $2,000 lock@ 2000 -> 0 (hwm, first_payout) | daily+five_winning_days | $250..$1,500, buf $2,000, >=$0.01 since last | 5d>=$150, $125..$4,000, 50% of balance | $1,500 / $4,000 | 0.9 | $149 at_start; lifespan 90d; inactivity 30d |
+| `topstep-labs-daily-payouts-plus-50k-static.v1.yaml` | $50,000 | yes | $4,000 | static $2,000 | 5 | - | 0.55 pass | none (`not_modeled` critical) | daily+five_winning_days | $250..$1,500, buf $2,000, >=$0.01 since last | 5d>=$150, $125..$8,000, 50% of balance | $1,500 / $8,000 | 0.9 | $149 at_start; lifespan 90d; inactivity 30d |
+Every funded `payout` rule declares `min_profit_since_last_usd: '0.01'` where the gate can
+bind (24 Trading Combine files and the Labs Daily Payout path). The 5 Winning Days path states no
+such gate and needs none: five winning days of $150 already imply positive net profit since the last
+payout, so the gate is inert there and its description says so.
+
 The Labs files carry `addons: []` because the $1,000 Daily Loss Limit is part of the drop's bundle
 rather than a checkout add-on; the rule is present in both phases all the same.
 
@@ -245,6 +396,27 @@ so they are declared with their materiality and left to the report rather than p
 mechanically passing account is a practically valid one. Cross-account hedging stays a
 `not_modeled` entry, as the owner ruled (a single simulated account cannot hedge itself).
 
+**The six `effect: condition` rules (owner decision F21, 2026-11-23).** Automated trading is
+permitted, but only under obligations no bar-by-bar simulation can see. Each is a `compliance` rule
+with `effect: condition`, `applies_to_execution: [automated]`, `materiality: material`,
+`action: none`, quoted from `20261123_hc_topstepx-api-access.html` (sha256 `876d2214…788e`):
+
+| rule_id | condition (listed verbatim in the report) |
+|---|---|
+| `automated_trading_through_the_api` | the algorithm trades only through a linked TopstepX / ProjectX API subscription, in a Combine or an XFA |
+| `no_api_trading_in_the_live_funded_account` | it is never pointed at a Live Funded Account, where the API does not exist |
+| `high_frequency_trading_prohibited` | no high-frequency trading: no page states a threshold, so the boundary is Topstep's judgement |
+| `orders_originate_on_the_personal_device` | every order is transmitted from the trader's own personal device |
+| `no_order_entry_from_a_vps_vpn_or_remote_server` | no VPS, VPN or remote server places, modifies or cancels an order |
+| `the_algorithm_remains_subject_to_every_rule` | the algorithm obeys every trading rule and policy exactly as manual trading does |
+
+Practical eligibility for `automated` is therefore `eligible_conditional` (no critical rule blocks,
+six conditions apply) and a mechanical pass is a `conditionally_valid_passes`, never a
+`practically_valid_passes`. Authorization is no guarantee of compliance: an API key is what Topstep
+grants, and the page says API orders are final and that a rule violation counts the same for a bot.
+`execution_mode: manual` is unaffected by all six (they apply to `automated` only), so a manual run
+of the same ruleset stays `eligible`.
+
 ## 7. Conflicts
 
 **Genuine conflicts recorded in the files: 1** — `labs_daily_payout_minimum` in each of the two
@@ -259,13 +431,15 @@ same-conditions test of ADR-0107 section 7:
    $5,000/$10,000 for 150K). Same firm, plan, size, phase, platform and effective period, and the
    numbers agree once the card is read as the top of the range. Not a conflict; the per-size value is
    selected and the card is not cited as a value.
-2. **The public `/express-funded-account-rules` page (last updated 2025-06-26)** still says "Request
-   up to 50% of your account balance, up to $6,000" and "a max of $5,000 (Standard) or $6,000
-   (Consistency XFA) per payout", flat across sizes, and adds "After the first payout, a Minimum
-   Payout Balance must be met". That is a **different effective period** from the 2026 payout policy
-   page ("Updated this week", the doubling offer added) and from the current product page, which both
-   price the caps per size. Treated as an **inapplicable source**: dropped for the caps and the
-   minimum-payout-balance rule, noted here, not modeled.
+2. **The public `/express-funded-account-rules` page (last updated 2025-06-26) is SUPERSEDED**
+   (owner decision F16, 2026-11-23). It still says "Request up to 50% of your account balance, up to
+   $6,000" and "a max of $5,000 (Standard) or $6,000 (Consistency XFA) per payout", flat across
+   sizes, and adds "After the first payout, a Minimum Payout Balance must be met". That is a
+   different effective period from the 2026 payout policy page and the current product page, which
+   both price the caps per size. The page is **kept as a historical source only and is never an
+   authority for the 2026-11-22 rules**: it supplies no value to these files, and its
+   minimum-balance requirement is **not a rule** here (it is not modeled, not quoted and not
+   assumed). The snapshot stays in the set so the record of why it was dropped survives.
 3. **The XFA Maximum Loss Limit: two triggers.** "Your MLL starts at -$2,000 and trails upward. Once
    your balance reaches $2,000, the MLL locks at $0 permanently" and "After your first Payout: Your
    MLL is set to $0 regardless of where it was before." Not contradictory (both are true, on
@@ -285,7 +459,43 @@ same-conditions test of ADR-0107 section 7:
    maximum", while the firm-wide payout policy states "Minimum Payout: $125". The drop page is the
    more specific statement and $250 is the more restrictive reading (fewer and larger payouts), so
    `selected_value: '250'` with the $125 reading kept as sensitivity scenario
-   `labs_daily_payout_minimum#0`. Both sources stay in the file.
+   `labs_daily_payout_minimum#0`. Both sources stay in the file. **Owner decision
+   (2026-11-23):** confirmed - $250 stays the primary reading because it is the more
+   restrictive one, $125 stays the sensitivity scenario, and the conflict stays: the value is
+   a `conflict_resolution`, never a verification.
+
+### The payout-policy check (owner decision F16, 2026-11-23)
+
+Every file was checked against the CURRENT payout policy page (snapshot
+`20261123_hc_topstep-payout-policy.html`, sha256 `22aa745f…ad1f6`), whose terms are:
+
+| term | the page's words | declared in the files |
+|---|---|---|
+| Standard path | "5 winning days of $150+ Net P&L. Days don't need to be consecutive. A day locks in at 4:00 PM CT." | `min_profitable_days: 5`, `min_day_profit_usd: 150`, `window: since_last_payout` — 12 Standard files, already correct |
+| Standard, net profit | "Positive net profit since your last Payout. You must have earned at least $0.01 since your last Payout. Your first Payout is exempt." | **was missing** in all 24 Trading Combine files (see below) |
+| Consistency path | "3 trading days with at least 1 trade per day." and "Stay at or below the 40% Consistency Objective." | `min_traded_days: 3` + a `consistency` rule `max_day_share: 0.4` on the payout — 12 Consistency files |
+| Maximum request | "Payout caps by account size Max Payout per request: 50% of your account balance up to the cap below." | `max_pct_of_balance: 50` + `max_usd` per size and path — all 26 files |
+| General minimum | "Minimum Payout: $125" | `min_usd: 125` — all 26 files (the Labs Daily path's own $250 stays the primary reading of its recorded conflict) |
+| Split | "90/10 profit split — you keep 90%" | `split: 0.9` — all 26 files (the Labs files now quote their own page's "Profit Split 90/10") |
+
+**Mismatches found: one, and it was fixed where the page supports it.**
+
+1. **The $0.01 net-profit-since-last-Payout gate was declared nowhere.** `min_profit_since_last_usd`
+   was absent (0) in all 26 files, which lets a later payout go out at a LOWER balance than the
+   previous one as long as the balance is above the starting balance — the policy allows that only
+   after a payout, never on the first one, and only with "at least $0.01" earned since the last.
+   **Fixed:** `min_profit_since_last_usd: '0.01'` on every funded `payout` rule of the 24 Trading
+   Combine files (quoted, with the description carrying the sentence) and on the Labs Daily Payout
+   path, whose own page states "After your first Payout, you must be net positive since your last
+   Payout." The first payout needs no exemption mechanism: its balance requirement already implies
+   a profit, and the gate is measured from the last payout's balance.
+2. **The Labs 5 Winning Days path declares no such gate, on purpose.** The drop page states none,
+   and five winning days of $150 already imply positive net profit since the last payout, so the
+   gate could never bind there. Reported, not declared, and the rule's description says so.
+3. **Nothing else moved.** The caps, the 50%, the $125 minimum, the 3 traded days and the 40%
+   consistency objective were already declared and match; the Labs Daily path's $250 remains the
+   primary reading of the recorded conflict with the general $125, with $125 as sensitivity
+   scenario `labs_daily_payout_minimum#0` (owner decision, F10).
 
 ## 8. Assumptions applied (ADR-0107 section 7 defaults)
 
@@ -294,10 +504,16 @@ Only the defaults the owner fixed, each recorded as `evidence: assumption` with 
 | assumption name | rule(s) | files | rationale |
 |---|---|---|---|
 | `unspecified_target_frequency_is_eod` | `profit_target` | 26 (every file) | The pages state the target amount but never its observation frequency. A target is a pass condition, so the conservative default is the opposite of the failure-threshold one: the target is tested at the end of the trade date on the closed balance, because the trader passes no earlier than the end of the trade date and a later same-day breach still counts. Never intraday for a target the firm does not date. |
-| `trading_day_is_a_trade_date_with_at_least_one_trade` | `minimum_trading_days` | 24 (the Trading Combine files; the Labs drop states no minimum) | The pages state a two-day minimum but never define a qualifying day. ADR-0107 section 7 default: a trading day is a trade date with at least one executed trade. |
-| `static_xfa_drawdown_taken_as_the_trailing_firm_form` | funded `maximum_loss_limit` | 1 (the Static Labs drop) | The help article states the drop's XFA MLL as "$2,000 static", but the engine raises a threshold after a payout only on a trailing rule and the firm's own funded form for a 50K account is the trailing $2,000 MLL locking at $0. The trailing form is the conservative substitution: above a $2,000 balance the two agree (and the first daily payout cannot happen below it, given the $2,000 buffer), and between $0 and $2,000 the trailing floor is the higher, earlier-failing one. |
-| `payout_split_taken_from_firm_payout_policy` | `payout_daily` | 2 (the Labs files) | The drop page states the buffer, the $250 minimum and the $1,500 cap but not the 90/10 split; the firm-wide Express Funded Account split is taken from `.../8284233-topstep-payout-policy`. |
-| `labs_five_winning_days_minimum_from_firm_policy` | `payout_five_winning_days` | 2 (the Labs files) | The drop page states the five-day eligibility, the buffer (none) and the per-payout cap ($4,000 EOD / $8,000 Static) but no minimum for that path, so the firm-wide Express Funded Account minimum ($125) is used. |
+| `trading_day_is_a_trade_date_with_at_least_one_trade` | `minimum_trading_days` | 24 (the Trading Combine files; the Labs drop states no minimum) | The pages state a two-day minimum but never define a qualifying day. ADR-0107 section 7 default: a trading day is a trade date with at least one executed trade. **Owner decision (2026-11-23): confirmed** - an EXECUTED trade (an unfilled order does not count, a roll leg is not a trade) inside the Topstep session, 5:00 PM CT to 3:10 PM CT, which is the 17:00 America/Chicago rule-day the files declare (`crucible/prop/overlay.py` step 7). Payout qualifying days keep their own gates and never read this default. || `xfa_inactivity_may_be_closed_on_day_31` | funded `xfa_inactivity` | 24 (the Trading Combine files) | The page says an XFA with no activity for more than 30 days **may** be closed, a soft statement. The pessimistic reading closes it at the start of the 31st calendar day after the last trade date (30 full days of silence), the rule-day transition the overlay counts inactivity on, and never describes a guaranteed automatic close. `assumption_kind: provisional_conservative` (owner decision, 2026-11-23). The 2 Labs files carry no such assumption: their drop page states the closure itself, and it is declared as an `inactivity` rule of the EVALUATION phase (the phase whose table publishes it), with no funded-phase inactivity at all. |
+| `labs_five_winning_days_minimum_from_firm_policy` | `payout_five_winning_days` | 2 (the Labs files) | The drop page states the five-day eligibility, the buffer (none), the per-payout cap ($4,000 EOD / $8,000 Static), 50% of balance and the 90/10 split, but no minimum for that path. The firm-wide Express Funded Account minimum (`Minimum Payout: $125`) is used, and the owner ruled on 2026-11-23 that this general minimum is the 5 Winning Days path's minimum: `assumption_kind: owner_decision`, never a quote of the drop page. |
+
+The 90/10 split is no longer an assumption: `payout_split_taken_from_firm_payout_policy` is gone
+because the drop page states the split itself ("Profit Split 90/10", in its `Choose your Payout
+path` columns), and both Labs payout rules now quote that page (owner decision F10, 2026-11-23). The
+`min_profit_since_last_usd: '0.01'` gate is quoted from the firm-wide policy and the drop's own
+net-positive sentence, not assumed (see section 7).
+
+The static Labs substitution that this table carried until 2026-11-23 (`static_xfa_drawdown_taken_as_the_trailing_firm_form`) is **gone**: the owner refused it (F8) because the drop states a post-first-payout reset on the static floor, which no vocabulary expresses, so the funded rule is `not_modeled` critical instead of approximated.
 
 No other default was needed. "CT" is quoted by the firm, so the time zone is `America/Chicago`
 directly (an ADR default of `America/New_York` would have been wrong). Every **failure** threshold's
@@ -311,22 +527,34 @@ The payout day is stated ("A day locks in at 4:00 PM CT"), so the payout rules c
 Six entries in the 24 Trading Combine files, six in the trailing Labs drop, seven in the static one
 (three material everywhere; the static drop adds its drawdown substitution).
 
-**Material** (the evaluation status is `conditional_on_modeled_rules` because of these):
+**Material** (the evaluation status is `conditional_on_modeled_rules` because of these), with the
+condition an audit would have to establish before the materiality could change:
+
+| rule | why | `becomes_immaterial_if` |
+|---|---|---|
+| `xfa_scaling_plan_ladder` | The XFA's contract limit follows the Scaling Plan, which the article calls "an Express Funded Account® (XFA) objective" setting the maximum position size by balance. The ladder exists **only as an image**, saved at `prop_snapshots/topstep/20261123_hc_scaling-plan-xfa-charts.png` (sha256 `55ec76b4…6cbd`), so no contract number is quoted and the funded phase's own limit is NOT declared — not "no limit", and never the Combine's maximum. | — (an owner transcription of the ladder is what would model it; until then the entry stands) |
+| `news_full_position_size_prohibited` | Discretionary news rule, no threshold, no invented window. | — (never self-service: the owner must decide) |
+| `sub_minute_holding_and_micro_scalping` | Material for one-minute granularity: the ban is on algorithmic scalping that exploits unrealistic SIM fills, and the page's seconds are an example, not a universal threshold. Never an automatic ban on holds under 60 s. | — (needs intra-bar data) |
+| `two_percent_price_limit_restriction` | A hard prohibition the engine cannot test: no CME price-limit band is carried. | an audit of the instruments and dates shows it never affected a trade |
+| `volatility_position_limit_tightening` | The firm may tighten limits by announcement ("Trading on mini-sized contracts or larger may be temporarily halted for affected products"); the published restrictions cover energies, metals and Micro Bitcoin only, none of the nine roots here. | shown not to affect the evaluated universe, dates and sizes |
+
+**Critical** (the estimate is `unavailable` because of it):
 
 | rule | why |
 |---|---|
-| `xfa_scaling_plan_ladder` | The funded account's contract limit follows a balance -> contracts ladder published **only as PNG images**; no contract number can be quoted, so the funded phase declares no contract limit and overstates the size a real XFA may hold. |
-| `news_full_position_size_prohibited` | Discretionary news rule, no threshold. |
-| `sub_minute_holding_and_micro_scalping` | Owner ruling: sub-minute holding and micro-scalping stay unmodeled on one-minute bars. |
-| `static_xfa_drawdown_taken_as_trailing` | Static Labs drop only: "$2,000 static" is modeled as the firm's trailing funded form, because a post-payout threshold on a static rule needs engine support; see the assumption above. |
+| `static_xfa_drawdown_post_payout_reset` | Static Labs drop only: the page states "$2,000 static, non-trailing" **and** "After first Payout, MLL sets to $0". `static_drawdown` has no post-payout reset or lock and the trailing form is not this rule, so the funded phase declares no loss limit at all rather than an approximation (owner decision 2026-11-23, F8). |
 
-**Immaterial** (declared and warned, and they do not weaken the status):
+**Immaterial** (declared and warned, and it does not weaken the status):
 
-| rule | why |
-|---|---|
-| `volatility_position_limit_tightening` | Discretionary, and the published reductions cover energies, metals and Micro Bitcoin, not this instrument set. |
-| `cross_account_hedging` | A single simulated account cannot hedge itself (owner ruling: stays unmodeled). |
-| `two_percent_price_limit_restriction` | A hard prohibition, but the engine has no CME price-limit band and the index products' bands sit far outside any one-minute bar the simulation sees (owner ruling: stays unmodeled). |
+| rule | why | `becomes_immaterial_if` |
+|---|---|---|
+| `cross_account_hedging` | A single simulated account cannot hedge itself: the rule constrains how many accounts a person runs. | "becomes material if multiple accounts, copy trading or coordinated strategies are simulated" (the field states the fact that would make it bind) |
+
+`two_percent_price_limit_restriction` and `volatility_position_limit_tightening` moved from
+immaterial to material (owner decision F13, 2026-11-23): both were immaterial by an argument about
+what the data probably never touches, which is exactly what an audit has to establish and the
+declaration may not assume. Every entry above declares the fact an audit would need, and the
+declared materiality itself never changes until that audit exists.
 
 ## 10. Vocabulary now used, and what it replaced
 
@@ -407,6 +635,8 @@ declares, and no page states a non-zero level).
   into the XFA ("Applies to your Express Funded Account after you pass").
 - **The Labs funded account** is an Express Funded Account, so it carries the firm-wide XFA MLL, the
   firm's day-trading window and the 90/10 split; the drop adds its own caps, buffer and price.
+- **Promotions carry the limited offer, not the ruleset's value.** The twelve `addons: [daily_loss_limit]` files state the STANDARD per-request cap and declare the doubling as `promotions: [dll_doubled_payout_cap]` (`multiplier: 2` on `max_usd`, `starts_on` 2026-06-02, `purchase_on_or_after` 2026-06-02, `ends_on: unknown`, `requires` `account_purchase: new` and `dll_selected_at_purchase: 'true'`, and the profile's `purchase_date`). The rule's own quote is the per-size row (`$50K Standard $2,000 $4,000`), so an ineligible run gets the standard cap with the reason recorded, and a promoted value never changes the file's hash (ADR-0107, amendment of 2026-11-23).
+- **Inactivity, where each page publishes it.** The 24 Trading Combine files take the XFA page's soft "may be closed" and declare the pessimistic close in the FUNDED phase as `xfa_inactivity_may_be_closed_on_day_31` (`provisional_conservative`). The 2 Labs files quote their own drop page, which states the closure itself ("If there are no trades placed for 30 days, the account will close."), and declare it in the EVALUATION phase, where the drop's Challenge table publishes "Inactivity 30 days": no assumption, and no funded-phase inactivity, because the drop's Phase 2 table publishes none. The same table publishes "Lifespan 90 days", declared as a `time_limit` of 90 calendar days in the evaluation phase; neither reading is extrapolated to a standard Topstep product.
 - **The Labs daily path's 50%-of-balance cap is not declared** because it cannot bind: with a $2,000
   buffer, the withdrawable amount is at or below 50% of the balance for any balance a $1,500 cap
   could reach (balance/2 >= balance - 2,000 for every balance <= 4,000, and above that the $1,500
@@ -432,286 +662,287 @@ news/compliance, assumptions, conflicts.
 - **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, locking at $50,000 when the balance reaches $52,000 (lock.on ['hwm']); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $2,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $49 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-50k-daily-loss-limit.v1.yaml` — Trading Combine (Standard path, 50K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, locking at $50,000 when the balance reaches $52,000 (lock.on ['hwm']); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $1,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $4,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
+- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $2,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $4,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $49 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-50k-consistency-payout.v1.yaml` — Trading Combine (Standard path, 50K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, locking at $50,000 when the balance reaches $52,000 (lock.on ['hwm']); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $3,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $49 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-50k-consistency-payout-daily-loss-limit.v1.yaml` — Trading Combine (Standard path, 50K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, locking at $50,000 when the balance reaches $52,000 (lock.on ['hwm']); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $1,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $6,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
+- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $3,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $6,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $49 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-50k-no-activation-fee.v1.yaml` — Trading Combine (No Activation Fee path, 50K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, locking at $50,000 when the balance reaches $52,000 (lock.on ['hwm']); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $2,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $95 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-50k-no-activation-fee-daily-loss-limit.v1.yaml` — Trading Combine (No Activation Fee path, 50K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, locking at $50,000 when the balance reaches $52,000 (lock.on ['hwm']); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $1,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $4,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
+- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $2,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $4,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $95 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-50k-no-activation-fee-consistency-payout.v1.yaml` — Trading Combine (No Activation Fee path, 50K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, locking at $50,000 when the balance reaches $52,000 (lock.on ['hwm']); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $3,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $95 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-50k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml` — Trading Combine (No Activation Fee path, 50K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, locking at $50,000 when the balance reaches $52,000 (lock.on ['hwm']); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $1,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $6,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
+- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $3,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $6,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $95 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-100k.v1.yaml` — Trading Combine (Standard path, 100K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $100,000; MLL $3,000 trailing on the end-of-day balance, locking at $100,000 when the balance reaches $103,000 (lock.on ['hwm']); profit target $6,000 on the closed balance; 10 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $3,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $99 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-100k-daily-loss-limit.v1.yaml` — Trading Combine (Standard path, 100K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $100,000; MLL $3,000 trailing on the end-of-day balance, locking at $100,000 when the balance reaches $103,000 (lock.on ['hwm']); profit target $6,000 on the closed balance; 10 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $2,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $6,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
+- **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $3,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $6,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $99 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-100k-consistency-payout.v1.yaml` — Trading Combine (Standard path, 100K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $100,000; MLL $3,000 trailing on the end-of-day balance, locking at $100,000 when the balance reaches $103,000 (lock.on ['hwm']); profit target $6,000 on the closed balance; 10 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $4,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $99 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-100k-consistency-payout-daily-loss-limit.v1.yaml` — Trading Combine (Standard path, 100K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $100,000; MLL $3,000 trailing on the end-of-day balance, locking at $100,000 when the balance reaches $103,000 (lock.on ['hwm']); profit target $6,000 on the closed balance; 10 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $2,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $8,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
+- **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $4,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $8,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $99 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-100k-no-activation-fee.v1.yaml` — Trading Combine (No Activation Fee path, 100K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $100,000; MLL $3,000 trailing on the end-of-day balance, locking at $100,000 when the balance reaches $103,000 (lock.on ['hwm']); profit target $6,000 on the closed balance; 10 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $3,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $149 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-100k-no-activation-fee-daily-loss-limit.v1.yaml` — Trading Combine (No Activation Fee path, 100K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $100,000; MLL $3,000 trailing on the end-of-day balance, locking at $100,000 when the balance reaches $103,000 (lock.on ['hwm']); profit target $6,000 on the closed balance; 10 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $2,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $6,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
+- **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $3,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $6,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $149 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-100k-no-activation-fee-consistency-payout.v1.yaml` — Trading Combine (No Activation Fee path, 100K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $100,000; MLL $3,000 trailing on the end-of-day balance, locking at $100,000 when the balance reaches $103,000 (lock.on ['hwm']); profit target $6,000 on the closed balance; 10 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $4,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $149 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-100k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml` — Trading Combine (No Activation Fee path, 100K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $100,000; MLL $3,000 trailing on the end-of-day balance, locking at $100,000 when the balance reaches $103,000 (lock.on ['hwm']); profit target $6,000 on the closed balance; 10 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $2,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $8,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
+- **Payouts:** funded MLL $3,000 trailing, locking at $0 when the balance reaches $3,000 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $4,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $8,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $149 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.6-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-150k.v1.yaml` — Trading Combine (Standard path, 150K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $150,000; MLL $4,500 trailing on the end-of-day balance, locking at $150,000 when the balance reaches $154,500 (lock.on ['hwm']); profit target $9,000 on the closed balance; 15 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $5,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $199 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-150k-daily-loss-limit.v1.yaml` — Trading Combine (Standard path, 150K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $150,000; MLL $4,500 trailing on the end-of-day balance, locking at $150,000 when the balance reaches $154,500 (lock.on ['hwm']); profit target $9,000 on the closed balance; 15 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $3,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $10,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
+- **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $5,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $10,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $199 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-150k-consistency-payout.v1.yaml` — Trading Combine (Standard path, 150K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $150,000; MLL $4,500 trailing on the end-of-day balance, locking at $150,000 when the balance reaches $154,500 (lock.on ['hwm']); profit target $9,000 on the closed balance; 15 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $6,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $199 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-150k-consistency-payout-daily-loss-limit.v1.yaml` — Trading Combine (Standard path, 150K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $150,000; MLL $4,500 trailing on the end-of-day balance, locking at $150,000 when the balance reaches $154,500 (lock.on ['hwm']); profit target $9,000 on the closed balance; 15 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $3,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $12,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
+- **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $6,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $12,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $199 per_month; $149 at_pass; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-150k-no-activation-fee.v1.yaml` — Trading Combine (No Activation Fee path, 150K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $150,000; MLL $4,500 trailing on the end-of-day balance, locking at $150,000 when the balance reaches $154,500 (lock.on ['hwm']); profit target $9,000 on the closed balance; 15 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $5,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $229 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-150k-no-activation-fee-daily-loss-limit.v1.yaml` — Trading Combine (No Activation Fee path, 150K) -> Express Funded Account (Standard payout path)
 
 - **Account / thresholds:** starting balance $150,000; MLL $4,500 trailing on the end-of-day balance, locking at $150,000 when the balance reaches $154,500 (lock.on ['hwm']); profit target $9,000 on the closed balance; 15 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $3,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $10,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; every payout resets the day counts.
+- **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_standard: 5 profitable days >= $150, counted since the last payout; cap $5,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $10,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; every payout resets the day counts.
 - **Fees / commissions:** $229 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-150k-no-activation-fee-consistency-payout.v1.yaml` — Trading Combine (No Activation Fee path, 150K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $150,000; MLL $4,500 trailing on the end-of-day balance, locking at $150,000 when the balance reaches $154,500 (lock.on ['hwm']); profit target $9,000 on the closed balance; 15 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; no Daily Loss Limit; flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
 - **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $6,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $229 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-trading-combine-150k-no-activation-fee-consistency-payout-daily-loss-limit.v1.yaml` — Trading Combine (No Activation Fee path, 150K) -> Express Funded Account (Consistency payout path)
 
 - **Account / thresholds:** starting balance $150,000; MLL $4,500 trailing on the end-of-day balance, locking at $150,000 when the balance reaches $154,500 (lock.on ['hwm']); profit target $9,000 on the closed balance; 15 contracts (mini weight 1, micro 0.1); minimum 2 trading days; consistency 55% of the target; Daily Loss Limit $3,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $12,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
+- **Payouts:** funded MLL $4,500 trailing, locking at $0 when the balance reaches $4,500 (lock.on ['hwm', 'first_payout']); payout_consistency: 3 traded days, counted since the last payout; cap $6,000 per request and 50% of the balance (the promotion `dll_doubled_payout_cap` doubles it to $12,000 for a new purchase with the DLL at checkout on or after 2026-06-02); minimum $125; split 0.9; buffer $0; consistency 40% on the payout, since the last payout; every payout resets the day counts.
 - **Fees / commissions:** $229 per_month; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.9-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); funded account closed at the start of the 31st calendar day without a trade (the page says the account may be closed: assumption `xfa_inactivity_may_be_closed_on_day_31`).
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `trading_day_is_a_trade_date_with_at_least_one_trade` on `minimum_trading_days`; `xfa_inactivity_may_be_closed_on_day_31` on `xfa_inactivity`. The payout policy's `>= $0.01 since your last Payout` gate is quoted rather than assumed (`min_profit_since_last_usd: '0.01'`).
 - **Conflicts:** none recorded (`conflicts: []`).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-labs-daily-payouts-plus-50k.v1.yaml` — Labs Daily Payouts+ Trading Combine (50K, End-of-Day Trailing drawdown) -> Express Funded Account
 
-- **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, NO lock (the drop states none); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); no minimum trading days; consistency 55% of the target; Daily Loss Limit $1,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_daily: no day-count gate, counted since the last payout; cap $1,500 per request; minimum $250; split 0.9; buffer $2,000; payout_group labs_xfa_payout_paths; payout_five_winning_days: 5 profitable days >= $150, counted since the last payout; cap $4,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; payout_group labs_xfa_payout_paths; every payout resets the day counts.
+- **Account / thresholds:** starting balance $50,000; MLL $2,000 trailing on the end-of-day balance, NO lock (the drop states none); profit target $3,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); no minimum trading days; consistency 55% of the target; Daily Loss Limit $1,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago; lifespan 90 calendar days and inactivity 30 calendar days (executed trades only), both from the drop's own Challenge table and FAQ; the drop page also says 'XFA matches the standard $50K XFA scaling plan', which is why the scaling-plan entry applies to this account.
+- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_daily: no day-count gate, counted since the last payout; cap $1,500 per request; minimum $250 (primary; $125 is sensitivity scenario labs_daily_payout_minimum#0); split 0.9 (`Profit Split 90/10`, the drop page's own table); buffer $2,000; min_profit_since_last_usd $0.01 (the drop's net-positive-since-last-Payout sentence); payout_group labs_xfa_payout_paths; payout_five_winning_days: 5 profitable days >= $150, counted since the last payout; cap $4,000 per request and 50% of the balance; minimum $125 (owner decision 2026-11-23); split 0.9; buffer $0; payout_group labs_xfa_payout_paths; every payout resets the day counts.
 - **Fees / commissions:** $149 at_start; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `payout_split_taken_from_firm_payout_policy` on `payout_daily`; `labs_five_winning_days_minimum_from_firm_policy` on `payout_five_winning_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); evaluation phase closed after 90 calendar days (a `time_limit`, the drop's own lifespan) and after 30 calendar days without an EXECUTED trade (an `inactivity` rule; an unfilled order does not count). The funded phase declares no inactivity: the drop's Phase 2 table publishes none, and the firm-wide XFA reading is not borrowed.
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `labs_five_winning_days_minimum_from_firm_policy` on `payout_five_winning_days`, `assumption_kind: owner_decision` (the $125 general minimum, ruled on 2026-11-23). The 90/10 split is no longer an assumption: the drop page states it.
 - **Conflicts:** `labs_daily_payout_minimum` on `payout_daily.min_usd`: selected '250' (https://help.topstep.com/en/articles/15520357-topstep-labs), alternative(s) '125' (https://help.topstep.com/en/articles/8284233-topstep-payout-policy).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ### `topstep-labs-daily-payouts-plus-50k-static.v1.yaml` — Labs Daily Payouts+ Trading Combine (50K, Static drawdown) -> Express Funded Account
 
-- **Account / thresholds:** starting balance $50,000; MLL $2,000 static; profit target $4,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); no minimum trading days; consistency 55% of the target; Daily Loss Limit $1,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago.
-- **Payouts:** funded MLL $2,000 trailing, locking at $0 when the balance reaches $2,000 (lock.on ['hwm', 'first_payout']); payout_daily: no day-count gate, counted since the last payout; cap $1,500 per request; minimum $250; split 0.9; buffer $2,000; payout_group labs_xfa_payout_paths; payout_five_winning_days: 5 profitable days >= $150, counted since the last payout; cap $8,000 per request and 50% of the balance; minimum $125; split 0.9; buffer $0; payout_group labs_xfa_payout_paths; every payout resets the day counts.
+- **Account / thresholds:** starting balance $50,000; MLL $2,000 static; profit target $4,000 on the closed balance; 5 contracts (mini weight 1, micro 0.1); no minimum trading days; consistency 55% of the target; Daily Loss Limit $1,000 soft (both phases); flat by 15:10 CT, reopen 17:00 CT; rule day rolls at 17:00 America/Chicago; lifespan 90 calendar days and inactivity 30 calendar days (executed trades only), both from the drop's own Challenge table and FAQ; the drop page also says 'XFA matches the standard $50K XFA scaling plan', which is why the scaling-plan entry applies to this account.
+- **Payouts:** funded MLL **not modelled (critical)**: the static $2,000 floor plus its post-first-payout reset to $0 has no vocabulary, so no loss limit is declared; payout_daily: no day-count gate, counted since the last payout; cap $1,500 per request; minimum $250 (primary; $125 is sensitivity scenario labs_daily_payout_minimum#0); split 0.9 (`Profit Split 90/10`, the drop page's own table); buffer $2,000; min_profit_since_last_usd $0.01 (the drop's net-positive-since-last-Payout sentence); payout_group labs_xfa_payout_paths; payout_five_winning_days: 5 profitable days >= $150, counted since the last payout; cap $8,000 per request and 50% of the balance; minimum $125 (owner decision 2026-11-23); split 0.9; buffer $0; payout_group labs_xfa_payout_paths; every payout resets the day counts.
 - **Fees / commissions:** $149 at_start; commissions per side ES 1.89, NQ 1.89, YM 1.89, RTY 1.89, NKD 2.66, MES 0.61, MNQ 0.61, MYM 0.61, M2K 0.61 (TopstepX round-turn total / 2).
-- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); funded account closed after 30 calendar days without a trade.
-- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `static_xfa_drawdown_taken_as_the_trailing_firm_form` on `maximum_loss_limit`; `payout_split_taken_from_firm_payout_policy` on `payout_daily`; `labs_five_winning_days_minimum_from_firm_policy` on `payout_five_winning_days`.
+- **News / compliance:** Tier 1 window 5 min before/after CPI, the FOMC statement, the FOMC press conference, NFP and PPI: no new entry in the minis (ES, NQ, RTY, YM, NKD, effect block) and a 0.3-weight cap on the micros (MES, MNQ, MYM, M2K, effect contract_cap); new entries only, nothing flattened; compliance: unfair_technology (automated, material, action none), sim_fill_exploitation (automated, material, action none), trade_outside_best_bid_offer (automated/manual, material, action none), coordinated_and_copy_trading (automated/manual, material, action none), account_stacking (automated/manual, material, action none); six `effect: condition` rules make automated execution `eligible_conditional` (section 6); evaluation phase closed after 90 calendar days (a `time_limit`, the drop's own lifespan) and after 30 calendar days without an EXECUTED trade (an `inactivity` rule; an unfilled order does not count). The funded phase declares no inactivity: the drop's Phase 2 table publishes none, and the firm-wide XFA reading is not borrowed.
+- **Assumptions:** `unspecified_target_frequency_is_eod` on `profit_target`; `labs_five_winning_days_minimum_from_firm_policy` on `payout_five_winning_days`, `assumption_kind: owner_decision` (the $125 general minimum, ruled on 2026-11-23). The 90/10 split is no longer an assumption: the drop page states it.
 - **Conflicts:** `labs_daily_payout_minimum` on `payout_daily.min_usd`: selected '250' (https://help.topstep.com/en/articles/15520357-topstep-labs), alternative(s) '125' (https://help.topstep.com/en/articles/8284233-topstep-payout-policy).
-- **Not modeled (material):** `xfa_scaling_plan_ladder`, `news_full_position_size_prohibited`, `sub_minute_holding_and_micro_scalping`, `static_xfa_drawdown_taken_as_trailing`.
-- **Not modeled (immaterial):** `cross_account_hedging`, `two_percent_price_limit_restriction`, `volatility_position_limit_tightening`.
+- **Not modeled (critical):** `static_xfa_drawdown_post_payout_reset`.
+- **Not modeled (material, with what would change it):** `xfa_scaling_plan_ladder` (the funded phase's own contract limit is NOT declared — the ladder is image-only, saved with its sha256, and the Combine's maximum is never substituted), `news_full_position_size_prohibited` (discretionary), `sub_minute_holding_and_micro_scalping` (one-minute bars; the page's seconds are an example, not a threshold), `two_percent_price_limit_restriction` (`becomes_immaterial_if`: an audit of the instruments and dates shows it never affected a trade), `volatility_position_limit_tightening` (`becomes_immaterial_if`: shown not to affect the evaluated universe, dates and sizes).
+- **Not modeled (immaterial, with what would make it bind):** `cross_account_hedging` (`becomes_immaterial_if`: becomes material if multiple accounts, copy trading or coordinated strategies are simulated).
 
 ## 14. Open questions for the owner
 
@@ -726,45 +957,64 @@ news/compliance, assumptions, conflicts.
 | `nfa` | `included` | `official_quote` | the same breakdown ("NFA & Regulatory Fees $0.02") |
 | `other` | `unknown` | `not_stated` | the breakdown names three components and no other per-side charge |
 
-An `excluded` component needs a participant type at RUN time (`--fee-participant-type`): the ruleset never states one, and using it makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
+An `excluded` component needs the run's participant PROFILE (`--participant-profile`): each fee row names the one classification dimension it needs (`cme_membership_status`, `nfa_assessment_eligibility`, ...), a dimension the profile leaves out makes that component a gap, and using the profile makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
 
 Owner questions, one per component the files declare `unknown`:
 
 1. **clearing**: Does the per-side commission already contain the clearing fee, or is the clearing fee charged on top of it?
+   **Owner decision (2026-11-23): stays `unknown`** - no inference and no generic value; the gap stands.
 2. **other**: Is there any other per-side charge beside the commission, the exchange fee, the clearing fee and the NFA assessment?
+   **Owner decision (2026-11-23): stays `unknown`** on the same terms.
 
 
 1. **The doubled payout cap on the twelve `addons: [daily_loss_limit]` files.** Two pages agree that
-   a Combine bought with a DLL at checkout has doubled per-request caps, so those files use $4,000 / $6,000 /
-   $6,000 / $8,000 / $10,000 / $12,000 where the v1 draft used the base cap. The offer is described
-   as a limited-time offering ("beginning at 3:30 PM CT on Tuesday, June 2nd") whose end date is
-   unpublished, while both pages still show it as live at retrieval. Confirm it is in force for a
-   Combine bought now; if not, every DLL file drops back to its base cap.
+   a Combine bought with a DLL at checkout has doubled per-request caps. **Owner decision (2026-11-23):**
+   the doubling is a `promotion` (`dll_doubled_payout_cap`, x2 on `max_usd`) on the STANDARD cap, applied
+   only to a new Trading Combine purchase with the DLL selected at checkout on or after 2026-06-02,
+   with `ends_on: unknown` and never assumed past `as_of`; every other run keeps the standard cap. Applied
+   to the 12 files.
 2. **The XFA Scaling Plan ladder** has to be transcribed from the article's images by the owner before
    a funded phase can carry a contract limit. Until then the funded account is unconstrained in size.
+   **Owner decision (2026-11-23, F11):** the ladder stays `not_modeled` **material**, quoted to the
+   article's own statement that the plan is an XFA objective, and the texts no longer read as "no
+   contract limit". The ladder images are saved (`20261123_hc_scaling-plan-xfa-charts.png`, sha256
+   `55ec76b4…6cbd`); the coordinator transcribes them, not this packet.
 3. **The FOMC press conference has no stated hour, so its trade date is a coverage gap.** The
    engine does not invent a window: on those days the news rules are `not_modeled`, the estimate is
    `partial` and the event ids are reported (see section 5). Supply the hour (the transcript PDF
    states it, and reading it is out of scope here) to make the window enforceable; alternatively
    say that a whole-day blackout should be carried as an owner-chosen sensitivity scenario. It is
    not simulated today and was never simulated as a whole-day block.
+   **Owner decision (2026-11-23):** the 5-minute window applies wherever a reliable timestamp
+   exists, and a missing time stays a reported coverage gap for its own trade date, never a
+   whole-day block. Checked, no change: the files and `crucible/prop/news.py` already do exactly
+   that (`time_known` required, unknown-time events gap their own date only).
 4. **The micro cap inside the window** is declared for *new entries* only, like the block: the page
    speaks of "Opening transactions" and says existing positions may be managed through the window.
    Confirm a held micro position above the cap is not a breach.
 5. **The Labs Daily Payout minimum is a recorded conflict** ($250 on the drop page, $125 on the
-   firm-wide policy; scenario `labs_daily_payout_minimum#0` is the $125 reading). Confirm the
-   conservative selection.
+   firm-wide policy; scenario `labs_daily_payout_minimum#0` is the $125 reading). **Owner decision
+   (2026-11-23):** confirmed - $250 primary, $125 sensitivity, both sources kept, nothing verified.
 6. **The 5 Winning Days path on the Labs drops** carries the firm-wide $125 minimum as a named
    assumption, because the drop states no minimum for it. Confirm, or say that path pays no minimum.
+   **Owner decision (2026-11-23, F10):** confirmed - $125 general minimum, `assumption_kind:
+   owner_decision`; the Daily Payout path keeps $250 primary with $125 as sensitivity, and the two
+   paths never share a minimum. The 90/10 split is re-sourced to the drop page's own table.
 7. **"Avoid opening new positions after 3:08 PM CT. Risk Managers begin flattening then."** (Trading
    Combine parameters) is advisory and two minutes before the modeled 3:10 PM CT `flat_by`, so it is
    not declared. A separate 15:08 no-entry clock would be a rule the page only advises.
 8. **Is the Reset fee ($49 / $99 / $199) and the Back2Funded reactivation fee ($599 / $699 / $829)
    part of attempt cost accounting?** They are not phase fees; a reset restarts the attempt, which is
    a C7b attempt policy question.
-9. **`unfair_technology` is `material`, not `critical`.** Topstep sells an API and does not ban
+9. **The static Labs drawdown (F8): the conservative trailing substitution is withdrawn.**
+   **Owner decision (2026-11-23):** the substitution is REMOVED - the static $2,000 floor plus its
+   post-first-payout reset to $0 is `not_modeled` critical, and the funded phase declares no loss
+   limit rather than an approximation.
+10. **`unfair_technology` is `material`, not `critical`.** Topstep sells an API and does not ban
    automated trading, so no automated attempt is `blocked_by_compliance`. Confirm that reading (the
-   contrast is Apex, whose automation ban the owner made critical).
+   contrast is Apex, whose automation ban the owner made critical). **Owner decision (2026-11-23,
+   F21):** confirmed and sharpened - automated execution is `eligible_conditional` under six
+   conditions quoted from the API Access article, never `blocked_by_compliance`.
 
 ## 15. Reproduction and self-check
 
@@ -779,8 +1029,9 @@ for f in rulesets/prop/topstep/*.yaml; do uv run crucible prop validate "$f" --j
 uv run crucible prop list --firm topstep --json
 ```
 
-Generation: `topstep/migrate_v2.py` rewrote the drafts in schema 2 from the quoted values and
-`topstep/round2.py` applied the round-2 declarations (both abort if a quotation cannot be found in
+Generation: `topstep/migrate_v2.py` rewrote the drafts in schema 2 from the quoted values,
+`topstep/round2.py` applied the round-2 declarations and `topstep/round4.py` the round-4 owner
+decisions of 2026-11-23 (all abort if a quotation cannot be found in
 the saved bytes); `topstep/write_research.py` composes this page from the emitted YAML, so the matrix
 and the per-file checklist cannot drift from the files.
 

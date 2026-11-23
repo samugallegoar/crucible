@@ -39,6 +39,11 @@ class RuleCoverageRow:
     materiality: Materiality
     modeled: bool
     source: Attribution
+    becomes_immaterial_if: str | None = None
+    """The audited fact that would change a declared ``not_modeled`` entry's materiality.
+
+    A CONDITION, never a downgrade: the declared materiality stands until an audit shows it holds.
+    """
 
 
 def rule_coverage(
@@ -81,6 +86,7 @@ def rule_coverage(
             materiality=entry.materiality,
             modeled=False,
             source=entry.source,
+            becomes_immaterial_if=entry.becomes_immaterial_if,
         )
         for entry in ruleset.not_modeled
     )

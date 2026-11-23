@@ -156,6 +156,7 @@ phases:
     evidence: assumption
     assumption:
       name: intraday_evaluation_lock_taken_from_auto_liq_min_max
+      assumption_kind: section7_default
       rationale: No official page states where the intraday trailing threshold stops. The product record
         for this exact plan, size and platform declares auto_liq_min_max $26,500, which is the profit-target
         balance; the shape (trigger at peak = locked threshold + drawdown) is taken from the EOD drawdown
@@ -386,6 +387,7 @@ phases:
     evidence: assumption
     assumption:
       name: intraday_pa_lock_taken_from_pa_auto_liq_min_max
+      assumption_kind: section7_default
       rationale: The intraday PA page says only that trailing stops once the max trailing drawdown amount
         + $100 is reached. The stop level itself is taken from the same product record's pa_auto_liq_min_max
         ($25,100 = starting balance + $100) and from the EOD Performance Account page for this product,

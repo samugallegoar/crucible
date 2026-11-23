@@ -16,6 +16,9 @@ Semantics, all from the ruleset and never from a firm:
 - A hard breach closes the account; a soft breach liquidates and locks trading until the rule's
   own reset. A pass ends the phase; the attempt moves on to the next phase.
 - A breach touched in a bar beats a pass in the same bar.
+- A loss threshold declared ``evaluated: intraday`` is ALSO tested the instant a fill or a cost
+  posting moves the basis, flat or not: a round turn that leaves the closed account past the
+  threshold fails at that fill (ADR-0106, amendment of 2026-11-23).
 - An end-of-day rule of day D is computed at D's last scheduled bar and its consequence is applied
   at the first bar of day D+1, before that bar's gap test; at the end of the data, day D's EOD is
   applied only when the last bar closes at the session's scheduled close, otherwise an unresolved
@@ -26,7 +29,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -52,6 +55,36 @@ from crucible.prop.ruleset import (
 )
 
 Outcome = Literal["running", "pass", "fail", "timeout", "censored"]
+
+_NS_PER_S = 1_000_000_000
+
+_ZONE_LABEL: dict[str, str] = {
+    "America/Chicago": "CT",
+    "America/New_York": "ET",
+    "America/Denver": "MT",
+    "America/Los_Angeles": "PT",
+}
+"""A short label for the clock a rule's time is stated in, so a rejection reads as the firm
+states it (``17:00 CT``). A zone not listed keeps its last path segment."""
+
+
+@dataclass(frozen=True, slots=True)
+class _EntryBlock:
+    """One rule that refuses an entry, with the reason it gives (ADR-0106 amendment 2026-11-23).
+
+    ``kind`` is the event kind it is recorded under: ``session_entry_block`` for a session-close
+    ``flat_by`` window (the owner's name), ``news_entry_block`` for a news window and
+    ``entry_blocked`` for a lock. ``freeze`` marks a rule that forbids ANY change of position
+    (a news window whose scope is ``all_trading``) rather than only an increase.
+
+    The blocking LOGIC and the rejection REASON are kept separate: the logic is
+    ``PropAccountOverlay._entry_blockers``, the reason is the text built there.
+    """
+
+    kind: str
+    rule_id: str
+    reason: str
+    freeze: bool = False
 
 
 class PropAccountOverlay:
@@ -92,6 +125,9 @@ class PropAccountOverlay:
         self.outcome: Outcome = "running"
         self.breached_rule: str | None = None
         self.breach_time_ns: int | None = None
+        self.pending_liquidation: BreachPrice | None = None
+        """A breach found the instant a fill was booked, with a position still open: the simulator
+        liquidates the rest at that price (ADR-0106, amendment of 2026-11-23)."""
         self.min_buffer: tuple[int, int, int, str] | None = None
         """``(delta_micro, bar, time_ns, rule_id)``: the smallest equity-minus-threshold seen."""
         self.days: dict[int, rl.DayStats] = {}
@@ -273,16 +309,34 @@ class PropAccountOverlay:
 
     def admit(self, i: int, marks: AccountMarks, requested: int) -> int:
         """Step 3: the target the account allows (lock, closed account, forced-flat window,
-        contract limit and scaling plan, by contract weight)."""
+        contract limit and scaling plan, by contract weight).
+
+        A rule that REFUSES the entry is recorded under its own id and reason: one
+        ``session_entry_block`` per session-close ``flat_by`` window, one ``news_entry_block`` per
+        news window, one ``entry_blocked`` per lock, sorted by rule id. The size limit is recorded
+        separately, as a ``resize`` under its own rule, and only when it is the size limit that
+        changed the size (ADR-0106 amendment of 2026-11-23).
+        """
         marks = self._adjusted(marks)
         if self.closed:
             return marks.position
         allowed = requested
-        if self._news_all_trading(marks):
-            # ``all_trading``: nothing may change the position while the window is open
-            allowed = marks.position
-        elif self.locked_by is not None or self._flat_window(marks) or self._news_blocks(marks):
-            allowed = self._reduction(marks, requested)
+        blocked = self._entry_blockers(marks)
+        if blocked:
+            for block in blocked:
+                self._record(
+                    block.kind,
+                    block.rule_id,
+                    marks,
+                    requested=requested,
+                    allowed=marks.position,
+                    note=block.reason,
+                )
+            if any(block.freeze for block in blocked):
+                # ``all_trading``: nothing may change the position while the window is open
+                allowed = marks.position
+            else:
+                allowed = self._reduction(marks, requested)
         self._update_news_caps(marks)
         limit = self._contract_limit()
         if limit is not None:
@@ -293,16 +347,73 @@ class PropAccountOverlay:
                 else:
                     sign = 1 if allowed > 0 else -1
                     allowed = sign * rl.allowed_contracts(limit, self.weight)
-        if allowed != requested:
-            self._record(
-                "resize",
-                self._limiting_rule(),
-                marks,
-                requested=requested,
-                allowed=allowed,
-                note="clip" if self._on_excess() == "clip" else "reject",
-            )
+                self._record(
+                    "resize",
+                    self._limiting_rule(),
+                    marks,
+                    requested=requested,
+                    allowed=allowed,
+                    note="clip" if self._on_excess() == "clip" else "reject",
+                )
         return allowed
+
+    def _entry_blockers(self, marks: AccountMarks) -> list[_EntryBlock]:
+        """Every rule that refuses an entry at this instant, sorted by rule id.
+
+        The blocking LOGIC lives here and the reason text next to it; neither touches the size
+        limit, which is applied afterwards and only to the size that survived the blocks.
+        """
+        blocks: list[_EntryBlock] = []
+        if self.locked_by is not None:
+            blocks.append(
+                _EntryBlock(
+                    "entry_blocked",
+                    self.locked_by,
+                    f"entry blocked: account locked by {self.locked_by} until its reset",
+                )
+            )
+        for evaluator in self.flat_rules:
+            window = evaluator.flat_and_reopen(
+                marks.open_time_ns, marks.close_time_ns, self._session_close(self._bar)
+            )
+            if window is None:
+                continue
+            flat, reopen = window
+            if int(marks.open_time_ns) >= reopen or int(marks.close_time_ns) < flat:
+                continue
+            rule = evaluator.rule
+            zone = _ZONE_LABEL.get(rule.tz or "", (rule.tz or "").rsplit("/", 1)[-1])
+            until = dt.datetime.fromtimestamp(reopen / _NS_PER_S, dt.UTC)
+            if rule.tz is not None:
+                from zoneinfo import ZoneInfo
+
+                until = until.astimezone(ZoneInfo(rule.tz))
+            blocks.append(
+                _EntryBlock(
+                    "session_entry_block",
+                    evaluator.rule_id,
+                    f"entry blocked: {evaluator.rule_id} until "
+                    f"{until.strftime('%H:%M')} {zone}".rstrip(),
+                )
+            )
+        for news in self.news:
+            active = self._news_active(news, marks)
+            if not active:
+                continue
+            if news.rule.effective_effect != "block":
+                # a contract_cap window clips through the limiters; it never refuses an entry
+                continue
+            freeze = news.rule.scope == "all_trading"
+            blocks.append(
+                _EntryBlock(
+                    "news_entry_block",
+                    news.rule_id,
+                    f"entry blocked: news window of {news.rule_id} (event {active[0]})",
+                    freeze=freeze,
+                )
+            )
+        blocks.sort(key=lambda block: (block.rule_id, block.kind))
+        return blocks
 
     def favorable(self, i: int, marks: AccountMarks, price_ticks: int) -> None:
         """Step 4, before the adverse side: an intraday high-water mark rises first."""
@@ -328,13 +439,63 @@ class PropAccountOverlay:
         """The simulator liquidated at ``price_ticks``: record the consequence."""
         self._consequence(rule_id, hard, self._adjusted(marks), price_ticks)
 
-    def fill(self, i: int, marks: AccountMarks, quantity: int, price_ticks: int, kind: str) -> None:
-        """Every fill the simulator books, for the day statistics (trades per rule-day)."""
-        if kind in ("roll_close", "roll_open"):
+    def fill(
+        self,
+        i: int,
+        marks: AccountMarks,
+        quantity: int,
+        price_ticks: int,
+        kind: str,
+        time_ns: int,
+    ) -> None:
+        """Step 7: every fill the simulator books (roll legs included).
+
+        Two things happen here. The day statistics count the trade (roll legs are not new trades).
+        Then every ``evaluated: intraday`` loss threshold is tested against the POST-FILL basis at
+        the fill's own price: a fill moves the realized balance and its costs, so a threshold can
+        be crossed with no position left to solve a breach price from (ADR-0106, amendment of
+        2026-11-23). A crossing fails (or locks) the account at that instant; when a position
+        remains, the rest is liquidated at the same price by the simulator.
+        """
+        marks = self._adjusted(marks)
+        if kind not in ("roll_close", "roll_open"):
+            self._day_stats(marks).trades += 1
+            for evaluator in self.inactivity:
+                evaluator.note_trade(self.day, self._trade_date(marks))
+        if self.closed:
             return
-        self._day_stats(marks).trades += 1
-        for evaluator in self.inactivity:
-            evaluator.note_trade(self.day, self._trade_date(marks))
+        self._breach_after_fill(marks, price_ticks, int(time_ns))
+
+    def take_pending_liquidation(self) -> BreachPrice | None:
+        """The breach a fill just caused with a position still open, consumed once."""
+        pending, self.pending_liquidation = self.pending_liquidation, None
+        return pending
+
+    def _breach_after_fill(self, marks: AccountMarks, price_ticks: int, time_ns: int) -> None:
+        """Test every intraday loss threshold against the post-fill basis (flat included).
+
+        The most adverse crossing wins: a hard rule before a soft one, then the lower threshold,
+        then the rule id, so the outcome never depends on the order rules are declared in.
+        """
+        found: list[tuple[int, int, str, BreachPrice]] = []
+        for evaluator in self.failure_rules:
+            for breach in evaluator.observed(marks, price_ticks):
+                threshold = getattr(evaluator, "threshold", None)
+                found.append(
+                    (
+                        0 if breach.hard else 1,
+                        -int(threshold) if threshold is not None else 0,
+                        breach.rule_id,
+                        breach,
+                    )
+                )
+        if not found:
+            return
+        found.sort(key=lambda item: (item[0], item[1], item[2]))
+        breach = found[0][3]
+        self._consequence(breach.rule_id, breach.hard, marks, price_ticks, when=time_ns)
+        if marks.position != 0:
+            self.pending_liquidation = breach
 
     def _day_stats(self, marks: AccountMarks) -> rl.DayStats:
         """The current rule-day's statistics, opened with the balance it started from."""

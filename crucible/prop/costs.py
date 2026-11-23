@@ -5,7 +5,7 @@ firm says about each of them (``exchange``, ``clearing``, ``nfa``, ``other``):
 
 - ``included`` — the firm's per-side commission contains the component: nothing is added;
 - ``excluded`` — the firm charges it on top: the amount comes from the fee dataset, for the run's
-  participant type, on the attempt's date;
+  participant profile, on the attempt's date;
 - ``unknown`` — the sources do not say: a gap, never a zero cost.
 
 **Unknown is never zero.** A component with no stated status, or an excluded one the dataset cannot
@@ -15,9 +15,19 @@ root and component it names (see :func:`load_cost_assumption`). The assumption i
 construction and the estimate stays ``conditional``.
 
 **No universal fee, no extrapolation.** :class:`ComponentFeeRow` and the stored
-``exchange_fees_v1`` dataset price exactly their root, participant type and date range; a row that
-covers several components is charged once. The engine never maps a CME product bucket to a root,
-and the participant type used for ``excluded`` components is a run parameter, never a ruleset value.
+``exchange_fees_v1`` dataset price exactly their root and date range, for the CLASSIFICATION their
+row states; a row that covers several components is charged once. The engine never maps a CME
+product bucket to a root.
+
+**The classification is the run's participant PROFILE, resolved per component.** A fee row names
+the one profile dimension it needs (``cme_membership_status`` for an exchange row,
+``nfa_assessment_eligibility`` for the NFA assessment) and the value it is written for. The run
+declares a :class:`crucible.data.exchange_fees.ParticipantProfile` — a flat mapping from dimension
+name to value — and every ``excluded`` component is resolved through it: a dimension the profile
+does not declare makes the component a gap whose reason names it, a different value makes the row
+inapplicable, and there is never a default or a fallback. Using the profile keeps the cost
+``conditional`` with the reason :data:`PARTICIPANT_PROFILE_REASON`; it is a run's declaration, never
+a firm's statement, so it never makes a cost ``complete``.
 
 Amounts are per contract per side in USD, like ``CostSchedule.exchange_fee``. This module is
 deterministic: no clock, no network, no global RNG.
@@ -36,6 +46,16 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import yaml
 
 from crucible.core.errors import ConfigurationError, CrucibleError
+from crucible.data.exchange_fees import (
+    CLASSIFICATION_DIMENSION_NONE,
+    CLASSIFICATION_DIMENSION_PATTERN,
+    CLASSIFICATION_VALUE_ALL,
+    UNIT_PER_CONTRACT_PER_SIDE,
+    FeeLookup,
+    ParticipantProfile,
+    is_generic_charge_name,
+    resolve_component_rows,
+)
 from crucible.prop.rules_schema import COST_COMPONENTS, CostComponents
 
 if TYPE_CHECKING:
@@ -62,6 +82,11 @@ SCHEDULE_FIELD: dict[str, str] = {
 
 FEE_SOURCE_DATASET = "exchange_fees_v1"
 """The dataset a :class:`StoreComponentFees` reads by default."""
+
+PARTICIPANT_PROFILE_REASON = "participant profile declared by the run, not stated by the firm"
+"""Why a cost priced through the run's participant profile is never ``complete``: the profile is a
+run input, and a firm never states which rate class its accounts fall in (ADR-0107, second
+2026-11-22 amendment)."""
 
 _ASSUMPTION_KEYS: tuple[str, ...] = (
     "name",
@@ -107,21 +132,22 @@ class FeeRow:
 class ComponentFeeSource(Protocol):
     """What the attempt's pricing needs: the amounts in force for a root on a date.
 
-    ``rows_for`` returns only the components the source can price: a component it has no row for is
-    ABSENT from the result, never returned as a zero. An implementation must be deterministic (no
-    clock, no network) and must refuse (raise ``CrucibleError``) rather than choose between two rows
-    that cover the same component on the same date.
+    ``lookup`` returns only the components the source can price, and names why each of the others
+    is not priced: a component in neither map was never asked for, and a component it cannot price
+    is a gap, never a zero. An implementation must be deterministic (no clock, no network) and must
+    refuse (raise ``CrucibleError``) rather than choose between two rows that apply to the same
+    component on the same date.
     """
 
-    def rows_for(
+    def lookup(
         self,
         root: str,
         when: dt.date,
         *,
-        participant_type: str,
+        profile: ParticipantProfile | None,
         components: Sequence[str],
-    ) -> dict[str, FeeRow]:
-        """``{component: FeeRow}`` for the components this source can price."""
+    ) -> FeeLookup:
+        """``priced`` and ``gaps`` for the components this source was asked about."""
         ...
 
     @property
@@ -137,15 +163,23 @@ class ComponentFeeRow:
     ``covers`` lists the components the amount covers and must contain ``fee_type``: a CME
     "Exchange Fees for Clearing & Trading" cell is ``fee_type="exchange"`` with
     ``covers=("exchange", "clearing")``, and it is charged once for both.
+
+    ``classification_dimension``/``classification_value`` are the one participant-profile dimension
+    the row needs and the value it is written for (``cme_membership_status = non_member``), or
+    ``none``/``all`` for a charge the source states is the same for every participant. There is no
+    participant type: a row never prices "any participant" (ADR-0107, second 2026-11-22 amendment).
     """
 
     root: str
     fee_type: str
-    participant_type: str
+    classification_dimension: str
+    classification_value: str
     covers: tuple[str, ...]
     per_side_usd: Decimal
     effective_from: dt.date
     effective_to: dt.date | None = None
+    charge_name: str | None = None
+    """An ``other`` row's specific name; REQUIRED for ``other`` and refused when generic."""
 
     def __post_init__(self) -> None:
         if not self.root or self.root != self.root.upper():
@@ -167,8 +201,54 @@ class ComponentFeeRow:
                 "its own fee_type; a row prices the component it is typed as"
             )
             raise ConfigurationError(msg)
-        if not self.participant_type.strip():
-            msg = f"fee row {self.root} {self.fee_type}: participant_type is empty"
+        if not CLASSIFICATION_DIMENSION_PATTERN.match(self.classification_dimension):
+            msg = (
+                f"fee row {self.root} {self.fee_type}: classification_dimension "
+                f"{self.classification_dimension!r} is not an identifier matching "
+                "^[a-z][a-z0-9_]*$ (use 'none' for a charge that is the same for every participant)"
+            )
+            raise ConfigurationError(msg)
+        if not self.classification_value.strip():
+            msg = f"fee row {self.root} {self.fee_type}: classification_value is empty"
+            raise ConfigurationError(msg)
+        if self.classification_dimension == CLASSIFICATION_DIMENSION_NONE:
+            if self.classification_value != CLASSIFICATION_VALUE_ALL:
+                msg = (
+                    f"fee row {self.root} {self.fee_type}: classification_dimension 'none' needs "
+                    f"classification_value 'all', got {self.classification_value!r}"
+                )
+                raise ConfigurationError(msg)
+        elif self.classification_value == CLASSIFICATION_VALUE_ALL:
+            msg = (
+                f"fee row {self.root} {self.fee_type}: classification_value 'all' is only allowed "
+                "with classification_dimension 'none'"
+            )
+            raise ConfigurationError(msg)
+        if self.fee_type == "other":
+            if self.covers != ("other",):
+                msg = (
+                    f"fee row {self.root} other: covers must be exactly ('other',), got "
+                    f"{list(self.covers)}"
+                )
+                raise ConfigurationError(msg)
+            name = "" if self.charge_name is None else self.charge_name.strip()
+            if not name:
+                msg = (
+                    f"fee row {self.root} other: charge_name is required; name the charge "
+                    "specifically, so an 'other' row is not a catch-all"
+                )
+                raise ConfigurationError(msg)
+            if is_generic_charge_name(name):
+                msg = (
+                    f"fee row {self.root} other: charge_name {name!r} is a generic name, not a "
+                    "charge"
+                )
+                raise ConfigurationError(msg)
+        elif "other" in self.covers:
+            msg = (
+                f"fee row {self.root} {self.fee_type}: an exchange fee cannot cover other "
+                "components; an other charge is its own row"
+            )
             raise ConfigurationError(msg)
         if not self.per_side_usd.is_finite() or self.per_side_usd < 0:
             msg = (
@@ -199,8 +279,10 @@ class ComponentFeeRow:
         payload = {
             "root": self.root,
             "fee_type": self.fee_type,
-            "participant_type": self.participant_type,
+            "classification_dimension": self.classification_dimension,
+            "classification_value": self.classification_value,
             "covers": list(self.covers),
+            "charge_name": self.charge_name,
             "per_side_usd": str(self.per_side_usd),
             "effective_from": self.effective_from.isoformat(),
             "effective_to": None if self.effective_to is None else self.effective_to.isoformat(),
@@ -214,8 +296,9 @@ class ComponentFeeTable:
     """A table of :class:`ComponentFeeRow` with the hash of the document it came from.
 
     Two rows may not cover the same component of the same key on the same date: an ambiguous fee is
-    refused, never resolved by row order. ``nfa`` is keyed without the participant type, because it
-    is the FCM member's pass-through assessment and prices any requested type.
+    refused, never resolved by row order. Every row is keyed by its own classification
+    (``(root, dimension, value, component)``), exactly as the stored dataset is, so a member row and
+    a non-member row are two different rows rather than a contradiction.
     """
 
     rows: tuple[ComponentFeeRow, ...]
@@ -231,56 +314,92 @@ class ComponentFeeTable:
         if not self.rows:
             msg = "fee table needs at least one row"
             raise ConfigurationError(msg)
-        grouped: dict[tuple[str, str, str], list[ComponentFeeRow]] = {}
+        named: dict[tuple[str, str, str, str], list[ComponentFeeRow]] = {}
         for row in self.rows:
-            for component in row.covers:
-                key = (
-                    (row.root, "*", component)
-                    if component == "nfa"
-                    else (row.root, row.participant_type, component)
-                )
-                grouped.setdefault(key, []).append(row)
-        for (root, participant_type, component), group in sorted(grouped.items()):
+            if row.fee_type != "other":
+                continue
+            key = (
+                row.root,
+                str(row.charge_name),
+                row.classification_dimension,
+                row.classification_value,
+            )
+            named.setdefault(key, []).append(row)
+        for (root, charge_name, dimension, value), group in sorted(named.items()):
             ordered = sorted(group, key=lambda row: row.effective_from)
             for earlier, later in itertools.pairwise(ordered):
                 if earlier.effective_to is None or later.effective_from <= earlier.effective_to:
-                    label = (
-                        f"{root} {component}"
-                        if participant_type == "*"
-                        else f"{root} {participant_type} {component}"
+                    msg = (
+                        f"fee table rows for {root} other {charge_name!r} ({dimension}={value}) "
+                        f"overlap at {later.effective_from}: one charge is one row per period"
                     )
+                    raise ConfigurationError(msg)
+        grouped: dict[tuple[str, str, str, str], list[ComponentFeeRow]] = {}
+        for row in self.rows:
+            for component in row.covers:
+                if component == "other":
+                    # two NAMED other charges on one date are two charges, not a contradiction
+                    continue
+                key = (
+                    row.root,
+                    row.classification_dimension,
+                    row.classification_value,
+                    component,
+                )
+                grouped.setdefault(key, []).append(row)
+        for (root, dimension, value, component), group in sorted(grouped.items()):
+            ordered = sorted(group, key=lambda row: row.effective_from)
+            for earlier, later in itertools.pairwise(ordered):
+                if earlier.effective_to is None or later.effective_from <= earlier.effective_to:
+                    label = f"{root} {component} ({dimension}={value})"
                     msg = (
                         f"fee table rows for {label} overlap at {later.effective_from}: one row "
                         "per key per period, otherwise the fee is ambiguous"
                     )
                     raise ConfigurationError(msg)
 
-    def rows_for(
+    def lookup(
         self,
         root: str,
         when: dt.date,
         *,
-        participant_type: str,
+        profile: ParticipantProfile | None,
         components: Sequence[str],
-    ) -> dict[str, FeeRow]:
-        """``{component: FeeRow}`` from the rows in force on ``when`` for this key."""
-        out: dict[str, FeeRow] = {}
+    ) -> FeeLookup:
+        """``priced`` and ``gaps`` for ``when``, resolved through the run's ``profile``."""
+        priced: dict[str, tuple[Decimal, str]] = {}
+        gaps: dict[str, str] = {}
         for component in components:
-            found = [
+            covering = [
                 row
                 for row in self.rows
-                if row.root == root
-                and component in row.covers
-                and row.covers_date(when)
-                and (component == "nfa" or row.participant_type == participant_type)
+                if row.root == root and component in row.covers and row.covers_date(when)
             ]
-            if found:
-                out[component] = FeeRow(
-                    component=component,
-                    per_side_usd=found[0].per_side_usd,
-                    record_sha256=found[0].record_sha256,
+            indices, reason = resolve_component_rows(
+                where=f"{root} {component} on {when.isoformat()}",
+                classifications=[
+                    (row.classification_dimension, row.classification_value) for row in covering
+                ],
+                profile=profile,
+                labels=[row.record_sha256 for row in covering],
+                multiple=component == "other",
+            )
+            if not indices:
+                assert reason is not None
+                gaps[component] = reason
+                continue
+            if component == "other":
+                chosen = [covering[index] for index in indices]
+                total = sum((row.per_side_usd for row in chosen), Decimal(0))
+                joined = ";".join(sorted(row.record_sha256 for row in chosen))
+                priced[component] = (
+                    total,
+                    hashlib.sha256(joined.encode("utf-8")).hexdigest(),
                 )
-        return out
+                continue
+            row = covering[indices[0]]
+            priced[component] = (row.per_side_usd, row.record_sha256)
+        return FeeLookup(priced=priced, gaps=gaps)
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,8 +407,9 @@ class StoreComponentFees:
     """``ComponentFeeSource`` over the stored ``exchange_fees_v1`` dataset.
 
     Every component read goes through ``crucible.data.exchange_fees.fee_rows_as_of``, which prices
-    ONE root for ONE participant type on ONE date: an owner file that prices ES alone is usable, and
-    a component it does not cover is absent (a gap for the caller), never a zero.
+    ONE root on ONE date for the run's participant profile: an owner file that prices ES alone is
+    usable, and a component it does not cover (or whose classification the profile does not
+    declare) is a named gap, never a zero.
 
     The dataset's own content hash is the source hash the result records, so an attempt can be
     traced to the exact table it priced with.
@@ -300,30 +420,26 @@ class StoreComponentFees:
     dataset: str | None = None
     """The dataset name to read instead of the default ``exchange_fees_v1`` (``None``: default)."""
 
-    def rows_for(
+    def lookup(
         self,
         root: str,
         when: dt.date,
         *,
-        participant_type: str,
+        profile: ParticipantProfile | None,
         components: Sequence[str],
-    ) -> dict[str, FeeRow]:
-        """``{component: FeeRow}`` the stored table prices for ``root`` on ``when``."""
+    ) -> FeeLookup:
+        """``priced`` and ``gaps`` the stored table resolves for ``root`` on ``when``."""
         from crucible.core.types import DatasetId
         from crucible.data.exchange_fees import fee_rows_as_of
 
-        priced = fee_rows_as_of(
+        return fee_rows_as_of(
             self.store,
             root,
             when,
-            participant_type=participant_type,
+            profile=profile,
             components=components,
             dataset=None if self.dataset is None else DatasetId(self.dataset),
         )
-        return {
-            component: FeeRow(component=component, per_side_usd=amount, record_sha256=record_sha256)
-            for component, (amount, record_sha256) in priced.items()
-        }
 
     @property
     def source_sha256(self) -> str:
@@ -357,10 +473,17 @@ def store_component_fees(store: DataStore, *, dataset: str | None = None) -> Sto
 
 @dataclass(frozen=True, slots=True)
 class AssumptionAmount:
-    """One amount of a cost-assumption file: what it covers, for the root it sits under."""
+    """One amount of a cost-assumption file: what it covers, for the root it sits under.
+
+    ``unit`` must be ``per_contract_per_side`` (an assumption is a per-side execution cost like
+    any fee row, never a monthly or platform charge), and an entry that covers ``other`` must name
+    the charge (``charge_name``) in the same terms a fee row does.
+    """
 
     covers: tuple[str, ...]
     per_side_usd: Decimal
+    unit: str = UNIT_PER_CONTRACT_PER_SIDE
+    charge_name: str | None = None
 
     def __post_init__(self) -> None:
         if not self.covers:
@@ -376,12 +499,34 @@ class AssumptionAmount:
         if len(set(self.covers)) != len(self.covers):
             msg = f"a cost-assumption amount repeats a component in {list(self.covers)}"
             raise ConfigurationError(msg)
+        if self.unit != UNIT_PER_CONTRACT_PER_SIDE:
+            msg = (
+                f"a cost-assumption amount states unit {self.unit!r}; an assumption prices a "
+                f"per-side cost, so its unit must be {UNIT_PER_CONTRACT_PER_SIDE!r} (a monthly, "
+                "platform, subscription or account charge is a fixed charge and belongs in the "
+                "ruleset's fee schedule)"
+            )
+            raise ConfigurationError(msg)
         if not self.per_side_usd.is_finite() or self.per_side_usd < 0:
             msg = (
                 f"a cost-assumption amount of {self.per_side_usd} USD per side must be a finite "
                 "USD >= 0"
             )
             raise ConfigurationError(msg)
+        name = "" if self.charge_name is None else self.charge_name.strip()
+        if "other" in self.covers:
+            if not name:
+                msg = (
+                    "a cost-assumption amount that covers other needs charge_name; name the "
+                    "charge specifically, so an 'other' amount is not a catch-all"
+                )
+                raise ConfigurationError(msg)
+            if is_generic_charge_name(name):
+                msg = (
+                    f"a cost-assumption amount covering other names {name!r}, which is a generic "
+                    "name rather than a charge"
+                )
+                raise ConfigurationError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -470,13 +615,18 @@ def load_cost_assumption(path: Path) -> CostAssumption:
           ES:
             - covers: [commission]
               per_side_usd: "0.77"
+              unit: per_contract_per_side
             - covers: [exchange, clearing]
               per_side_usd: "0.41"
+              unit: per_contract_per_side
 
     Every key is required and no other key is accepted, ``status`` must be ``unverified``, the
-    roots are upper-case and the ``covers`` names are cost components. An amount applies only to
-    its own root and components: an assumption never extrapolates to another root, and it is never
-    reported as a firm value or as a complete cost.
+    roots are upper-case and the ``covers`` names are cost components. Every amount carries
+    ``unit: per_contract_per_side`` (any other unit is refused: a monthly or platform charge is a
+    fixed charge, not a per-side execution cost), and an amount that covers ``other`` names the
+    charge (``charge_name``) in the same terms a fee row does. An amount applies only to its own
+    root and components: an assumption never extrapolates to another root, and it is never reported
+    as a firm value or as a complete cost.
     """
     if not path.is_file():
         msg = f"cost assumption {path} does not exist: pass the YAML file, or omit the assumption"
@@ -526,11 +676,23 @@ def load_cost_assumption(path: Path) -> CostAssumption:
         for index, entry in enumerate(entries, start=1):
             where = f"{path.name}: {root_text} entry {index}"
             if not isinstance(entry, dict):
-                msg = f"{where}: an entry must be {{covers, per_side_usd}}"
+                msg = f"{where}: an entry must be {{covers, per_side_usd, unit}}"
                 raise ConfigurationError(msg)
-            extra = [key for key in entry if key not in ("covers", "per_side_usd")]
+            extra = [
+                key for key in entry if key not in ("covers", "per_side_usd", "unit", "charge_name")
+            ]
             if extra:
-                msg = f"{where}: unknown key(s) {extra}; an entry is {{covers, per_side_usd}}"
+                msg = (
+                    f"{where}: unknown key(s) {extra}; an entry is "
+                    "{covers, per_side_usd, unit, charge_name}"
+                )
+                raise ConfigurationError(msg)
+            if "unit" not in entry or not str(entry["unit"]).strip():
+                msg = (
+                    f"{where}: unit is required and must be {UNIT_PER_CONTRACT_PER_SIDE!r}; this "
+                    "file prices a per-side execution cost, and a monthly, platform, subscription "
+                    "or account charge is a fixed charge that belongs in the ruleset's fee schedule"
+                )
                 raise ConfigurationError(msg)
             covers = entry.get("covers")
             if isinstance(covers, str):
@@ -538,10 +700,13 @@ def load_cost_assumption(path: Path) -> CostAssumption:
             if not isinstance(covers, list) or not covers:
                 msg = f"{where}: covers must be a non-empty list of component names"
                 raise ConfigurationError(msg)
+            charge_name = entry.get("charge_name")
             parsed.append(
                 AssumptionAmount(
                     covers=tuple(str(name).strip() for name in covers),
                     per_side_usd=_assumption_decimal(entry.get("per_side_usd"), where=where),
+                    unit=str(entry["unit"]).strip(),
+                    charge_name=None if charge_name is None else str(charge_name),
                 )
             )
         seen: dict[str, int] = {}
@@ -606,7 +771,10 @@ class CostPricing:
     status: str
     assumption: CostAssumption | None = None
     priced_by_assumption: tuple[str, ...] = ()
-    participant_type: str | None = None
+    profile: ParticipantProfile | None = None
+    profile_priced: bool = False
+    """Whether the run's participant profile actually resolved a component (and so why the cost is
+    ``conditional``)."""
 
     def component_charge(self, component: str) -> ComponentCharge:
         """One component's charge: the commission, exchange, clearing, nfa or other."""
@@ -645,8 +813,8 @@ class CostPricing:
                 else f"cost assumption {self.assumption.name!r} was used"
             )
             out.append(label)
-        if self.participant_type is not None:
-            out.append(f"participant type assumed: {self.participant_type}")
+        if self.profile_priced:
+            out.append(PARTICIPANT_PROFILE_REASON)
         return tuple(out)
 
 
@@ -659,7 +827,7 @@ def price_components(
     when: dt.date,
     costs: CostSchedule,
     fee_source: ComponentFeeSource | None = None,
-    participant_type: str | None = None,
+    profile: ParticipantProfile | None = None,
     assumption: CostAssumption | None = None,
 ) -> CostPricing:
     """Price one root's per-side cost on ``when``, component by component (ADR-0107 s10).
@@ -669,25 +837,27 @@ def price_components(
     1. the commission: ``known`` with its per-side amount, or a gap when the ruleset says
        ``unknown``;
     2. each component, by its declared status — ``included`` adds nothing, ``excluded`` adds the
-       fee dataset's amount for the run's participant type (a gap when there is no row),
-       ``unknown`` is a gap;
+       fee dataset's amount as the run's participant PROFILE resolves it (a gap when there is no
+       row, when the profile does not declare the row's dimension, or when the row states another
+       value), ``unknown`` is a gap;
     3. the cost-assumption file, which prices the exact gaps it names for this exact root.
 
-    ``status`` is ``complete`` when nothing is a gap and no assumption or participant type was
-    needed, ``conditional`` when an assumption or the participant type supplied a value, and
-    ``unavailable`` when any gap remains. ``excluded`` components need ``participant_type``: it is
-    refused when missing, because the dataset prices a rate class and the ruleset never states one.
+    ``status`` is ``complete`` when nothing is a gap and no assumption or participant profile was
+    needed, ``conditional`` when an assumption or the profile supplied a value, and ``unavailable``
+    when any gap remains. ``excluded`` components need a ``profile``: it is refused when missing,
+    because a fee row prices a stated classification and the ruleset never states one.
 
     A gap is never charged as zero: the returned schedule keeps no amount for it, and the caller
     must not present the total as complete.
     """
     excluded = components.of_status("excluded")
-    if excluded and participant_type is None:
+    if excluded and profile is None:
         raise ConfigurationError(
-            f"the commission for {root} declares {list(excluded)} excluded, so the dataset must "
-            "price them for a participant type: pass fee_participant_type "
-            "(--fee-participant-type) — the ruleset never states one, and a member rate is not a "
-            "customer rate"
+            f"the commission for {root} declares {list(excluded)} excluded, so the fee dataset "
+            "must price them for the participant the run is: pass a participant profile "
+            "(--participant-profile FILE) — its dimensions resolve each component's "
+            "classification, the ruleset never states one, and a member rate is not a "
+            "non-member rate"
         )
     charges: dict[str, ComponentCharge] = {}
     gaps: list[str] = []
@@ -711,10 +881,14 @@ def price_components(
         )
         gaps.append("commission")
     priced: dict[str, FeeRow] = {}
+    gap_reasons: dict[str, str] = {}
     if excluded and fee_source is not None:
-        priced = fee_source.rows_for(
-            root, when, participant_type=participant_type or "", components=excluded
-        )
+        found = fee_source.lookup(root, when, profile=profile, components=excluded)
+        priced = {
+            component: FeeRow(component=component, per_side_usd=amount, record_sha256=record_sha256)
+            for component, (amount, record_sha256) in found.priced.items()
+        }
+        gap_reasons = dict(found.gaps)
     # a row that covers several components is charged ONCE: the components it prices share its
     # record hash, so the row is the group and the first component in report order carries the
     # amount while the others say they are inside it. Splitting the amount across them would be a
@@ -752,8 +926,8 @@ def price_components(
                     status="excluded_unpriced",
                     usd=None,
                     detail=(
-                        f"the commission excludes it and the fee dataset has no {name} row for "
-                        f"{root} on {when.isoformat()} for participant type {participant_type!r}"
+                        "the commission excludes it and the fee dataset does not price it: "
+                        + gap_reasons.get(name, f"no fee row for {root} on {when.isoformat()}")
                     ),
                 )
                 gaps.append(name)
@@ -777,7 +951,7 @@ def price_components(
                     usd=row.per_side_usd,
                     detail=(
                         f"charged from the fee dataset, row {row.record_sha256[:12]}... "
-                        f"(participant type {participant_type})"
+                        f"(classification resolved through the run's participant profile)"
                     ),
                 )
         else:
@@ -833,15 +1007,15 @@ def price_components(
         regulatory_fee=_amount("nfa"),
         other_fee=_amount("other"),
     )
-    # the participant type is "assumed" only when it actually priced a component: a run that
-    # supplies one for a ruleset whose commission is all-in has assumed nothing
-    used_participant = any(
+    # the profile is the reason the cost is conditional only when it actually resolved a
+    # component: a run that declares one for a ruleset whose commission is all-in has declared a
+    # fact the cost never used, and the cost stays complete
+    profile_priced = any(
         charge.status in ("excluded_priced", "covered_by_row") for charge in charges.values()
     )
-    recorded_participant = participant_type if used_participant else None
     if gaps:
         status = "unavailable"
-    elif priced_by_assumption or recorded_participant is not None:
+    elif priced_by_assumption or profile_priced:
         status = "conditional"
     else:
         status = "complete"
@@ -852,13 +1026,15 @@ def price_components(
         status=status,
         assumption=assumption,
         priced_by_assumption=tuple(priced_by_assumption),
-        participant_type=recorded_participant,
+        profile=profile,
+        profile_priced=profile_priced,
     )
 
 
 __all__ = [
     "COMPONENTS_WITH_COMMISSION",
     "FEE_SOURCE_DATASET",
+    "PARTICIPANT_PROFILE_REASON",
     "SCHEDULE_FIELD",
     "AssumptionAmount",
     "ComponentCharge",

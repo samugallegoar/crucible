@@ -44,6 +44,7 @@ from crucible.data.contracts import (
     ROLL_SORT_KEYS,
 )
 from crucible.data.econ_events import ECON_EVENT_SCHEMA, ECON_EVENT_SORT_KEYS
+from crucible.data.exchange_fees import ParticipantProfile
 from crucible.data.store import ParquetDataStore, build_dataset
 from crucible.experiments.artifact_id import verify_artifact
 from crucible.experiments.futures_config import FuturesRunConfig, parse_futures_config
@@ -291,11 +292,18 @@ def build_store(root: Path, *, exchange_fees: bool | None = None) -> Path:
     return root
 
 
+PROFILE = ParticipantProfile.from_mapping(
+    {"cme_membership_status": "non_member", "nfa_assessment_eligibility": "fcm_member"}
+)
+"""The run's participant profile: it resolves the synthetic exchange and NFA rows."""
+
+
 def _fee_row(
     root: str,
     fee_type: str,
     amount: str,
-    participant_type: str,
+    dimension: str,
+    value: str,
     covers: str,
     source_kind: str,
 ) -> dict:
@@ -308,8 +316,11 @@ def _fee_row(
         "root": root,
         "venue": ef.VENUE_OF[root],
         "fee_type": fee_type,
-        "participant_type": participant_type,
+        "classification_dimension": dimension,
+        "classification_value": value,
         "covers": covers,
+        "charge_name": None,
+        "unit": ef.UNIT_PER_CONTRACT_PER_SIDE,
         "per_side_usd": amount,
         "effective_from": day,
         "effective_to": None,
@@ -318,6 +329,8 @@ def _fee_row(
         "source_url": "https://example.invalid/synthetic-fees",
         "snapshot_sha256": "0" * 64,
         "quote": "SYNTHETIC TEST VALUE: a fee row invented for a test",
+        "applies_quote": None,
+        "distinct_from": None,
         "event_time": stamp,
         "available_at": stamp,
         "dataset_version": ef.DATASET_VERSION,
@@ -331,7 +344,15 @@ def _write_fee_table(root: Path, *, exchange: bool) -> None:
     from crucible.data import exchange_fees as ef
 
     rows = [
-        _fee_row(name, "nfa", "0.02", ef.PARTICIPANT_TYPE_NFA, "nfa", ef.SOURCE_KIND_OFFICIAL)
+        _fee_row(
+            name,
+            "nfa",
+            "0.02",
+            ef.NFA_CLASSIFICATION_DIMENSION,
+            ef.NFA_CLASSIFICATION_VALUE,
+            "nfa",
+            ef.SOURCE_KIND_OFFICIAL,
+        )
         for name in ef.ROOTS
     ]
     if exchange:
@@ -340,7 +361,8 @@ def _write_fee_table(root: Path, *, exchange: bool) -> None:
                 name,
                 "exchange",
                 "1.25",
-                ef.PARTICIPANT_TYPE_EXCHANGE,
+                ef.EXCHANGE_CLASSIFICATION_DIMENSION,
+                ef.EXCHANGE_CLASSIFICATION_VALUE,
                 "exchange;clearing",
                 ef.SOURCE_KIND_OWNER,
             )
@@ -433,6 +455,7 @@ def ruleset(
     commissions: Mapping[str, object] | None = None,
     fees: Sequence[Mapping[str, object]] = (),
     conflicts: Sequence[Mapping[str, object]] = (),
+    not_modeled: Sequence[Mapping[str, object]] = (),
     extra_rules: Sequence[Mapping[str, object]] = (),
     synthetic: bool = True,
     effective_from: str = "2024-01-01",
@@ -473,6 +496,7 @@ def ruleset(
             "reset": {"time": "17:00:00", "tz": "America/Chicago"},
             "commissions": commission_table,
             "conflicts": [dict(conflict) for conflict in conflicts],
+            "not_modeled": [{"source": source, **dict(entry)} for entry in not_modeled],
             "phases": [
                 {
                     "phase_id": "evaluation",
@@ -515,7 +539,17 @@ def write_cost_assumption(
         "provided_by": "owner",
         "status": "unverified",
         "evidence": "SYNTHETIC TEST VALUE: no document states this split",
-        "amounts": {root: [{"covers": list(covers), "per_side_usd": amount}]},
+        "amounts": {
+            root: [
+                {
+                    "covers": list(covers),
+                    "per_side_usd": amount,
+                    "unit": "per_contract_per_side",
+                    # an amount covering ``other`` must name the charge
+                    "charge_name": "SYNTHETIC TEST VALUE: a named per-side charge",
+                }
+            ]
+        },
     }
     path.write_text(yaml.safe_dump(document, sort_keys=True), encoding="utf-8", newline="\n")
     return path
@@ -536,7 +570,7 @@ def evaluate(
     ruleset_options = {
         key: value
         for key, value in options.items()
-        if key not in ("cost_assumption", "fee_participant_type")
+        if key not in ("cost_assumption", "participant_profile")
     }
     ruleset_file = write_ruleset(
         artifacts / "ruleset.yaml",
@@ -549,7 +583,7 @@ def evaluate(
         execution_mode="manual",
         scenarios=scenarios,
         cost_assumption=options.get("cost_assumption"),  # type: ignore[arg-type]
-        fee_participant_type=options.get("fee_participant_type"),  # type: ignore[arg-type]
+        participant_profile=options.get("participant_profile"),  # type: ignore[arg-type]
         store_root=store,
         artifacts_root=artifacts,
         overwrite=True,
@@ -945,6 +979,156 @@ def test_a_mechanical_pass_under_a_compliance_blocker_is_never_a_practically_val
     assert eligible["practical_eligibility"]["practically_valid_passes"] == 5
 
 
+CONDITION_API_ONLY: dict[str, object] = {
+    "kind": "compliance",
+    "rule_id": "orders_only_through_the_api",
+    "restriction": "Automated trading is permitted only through the firm's own API",
+    "applies_to_execution": ["automated"],
+    "materiality": "material",
+    "comparison": ">=",
+    "action": "none",
+    "effect": "condition",
+    "condition": "Order-transmitting activity must originate on the trader's personal device",
+}
+CONDITION_ORIGIN: dict[str, object] = {
+    "kind": "compliance",
+    "rule_id": "orders_from_the_own_device",
+    "restriction": "Order entry from a remote server is prohibited",
+    "applies_to_execution": ["automated"],
+    "materiality": "material",
+    "comparison": ">=",
+    "action": "none",
+    "effect": "condition",
+    "condition": "A VPS, VPN or remote server may not place, modify or cancel orders",
+}
+"""Two obligations the simulation cannot prove: the report must list them, never block."""
+
+UNMODELED_TWO_PERCENT: dict[str, object] = {
+    "rule": "two_percent_price_limit_restriction",
+    "description": "SYNTHETIC TEST VALUE: a band the engine does not carry",
+    "materiality": "material",
+    "becomes_immaterial_if": (
+        "an audit of the instruments and dates shows it never affected a trade"
+    ),
+}
+
+
+def test_a_condition_makes_the_passes_conditionally_valid_and_lists_every_condition(
+    store: Path, artifacts: Path
+) -> None:
+    """No blocker applies, two conditions do: five passes, none of them PRACTICALLY valid.
+
+    ``eligible_conditional`` is the honest label: the simulation cannot prove that orders come from
+    the trader's own device or through the API, so the mechanical successes are reported as
+    ``conditionally_valid_passes`` and ``practically_valid_passes`` is 0. The conditions are
+    de-duplicated and sorted, in the summary AND in ``attempts.parquet``, so a reader of either
+    artifact sees the same two obligations. The same ruleset under ``manual`` has no condition
+    (both rules apply to ``automated`` only) and keeps five practically valid passes.
+    """
+    ruleset_file = write_ruleset(
+        artifacts / "ruleset.yaml",
+        ruleset([DRAWDOWN, CONDITION_ORIGIN, CONDITION_API_ONLY], [TARGET]),
+    )
+    automated = run_prop_evaluation(
+        config(),
+        ruleset_path=ruleset_file,
+        horizon_trading_days=5,
+        execution_mode="automated",
+        store_root=store,
+        artifacts_root=artifacts / "automated",
+        overwrite=True,
+    )
+    summary = automated.summary["scenarios"][0]
+    eligibility = summary["practical_eligibility"]
+    assert summary["counts"]["pass"] == 5
+    assert eligibility["status"] == "eligible_conditional"
+    assert eligibility["conditions"] == [
+        "A VPS, VPN or remote server may not place, modify or cancel orders",
+        "Order-transmitting activity must originate on the trader's personal device",
+    ]
+    assert eligibility["mechanical_passes"] == 5
+    assert eligibility["practically_valid_passes"] == 0
+    assert eligibility["conditionally_valid_passes"] == 5
+    assert "conditionally valid pass" in eligibility["reason"]
+    frame = pl.read_parquet(automated.evaluation_dir / "attempts.parquet")
+    assert set(frame["practical_eligibility"].to_list()) == {"eligible_conditional"}
+    assert set(frame["practical_eligibility_conditions"].to_list()) == {
+        "A VPS, VPN or remote server may not place, modify or cancel orders;"
+        "Order-transmitting activity must originate on the trader's personal device"
+    }
+
+    manual = run_prop_evaluation(
+        config(),
+        ruleset_path=ruleset_file,
+        horizon_trading_days=5,
+        execution_mode="manual",
+        store_root=store,
+        artifacts_root=artifacts / "manual",
+        overwrite=True,
+    )
+    plain = manual.summary["scenarios"][0]["practical_eligibility"]
+    assert plain["status"] == "eligible"
+    assert plain["conditions"] == []
+    assert plain["practically_valid_passes"] == 5
+    assert plain["conditionally_valid_passes"] == 0
+
+
+def test_a_critical_compliance_blocker_beats_a_condition(store: Path, artifacts: Path) -> None:
+    """A block is not softened by an obligation: the status is blocked and no condition is listed.
+
+    The condition and the blocker both apply to ``automated``; the block wins because it says the
+    account may not be traded that way at all, which is a stronger statement than "you must also
+    meet this". The mechanical passes stay visible and both valid-pass counters are 0.
+    """
+    ruleset_file = write_ruleset(
+        artifacts / "ruleset.yaml",
+        ruleset([DRAWDOWN, BAN_AUTOMATION, CONDITION_API_ONLY], [TARGET]),
+    )
+    result = run_prop_evaluation(
+        config(),
+        ruleset_path=ruleset_file,
+        horizon_trading_days=5,
+        execution_mode="automated",
+        store_root=store,
+        artifacts_root=artifacts,
+        overwrite=True,
+    )
+    eligibility = result.summary["scenarios"][0]["practical_eligibility"]
+    assert eligibility["status"] == "blocked_by_compliance"
+    assert eligibility["conditions"] == []
+    assert eligibility["mechanical_passes"] == 5
+    assert eligibility["practically_valid_passes"] == 0
+    assert eligibility["conditionally_valid_passes"] == 0
+
+
+def test_an_unmodeled_rule_carries_its_condition_while_the_materiality_stays_material(
+    store: Path, artifacts: Path
+) -> None:
+    """``becomes_immaterial_if`` is reported verbatim, and the entry stays ``material``.
+
+    The fact that an audit COULD show the restriction never bit does not lower the materiality: it
+    is a condition somebody has to establish. So the ruleset's evaluation status still says
+    ``conditional_on_modeled_rules`` because of this entry, and the summary repeats both the
+    materiality and the condition.
+    """
+    result = evaluate(store, artifacts, not_modeled=[UNMODELED_TWO_PERCENT])
+    summary = result.summary["scenarios"][0]
+    assert summary["unmodeled_rules"] == [
+        {
+            "rule": "two_percent_price_limit_restriction",
+            "materiality": "material",
+            "becomes_immaterial_if": (
+                "an audit of the instruments and dates shows it never affected a trade"
+            ),
+        }
+    ]
+    assert summary["probability"]["evaluation_status"] == "conditional_on_modeled_rules"
+    assert any(
+        item.startswith("two_percent_price_limit_restriction is not modeled (material)")
+        for item in summary["warnings"]
+    )
+
+
 def test_the_attempt_fees_are_reported_by_kind_and_apart_from_the_trading_pnl(
     store: Path, artifacts: Path
 ) -> None:
@@ -1089,8 +1273,8 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
         "platform": None,
         "source": _source(),
     }
-    # the participant type is a run parameter: without it an excluded component is refused
-    with pytest.raises(ConfigurationError, match="fee_participant_type"):
+    # the participant profile is a run input: without it an excluded component is refused
+    with pytest.raises(ConfigurationError, match="participant profile"):
         evaluate(
             build_store(tmp_path / "refuse", exchange_fees=True),
             tmp_path / "refused",
@@ -1102,11 +1286,11 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
         blind_store,
         tmp_path / "blind",
         commissions=excluding,
-        fee_participant_type="non_member_customer",
+        participant_profile=PROFILE,
     )
     cash = blind.summary["scenarios"][0]["cash"]
     assert cash["status"] == "unavailable"
-    assert any("no exchange row for ES" in reason for reason in cash["reasons"])
+    assert any("no fee row covers ES exchange" in reason for reason in cash["reasons"])
     frame = pl.read_parquet(blind.evaluation_dir / "attempts.parquet")
     assert set(frame["cash_estimate_status"].to_list()) == {"unavailable"}
     assert set(frame["exchange_status"].to_list()) == {"excluded_unpriced"}
@@ -1117,7 +1301,7 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
         priced_store,
         tmp_path / "priced_art",
         commissions=excluding,
-        fee_participant_type="non_member_customer",
+        participant_profile=PROFILE,
     )
     cash = priced.summary["scenarios"][0]["cash"]
     assert cash["status"] == "unavailable"  # clearing and other stay unknown
@@ -1126,7 +1310,35 @@ def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path
     frame = pl.read_parquet(priced.evaluation_dir / "attempts.parquet")
     assert set(frame["exchange_status"].to_list()) == {"excluded_priced"}
     assert set(frame["exchange_usd"].to_list()) == {Decimal("1.250000")}
-    assert set(frame["fee_participant_type"].to_list()) == {"non_member_customer"}
+    assert set(frame["participant_profile_sha256"].to_list()) == {PROFILE.sha256}
+    # the profile is recorded as declared (dimensions and values) and by its canonical hash, in
+    # the summary AND in the sealed manifest, so a reader can tell which account was priced
+    assert priced.summary["participant_profile"] == {
+        "cme_membership_status": "non_member",
+        "nfa_assessment_eligibility": "fcm_member",
+    }
+    assert priced.summary["participant_profile_sha256"] == PROFILE.sha256
+    import json
+
+    manifest = json.loads((priced.evaluation_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["participant_profile"] == priced.summary["participant_profile"]
+    assert manifest["participant_profile_sha256"] == PROFILE.sha256
+    assert f"participant_profile={PROFILE.sha256}" in manifest["evaluation_basis"]
+    # a member profile is a DIFFERENT run: its own evaluation id, its own artifact
+    member = ParticipantProfile.from_mapping(
+        {"cme_membership_status": "member", "nfa_assessment_eligibility": "fcm_member"}
+    )
+    other = evaluate(
+        priced_store,
+        tmp_path / "member_art",
+        commissions=excluding,
+        participant_profile=member,
+    )
+    assert other.evaluation_id != priced.evaluation_id
+    assert other.summary["participant_profile_sha256"] == member.sha256
+    # the member row does not exist, so the exchange component is a gap, not the non-member rate
+    member_frame = pl.read_parquet(other.evaluation_dir / "attempts.parquet")
+    assert set(member_frame["exchange_status"].to_list()) == {"excluded_unpriced"}
 
 
 # ----------------------------------------------------------------------------------- 5. the news
