@@ -297,13 +297,13 @@ cp /tmp/durations/.test_durations .test_durations
 Job budgets (`timeout-minutes` in `ci.yml`; a budget fails the job, it does not widen a limit), at
 about 2x the measured p95 after ADR-0109:
 
-| Job | Budget | What it does |
-|-----|--------|--------------|
-| `checks` | 8 min | ruff, `ruff format --check`, `mypy --strict` (cold), layering, generated docs, CLI smoke |
-| `tests` (each shard) | 6 min | setup (~25 s) + ~60 s of tests + the collection it uploads |
-| `shard-union` | 6 min | downloads 20 artifacts, collects the suite per OS, compares |
-| `clean-install` | 6 min | builds the wheel, installs it with runtime deps only, imports every entry point |
-| `durations` | 20 min | `workflow_dispatch` only: the whole suite with `--store-durations` |
+| Job | Budget | Measured p50/p95 | What it does |
+|-----|--------|------------------|--------------|
+| `checks` | 3 min | 42/50 s | ruff, `ruff format --check`, `mypy --strict` (cold), layering, generated docs, CLI smoke |
+| `tests` (each shard) | 6 min | 73-157 s | setup + sync (~10 s) + one shard of tests |
+| `shard-union` | 3 min | 25/38 s | downloads 20 artifacts, collects the suite per OS, compares |
+| `clean-install` | 2 min | 16/19 s | builds the wheel, installs it with runtime deps only, imports every entry point |
+| `durations` | 15 min | 7 min | `workflow_dispatch` only: the whole suite with `--store-durations` |
 
 ## Running in parallel (ADR-0075)
 
