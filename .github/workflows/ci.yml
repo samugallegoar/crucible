@@ -50,32 +50,33 @@ jobs:
         # ubuntu 320 s, macOS 340 s, Windows 466 s (p50, 4 workers per job): 6/6/8 shards keep a
         # shard at ~55-60 s of tests. The numbers are the plan in tools/check_shards.py, and
         # tests/unit/test_ci_shard_plan.py fails when the two disagree.
-        # 16 jobs in this matrix + `checks` + `clean-install` + `shard-union` = 19 at once, under
+        # 15 jobs in this matrix + `checks` + `clean-install` + `shard-union` = 18 at once, under
         # the workflow's ~20-job concurrency ceiling: the `durations` jobs are skipped on a PR and
-        # take no slot. 6/4/6 shards come from each OS's own measured suite (`.test_durations.<os>`,
-        # ADR-0109): ~120/150/130 s of estimated tests per shard. ubuntu shards run at half their
+        # take no slot. 3/6/6 shards come from each OS's own measured suite (`.test_durations.<os>`,
+        # ADR-0109): ~200/130/120 s of estimated tests per shard. ubuntu shards run at half their
         # estimate (four workers across many small modules); macOS shards run at it, because the
-        # runner has three cores and the suite's long tests do not overlap. macOS gets fewer shards
-        # than its own durations would allow because macOS runners are the scarce ones: a fifth
-        # macOS job has waited 5-10 minutes for a runner while every ubuntu and Windows shard
-        # started in 2-3 s. `extra` is ADR-0076's marker cut.
+        # runner has three cores and the suite's long tests do not overlap.
+        #
+        # macOS gets 3 shards and sits first in the matrix, because macOS runners are the scarce
+        # resource: a fourth macOS job has waited 335 s and been cancelled after 10 minutes without
+        # a runner, while every ubuntu and Windows shard started in 2-3 s. Starting the scarce OS
+        # first gives it the pool before the other 12 shards fill it. `extra` is ADR-0076's cut.
         include:
-          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 1, extra: "" }
-          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 2, extra: "" }
-          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 3, extra: "" }
-          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 4, extra: "" }
-          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 5, extra: "" }
-          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 6, extra: "" }
-          - { os: macos-latest, tag: macos, splits: 4, group: 1, extra: '-m "not single_os"' }
-          - { os: macos-latest, tag: macos, splits: 4, group: 2, extra: '-m "not single_os"' }
-          - { os: macos-latest, tag: macos, splits: 4, group: 3, extra: '-m "not single_os"' }
-          - { os: macos-latest, tag: macos, splits: 4, group: 4, extra: '-m "not single_os"' }
+          - { os: macos-latest, tag: macos, splits: 3, group: 1, extra: '-m "not single_os"' }
+          - { os: macos-latest, tag: macos, splits: 3, group: 2, extra: '-m "not single_os"' }
+          - { os: macos-latest, tag: macos, splits: 3, group: 3, extra: '-m "not single_os"' }
           - { os: windows-latest, tag: windows, splits: 6, group: 1, extra: '-m "not single_os"' }
           - { os: windows-latest, tag: windows, splits: 6, group: 2, extra: '-m "not single_os"' }
           - { os: windows-latest, tag: windows, splits: 6, group: 3, extra: '-m "not single_os"' }
           - { os: windows-latest, tag: windows, splits: 6, group: 4, extra: '-m "not single_os"' }
           - { os: windows-latest, tag: windows, splits: 6, group: 5, extra: '-m "not single_os"' }
           - { os: windows-latest, tag: windows, splits: 6, group: 6, extra: '-m "not single_os"' }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 1, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 2, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 3, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 4, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 5, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 6, extra: "" }
     runs-on: ${{ matrix.os }}
     # budget: 2x the measured p95 of a shard job (setup + sync + 60-165 s of tests). A shard that
     # needs more than this is broken or unbalanced, not merely slow -- .test_durations balances it.
