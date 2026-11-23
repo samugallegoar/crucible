@@ -98,10 +98,13 @@ kind of change is recorded).
   and the union job's tail).
 - **Amendment (ADR-0109): one durations file per OS, and a plan that fits in one wave.** The single
   ubuntu-derived file left macOS and Windows shards 1.2-1.8x over plan; there are now three
-  (`.test_durations.ubuntu|macos|windows`, one `durations` matrix job each) and 6/4/6 shards, so the
-  workflow runs 19 jobs at once instead of 23 and no shard waits for a slot. macOS gets the smaller
-  count because macOS runners are the scarce resource: measured waits of 335-604 s for a fifth macOS
-  job while every ubuntu and Windows shard started in 2-3 s.
+  (`.test_durations.ubuntu|macos|windows`, one `durations` matrix job each) and 6/3/6 shards, so the
+  workflow runs 18 jobs at once instead of 23 and no shard waits for a slot (every ubuntu and Windows
+  shard starts in 2-3 s). Measured on the final shape: 4:01, 6:53 and 12:53 of workflow wall, with
+  `checks` 33-52 s, `shard-union` 24-32 s and `clean-install` 18-20 s. macOS is the tail and the
+  reason the 2-minute target is still out of reach: its ~600 s suite over the 3 runners the pool
+  gives is ~200 s a shard, and on 2026-11-24 a macOS job waited 604 s (or was cancelled with no
+  runner) while every other shard started in 3 s.
 
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**

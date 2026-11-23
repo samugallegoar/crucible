@@ -126,18 +126,26 @@ Three things in the original decision did not survive measurement:
    factor of nearly 1.3 between the fastest and the slowest runner).
 2. **23 jobs.** With `checks`, `clean-install` and `shard-union` the old plan ran 23 jobs at once,
    three more than the ~20 a workflow gets; the shards that started last waited 73-108 s, a third of
-   the wall. The plan is now **19 jobs**: 16 shards (6 ubuntu, 4 macOS, 6 Windows) plus the three
+   the wall. The plan is now **18 jobs**: 15 shards (6 ubuntu, 3 macOS, 6 Windows) plus the three
    single jobs, and `tests/unit/test_ci_shard_plan.py::test_the_plan_fits_in_one_wave` fails if it
-   grows past the ceiling again.
-3. **A shard's measured wall is not its estimated duration divided by four.** ubuntu runs at about
-   half its estimate (many small modules, four workers), Windows at 0.5-0.8, and macOS at 1.0-1.6:
-   its runner has three cores and the suite's long tests (a 27 s acceptance sweep, two 20 s
-   ingestion tests) do not overlap. That is why macOS gets 4 shards and not 2.
+   grows past the ceiling again. Measured: every ubuntu and Windows shard starts in 2-3 s.
+3. **A shard's measured wall is not its estimated duration divided by four.** Against the per-OS
+   durations (ubuntu 718 s, macOS 599 s, Windows 773 s of estimated suite), a shard of 120 s of
+   ubuntu tests takes 59-104 s, of 130 s of Windows tests 88-162 s, and of 200 s of macOS tests
+   122-286 s: ubuntu halves its estimate (many small modules, four workers), macOS runs at it (three
+   cores, and the suite's long tests — an 85 s null-test module, a 27 s acceptance sweep — do not
+   overlap). That is why macOS carries the fewest shards and sits first in the matrix, so the scarce
+   pool is claimed before the other 12 shards fill it.
 
-What is left, and why the 2-minute target is still not reached: **macOS runner availability**. On
-2026-11-24 a fifth macOS job waited 604 s and a fourth waited 335 s for a runner, while all 12
-ubuntu and Windows shards started in 2-3 s; when the pool was roomy (2026-11-23) the same plan ran
-in 232-293 s. The macOS suite alone is ~600 s of estimated work, so at the 3-4 macOS runners
-available it sets a floor of about 3.5-4 minutes on the days the pool is short. More macOS shards
-would not help (they queue), and fewer would make each one longer.
+Measured on the final shape (2026-11-23/24, `gh run view --json jobs`): workflow wall **241 s**
+(4:01), **413 s** (6:53) and 773 s (12:53) on three green runs; `checks` 33-52 s, `shard-union`
+24-32 s, `clean-install` 18-20 s; per-job waiting 2-3 s for every ubuntu and Windows shard.
+
+**The 2-minute target is still not reached, and macOS is what stops it.** macOS carries ~600 s of
+estimated suite; with the 3 macOS runners the pool gives, a shard is ~200 s and the workflow is
+~4-7 min. On 2026-11-24 the pool was worse than that: a third macOS job waited 304 s and 604 s on two
+runs (with 4 and 5 shards alike) and one macOS job was cancelled after ten minutes with no runner at
+all, while all 12 ubuntu and Windows shards started in 2-3 s. More macOS shards queue and fewer make
+each one longer, so the count is set to what the pool gives; going under 2 minutes needs more macOS
+capacity (a larger runner) or a macOS suite that is ~2x faster, not a different matrix.
 
