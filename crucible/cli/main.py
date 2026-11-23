@@ -565,12 +565,15 @@ def build_parser() -> argparse.ArgumentParser:
         "unavailable, never zero",
     )
     futures_prop.add_argument(
-        "--fee-participant-type",
+        "--participant-profile",
         default=None,
-        dest="fee_participant_type",
-        help="The rate class the per-side fees a commission EXCLUDES are priced for "
-        "(non_member_customer, member, ...). Required as soon as a component is declared excluded: "
-        "the ruleset never states one, and using it makes the cost estimate conditional",
+        dest="participant_profile",
+        metavar="FILE",
+        help="Path of a participant-profile YAML file: a flat mapping from classification "
+        "dimension to value, e.g. 'cme_membership_status: non_member' and "
+        "'nfa_assessment_eligibility: fcm_member'. Each fee row states the one dimension it needs, "
+        "so the profile is required as soon as a component is declared excluded: the ruleset "
+        "never states one, and using it keeps the cost estimate conditional",
     )
     futures_prop.add_argument(
         "--scenarios",
@@ -2029,10 +2032,16 @@ def _cmd_futures_prop(args: argparse.Namespace) -> int:
     pass probability under the name the estimate earned, its interval and its bounds, and the
     practical eligibility; it never prints a threshold and never a verdict.
     """
+    from crucible.data.exchange_fees import load_participant_profile
     from crucible.experiments.futures_config import load_futures_config
     from crucible.experiments.futures_prop import run_prop_evaluation
 
     config = load_futures_config(Path(args.config))
+    profile = (
+        None
+        if args.participant_profile is None
+        else load_participant_profile(Path(args.participant_profile))
+    )
     result = run_prop_evaluation(
         config,
         ruleset_path=Path(args.ruleset),
@@ -2040,7 +2049,7 @@ def _cmd_futures_prop(args: argparse.Namespace) -> int:
         execution_mode=args.execution_mode,
         payout_policy=args.payout_policy,
         cost_assumption=args.cost_assumption,
-        fee_participant_type=args.fee_participant_type,
+        participant_profile=profile,
         scenarios=args.scenarios,
         news_dataset=args.news_dataset,
         exchange_fees_dataset=args.exchange_fees_dataset,
@@ -2113,11 +2122,16 @@ def _prop_scenario_lines(entry: dict[str, object]) -> list[str]:
         f"  net cash:   {cash['mean_net_cash_usd'] or '-'} USD per attempt "
         f"({cash['status']}), interval {cash_interval['status']}",
         f"  eligible:   {eligibility['status']}, practically valid passes "
-        f"{eligibility['practically_valid_passes']}",
+        f"{eligibility['practically_valid_passes']}, conditionally valid passes "
+        f"{eligibility['conditionally_valid_passes']}",
         f"  estimate:   {entry['estimate_status']}",
     ]
     for reason in reasons:
         lines.append(f"    reason:   {reason}")
+    conditions = eligibility["conditions"]
+    assert isinstance(conditions, list)
+    for condition in conditions:
+        lines.append(f"    condition: {condition}")
     return lines
 
 

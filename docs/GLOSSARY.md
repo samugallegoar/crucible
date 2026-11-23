@@ -517,9 +517,17 @@ declare `since_last_payout` count only rule-days after the previous withdrawal; 
 starts at the phase's start (ADR-0107 section 9).
 
 **Practical eligibility** — whether the exact plan may be traded by the exact execution mode:
-`eligible`, `blocked_by_compliance` (a critical compliance rule such as a ban on automated trading
-applies to this ruleset and this `execution_mode`) or `unknown`. A mechanically successful attempt
-under a blocker is never a practically valid pass (ADR-0107 section 11).
+`eligible`, `eligible_conditional` (no critical blocker, but at least one `effect: condition`
+compliance obligation the simulation cannot prove, e.g. orders only through the firm's API, each
+listed) or `blocked_by_compliance` (a critical compliance rule such as a ban on automated trading
+applies to this ruleset and this `execution_mode`). A mechanically successful attempt under a
+blocker is never a practically valid pass, and under a condition it is a `conditionally_valid_passes`
+(ADR-0107 section 11).
+
+**`becomes_immaterial_if`** — the audited fact that would change a `not_modeled` entry's materiality:
+on a `material` entry what would let it be read as immaterial, on an `immaterial` entry what would
+make it bind. It is a condition on the materiality, never a downgrade: the declared materiality
+stands until an audit establishes it (ADR-0107, amendment of 2026-11-23).
 
 **`unlimited` vs `unknown`** — `unlimited` is an explicit source value (a payout cap the firm
 states is uncapped); `unknown` is a value the sources do not give. In a rule it means the rule
@@ -557,12 +565,44 @@ contains it (`included`), charges it on top (`excluded`) or does not say (`unkno
 the sources do not state is a GAP, never a zero, and the cost total is never presented as complete
 while one is unknown or unpriced.
 
-**Participant type** — the rate class a fee row prices (`non_member_customer`, `member`, …) and the
-class a run passes to price the components a commission excludes (`--fee-participant-type`, MCP
-`fee_participant_type`). A ruleset never states one, so it is a RUN parameter; no fee is carried
-across participant types, with one stated exception: an `nfa` row is the FCM member's pass-through
-assessment (`fcm_member_assessment`) and prices any requested type. Using an assumed participant type
-keeps the cost estimate `conditional` (`participant type assumed: <x>`).
+**Promotion** — a better value a firm publishes for a limited offer (`promotions` on a rule:
+`id`, `field`, `value` or `multiplier`, `starts_on`, `ends_on`, `requires`, `purchase_on_or_after`,
+`source`). It applies only when every requirement is declared in the run's participant profile and
+matches and the declared `purchase_date` falls in the window; `ends_on: unknown` never continues
+past the ruleset's `as_of`; anything missing or `unknown` leaves the base value and is reported
+(`promotion <id> not applied: <reason>`). The promoted value is a property of the run, recorded per
+attempt in `promotions_applied`, never of the file.
+
+**Assumption kind** — what KIND of default a rule assumption is: `section7_default` (the documented
+ADR-0107 section 7 default), `provisional_conservative` (the source is silent or soft and the
+pessimistic reading is temporary) or `owner_decision` (the owner ruled on it). REQUIRED on every
+assumption entry, so a review knows what to re-check when a page changes.
+
+**Breach on fill** — an `evaluated: intraday` loss threshold crossed by realized P&L or by the
+costs of a fill is a breach at THAT fill's timestamp, flat or not: the basis tested is the
+post-fill one, the fill's own commission, spread and slippage included, and a position still open
+is liquidated at that fill's price (ADR-0106, amendment of 2026-11-23).
+
+**session_entry_block** — the overlay event recorded when a session-close `flat_by` window refuses
+an entry: the flat_by rule's own id and a reason (`entry blocked: flat_by_1510_ct until 17:00 CT`).
+A `news_entry_block` is the same for a news window and `entry_blocked` for a lock;
+`resize` under the size rule is reserved for a size limit that actually clipped.
+
+**Participant profile** — the run's immutable declaration of who its account is, as a flat mapping
+from classification dimension to value (`cme_membership_status: non_member`,
+`nfa_assessment_eligibility: fcm_member`). A ruleset never states one, so it is a RUN input
+(`--participant-profile FILE`, MCP `participant_profile`); it is required as soon as a commission
+declares a component `excluded`, its canonical SHA-256 is recorded in the artifact and is part of the
+evaluation id, and using it keeps the cost estimate `conditional` (`participant profile declared by
+the run, not stated by the firm`) — never `complete`.
+
+**Classification dimension** — the one name a fee row uses to say whom it is written for
+(`cme_membership_status`, `nfa_assessment_eligibility`, …). Dimension names are identifiers
+(`^[a-z][a-z0-9_]*$`), not a fixed enum, and each row brings its own; `none` marks a charge the
+source says is the same for every participant (with value `all`). A component is priced only when
+the profile declares the row's dimension and matches its value: a missing or `unknown` value is a
+gap (`classification <dim> not declared`), and there is no default and no fallback to the only row
+there is.
 
 **Cost-assumption file** — the YAML a user passes to price the cost gaps the sources leave
 (`--cost-assumption FILE`): `name`, `description`, `provided_by`, `status: unverified`, `evidence`

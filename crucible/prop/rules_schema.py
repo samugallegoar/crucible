@@ -37,7 +37,18 @@ declaration (ADR-0107 sections 7-13):
 - ``commissions.components``: REQUIRED, with all four keys (``exchange``, ``clearing``, ``nfa``,
   ``other``), each ``{status: included|excluded|unknown, evidence, text}``. A component declared
   ``included`` or ``excluded`` needs a quotation that says so; ``unknown`` is never a zero cost.
+- ``commissions.components``: REQUIRED, with all four keys (``exchange``, ``clearing``, ``nfa``,
+  ``other``), each ``{status: included|excluded|unknown, evidence, text}``. A component declared
+  ``included`` or ``excluded`` needs a quotation that says so; ``unknown`` is never a zero cost.
   The old ``includes_exchange_and_regulatory_fees`` flag is refused by name.
+
+The owner-review round 2 adds, additively (ADR-0107, amendment of 2026-11-23):
+
+- ``compliance.effect: condition`` with a REQUIRED ``condition`` text: an obligation the simulation
+  cannot prove and the trader must meet. Practical eligibility becomes ``eligible_conditional`` and
+  every condition is listed; a mechanical pass is then a CONDITIONAL valid pass.
+- ``not_modeled.becomes_immaterial_if``: the audited fact that would change an entry's materiality.
+  The declared materiality is unchanged by it.
 """
 
 from __future__ import annotations
@@ -46,7 +57,7 @@ import datetime as dt
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _MONEY = Annotated[Decimal, Field(decimal_places=6)]
 _MONEY_GE0 = Annotated[Decimal, Field(ge=0, decimal_places=6)]
@@ -55,6 +66,9 @@ SENTINEL_FLOOR_USD = Decimal(1_000_000)
 """A capability above this is a sentinel, not a firm rule; ``unlimited`` says it instead."""
 
 Evidence = Literal["official_quote", "owner_provided", "assumption", "conflict_resolution"]
+AssumptionKind = Literal["section7_default", "provisional_conservative", "owner_decision"]
+"""What KIND of default an assumption is: a documented ADR-0107 section 7 default, a provisional
+conservative reading of a silent or soft source, or the owner's own decision on it."""
 COST_COMPONENT_NAME = Literal["exchange", "clearing", "nfa", "other"]
 COST_COMPONENTS: tuple[COST_COMPONENT_NAME, ...] = ("exchange", "clearing", "nfa", "other")
 """The per-side cost components a firm's commission may or may not contain (ADR-0107 section 10).
@@ -130,10 +144,17 @@ class Attribution(_Frozen):
 
 
 class Assumption(_Frozen):
-    """A named default the owner accepted where the firm is silent (ADR-0107 section 7)."""
+    """A named default the owner accepted where the firm is silent (ADR-0107 section 7).
+
+    ``assumption_kind`` is REQUIRED and says what KIND of default it is (ADR-0107, amendment of
+    2026-11-23): ``section7_default`` (the documented default of that section), a
+    ``provisional_conservative`` reading (the source is silent or soft, and the pessimistic reading
+    is temporary: the owner may tighten it), or ``owner_decision`` (the owner ruled on it).
+    """
 
     name: str
     rationale: str
+    assumption_kind: AssumptionKind
 
     @model_validator(mode="after")
     def _text(self) -> Assumption:
@@ -185,12 +206,34 @@ class Instrument(_Frozen):
 
 
 class NotModeled(_Frozen):
-    """A firm rule the vocabulary cannot express. Declared, never silently dropped."""
+    """A firm rule the vocabulary cannot express. Declared, never silently dropped.
+
+    ``becomes_immaterial_if`` names the audited fact that would change the entry's materiality: on a
+    ``material`` (or ``critical``) entry the fact that would let it be read as immaterial, on an
+    ``immaterial`` entry the fact that would make it bind. It is a CONDITION, never a downgrade: the
+    declared ``materiality`` stays exactly as written until an audit shows the condition holds, so a
+    ``material`` entry keeps weakening the estimate (ADR-0107, amendment of 2026-11-23).
+    """
 
     rule: str
     description: str
     materiality: Materiality
     source: Attribution
+    becomes_immaterial_if: str | None = None
+
+    @field_validator("becomes_immaterial_if")
+    @classmethod
+    def _condition(cls, value: str | None) -> str | None:
+        """A condition is text a reviewer can check, never an empty marker."""
+        if value is None:
+            return None
+        if not value.strip():
+            msg = (
+                "not_modeled.becomes_immaterial_if is empty: either name the audited fact that "
+                "would change the materiality, or omit the field"
+            )
+            raise ValueError(msg)
+        return value
 
 
 class CostComponentDeclaration(_Frozen):
@@ -393,6 +436,76 @@ class Conflict(_Frozen):
         return self
 
 
+class Promotion(_Frozen):
+    """A better value for a limited offer, applied only when the RUN can show it qualifies.
+
+    ``field`` names the numeric field of the rule it replaces (``max_usd``,
+    ``max_usd_by_payout[0]``, ``amount_usd``); exactly one of ``value`` (the promoted value) and
+    ``multiplier`` (the base value times it) is given. ``requires`` is checked against the run's
+    participant profile, where account dimensions such as ``account_purchase: new`` or
+    ``dll_selected_at_purchase: 'true'`` are ordinary profile entries, and the profile's
+    ``purchase_date`` must fall in
+    ``[starts_on, ends_on]``, where ``ends_on: unknown`` means the offer's end is not stated and the
+    promotion is never assumed to continue past the ruleset's ``as_of``.
+
+    A promotion that does not apply leaves the base value alone and is REPORTED
+    (``promotion <id> not applied: <reason>``): eligibility is never assumed
+    (ADR-0107, amendment of 2026-11-23).
+    """
+
+    id: str
+    field: str
+    value: _MONEY_GE0 | None = None
+    multiplier: Annotated[Decimal, Field(gt=0, decimal_places=6)] | None = None
+    starts_on: dt.date
+    ends_on: dt.date | Literal["unknown"]
+    purchase_on_or_after: dt.date | None = None
+    requires: dict[str, str] = Field(default_factory=dict)
+    source: Attribution | None = None
+
+    @field_validator("requires", mode="before")
+    @classmethod
+    def _strings(cls, value: object) -> object:
+        """Requirement values are strings: a YAML ``true`` becomes ``'true'``, a date ISO form."""
+        if not isinstance(value, dict):
+            return value
+        out: dict[str, str] = {}
+        for key, raw in value.items():
+            name = str(key).strip()
+            if isinstance(raw, bool):
+                out[name] = "true" if raw else "false"
+            elif isinstance(raw, dt.date):
+                out[name] = raw.isoformat()
+            else:
+                out[name] = str(raw).strip()
+        return out
+
+    @model_validator(mode="after")
+    def _shape(self) -> Promotion:
+        if not self.id.strip():
+            msg = "a promotion needs a non-empty id"
+            raise ValueError(msg)
+        if not self.field.strip():
+            msg = f"promotion {self.id}: field is empty; name the numeric field it replaces"
+            raise ValueError(msg)
+        if (self.value is None) == (self.multiplier is None):
+            msg = (
+                f"promotion {self.id}: give exactly one of value (the promoted value) and "
+                "multiplier (the base value times it)"
+            )
+            raise ValueError(msg)
+        if isinstance(self.ends_on, dt.date) and self.ends_on < self.starts_on:
+            msg = f"promotion {self.id}: ends_on is before starts_on"
+            raise ValueError(msg)
+        if not self.requires:
+            msg = (
+                f"promotion {self.id}: requires is empty; a promotion that depends on nothing is "
+                "either the base value (so delete it) or is missing what it depends on"
+            )
+            raise ValueError(msg)
+        return self
+
+
 class _Rule(_Frozen):
     """Common rule identity, evidence and the optional rule-level effective dates."""
 
@@ -401,6 +514,8 @@ class _Rule(_Frozen):
     source: Attribution
     evidence: Evidence = "official_quote"
     assumption: Assumption | None = None
+    promotions: tuple[Promotion, ...] = ()
+    """Promotional values this rule may take, each applied only when the run qualifies for it."""
     effective_from: dt.date | None = None
     effective_to: dt.date | None = None
 
@@ -926,7 +1041,15 @@ class ActivityRequirementRule(_Rule):
 
 
 class ComplianceRule(_Rule):
-    """A conduct restriction that gates practical eligibility, not the mechanical account."""
+    """A conduct restriction that gates practical eligibility, not the mechanical account.
+
+    ``effect`` says HOW the restriction limits eligibility: ``block`` is the mechanical reading (a
+    rule the run cannot satisfy at all), while ``condition`` is an obligation the SIMULATION cannot
+    prove and the trader must meet (automated trading only through the firm's API, orders placed
+    from the trader's own device, no VPS/VPN order entry, high-frequency trading prohibited). A
+    ``condition`` rule carries the ``condition`` text, which is listed verbatim in the report, and
+    it never blocks: the ruleset's practical eligibility becomes ``eligible_conditional``.
+    """
 
     kind: Literal["compliance"] = "compliance"
     restriction: str
@@ -934,6 +1057,8 @@ class ComplianceRule(_Rule):
     materiality: Materiality
     comparison: Comparison
     action: Literal["block", "none"]
+    effect: Literal["condition"] | None = None
+    condition: str | None = None
 
     @model_validator(mode="after")
     def _text(self) -> ComplianceRule:
@@ -942,6 +1067,28 @@ class ComplianceRule(_Rule):
             raise ValueError(msg)
         if not self.applies_to_execution:
             msg = f"compliance {self.rule_id} needs at least one execution mode"
+            raise ValueError(msg)
+        if self.restriction.strip() == str(self.condition or "").strip():
+            msg = (
+                f"compliance {self.rule_id}: condition repeats restriction; the condition is the "
+                "obligation the trader must meet, in words the report can list"
+            )
+            raise ValueError(msg)
+        if (self.effect == "condition") != (self.condition is not None):
+            msg = (
+                f"compliance {self.rule_id}: effect: condition and the condition text go "
+                "together: a condition nobody states is not a condition, and a text without the "
+                "effect is not a declaration"
+            )
+            raise ValueError(msg)
+        if self.condition is not None and not self.condition.strip():
+            msg = f"compliance {self.rule_id}: the condition text is empty"
+            raise ValueError(msg)
+        if self.effect == "condition" and self.action == "block":
+            msg = (
+                f"compliance {self.rule_id}: a rule with effect: condition is an obligation the "
+                "simulation cannot prove, not a mechanical blocker; declare action: none"
+            )
             raise ValueError(msg)
         return self
 

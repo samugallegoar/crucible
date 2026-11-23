@@ -170,6 +170,7 @@ phases:
     evidence: assumption
     assumption:
       name: daily_loss_basis_and_reference_are_not_published
+      assumption_kind: section7_default
       rationale: The pages state the Daily Loss Limit amount, that hitting it is a soft pause and not
         a breach, and (Rapid EOD) that it resets daily at 6:00 PM ET. They state neither the reference
         balance nor the basis. Modeled on the rule-day's opening balance and on equity (open losses counted),
@@ -370,6 +371,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: 'No MFFU page states when the profit target is judged. Recorded default for a pass condition
         whose frequency the firm does not state: tested at the rule-day close on the closed balance, so
         the trader passes no earlier than the end of the trade date and a same-day breach after the target
@@ -399,6 +401,7 @@ phases:
     evidence: assumption
     assumption:
       name: trading_day_is_a_trade_date_with_at_least_one_trade
+      assumption_kind: section7_default
       rationale: 'No MFFU page defines a trading day. ADR-0107 section 7 default: a trading day is a trade
         date with at least one executed trade, so a rule-day with no fill does not count toward the minimum.'
   max_calendar_days: null
@@ -495,6 +498,7 @@ phases:
     evidence: assumption
     assumption:
       name: daily_loss_basis_and_reference_are_not_published
+      assumption_kind: section7_default
       rationale: The pages state the Daily Loss Limit amount, that hitting it is a soft pause and not
         a breach, and (Rapid EOD) that it resets daily at 6:00 PM ET. They state neither the reference
         balance nor the basis. Modeled on the rule-day's opening balance and on equity (open losses counted),

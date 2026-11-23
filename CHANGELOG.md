@@ -8,6 +8,74 @@ kind of change is recorded).
 
 ## Unreleased
 
+### Fathom C7b.1: participant profile, breach on fill, promotions, Topstep review decisions (ADR-0106, ADR-0107 amendments)
+- **Participant profile.**
+  - A run declares an immutable participant profile (dimension to value); its sha256 is in the
+    manifest, the summary, every attempt row and the evaluation id.
+  - Each fee row names the classification dimension it needs and is resolved against the
+    profile. A missing or `unknown` dimension leaves that component a named gap; there is no
+    default classification.
+- **"other" fee rows.** Accepted only as a specific, named per-side charge from cmegroup.com,
+  with:
+  - its quote;
+  - evidence that it applies;
+  - a statement of why it is distinct from exchange, clearing and NFA.
+
+  Refused: generic names, monthly or platform charges, an exchange row covering `other`, and
+  duplicates.
+- **Breach on fill.** An intraday loss threshold is tested after every fill and cost posting,
+  flat or not, and fails at that fill. Previously a flat account below its maximum loss limit
+  kept trading until its next position crossed it.
+- **Blocked entries.** A blocked entry is attributed to the rule that blocked it
+  (`session_entry_block`, `news_entry_block`), not to the size limit.
+- **Promotions.**
+  - A rule value may carry eligibility-gated promotions, applied only when the profile proves
+    every requirement and the purchase date is inside the window.
+  - An unknown end date never extends past the ruleset's `as_of`.
+- **Assumption kinds.** Every assumption declares `section7_default`, `provisional_conservative`
+  or `owner_decision`.
+- **Topstep rulesets (26, all still unverified).** The owner's review decisions are applied:
+  - the DLL doubled payout cap is a promotion over the standard cap;
+  - XFA inactivity is a provisional conservative close on day 31;
+  - Labs inactivity is sourced from the Labs page;
+  - the Labs post-payout static drawdown is `not_modeled` (critical) instead of approximated by a
+    trailing one;
+  - the scope is TopstepX, without metals, as of 2026-11-22.
+- **Ruleset lock.** A verified ruleset can never change. An unverified one may be corrected in
+  place, and its owner confirmation is bound to the content hash.
+- **Conditions on practical eligibility (round 2 of the Topstep review).**
+  - A `compliance` rule may declare `effect: condition` with a required `condition` text: an
+    obligation the simulation cannot prove, which the trader must meet.
+  - Practical eligibility gains `eligible_conditional`, listing every applicable condition in
+    `summary.json` and `attempts.parquet`. A mechanical pass under a condition is reported as
+    `conditionally_valid_passes`, never as `practically_valid_passes`, and a
+    `blocked_by_compliance` verdict still wins over a condition.
+  - `practical_eligibility()` returns a `PracticalEligibility` (`status`, `conditions`, `blocker`)
+    instead of a bare string.
+- **What would change an unmodeled entry's materiality.** A `not_modeled` entry may declare
+  `becomes_immaterial_if`: the audited fact that would let its materiality change. The declared
+  materiality never changes by itself, and the condition is reported in `rule_coverage`, in
+  `summary.json` (`unmodeled_rules`) and in the firm's `RESEARCH.md`.
+- **Topstep rulesets (26, re-hashed in place, all still unverified).**
+  - Automated trading becomes `eligible_conditional`: six `effect: condition` rules quoted from
+    the TopstepX API Access article (API only in the Combine and the XFA, never a Live Funded
+    Account; HFT prohibited; orders from the trader's personal device; no VPS/VPN/remote-server
+    order entry; the algorithm stays subject to every rule).
+  - The XFA scaling plan keeps `material`, is re-quoted to the article that makes it an XFA
+    objective, names the saved ladder image and its sha256, and no longer reads as "the funded
+    account has no contract limit".
+  - Materialities: the 2% price-limit rule, the volatility position-limit tightening and the
+    sub-minute scalping entry are material (each with the condition an audit would have to
+    establish), the discretionary full-size news rule stays material, and cross-account hedging
+    stays immaterial with the condition that would make it bind.
+  - The payout policy's "at least $0.01 since your last Payout" gate is declared on every funded
+    payout rule where it can bind; the Labs drops re-source the 90/10 split to their own page, keep
+    $250 on the Daily Payout path (with $125 as the sensitivity), declare $125 on the 5 Winning
+    Days path as an owner decision, and keep each variant's own maxima.
+  - The Labs drops declare the page's own 90-calendar-day lifespan and 30-calendar-day inactivity
+    in the evaluation phase, counting executed trades only, and no funded-phase inactivity the
+    page does not publish.
+
 ### CI shape: shard the suite across runners, prove the shards add up (ADR-0109)
 - **One run per change.** `on: push: branches: [main]` plus `pull_request` (a PR branch used to run
   the whole workflow twice) with `concurrency` + `cancel-in-progress`, so a superseded push stops

@@ -120,7 +120,7 @@ def _drive(
         sheet = _marks(bar, opening, open_ns=open_ns, close_ns=open_ns + _MIN)
         assert overlay.begin_bar(bar, sheet) is None
         for _ in range(trades):
-            overlay.fill(bar, sheet, 1, 20_000, "signal")
+            overlay.fill(bar, sheet, 1, 20_000, "signal", 20_000)
         end = _marks(bar, closing, open_ns=open_ns, close_ns=open_ns + _MIN)
         action = overlay.end_bar(bar, end)
         if action is not None or overlay.closed:

@@ -339,6 +339,7 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
+      assumption_kind: provisional_conservative
       rationale: 'No MFFU page states when the profit target is judged. Recorded default for a pass condition
         whose frequency the firm does not state: tested at the rule-day close on the closed balance, so
         the trader passes no earlier than the end of the trade date and a same-day breach after the target
@@ -368,6 +369,7 @@ phases:
     evidence: assumption
     assumption:
       name: trading_day_is_a_trade_date_with_at_least_one_trade
+      assumption_kind: section7_default
       rationale: 'No MFFU page defines a trading day. ADR-0107 section 7 default: a trading day is a trade
         date with at least one executed trade, so a rule-day with no fill does not count toward the minimum.'
   max_calendar_days: null
@@ -462,6 +464,7 @@ phases:
     evidence: assumption
     assumption:
       name: pro_funded_micro_limit_read_as_mini_equivalence
+      assumption_kind: section7_default
       rationale: 'The Pro Sim-Funded table prints the micro cap equal to the mini cap (3 mini / 3 micro,
         6 mini / 6 micro, 9 mini / 9 micro) while the Pro evaluation table prints 3 mini / 30 micro, and
         the firm states the 1:10 mini/micro equivalence everywhere. Modeled as 3, 6 and 9 mini-equivalents

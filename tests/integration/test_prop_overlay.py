@@ -248,7 +248,10 @@ def test_intraday_trailing_joint_pessimism_fails_on_the_raised_threshold() -> No
     (equity there = 49,979.25 - 10 * 50 = 49,479.25, touching is a breach). The low 4,955.00
     reaches it, though against the OLD threshold of 47,500 it never would have:
     equity(4,955) = 49,979.25 - 45 * 50 = 47,729.25. Liquidation at 4,990.00:
-    realized -500.00, balance 49,979.25 - 500.00 - 20.75 = 49,458.50.
+    realized -500.00, balance 49,979.25 - 500.00 - 20.75 = 49,458.50. That post-fill balance is
+    20.75 BELOW the 49,479.25 threshold, so the liquidation's own costs are the worst the basis
+    ever got: ``min_buffer`` is -20.75 micro-exact (ADR-0106 amendment of 2026-11-23: a fill is
+    tested on its POST-fill basis, its own costs included), not the 0 the pre-cost touch showed.
     """
     bars = _bars([(5000, 5000, 5000, 5000), (5000, 5040, 4955, 5000)], [0, 1])
     result, overlay = _run(
@@ -258,7 +261,7 @@ def test_intraday_trailing_joint_pessimism_fails_on_the_raised_threshold() -> No
     assert _balance(result) == Decimal("49458.50")
     assert overlay.outcome == "fail"
     assert overlay.min_buffer is not None
-    assert overlay.min_buffer[0] == 0
+    assert overlay.min_buffer[0] == -20_750_000
 
 
 # --------------------------------------------------------------------------------- test 5
@@ -355,8 +358,14 @@ def test_daily_loss_soft_liquidates_locks_and_resumes_next_rule_day() -> None:
     assert _balance(result) == Decimal("48950.25")
     kinds = [(e.kind, e.bar, e.rule_id) for e in overlay.events]
     assert ("lock", 1, "daily") in kinds
-    assert ("resize", 2, "account") in kinds
+    # the entry is refused by the LOCK, under the lock rule's own id and with a reason: it is not
+    # a resize of the account (ADR-0106 amendment of 2026-11-23, an entry block names its rule)
+    assert ("entry_blocked", 2, "daily") in kinds
     assert ("unlock", 3, "daily") in kinds
+    blocked = next(e for e in overlay.events if e.kind == "entry_blocked")
+    assert blocked.requested == 1
+    assert blocked.allowed == 0
+    assert blocked.note == "entry blocked: account locked by daily until its reset"
     assert overlay.outcome == "running"
 
 
@@ -554,8 +563,9 @@ def test_flat_by_auto_liquidates_at_the_open_and_refuses_entries_until_reopen() 
 
     The 1-contract entry at 5,000.00 (balance 49,979.25) is liquidated at the open of the bar
     reaching 12:00 (a forced flat at 5,000.00, balance 49,979.25 - 20.75 = 49,958.50). The
-    target in the 12:30 bar is refused (a resize to 0), and the entry after the 13:00 reopen
-    costs another 20.75: balance 49,937.75 with position 1.
+    target in the 12:30 bar is refused as a ``session_entry_block`` under the flat_by rule's own
+    id and with the reason it gives, and the entry after the 13:00 reopen costs another 20.75:
+    balance 49,937.75 with position 1 (ADR-0106 amendment of 2026-11-23).
     """
     result, overlay = _run(
         load_ruleset(FIXTURES / "synthetic_d_flat_by.yaml"),
@@ -570,7 +580,13 @@ def test_flat_by_auto_liquidates_at_the_open_and_refuses_entries_until_reopen() 
     ]
     assert result.bars["position"].to_list() == [0, 1, 0, 0, 1]
     assert _balance(result) == Decimal("49937.75")
-    assert [(e.kind, e.bar) for e in overlay.events] == [("forced_flat", 2), ("resize", 3)]
+    assert [(e.kind, e.bar) for e in overlay.events] == [
+        ("forced_flat", 2),
+        ("session_entry_block", 3),
+    ]
+    blocked = overlay.events[-1]
+    assert blocked.rule_id == "flat"
+    assert blocked.note == "entry blocked: flat until 13:00 CT"
     assert not overlay.closed
 
 
@@ -701,7 +717,9 @@ def test_two_phases_evaluation_passes_then_the_funded_account_fails() -> None:
     ]
     assert result.days_to_pass_trading == 1
     assert result.days_to_pass_calendar == 0
-    assert result.min_buffer_usd == Decimal("-8.25")
+    # -8.25 at the breach price, plus the liquidation's own 20.75 of costs posted by that fill:
+    # the post-fill basis is the worst the account ever got (ADR-0106 amendment of 2026-11-23)
+    assert result.min_buffer_usd == Decimal("-29.00")
     assert result.min_buffer_rule == "funded_drawdown"
     assert result.payouts_usd == Decimal(0)
     assert result.payout_modeled is False

@@ -317,7 +317,7 @@ Reproducibility: configs, the runner, artifacts and the research orchestrators. 
   refuses an H shorter than any phase's own limit (a `time_limit` rule included, a calendar-day
   limit converted per start), and runs `crucible.prop.attempt.simulate_attempt` for every
   (scenario, start) with the rule's news events and its coverage, the `ComponentFeeSource` the
-  commission's excluded components need, the run's `fee_participant_type` and the
+  commission's excluded components need, the run's `participant_profile` and the
   `cost_assumption` FILE. It then classifies every attempt
   (`classify_attempt`: `pass | fail | timeout | horizon | censored`, evaluation phases only) and
   writes the statistics (section "Prop evaluation" below), the labels and the sealed artifact
@@ -631,7 +631,11 @@ of the same bars, targets, rolls and raw per-contract bars.
   cost, a news-calendar coverage gap, an unsourced session-calendar window, the counterfactual
   application of a current ruleset to pre-2025 data, and a compliance blocker.
   `practical_eligibility` is judged for the `execution_mode`: under `blocked_by_compliance`,
-  `mechanically_passes` is reported and `practically_valid_passes` is 0 with the reason.
+  `mechanically_passes` is reported and `practically_valid_passes` is 0 with the reason; under
+  `eligible_conditional` every condition the simulation cannot prove is listed (sorted) and the
+  mechanical passes are `conditionally_valid_passes`, never `practically_valid_passes`. The block
+  also carries `unmodeled_rules`: every declared `not_modeled` entry with its materiality and the
+  `becomes_immaterial_if` condition that could change it (the materiality itself never changes).
 - **Scenarios.** `scenarios="primary"` evaluates the selected ruleset only; `"all"` adds one full
   sensitivity scenario per conflict alternative (`crucible.prop.scenarios`), each a row per start
   and a scenario summary labelled `alternative_sensitivity` beside the primary's
@@ -640,7 +644,9 @@ of the same bars, targets, rolls and raw per-contract bars.
   `PROP_ATTEMPTS_SCHEMA`), `summary.json` (`PropEvaluationSummary`, the statistics, the bootstrap
   record and the coverage), `ruleset.yaml` (the exact bytes read) and `manifest.json` with the run
   id basis, the candidate id (ADR-0103), the ruleset id/version/sha256/verification status, H, the
-  execution mode, the payout policy, the cost assumption and every dataset hash. `PRP-` is a pure
+  execution mode, the payout policy, the cost assumption, the participant profile and its
+  canonical SHA-256, the promotions applied and NOT applied (each `promotion <id> not applied:
+  <reason>`), and every dataset hash. `PRP-` is a pure
   function of the inputs (`evaluation_basis`, `evaluation_id_of`), so the same inputs reproduce the
   same directory and the same bytes; the seal (`seal_artifact`) covers the three result files.
   A prop evaluation is NOT a submission: it records no trial and changes neither

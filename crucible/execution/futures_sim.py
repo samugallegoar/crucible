@@ -880,12 +880,15 @@ class _Run:
         self.slippage[i] += slip
         self.balance += gained - (fees + spread + slip)
         close_time = int(self.frame.times[i])
+        stamp = (
+            fill_time
+            if fill_time is not None
+            else (close_time if at_close else close_time - self.bar_ns)
+        )
         self.fills.append(
             _Fill(
                 event_time=close_time,
-                fill_time=fill_time
-                if fill_time is not None
-                else (close_time if at_close else close_time - self.bar_ns),
+                fill_time=stamp,
                 contract=contract or self.frame.held[i],
                 kind=kind,
                 quantity=qty,
@@ -897,7 +900,8 @@ class _Run:
             )
         )
         if self.account is not None:
-            self.account.fill(i, self.marks(i), qty, price, kind)
+            self.account.fill(i, self.marks(i), qty, price, kind, int(stamp))
+            self.account_liquidate_pending(i)
 
     def roll(self, i: int, roll: _Roll) -> None:
         """Closes the old contract and opens the new one at the roll's execution prices; a target
@@ -1178,7 +1182,7 @@ class _Run:
             price, lot = stops.pop(0)
             self.bracket_exit(i, lot, price, "stop")
             current = price
-            if st.book.position == 0 or not st.book.lots:
+            if st.book.position == 0 or not st.book.lots or account.closed:
                 break
         if liquidated or touched:
             if self.policy.reentry == "require_signal_reset":
@@ -1188,6 +1192,8 @@ class _Run:
         if targets:
             for lot, price in targets:
                 self.bracket_exit(i, lot, price, "target")
+                if account.closed:
+                    break
             if self.policy.reentry == "require_signal_reset":
                 st.blocked = st.in_force_raw
             st.pending = None
@@ -1223,6 +1229,24 @@ class _Run:
                 live.append(price)
         live.sort(key=lambda b: b.price_ticks, reverse=side > 0)
         return live
+
+    def account_liquidate_pending(self, i: int) -> None:
+        """Act on a breach the overlay found the instant a fill was booked (ADR-0106 amendment).
+
+        The breach itself was recorded by the overlay at that fill; what is left is the position:
+        it is liquidated at the fill's own price, which is inside the bar and is the instant the
+        account crossed the threshold. Nothing happens when the account was already flat.
+        """
+        account = self.account
+        assert account is not None
+        pending = account.take_pending_liquidation()
+        if pending is None:
+            return
+        self.apply_action(
+            i,
+            OverlayAction("liquidate", pending.rule_id, pending.hard, pending.price_ticks),
+            "liquidation",
+        )
 
     def account_decide(self, i: int, decided: int) -> None:
         """``decide`` with admission: an entry at the signal bar's close is subject to the

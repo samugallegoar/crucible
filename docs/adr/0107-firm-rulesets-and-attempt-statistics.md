@@ -461,6 +461,246 @@ binding rules.
   content hashes change in place. The index stays append-only in the two senses that still hold: no
   version disappears, no version number is reused, and a `verified` ruleset's hash never changes.
 
+## Amendment (2026-11-22, second): participant profile and other-fee evidence
+
+The first amendment replaced one all-in flag with four cost components, and gave each fee row a
+single `participant_type`. Two things were still wrong. A participant type is not one fact: the
+exchange fee depends on CME membership, the NFA assessment depends on the bylaw's own subject (the
+FCM member), and a charge can be the same for everyone. And an "other" row could be a catch-all: a
+row typed `other` with a name like "misc" could add money nobody could point at, or a monthly
+platform charge could arrive as a per-side execution cost. The owner ruled both out. This amendment
+replaces the participant type with a run-level PROFILE resolved per component, and makes an `other`
+row carry its own evidence.
+
+**1. The run declares a participant profile; the classification is resolved per component.**
+
+- A run declares an immutable `participant_profile`: a flat mapping from dimension name to value,
+  e.g. `cme_membership_status: non_member` and `nfa_assessment_eligibility: fcm_member`.
+- Dimension names are NOT an enum. Each row brings its own, and every name matches
+  `^[a-z][a-z0-9_]*$`. Values are non-empty strings; the literal `unknown` is allowed and means
+  *unknown*.
+- A fee row declares the classification it needs: `classification_dimension` plus
+  `classification_value`. They replace `participant_type`, and different components may need
+  different dimensions (an exchange row `cme_membership_status=non_member`, the NFA row
+  `nfa_assessment_eligibility=fcm_member`). A row that is the same for every participant uses
+  `classification_dimension=none` / `classification_value=all`, which needs no profile entry.
+- The former "an NFA row prices any participant type" pass-through is REMOVED: the profile must
+  declare `nfa_assessment_eligibility`, or the `nfa` component is a gap. A classification the run
+  never declared is not a classification the engine may assume.
+- Resolution for an `excluded` component on `(root, date)`:
+  1. take the rows that cover the component, for the exact root, with the date inside their
+     effective range;
+  2. look each row's dimension up in the profile: missing or `unknown` makes the component a gap
+     whose reason is `classification <dim> not declared`; a different value means the row does not
+     apply;
+  3. exactly one applicable row prices the component; two are a refusal (ambiguous); none is a gap.
+- There is never a default classification, and never a fallback to the only row available.
+- The profile's canonical SHA-256 goes in the manifest, `summary.json` and every
+  `attempts.parquet` row (`participant_profile_sha256`), and it is part of the evaluation id, so
+  two profiles give two artifacts.
+- The profile is the CLI's `--participant-profile FILE` (a flat YAML mapping) and the MCP tool's
+  `participant_profile` object. It is required only when some component is `excluded`, and recorded
+  when given either way.
+- The estimate stays `conditional`, with the reason `participant profile declared by the run, not
+  stated by the firm`. A profile is the run's declaration, never the firm's, so it never makes a
+  cost `complete`.
+
+**2. An `other` row must prove what it is.**
+
+A row may carry `fee_type=other` ONLY with all of the following, each refused when missing or
+empty:
+
+- `charge_name`: a specific name or identifier. Generic names are refused case-insensitively after
+  punctuation is stripped: `other`, `others`, `misc`, `miscellaneous`, `fees`, `other fees`,
+  `cme other fees`, `additional fees`, `charges`, and any name made only of those words plus `cme`,
+  `exchange` or `fee`/`fees`.
+- `unit`: exactly `per_contract_per_side`. Monthly, platform, subscription and account charges are
+  refused, with a message saying a fixed charge belongs in the ruleset's fee schedule, separate
+  from execution costs.
+- `source_url`: an official source; for a CME Group root, the host must be `www.cmegroup.com`.
+- `quote`: the exact text naming the charge and its amount.
+- `applies_quote`: the exact text showing the charge applies to this execution (product and
+  participant).
+- `distinct_from`: why the charge is not part of the exchange, clearing or NFA fee.
+- `root`, `effective_from`, `classification_dimension` and `classification_value` — the
+  classification being required unless the source states the charge is the same for every
+  participant, in which case `none`/`all` needs no profile entry.
+
+Further rules:
+
+- `covers` must be exactly `other` for an `other` row.
+- A row whose `fee_type` is `exchange`, `clearing` or `nfa` may NOT list `other` in `covers`: *an
+  exchange fee cannot cover other components*. An `exchange` row may still cover
+  `exchange;clearing` when the owner's source names both (CME's "Clearing & Trading").
+- Two `other` rows with the same `charge_name`, root and classification that overlap in dates are
+  refused: that is one charge written twice.
+- Two `other` rows with DIFFERENT names covering the same date are both charged. They are distinct
+  charges, each with its own evidence, and the `other` component is their sum — the one stated
+  exception to "one row per component".
+- `unit` is required on every row type, and only `per_contract_per_side` is accepted in this
+  per-side table.
+
+**3. Cost-assumption entries state their unit too.**
+
+- Every amount entry now requires `unit: per_contract_per_side`; anything else is refused.
+- An entry covering `other` also gives a `charge_name`, under the same generic-name refusal.
+
+**4. What "all-in" can mean.**
+
+`complete` is reached only when every applicable component is identified, quantified and backed by
+evidence or an explicit assumption file. A profile-only resolution stays `conditional`. An
+incomplete, explicitly conditional cost beats an apparently complete one.
+
+**Consequences of the amendment.**
+
+- `exchange_fees_v1`'s row contract changes shape (`participant_type` out;
+  `classification_dimension`, `classification_value`, `unit`, `charge_name`, `applies_quote`,
+  `distinct_from` in), and so does its stored sort order. The dataset is unreleased, so no committed
+  artifact changes; see `docs/COMPATIBILITY.md`.
+- `fee_rows_as_of` returns a `FeeLookup` (priced components plus a named reason per gap) instead of
+  a bare mapping, because "absent" was a gap with no explanation and a gap must say what is missing.
+- No ruleset changes: `commissions.components` already declares the four components, and the
+  classification is a run input, not a firm value. `rulesets/prop/INDEX.json` is unchanged.
+- The owner's fee file gains required columns: a supplier who used to write a participant type now
+  writes the dimension and the value, and an `other` charge now has to be named and quoted twice
+  (what it is, and why it applies).
+
+## Amendment (2026-11-23): promotions, and what kind of default an assumption is
+
+Two vocabulary gaps the Topstep review left open (F5, F6, F15). Neither changes a rule VALUE.
+
+**1. A promotional value applies only when the run can show it bought that offer.**
+
+The doubled per-request payout caps of the twelve daily-loss-limit files rest on a limited-time
+offer. The offer is not the ruleset's value and it is not inferable: it depends on what the
+participant bought. So a rule may carry ``promotions``, and each one states:
+
+- ``id``; ``field`` (the numeric field it replaces: ``max_usd``, ``max_usd_by_payout[0]``,
+  ``amount_usd``); exactly one of ``value`` or ``multiplier`` (the base value times it);
+- ``starts_on`` and ``ends_on`` (``<date>`` or ``unknown``); ``purchase_on_or_after``;
+- ``requires``, a mapping of participant-profile dimension to value, checked against the RUN's
+  profile — account dimensions such as ``account_purchase: new``, ``dll_selected_at_purchase:
+  'true'`` or ``purchase_date: YYYY-MM-DD`` are ordinary profile entries;
+- ``source`` (an ``Attribution``), so the offer sentence is quoted like any other value.
+
+Resolution is a pure function of the ruleset and the profile
+(``crucible.prop.promotions.resolve_promotions``): a promotion applies only when EVERY requirement
+is declared in the profile and matches, and the declared ``purchase_date`` falls in
+``[starts_on, ends_on]``. ``ends_on: unknown`` is never assumed to continue past the ruleset's
+``as_of``, so a purchase dated after it does not qualify. A missing, ``unknown`` or non-matching
+fact leaves the BASE value in place — eligibility that cannot be shown is never assumed — and the
+summary lists ``promotion <id> not applied: <reason>``. Two applicable promotions on one field are
+refused (the value would depend on declaration order).
+
+The promoted value is a property of the RUN, not of the file: the artifact still cites the
+ruleset's own content hash, and ``attempts.parquet`` gains ``promotions_applied``
+(``<id>:<rule>:<field>=<value>``, ``;``-joined, empty when none), with the applied and the skipped
+lists in ``summary.json`` and the manifest.
+
+For the Topstep files, the owner's decision is: the doubled cap applies ONLY when the account is a
+NEW Trading Combine purchase, the daily-loss-limit add-on was selected at that purchase, and the
+purchase date is on or after the offer start (2026-06-02); otherwise the standard cap applies. The
+files themselves are not edited by this amendment — the promotion is declared where a file carries
+the offer, and an ineligible run simply gets the standard cap with the reason recorded.
+
+**2. Every assumption declares what KIND of default it is.**
+
+An ``assumption`` entry gains a REQUIRED ``assumption_kind``: ``section7_default`` (the documented
+default of ADR-0107 section 7), ``provisional_conservative`` (the source is silent or soft and the
+pessimistic reading is temporary, open to being tightened) or ``owner_decision`` (the owner ruled
+on it). A default that does not say what kind of default it is cannot be reviewed: the owner has to
+re-check a "conservative" reading when the page softens, and never has to re-check a decision.
+
+The owner ruled on the two Topstep readings:
+
+- the ``profit_target`` EOD assumption (``unspecified_target_frequency_is_eod``) is
+  ``provisional_conservative``: the page states the target without an observation frequency;
+- the XFA inactivity close on day 31 is ``provisional_conservative``: the page says the account
+  "may be closed", which is not a guaranteed automatic close. (No Topstep file carries this as an
+  ``assumption`` entry: the rule is quoted and its pessimistic reading is in its description, so
+  there is nothing to migrate for it. Reported, not edited.)
+
+Mechanically every one of the 201 files was migrated: `section7_default` everywhere except the 98
+``profit_target`` ``unspecified_target_frequency_is_eod`` entries, which are
+``provisional_conservative``. No other value and no verification status changed. Because the files
+are unverified and unmerged, their content hashes change in place and
+``rulesets/prop/INDEX.json`` is regenerated; the append-only rule that matters is unchanged: a
+version number never disappears or is reused, and a VERIFIED file's hash never changes (which is
+what the lock test now asserts, as ADR-0107 section 1 states).
+
+**3. Static threshold with an exact post-payout reset (reported, not built).**
+
+Asked whether the engine supports a threshold that is static (never moving with equity highs or
+daily closes) with an exact post-payout reset or lock, the answer is: **partly, and not for a
+static threshold.**
+
+- A static threshold exists (``static_drawdown``: ``start - amount``, never trailing) and is tested
+  intraday and/or at the close like any other.
+- Trail-freezing exists on the TRAILING rule: ``trailing_drawdown.lock`` with ``on: [hwm,
+  first_payout]``, a trigger level (``at_balance_usd``/``at_offset_usd``) and an exact frozen level
+  (``locked_threshold_usd``/``locked_offset_usd``), plus a payout-level override
+  (``payout.threshold_after_payout: set_threshold`` with ``set_threshold_to: start |
+  start_plus_usd:<x> | zero_balance_offset:<x>``).
+- What is missing: a post-payout reset or lock ON a ``static_drawdown``. The payout's
+  ``threshold_after_payout`` handler only reaches ``TrailingDrawdown`` instances, so a file that
+  wants "static $2,000, reset to the start after a payout" has to express it as a trailing rule
+  locked at the firm's form (which is what the Labs static file does today, flagged in its
+  ``not_modeled`` entry), not as a static threshold. Implementing it would add a
+  ``static_drawdown.lock`` vocabulary and its overlay handler; it is NOT implemented here.
+
+## Amendment (2026-11-23, owner-review round 2): conditions, and what would change a materiality
+
+Two vocabulary gaps the second pass over the Topstep packet left open (F13 and F21). Neither
+changes a rule VALUE of an existing declaration.
+
+**1. Practical eligibility gains `eligible_conditional`.**
+
+Section 11 knew two answers: the account may be traded this way (`eligible`) or a critical rule
+forbids it (`blocked_by_compliance`). A firm that allows automated trading only under obligations
+no simulation can see answers neither: Topstep permits it through its API in the Trading Combine and
+the XFA and forbids it in the Live Funded Account, prohibits high-frequency trading without stating
+a threshold, requires every order to originate on the trader's personal device, forbids VPS/VPN or
+remote-server order entry, and keeps the algorithm subject to every rule.
+
+So a `compliance` rule may declare ``effect: condition`` with a required ``condition`` text, and:
+
+- a critical rule with ``action: block`` that applies to the execution mode still wins:
+  ``blocked_by_compliance``, no conditions listed (a block is a stronger statement than "you must
+  also meet this");
+- otherwise, when at least one applicable ``condition`` exists, practical eligibility is
+  ``eligible_conditional`` and every condition is listed once, sorted, in
+  ``AttemptResult.practical_eligibility_conditions``, ``summary.json`` and
+  ``attempts.parquet``;
+- a mechanical pass under a condition is counted in ``conditionally_valid_passes`` and NEVER in
+  ``practically_valid_passes``: the simulation proved the account arithmetic, not the trader's
+  compliance;
+- ``effect: condition`` with ``action: block`` is refused (the two say opposite things about what
+  the rule does), and the effect and its text are required together.
+
+Authorization is not compliance: an API key, a subscription or an automated system is what the firm
+grants, never evidence that a strategy obeys a rule. ``practical_eligibility(ruleset,
+execution_mode)`` therefore returns a ``PracticalEligibility`` (``status``, ``conditions``,
+``blocker``) rather than a bare string.
+
+**2. An unmodeled entry states what would change its materiality.**
+
+A ``not_modeled`` entry may declare ``becomes_immaterial_if``: the audited fact that would let its
+materiality change. On a ``material`` entry it is the fact that could lower it ("an audit of the
+instruments and dates shows it never affected a trade"); on an ``immaterial`` entry the same field
+states what would make it bind ("becomes material if multiple accounts, copy trading or coordinated
+strategies are simulated").
+
+The declared materiality NEVER changes by itself: until an audit establishes the condition, the
+conservative reading stands and the entry keeps weakening the estimate. The field is a statement of
+what to check, not a self-service downgrade, and it is reported in ``rule_coverage``, in
+``summary.json`` (``unmodeled_rules``) and in the firm's ``RESEARCH.md``.
+
+**Mechanically**, the 201 unverified firm files were re-hashed in place (their dumps now carry the
+optional fields), so ``rulesets/prop/INDEX.json`` is regenerated; no version number disappears or is
+reused and no VERIFIED hash changes. ``attempts.parquet`` gains
+``practical_eligibility_conditions`` and ``summary.json`` gains the eligibility block's
+``conditions``/``conditionally_valid_passes`` plus ``unmodeled_rules``; both are additive.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its
