@@ -1771,7 +1771,10 @@ def fetch_raw(
 
     ``transport(url) -> bytes``, ``now() -> int`` (UTC ns) and ``pause_s`` are the seams a test
     drives without a network or a clock; the defaults walk the real web and read the real clock
-    (an I/O boundary, like the build's timestamp). Returns the manifest entries.
+    (an I/O boundary, like the build's timestamp). ``pause_s`` is the politeness gap between two
+    reads of a real host and applies **only** to the real transport: an injected ``transport`` is a
+    seam, not a crawl, and never sleeps (30 pages at 0.6 s is 18 s of a test doing nothing).
+    Returns the manifest entries.
     """
     import pathlib
 
@@ -1785,7 +1788,7 @@ def fetch_raw(
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(getter(url))
-            if pause_s:
+            if pause_s and transport is None:
                 time.sleep(pause_s)
         body = path.read_bytes()
         entries.append(

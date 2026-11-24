@@ -149,3 +149,18 @@ all, while all 12 ubuntu and Windows shards started in 2-3 s. More macOS shards 
 each one longer, so the count is set to what the pool gives; going under 2 minutes needs more macOS
 capacity (a larger runner) or a macOS suite that is ~2x faster, not a different matrix.
 
+## Amendment 2 (2026-11-24): one seed per run for the shards
+
+`pytest-randomly` (ADR-0108) shuffles the collection, and `pytest-split` assigns each item by its
+position in that collection. The shard jobs had no `--randomly-seed`, so each process drew its own
+permutation: while every test had a duration in the file the assignment still agreed (the split
+sorts by duration), but as soon as a test is missing from the file -- which is what happens on every
+PR that adds one, and on the merge that brought ADR-0108's three tests into this tree -- two shards
+both took it and another was taken by neither. The suite would have run a test twice and skipped
+one, and `shard-union` would (correctly) have failed the PR.
+
+Every shard job now runs with the same seed, the run id (`--randomly-seed=${{ github.run_id }}`):
+the order stays random and differs on every run, the partition is exact for every shard, and the
+seed is printed. `tests/unit/test_ci_shard_plan.py` pins the flag, and `tools/check_shards` shards
+with a fixed seed of its own so the local plan check is exact too.
+

@@ -43,6 +43,9 @@ _COLLECTED = re.compile(r"^(?P<selected>\d+)/(?P<total>\d+) tests collected")
 
 _ARTIFACT = re.compile(r"^shard-(?P<os>.+)-(?P<group>\d+)$")
 
+PLAN_SEED = 1
+"""The seed the local check shards with: any fixed value will do, and CI uses `github.run_id`."""
+
 
 @dataclass(frozen=True, slots=True)
 class ShardPlan:
@@ -220,6 +223,9 @@ def check_plan(plans: Sequence[ShardPlan], *, workers: int = 4) -> list[str]:
                 str(group),
                 "--durations-path",
                 plan.durations,
+                # the same seed in every shard, as CI does: pytest-split splits by position in the
+                # shuffled collection, so two shards with different seeds do not partition it
+                f"--randomly-seed={PLAN_SEED}",
             ]
             for group in range(1, plan.splits + 1)
         )

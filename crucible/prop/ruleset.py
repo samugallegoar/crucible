@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from crucible.core.canonical import canonical_json
 from crucible.core.errors import ConfigurationError, DataQualityError
+from crucible.prop._yaml import safe_load
 from crucible.prop.rules_schema import (
     ABSENT,
     PASS_KINDS,
@@ -407,7 +408,7 @@ def read_verification_sidecar(path: str | Path) -> VerificationRecord | None:
     if not sidecar.is_file():
         return None
     try:
-        raw = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+        raw = safe_load(sidecar.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         msg = f"cannot read verification sidecar {sidecar}: {exc}"
         raise DataQualityError(msg) from exc
@@ -479,7 +480,7 @@ def verified_copy(ruleset: PropRuleset, path: str | Path) -> PropRuleset:
 
 def _read(path: Path, *, with_sidecar: bool = True) -> PropRuleset:
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         msg = f"cannot read ruleset {path}: {exc}"
         raise DataQualityError(msg) from exc

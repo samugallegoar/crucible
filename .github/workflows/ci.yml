@@ -98,9 +98,17 @@ jobs:
         # (pytest-split assigns every collected item to exactly one group, and the `shard-union` job
         # below proves it on every run). The JUnit report is the shard's evidence: one case per test
         # it ran (or skipped), which `shard-union` unions and compares with the whole suite.
+        #
+        # `--randomly-seed` is the run id: the SAME seed in every shard, a different order on every
+        # CI run. pytest-split assigns items by their position in the (shuffled) collection, so a
+        # per-process random seed would give each shard a different permutation -- and with a test
+        # whose duration is not in the file yet (a PR that adds one) that duplicates and drops
+        # tests, which `shard-union` then (correctly) fails. One seed for the run keeps the order
+        # random but the partition exact, and the seed is in the log.
         run: >-
           uv run pytest -q --splits ${{ matrix.splits }} --group ${{ matrix.group }}
           --durations-path .test_durations.${{ matrix.tag }}
+          --randomly-seed=${{ github.run_id }}
           -n auto --dist loadscope --junitxml=junit.xml
           ${{ matrix.extra }}
       - uses: actions/upload-artifact@v4

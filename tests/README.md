@@ -3,7 +3,8 @@
 How the suite is organised, how to add to it, and how to run parts of it. The rules
 behind it are `AGENTS.md` §7 (testing) and §1 (prime directives); what a golden change
 means is `docs/COMPATIBILITY.md` §6. **Run the whole suite before you hand work back**
-(`uv run pytest`, about ten minutes); run subsets while you work (bottom of this page).
+(`uv run pytest`, about 15 minutes in one process, about 5 with four workers); run subsets while
+you work (bottom of this page).
 
 ## 1. What each folder is for
 
@@ -35,6 +36,11 @@ Each of the five folders' scope is enforced by convention, not tooling; the rule
   option. Profile `ci` (used when the `CI` environment variable is set) is `derandomize=True,
   max_examples=50`; profile `local` is `max_examples=100`.
 - `pyproject.toml` runs pytest with `--strict-markers`: an unregistered marker is an error.
+- `pytest-randomly` (dev dependency, ADR-0108) runs the suite in a **random order** and reseeds the
+  global RNGs before every test, so a hidden dependency on collection order, on another test's
+  leftovers or on the global RNG fails here instead of in a released run. Every run prints its
+  seed; reproduce with `--randomly-seed=<seed>` and bisect with `-p no:randomly` (collection
+  order). Three seeds must be green before work is handed back (AGENTS.md §7).
 - `tests/integration/checkpoint_support.py` holds the helpers of the resume matrix
   (`make_engine`, `build_dividend_store`, `assert_same_result`). It is importable only from
   `tests/integration/` (that folder is on `sys.path` for its own tests).
@@ -54,6 +60,16 @@ Each of the five folders' scope is enforced by convention, not tooling; the rule
 Rules for test data (AGENTS.md §13): fixed timestamps (an integer number of `DAY = 86_400 * 10**9`
 ns is fine), seeded `numpy.random.default_rng(seed)`, never wall-clock time, never the global RNG.
 Use `tmp_path` / `tmp_path_factory`; never write into the repo.
+
+**Expensive data is shared, never rebuilt per test.** A store, sweep or document that costs more
+than a fraction of a second belongs in a `module`- or `session`-scoped fixture (or a builder keyed
+by its inputs) that the tests only *read*; a test that writes to it takes a copy in `tmp_path`
+first (`shutil.copytree` of a synthetic store is milliseconds). Where the same job is run for many
+assertions — the futures walk-forward of `test_futures_walkforward.py`, the 40-seed overfit sweep of
+`test_phase3_acceptance.py` — run it once in the fixture and assert on the returned object.
+`test_econ_events.py` is the cautionary tale in the other direction: `fetch_raw` used to sleep 0.6 s
+per page even with an injected `transport`, which was 18 s per fetching test; a seam must never
+spend wall-clock time (ADR-0108).
 
 ## 4. Markers
 
@@ -257,7 +273,7 @@ attributions in a temporary snapshots folder, so no real snapshot is read by the
 ## 8. Running subsets
 
 ```bash
-uv run pytest                                   # everything (~10 minutes)
+uv run pytest                                   # everything (~15 minutes serial, ~5 on 4 workers)
 uv run pytest tests/unit                        # one folder
 uv run pytest tests/unit/test_ledger.py -q      # one file
 uv run pytest -k "dividend and not resume"      # by name
@@ -267,7 +283,13 @@ uv run pytest -m "not slow"                     # the fast tier (opt-in; the def
 uv run pytest tests/unit/test_architecture_conformance.py tests/unit/test_generated_docs.py  # the doc gates
 uv run pytest -x -q --lf                        # last failures first, stop at the first
 uv run pytest --regen-golden tests/golden       # regenerate golden (see §5; never silently)
+uv run pytest --randomly-seed=12345             # reproduce a random order (the seed is printed)
+uv run pytest -p no:randomly                    # collection order, to bisect an order failure
 ```
+
+The order is random (`pytest-randomly`, ADR-0108) and every run prints the seed it used, so a
+failure is reproducible from the header line alone. `-p no:randomly` is for bisecting, not for
+declaring a run green: three different seeds must pass before work is handed back.
 
 The CI job (`.github/workflows/ci.yml`) runs `ruff`, `mypy --strict`, the layering check (`tools.lint_imports`), the doc
 generator's `--check` and the full `pytest -q`, all from a locked install. Set `CI=true` locally to
@@ -276,7 +298,7 @@ reproduce its derandomized hypothesis profile.
 ## Sharding in CI, and the check that the shards add up (ADR-0109)
 
 CI does not run one suite per OS any more: it runs `pytest-split` shards of it. One job per
-`--splits N --group i` per OS (6 on ubuntu and macOS, 8 on Windows), each job on its own runner and
+`--splits N --group i` per OS (6 on ubuntu, 3 on macOS, 6 on Windows), each job on its own runner and
 still on `-n auto --dist loadscope` inside (ADR-0075). The shards are a distribution of the suite,
 never a selection of it, and two things enforce that on every PR:
 
@@ -298,8 +320,17 @@ three from real runs, never by hand:
 ```bash
 gh workflow run CI                                   # the `durations` matrix job (dispatch only)
 gh run download <run-id> --pattern "test-durations-*" --dir /tmp/durations
-cp /tmp/durations/test-durations-ubuntu/.test_durations.ubuntu    /tmp/durations/test-durations-macos/.test_durations.macos    /tmp/durations/test-durations-windows/.test_durations.windows .
+cp /tmp/durations/test-durations-ubuntu/.test_durations.ubuntu .
+cp /tmp/durations/test-durations-macos/.test_durations.macos .
+cp /tmp/durations/test-durations-windows/.test_durations.windows .
 ```
+
+**One seed for the whole run** (`--randomly-seed=${{ github.run_id }}` in every shard job).
+`pytest-split` assigns tests by their position in the shuffled collection, so a per-process random
+seed gives each shard a different permutation: with a test whose duration is not in the durations
+file yet (any PR that adds one) two shards then both take it and neither takes another — duplicated
+and dropped. Pinning the run id keeps the order random (a different one per run, printed in the log)
+and the partition exact.
 
 The plan is 6 shards on ubuntu, 3 on macOS and 6 on Windows: 15 shard jobs plus `checks`,
 `clean-install` and `shard-union` is **18 jobs at once**, under the workflow's ~20-job concurrency
@@ -317,7 +348,7 @@ about 2x the measured p95 after ADR-0109:
 |-----|--------|------------------|--------------|
 | `checks` | 3 min | 42/50 s | ruff, `ruff format --check`, `mypy --strict` (cold), layering, generated docs, CLI smoke |
 | `tests` (each shard) | 6 min | 73-157 s | setup + sync (~10 s) + one shard of tests |
-| `shard-union` | 3 min | 25/38 s | downloads 20 artifacts, collects the suite per OS, compares |
+| `shard-union` | 3 min | 24/38 s | downloads the 15 shard reports, collects the suite per OS, compares |
 | `clean-install` | 2 min | 16/19 s | builds the wheel, installs it with runtime deps only, imports every entry point |
 | `durations` | 15 min | 7 min | `workflow_dispatch` only: the whole suite with `--store-durations` |
 
@@ -328,6 +359,12 @@ about 2x the measured p95 after ADR-0109:
 its module- and class-scoped fixtures are built once: put independent heavy tests in separate
 classes or modules to let them overlap, and keep every write inside `tmp_path`.
 `python -m tools.check --serial` (or a plain `uv run pytest`) runs one process.
+
+The mode was re-measured with 3,138 tests on four workers (ADR-0108): `--dist loadscope`
+295/344/419 s, `--dist worksteal` 308/328/352 s — the same, inside the ±15 % noise of a machine
+running other things — `--dist loadfile` 352 s, `--dist load` 504 s (+46 %: it rebuilds every
+module's fixtures on every worker it touches). `loadscope` stays: it is not measurably slower, and
+it keeps the heavy fixtures built once on CI's 3-4 cores.
 
 ## 9. Acceptance scenarios: can the system reject misleading evidence? (ADR-0070)
 

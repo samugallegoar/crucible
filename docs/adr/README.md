@@ -134,6 +134,7 @@ The index below is generated from the ADR files (title, status and the first sen
 | [0105](0105-futures-holdout-vault.md) | Futures holdout vault — family-wide locked period, data-layer enforcement, human authorization, one evaluation per registration | accepted | The protected period |
 | [0106](0106-prop-firm-rule-engine.md) | Generic prop-firm rule engine — sourced versioned rulesets, bar-by-bar account overlay inside the futures simulation, conservative OHLC breach semantics, rule coverage | accepted | `crucible/prop/` is a new package in the layer of `risk` and `strategy` |
 | [0107](0107-firm-rulesets-and-attempt-statistics.md) | Firm rulesets as sourced, hash-locked data with owner-only verification; attempt sequences, censoring and pass probability with an overlapping-attempt block bootstrap | accepted | Files. Each ruleset is a file `rulesets/prop/<firm>/<ruleset_id>.v<N>.yaml` |
+| [0108](0108-test-suite-speed-and-order-independence.md) | An order-independent, faster test suite | accepted | The suite runs in random order (`pytest-randomly`, dev dependency), and every run prints the seed |
 | [0109](0109-shard-the-suite-across-runners.md) | Shard the test suite across runners, and prove the shards add up | accepted | One run per change, and a superseded one is cancelled. `on: push: branches: [main]` plus `pull_request`, with `concurrency: {group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true}` |
 
 <!-- END GENERATED: adr-index -->

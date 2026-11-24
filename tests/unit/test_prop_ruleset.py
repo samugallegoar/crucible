@@ -335,3 +335,21 @@ def test_an_expired_rule_cannot_sit_in_a_current_ruleset() -> None:
     raw["phases"][0]["rules"][0]["effective_to"] = "2024-05-31"  # type: ignore[index]
     with pytest.raises(ValidationError, match="effective_to"):
         PropRuleset.model_validate(raw)
+
+
+def test_the_c_loader_parses_every_shipped_ruleset_identically() -> None:
+    """``crucible.prop._yaml`` parses with libyaml when PyYAML ships it (8.5 s -> 0.8 s for the
+    registry). The two loaders must agree on every value: a difference would move a
+    ``ruleset_sha256`` and with it the ``INDEX.json`` lock."""
+    from crucible.prop._yaml import safe_load
+
+    root = Path(__file__).resolve().parents[2] / "rulesets" / "prop"
+    files = sorted(root.rglob("*.yaml"))
+    assert files, f"no rulesets under {root}"
+    differing = [
+        path.name
+        for path in files
+        if yaml.safe_load(path.read_text(encoding="utf-8"))
+        != safe_load(path.read_text(encoding="utf-8"))
+    ]
+    assert not differing, f"CSafeLoader and SafeLoader disagree on {differing}"

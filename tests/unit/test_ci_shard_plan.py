@@ -127,6 +127,23 @@ def test_each_shard_runs_the_whole_shard_selection() -> None:
     )
 
 
+def test_every_shard_shuffles_with_the_same_seed() -> None:
+    """One seed for the whole run: pytest-split splits by position, so per-process seeds collide."""
+    runs = " ".join(str(step.get("run", "")) for step in _workflow()["jobs"]["tests"]["steps"])
+    assert "--randomly-seed=${{ github.run_id }}" in runs, (
+        "the shard command must pin one seed for the run (the run id): with the plugin's default "
+        "each shard draws its own order, and a test whose duration is missing from the file "
+        "is then assigned differently in two shards -- duplicated and dropped, which shard-union "
+        "catches but should not have to"
+    )
+
+
+def test_the_local_union_check_shards_with_a_fixed_seed() -> None:
+    from tools.check_shards import PLAN_SEED
+
+    assert isinstance(PLAN_SEED, int)
+
+
 def test_every_shard_uploads_what_the_union_check_needs() -> None:
     steps = _workflow()["jobs"]["tests"]["steps"]
     uploads = [step for step in steps if str(step.get("uses", "")).startswith("actions/upload")]
