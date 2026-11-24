@@ -618,6 +618,11 @@ def consistency_ok(
 ) -> bool:
     """``best_day_profit/total_profit <= max_day_share`` over the two declared windows.
 
+    The declared ``comparison`` is READ: ``<=`` admits a share equal to ``max_day_share`` and ``<``
+    refuses it. A firm that writes "50% or more" forbids the exact boundary, while a firm that
+    writes "at most 30%" admits it; the engine never substitutes one reading for the other
+    (ADR-0107, amendment of 2026-11-23: the owner-review round).
+
     The numerator's window (which day is the best) and the denominator's (which profit it is
     shared with) are separate: ``all_time`` every rule-day, ``since_last_payout`` the rule-days
     after the previous withdrawal, and ``current_cycle`` the profit of the payout cycle measured
@@ -640,6 +645,8 @@ def consistency_ok(
     if not numerator or total <= 0:
         return False
     share = Decimal(max(numerator)) / Decimal(total)
+    if rule.comparison == "<":
+        return share < rule.max_day_share
     return share <= rule.max_day_share
 
 

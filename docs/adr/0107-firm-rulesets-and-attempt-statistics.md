@@ -821,6 +821,69 @@ gains the `lower_bound` label; `rulesets/prop/INDEX.json` gains the assumption e
 list` keeps listing rulesets only. Every one of those is additive: no released artifact changes, and
 `/schema_version` stays where it is.
 
+## Amendment (2026-11-23, Apex review round): the consistency comparison is read, and two values a review moves
+
+The Apex owner review (packet `internal/reviews/apex.md`, F5, F6, F12, F18, F21) settled four
+readings over the 90 Apex files. Only one of them needed the engine; the others are declarations,
+and one is a promotion the existing vocabulary can already express.
+
+**1. `consistency.comparison` is READ, never assumed.**
+
+`crucible.prop.rules.consistency_ok` computed `share <= max_day_share` while the rule carried a
+required `comparison` the engine ignored. Apex's payout page says "No single profitable trading day
+may account for **50% or more** of total profit" — a strict reading in which a day at exactly
+50.000% blocks the payout — while the evaluation record's bare `consistency_rule_percentage: 30` is
+an "at most" reading. Two firms, two boundary readings, one field: honouring it is the whole point
+of requiring it.
+
+- `<=` admits a share EQUAL to `max_day_share`; `<` refuses it.
+- `>=` and `>` describe no share ceiling (a consistency rule limits a share, it does not require
+  one) and are REFUSED by the model, by name, rather than silently read as a ceiling.
+- A file that declares `<=` behaves exactly as before: no released ruleset changes, and every
+  Topstep and Apex evaluation rule keeps its inclusive reading.
+- The Apex payout rules move from `<=` to `<` (F21), so a best day at exactly 50% of the profit
+  since the last payout now blocks the payout, which is what the page says.
+
+**2. The profit target's observation FREQUENCY is an assumption, its value is still quoted (F12).**
+
+The parameter table publishes the target amount and no observation frequency. The Apex files
+declared `evaluated: eod` under `evidence: official_quote`, which claimed more than the quote says.
+They now declare `evidence: assumption` with `unspecified_target_frequency_is_eod`
+(`provisional_conservative`, the reading the Topstep files take) and keep the quoted target value
+as the rule's `source`: the amount is sourced, the moment is assumed, and the assumption is the
+pessimistic one (an intraday touch lost by the close does not pass). No engine change.
+
+**3. A coupon on a fee is a promotion, and the vocabulary already expresses it (F11).**
+
+Apex's checkout carries `COUPON "SAVENOW"` — 90% off the first month, `active: true`,
+`expiration: 2026-11-24 23:59` — in the same saved home page the files cite, and no file declared
+it. `promotions` was written for a payout cap, but a promotion names any numeric `field` of the rule
+that carries it, and a `fee` carries `amount_usd`: `multiplier: '0.1'` on the evaluation fee is the
+first-month discount, `starts_on` the snapshot date, `ends_on` the stated expiration, and
+`requires` `account_purchase: new` plus `coupon_applied: SAVENOW` (the window already checks the
+profile's `purchase_date`). The base fee stays the list price; a run that cannot show the purchase
+keeps it and records the reason. No vocabulary change and no second mechanism: a promotional FEE is
+resolved by the same `resolve_promotions`, and `tests/integration/test_prop_promotions.py` covers it.
+
+**4. Two intraday lock readings become owner decisions (F8, F9).**
+
+Both `intraday_*_lock_taken_from_*` assumptions were `section7_default`; the engine's documented
+default did not produce them, the owner did, so they are `owner_decision`. Declaration form only.
+
+**Mechanically.** The 90 Apex files are re-hashed in place (unverified), `rulesets/prop/INDEX.json`
+is regenerated, and no released artifact changes: no v2 ruleset has been released, and the only
+files that declare `<` are the Apex payout rules, which were never run under a `<=` semantics. The
+unit test that pins the boundary is `test_consistency_comparison_reads_the_declared_boundary`
+(0.5 passes `<=` and fails `<`; `>=`/`>` are refused). `docs/modules/prop.md` states the reading;
+`docs/COMPATIBILITY.md` records it as a vocabulary behaviour change for a file that declares it.
+
+**What this amendment does NOT do.** It does not change the evaluation's 30% (that rule keeps `<=`,
+"at most", F5/F6: the primary reading, with `absent` as the sensitivity scenario
+`evaluation_consistency#0`), it does not model `max_eval_daily_profit_percent` separately (same 30,
+F18), and it does not relax `not_modeled`: cross-account hedging stays immaterial with the
+`becomes_immaterial_if` fact that would make it bind ("several accounts, copy trading or coordinated
+strategies are simulated", F10).
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its
