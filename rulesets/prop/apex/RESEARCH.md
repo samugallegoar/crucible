@@ -534,9 +534,14 @@ Why the constraint is the selected value: ADR-0107 section 7 requires the more r
 reading of a genuine conflict, and a constraint is more restrictive than none. Why it is
 still a conflict: the rendered table is the page a trader reads, the store's
 `consistency_rule_percentage` is the value the platform charges, and the record even
-carries a second field with the same 30 (`max_eval_daily_profit_percent`). The owner must
-confirm this one; it is the single most consequential choice in these files, because it
-means an evaluation passes only once its best day is at most 30% of its total profit.
+carries a second field with the same 30 (`max_eval_daily_profit_percent`). The owner's
+review of 2026-11-23 (F5 and F6, delegated to the coordinator) confirmed the reading, so
+the 30% stays PRIMARY: an evaluation passes only once its best day is at most 30% of its
+total profit, and `absent` ('Consistency Not Applied') stays the sensitivity scenario
+`evaluation_consistency#0`. The measure (F6) is best-day profit divided by the
+evaluation's total profit, with a pass at most 30% (`<=`, the comparison the file
+declares), and `max_eval_daily_profit_percent` is NOT modelled separately because it is
+the same 30, not a second rule (F18).
 
 ### 7.2 `tradovate_eod_lock` (the 12 EOD Tradovate files)
 
@@ -556,30 +561,36 @@ Source B — the product record of the same product (the alternative):
 
 Why no lock is selected: trailing forever leaves the smaller buffer, so it is the more
 restrictive reading, and it is also what the article says. Immaterial in practice, because
-the lock engages only above the balance at which the evaluation has already passed.
+the lock engages only above the balance at which the evaluation has already passed. The
+owner's review of 2026-11-23 (F7, delegated to the coordinator) confirmed no lock as the
+primary reading and kept the product record's lock as the sensitivity scenario
+`tradovate_eod_lock#0`.
 
 ## 8. Assumptions (named, each with its rationale)
 
-Only two values needed an assumption, both for the **intraday** program, where no page
-states where the trailing threshold stops. Both are `evidence: assumption` on the trailing
-rule itself.
+Four named readings, after the owner review of 2026-11-23 (delegated to the coordinator).
+Two are the intraday lock levels (no page states where the trailing threshold stops), one is
+the profit target's observation frequency, and one is the measure of the evaluation's 30%
+consistency field.
 
-| name | files | value | rationale |
-|---|---|---|---|
-| `intraday_evaluation_lock_taken_from_auto_liq_min_max` | 48 | lock at the profit-target balance, reached at peak = lock + drawdown | No page states a stop level; the product's own `auto_liq_min_max` is that balance and the shape is taken from the EOD drawdown page for the EOD evaluation. Unreachable before the pass. |
-| `intraday_pa_lock_taken_from_pa_auto_liq_min_max` | 48 | threshold fixed at starting balance + $100, reached at peak = start + drawdown + $100 | The intraday PA page states only that trailing stops; the level is the product's `pa_auto_liq_min_max`, the same structure the EOD PA page states in prose. |
+| name | files | value | kind | rationale |
+|---|---|---|---|---|
+| `intraday_evaluation_lock_taken_from_auto_liq_min_max` | 48 | lock at the profit-target balance, reached at peak = lock + drawdown | `owner_decision` | No page states a stop level; the product's own `auto_liq_min_max` is that balance and the shape is taken from the EOD drawdown page for the EOD evaluation. Unreachable before the pass (F8). |
+| `intraday_pa_lock_taken_from_pa_auto_liq_min_max` | 48 | threshold fixed at starting balance + $100, reached at peak = start + drawdown + $100 | `owner_decision` | The intraday PA page states only that trailing stops; the level is the product's `pa_auto_liq_min_max`, the same structure the EOD PA page states in prose (F9). |
+| `unspecified_target_frequency_is_eod` | 90 | the pass is tested on the closed balance at the rule-day's last scheduled bar | `provisional_conservative` | The parameter table publishes the target amount and no observation frequency, so WHEN it is observed is not sourced. EOD is the pessimistic reading (a touch lost by the close does not pass) and the reading the Topstep files take (F12). |
+| `consistency_30_is_best_day_share_of_total_profit` | 90 | best day profit / total profit over the evaluation, pass at most 30% (`<=`) | `owner_decision` | The store field is a bare percentage with no stated measure; the owner review settled the measure and kept the more restrictive 30% primary (F6, F18). |
 
-Nothing else in these files is an assumption: the time zone is published (`ALL times are
-published in the USA Eastern Time zone`, mapped to `America/New_York` including DST), the
-observation frequency of every threshold is stated (`monitored in real time`, `calculated
-once per trading day at 4:59:59 PM ET`), the profit target is judged on the closed balance
-(`reviewed at market close`), and Apex states the reset clock itself (`DLL resets daily at
-6PM ET`, `A trading day is defined from 6 PM ET one day to 4:59 PM ET the next day`).
+The time zone is published (`ALL times are published in the USA Eastern Time zone`, mapped to
+`America/New_York` including DST), the observation frequency of every THRESHOLD is stated
+(`monitored in real time`, `calculated once per trading day at 4:59:59 PM ET`), and Apex
+states the reset clock itself (`DLL resets daily at 6PM ET`, `A trading day is defined from
+6 PM ET one day to 4:59 PM ET the next day`).
 
-In particular no file needs the `unspecified_target_frequency_is_eod` default: Apex
-states the moment the evaluation target is judged, so every pass condition is
-`evaluated: eod` on the closed balance (`basis: balance`) under an `official_quote`, and
-no target is checked intraday anywhere in the 90 files.
+What is no longer an assumption either way is the target's VALUE: the target row is still the
+official quotation, and only its observation frequency is the `provisional_conservative`
+reading (F12). The two intraday lock readings were `section7_default` until the review
+re-declared them `owner_decision` (F8, F9), because the engine's documented default is not
+what produced the number.
 
 The commission's four `unknown` components are **not** an assumption:
 it is a declaration that the sources are silent (ADR-0107 section 8), and it leaves the cost
@@ -597,7 +608,7 @@ rule the firm states.
 | `sub_minute_holding_and_high_frequency_trading` | material | 90/90 | OHLC bars cannot detect a holding time shorter than the bar; Apex bans HFT and exploitation of the simulation |
 | `within_account_hedging_of_correlated_instruments` | material | 90/90 | one net position per instrument, but a long NQ against a short ES is representable and the engine has no correlated-instrument logic |
 | `news_trading_restriction_is_discretionary` | material | 90/90 | Apex names no event type, instrument, window or scope; it judges the strategy (section 5) |
-| `hedging_between_evaluation_accounts` | immaterial | 90/90 | a single simulated account cannot hedge another account |
+| `hedging_between_evaluation_accounts` | immaterial | 90/90 | a single simulated account cannot hedge another account; `becomes_immaterial_if` names the fact that would make it bind (`several accounts, copy trading or coordinated strategies are simulated`, F10) |
 | `evaluation_daily_profit_percent_field` | immaterial | 90/90 | the store record also carries `max_eval_daily_profit_percent: 30`; no page explains it and it is most likely the same 30% consistency, so it is not counted twice |
 | `five_pack_is_five_separate_accounts` | immaterial | 42/90 | five accounts at one price, modeled as one account at a fifth of the price |
 | `activation_fee_waiver` | immaterial | 42/90 | the waiver is `free_activation: true` in the store; no page states the waived amount |
@@ -726,19 +737,26 @@ Every value below is what the engine will enforce, grouped the way `crucible pro
 shows it. Confirm the **conflicts** first: they are the only places where an official page
 was not followed literally.
 
+The owner review of 2026-11-23 (delegated to the coordinator) changed four things in every
+file, and the lines below carry them: the profit target's observation frequency is now the
+`unspecified_target_frequency_is_eod` assumption, the payout consistency is strictly below
+50% (a best day at exactly 50% blocks it), the evaluation fee carries the SAVENOW coupon as a
+promotion, and the two `flat_before_session_end` rules carry the forfeiture and 6 PM ET rule
+day sentences as `supporting_sources`. Section 15 is the authoritative record of the round.
+
 ### `apex-eod-100k-5pack` — EOD Drawdown Evaluation (Rithmic) -> EOD Performance Account - 5-pack (per-account cost)
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -748,15 +766,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -766,15 +784,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (no lock); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $109,000->$106,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -784,15 +802,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (no lock); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $109,000->$106,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -802,15 +820,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (no lock); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $109,000->$106,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -820,15 +838,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -838,15 +856,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -856,15 +874,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -874,15 +892,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; EOD trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL $1,500; 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $2,500 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $139 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -892,15 +910,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -910,15 +928,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -928,15 +946,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (no lock); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $163,000->$159,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -946,15 +964,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (no lock); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $163,000->$159,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -964,15 +982,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (no lock); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $163,000->$159,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -982,15 +1000,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,990 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1000,15 +1018,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,490 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1018,15 +1036,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1036,15 +1054,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; EOD trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL $2,000; 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $350 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $3,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $2,190 at_start, activation $159 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1054,15 +1072,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1072,15 +1090,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1090,15 +1108,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1108,15 +1126,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (no lock); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $27,500->$26,500); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1126,15 +1144,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (no lock); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $27,500->$26,500); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1144,15 +1162,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (no lock); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $27,500->$26,500); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1162,15 +1180,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (no lock); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $27,500->$26,500); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1180,15 +1198,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $450 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1198,15 +1216,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1216,15 +1234,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1234,15 +1252,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1252,15 +1270,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; EOD trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL $500; 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $109 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1270,15 +1288,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1288,15 +1306,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1306,15 +1324,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1324,15 +1342,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (no lock); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $55,000->$53,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1342,15 +1360,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (no lock); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $55,000->$53,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1360,15 +1378,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (no lock); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $55,000->$53,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1378,15 +1396,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (no lock); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `tradovate_eod_lock`: lock = no lock (alternative lock $55,000->$53,000); `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1396,15 +1414,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $490 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1414,15 +1432,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,090 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1432,15 +1450,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1450,15 +1468,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1468,15 +1486,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; EOD trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL $1,000; 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA EOD trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $1,500 / $2,000 / $2,500 / $2,500 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: none
+- **Assumptions**: `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1486,15 +1504,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1504,15 +1522,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1522,15 +1540,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1540,15 +1558,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1558,15 +1576,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1576,15 +1594,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1594,15 +1612,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1612,15 +1630,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1630,15 +1648,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1648,15 +1666,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $999 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1666,15 +1684,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1684,15 +1702,15 @@ was not followed literally.
 
 - **Account / thresholds**: $100,000; evaluation target $6,000 on the closed balance; intraday trailing drawdown $3,000 (lock $109,000->$106,000); evaluation DLL none (the intraday evaluation has no DLL); 8 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $3,000 (lock $103,100->$100,100); PA DLL tiers $1,750@>=$100,000 / $1,750@>=$102,000 / $1,750@>=$103,000 / $2,500@>=$105,000 / $3,500@>=$110,000; PA scaling 3c@>$0 / 4c@>$2,000 / 5c@>$3,000 / 6c@>$5,000 / 6c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $250 net profit (since the last payout); safety net $3,100 above the starting balance; minimum $500; ladder $2,000 / $2,500 / $3,000 / $3,000 / $4,000 / $4,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $790 at_start, activation $129 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1702,15 +1720,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1720,15 +1738,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1738,15 +1756,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1756,15 +1774,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1774,15 +1792,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1792,15 +1810,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1810,15 +1828,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1828,15 +1846,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $990 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1846,15 +1864,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,790 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1864,15 +1882,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,890 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1882,15 +1900,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1900,15 +1918,15 @@ was not followed literally.
 
 - **Account / thresholds**: $150,000; evaluation target $9,000 on the closed balance; intraday trailing drawdown $4,000 (lock $163,000->$159,000); evaluation DLL none (the intraday evaluation has no DLL); 12 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $4,000 (lock $154,100->$150,100); PA DLL tiers $2,500@>=$150,000 / $2,500@>=$152,000 / $2,500@>=$153,000 / $3,000@>=$155,000 / $4,000@>=$160,000; PA scaling 4c@>$0 / 5c@>$2,000 / 7c@>$3,000 / 10c@>$5,000 / 10c@>$10,000.
 
-- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $300 net profit (since the last payout); safety net $4,100 above the starting balance; minimum $500; ladder $2,500 / $3,000 / $3,000 / $4,000 / $4,000 / $5,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $1,190 at_start, activation $149 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1918,15 +1936,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1936,15 +1954,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1954,15 +1972,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1972,15 +1990,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -1990,15 +2008,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2008,15 +2026,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2026,15 +2044,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2044,15 +2062,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $149.9 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2062,15 +2080,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $590 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2080,15 +2098,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2098,15 +2116,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2116,15 +2134,15 @@ was not followed literally.
 
 - **Account / thresholds**: $25,000; evaluation target $1,500 on the closed balance; intraday trailing drawdown $1,000 (lock $27,500->$26,500); evaluation DLL none (the intraday evaluation has no DLL); 4 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $1,000 (lock $26,100->$25,100); PA DLL tiers $500@>=$25,000 / $500@>=$26,000 / $1,250@>=$27,000; PA scaling 1c@>$0 / 2c@>$1,000 / 2c@>$2,000.
 
-- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $100 net profit (since the last payout); safety net $1,100 above the starting balance; minimum $500; ladder $1,000 / $1,000 / $1,000 / $1,000 / $1,000 / $1,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $167 at_start, activation $89 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2134,15 +2152,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2152,15 +2170,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2170,15 +2188,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2188,15 +2206,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2206,15 +2224,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2224,15 +2242,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2242,15 +2260,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (Tradovate); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2260,15 +2278,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $190 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2278,15 +2296,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $690 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2296,15 +2314,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $799 at_start; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2314,15 +2332,15 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.55, NQ 1.55, YM 1.55, RTY 1.55, NKD 2.32, MES 0.52, MNQ 0.52, MYM 0.52, M2K 0.52 (WealthCharts); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
@@ -2332,21 +2350,25 @@ was not followed literally.
 
 - **Account / thresholds**: $50,000; evaluation target $3,000 on the closed balance; intraday trailing drawdown $2,000 (lock $55,000->$53,000); evaluation DLL none (the intraday evaluation has no DLL); 6 contracts; flat 1 minute before the scheduled session end (16:59 ET on a regular session), consequence fail; access 30 calendar days; PA intraday trailing drawdown $2,000 (lock $52,100->$50,100); PA DLL tiers $1,000@>=$50,000 / $1,000@>=$51,500 / $2,000@>=$53,000 / $3,000@>=$56,000; PA scaling 2c@>$0 / 3c@>$1,500 / 4c@>$3,000 / 4c@>$6,000.
 
-- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; 50% consistency since the last payout; the threshold after a payout is unchanged.
+- **Payouts**: 5 qualifying days of >= $200 net profit (since the last payout); safety net $2,100 above the starting balance; minimum $500; ladder $1,500 / $2,000 / $2,500 / $2,500 / $3,000 / $3,000; at most 6; split 1.0; consistency strictly below 50% since the last payout, so a day at exactly 50% blocks it; the threshold after a payout is unchanged.
 
-- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable).
+- **Fees / commissions**: evaluation $249 at_start, activation $99 at_pass; commissions per side ES 1.99, NQ 1.99, YM 1.99, RTY 1.99, NKD 1.99, MES 0.51, MNQ 0.51, MYM 0.51, M2K 0.51 (Rithmic); every component `unknown` (no page says, so the cost statistics stay unavailable); the SAVENOW coupon is declared as a promotion (90% off the first month for a new purchase with the coupon between 2026-11-22 and 2026-11-24, F11).
 
 - **News / compliance**: no news window modeled (discretionary rule, section 5); automation ban critical -> `blocked_by_compliance` for automated execution; trade copying and high-risk strategies material
 
 - **Activity**: at least 2 days of >=$50 net profit in every rolling 30 calendar days, tested at each rule-day close once the window is full; a window short of its days closes the account (`close_account`) before the pass conditions are tested, so the payout eligibility is forfeited.
 
-- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max`, `intraday_pa_lock_taken_from_pa_auto_liq_min_max`
+- **Assumptions**: `intraday_evaluation_lock_taken_from_auto_liq_min_max` (owner_decision, F8), `intraday_pa_lock_taken_from_pa_auto_liq_min_max` (owner_decision, F9), `unspecified_target_frequency_is_eod` (provisional_conservative, F12)
 
 - **Conflicts**: `evaluation_consistency`: max_day_share = 0.3 (alternative the rule does not exist (`absent`))
 
 - **Coverage**: 5 `not_modeled` entries (3 material), evaluation status `conditional_on_modeled_rules`, estimate status `unavailable` and cash statistics `unavailable`: the commission does not declare whether it includes the exchange and regulatory fees, so no cost is assumed; unverified.
 
 ## 13. Open questions for the owner
+
+Every question below was answered by the owner review of 2026-11-23 (delegated to the
+coordinator); section 15 records each disposition and the packet's section F carries it per
+question. The questions stay verbatim as the record of what was open.
 
 ### Per-component costs (C7b fix, 2026-11-22)
 
@@ -2416,3 +2438,84 @@ uv run crucible prop list --firm apex --json >/dev/null
 
 `python fetch.py apex <short_name> <url>` re-fetches a page (full browser headers); a
 re-fetch is a **new** snapshot with a new hash, never a rewrite of the old bytes.
+
+## 15. Owner review round (2026-11-23) and the reference run under the upper bound
+
+The owner delegated the packet's questions F1-F21 to the coordinator on 2026-11-23, and the round
+applied them to all 90 files. The files stay `unverified`: no `crucible prop confirm` was run, no
+`*.verification.yaml` exists and no `verification.status` was touched. Each decision line in the
+packet carries the coordinator's recommendation and still waits for the owner's own confirmation.
+
+| # | question | decision (delegated 2026-11-23) | what the files now declare |
+|---|---|---|---|
+| F1-F4 | exchange, clearing, NFA, other | stay `unknown`; the preliminary cross-firm analysis uses `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` | four `unknown` components with `evidence: not_stated` in 90/90 files; the bound fills only those gaps and labels the cash `lower_bound` |
+| F5 | `evaluation_consistency` conflict | 30% stays PRIMARY (the more restrictive reading, `<=`); 'Consistency Not Applied' stays scenario `evaluation_consistency#0` | unchanged value, rationale now records the decision |
+| F6, F18 | the measure of the 30% and `max_eval_daily_profit_percent` | best-day profit / total profit over the evaluation, pass at most 30%; the second field is the same 30 and is NOT modelled separately | new `owner_decision` assumption `consistency_30_is_best_day_share_of_total_profit`; the immaterial `not_modeled` entry stays, with the decision in its description |
+| F7 | Tradovate EOD lock | no lock is primary (trails indefinitely, smaller buffer); the product record's lock stays scenario `tradovate_eod_lock#0` | unchanged value in the 14 EOD Tradovate files; rationale records the decision |
+| F8 | intraday evaluation lock | accepted, `owner_decision` | `assumption_kind` changed in 48 files |
+| F9 | intraday PA lock at start + $100 | accepted, `owner_decision` | `assumption_kind` changed in 48 files |
+| F10 | cross-account hedging | immaterial, with the fact that would make it bind | `becomes_immaterial_if` in 90 files: "becomes material if several accounts, copy trading or coordinated strategies are simulated" |
+| F11 | the SAVENOW coupon | a `promotion` on the first-month (evaluation) fee | `multiplier: '0.1'` (90% off), `starts_on` 2026-11-22, `ends_on` 2026-11-24, `requires` `account_purchase: new` and `coupon_applied: SAVENOW` (the window checks the profile's `purchase_date`); the base fee stays the list price and the coupon block is quoted verbatim |
+| F12 | the target's observation frequency | the target quote states the amount and no WHEN, so EOD is an assumption, the same reading as Topstep, with the value still quoted | `evidence: assumption` with `unspecified_target_frequency_is_eod` (`provisional_conservative`) in 90 files |
+| F13-F15 | sub-minute/HFT, correlated within-account hedging, discretionary news | stay `material` | unchanged |
+| F16 | five-pack | one account at one fifth of the pack price (immaterial) | unchanged; the acceptance is recorded in the entry's description |
+| F17 | no-activation-fee path | $0 activation accepted | unchanged (the activation fee rule is absent); the acceptance is recorded in the entry's description |
+| F19 | the missing sources of `flat_before_session_end` | add both sentences as `supporting_sources` | the forfeiture sentence (prohibited-activities page) and the 6 PM ET rule-day sentence (futures-trading-times page), in the evaluation and funded phases of 90 files; the self-check verifies both |
+| F20 | a position open at 16:59 ET | FAILS the account, sourced by the forfeiture sentence | unchanged `action: fail`, now sourced |
+| F21 | `consistency_payout` comparison | the page says "50% or more", so the comparison is strict | `comparison: <` in 90 files; the engine reads the declared comparison, so a day at exactly 50.000% blocks the payout (ADR-0107 amendment of 2026-11-23) |
+| F22-F29 | the remaining observations | the conservative reading where it is unambiguous; nothing left open | reported per question in the packet's section F: `close_account` stays, H = 23 accepted, censored starts stay their own class, the EOD mark/tests stay, the run is an illustration, the product set is complete, the fill label is a convention and a platform's schedule is its own file |
+
+### 15.1 The ES 2024 reference run under the upper bound (H = 23)
+
+`crucible.experiments.futures_prop.run_prop_evaluation` on `examples/futures/es_sma_cross.yaml`,
+prepared exactly as `tests/bench/test_prop_real_data.py` prepares it (window 2024-01-02 ..
+2024-12-31, warmup 5 trade dates, `flat_by_close: false`, `allow_unverified_sessions: true`), with
+`cost_assumption: rulesets/prop/cost_assumptions/upper_bound_v1.yaml`, `payout_policy: max_eligible`,
+`scenarios: primary`, `CRUCIBLE_DATA_STORE=D:/proyectos/crucible/data/processed`, a temporary
+Crucible home and a temporary artifacts root per mode (`D:/tmp/apex_review/tmp/*`). Nothing was
+written to the user's Crucible home. **H = 23** is the smallest horizon at which Apex's own
+30-calendar-day access period can fire from 2024-01-02 (the engine refuses a shorter one).
+
+The file is `apex-eod-50k.v1.yaml` (Rithmic, standard purchase), content hash
+`759c71e3cc076d041b704134ba02c18e93ad6d3226108180e3163f8a39ca24d8` (the packet's run used
+`4b4ff565...`, the file before this round).
+
+| measure | `automated` | `manual` |
+|---|---|---|
+| artifact / evaluation id | `PRP-d770bc1b16aeed30` | `PRP-68eebc5b7f92a9de` |
+| starts / complete | 253 / 231 | 253 / 231 |
+| outcomes | fail 252, censored 1, pass 0, timeout 0, horizon 0 | identical |
+| `breached_rule` | `eod_drawdown` 249, `flat_before_session_end` 3, `daily_loss_limit` 1 (the censored 2024-12-31 start) | identical |
+| probability field | `conditional_pass_probability`, `definitive: false` | identical |
+| value (bounds) | 0.0 (0.0 .. 0.003952569169960474) | identical |
+| interval | `available`, 0.0 .. 0.0 | identical |
+| effective independent attempts | 10.04 (231 / 23) | identical |
+| evaluation status | `conditional_on_modeled_rules` | identical |
+| estimate status | `partial` | identical |
+| `cost_bound` / `cost_status` | `upper` / `conditional`, no gaps | identical |
+| commission / bound per side | 1.99 + 3.02 (exchange 2.00, clearing 0.50, NFA 0.02, other 0.50) | identical |
+| cash status / mean net cash | `lower_bound` / -590.00 | identical |
+| fees per attempt | 590.00 (the one-time evaluation fee; the SAVENOW promotion is NOT applied because the run declares no participant profile, and the reason is recorded) | identical |
+| `min_buffer_usd` over the 253 starts | -46.83 .. 863.74 | identical |
+| **practical eligibility** | **`blocked_by_compliance`** | **`eligible`** |
+
+The two frames are identical in every column except `practical_eligibility` (checked column by
+column): the automation ban changes no fill, breach, fee or outcome, it only says a mechanically
+successful `automated` attempt could never be a practically valid pass.
+
+**Against the packet's run (section E).** The start count, the completeness, the class counts, the
+0.0 probability and the $590 fee are unchanged. What moved is the COST: with the upper bound charged
+on top of the 1.99 commission, three attempts that used to die on `flat_before_session_end` now die
+on `eod_drawdown` first (6 -> 3) and the deepest breach goes from the walked attempt's -30.22 to
+-46.83. The estimate status moves from `unavailable` to `partial`, because the bound prices the four
+components: the cash is now `-590.00` labelled `lower_bound`, and both the probability and the cash
+carry "costs are an upper bound: the probability and the net cash are pessimistic (lower bounds)
+under it". One of the three `flat_before_session_end` failures closed with a **positive** buffer
+(+863.74 on 2024-09-19), which is exactly the F20 shape: the rule fails the account even though the
+money was inside every threshold.
+
+Read this as an illustration of one ES strategy under one unverified ruleset, never as evidence
+about Apex: 253 starts, 0 passes, every attempt dead within 0-4 calendar days, and the covered
+window includes an unsourced CME session (2024-01-14..2024-01-15) and 253 counterfactual
+applications of a 2026 ruleset to 2024 data. The labels are what the round exists to get right, and
+the contract still says `unverified`.

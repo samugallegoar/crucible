@@ -216,6 +216,21 @@ phases:
       section: Trading Times
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://apextraderfunding.com/help-center/getting-started/prohibited-activities
+      quote: Holding open trade positions through the market close. Traders are responsible for ensuring
+        that all open trade positions are closed prior to the market close. Traders engaging in these
+        prohibited activities will forfeit their accounts and all associated balances.
+      snapshot_sha256: 494fd6da079ceaec93f14a5f8ea97299fb7cd9b212bf6fc5e62f00ba6d170c9c
+      retrieved_at: '2026-11-22T01:36:46Z'
+      section: Prohibited Activities, Holding open trade positions through the market close
+      synthetic: false
+    - url: https://apextraderfunding.com/help-center/getting-started/futures-trading-times/
+      quote: A trading day is defined from 6 PM ET one day to 4:59 PM ET the next day
+      snapshot_sha256: 639a215e3dc30105ff3c783d0c4df1a6fab04783f3bc5d668ae9bb32f29d7aef
+      retrieved_at: '2026-11-22T01:39:28Z'
+      section: Understanding Trading Days and System Updates
+      synthetic: false
   - kind: time_limit
     rule_id: access_period
     description: 30 consecutive calendar days of access from the date of purchase, running through weekends
@@ -305,9 +320,12 @@ phases:
   pass_conditions:
   - kind: profit_target
     rule_id: profit_target
-    description: $9,000 profit on the $150,000 starting balance ($159,000 closed balance), reviewed at
-      market close (4:59:59 PM ET); there is no minimum number of trading days, so the evaluation can
-      pass in one trading day.
+    description: The $9,000 profit target on the $150,000 starting balance ($159,000 closed balance) is
+      tested EOD on the closed balance. The target quote states the amount and not WHEN it is observed,
+      so the observation frequency is an assumption (unspecified_target_frequency_is_eod,
+      provisional_conservative, the pessimistic reading, since an intraday touch lost by the close does
+      not pass). There is no minimum number of trading days, so the evaluation can pass in one trading
+      day.
     amount_usd: '9000'
     basis: balance
     evaluated: eod
@@ -322,7 +340,15 @@ phases:
       retrieved_at: '2026-11-22T01:36:04Z'
       section: Account Parameters table, Profit Target and Max Drawdown (EOD) rows
       synthetic: false
-    evidence: official_quote
+    evidence: assumption
+    assumption:
+      name: unspecified_target_frequency_is_eod
+      rationale: The parameter table publishes the target amount and no observation frequency, so WHEN
+        the target is observed is not sourced. The EOD reading (the pass is tested on the balance at the
+        rule-day's last scheduled bar, never on an intraday touch) is the pessimistic one and the same
+        reading the Topstep files take. The owner review of 2026-11-23 (F12, delegated to the coordinator 2026-11-23) re-declared the
+        frequency as this provisional_conservative assumption and kept the target value quoted.
+      assumption_kind: provisional_conservative
   - kind: consistency
     rule_id: consistency_eval
     description: 'The rendered account-parameter tables say ''Consistency Not Applied'' to every evaluation,
@@ -348,6 +374,14 @@ phases:
       section: productPickerV3Config, consistency_rule_percentage of every 2026 evaluation record
       synthetic: false
     evidence: conflict_resolution
+    assumptions:
+    - name: consistency_30_is_best_day_share_of_total_profit
+      rationale: The store field is a bare percentage with no stated measure, so it is read as the best
+        day's profit divided by the evaluation's total profit, with a pass at most 30% (<=). The owner
+        review of 2026-11-23 (F6, delegated to the coordinator 2026-11-23) settled the measure; the more restrictive 30% stays the
+        primary reading and max_eval_daily_profit_percent is not modelled separately because it is the
+        same field, not a second rule.
+      assumption_kind: owner_decision
   max_calendar_days: null
   max_trading_days: null
   fees:
@@ -368,6 +402,24 @@ phases:
       section: productPickerV3Config, id 3008 "150k Rithmic EOD Trail", price / pack_quantity
       synthetic: false
     evidence: official_quote
+    promotions:
+    - id: savenow_90_off_first_month
+      field: amount_usd
+      multiplier: '0.1'
+      starts_on: '2026-11-22'
+      ends_on: '2026-11-24'
+      purchase_on_or_after: '2026-11-22'
+      requires:
+        account_purchase: new
+        coupon_applied: SAVENOW
+      source:
+        url: https://apextraderfunding.com/
+        quote: '"EndOfDay":{"first_month_code":"90","recurring_code":"50","title_code":"COUPON \"SAVENOW\"","active":true,"expiration":"2026-11-24 23:59"}'
+        snapshot_sha256: 3545df973d7ecc638f674d009a85b351d8da0e32bd224882810617fe16f7be7d
+        retrieved_at: '2026-11-22T01:35:38Z'
+        section: productPicker checkout coupon block (EndOfDay), first-month code 90 (90% off), active,
+          expiration 2026-11-24 23:59
+        synthetic: false
 - phase_id: funded
   kind: funded
   starting_balance_usd: '150000'
@@ -468,14 +520,15 @@ phases:
     rule_id: consistency_payout
     description: 'Payout condition: no single profitable trading day may account for 50% or more of the
       net profit earned since the last approved payout (since inception before the first one); if it does,
-      the payout option is unavailable until the share falls below 50%. The pages say ''less than 50%''
-      while the engine''s evaluator accepts a share equal to the limit, which differs only at exactly
-      50.000% (immaterial).'
+      the payout option is unavailable until the share falls below 50%. The page says ''50% or more'', so
+      the comparison is strict (<) and a best day at exactly 50.000% of total profit blocks the payout;
+      the engine reads the declared comparison rather than a fixed one. The owner review of 2026-11-23
+      (F21, delegated to the coordinator 2026-11-23) settled the strict reading.'
     max_day_share: '0.5'
     measure: best_day_profit/total_profit
     applies_to: payout
     window: since_last_payout
-    comparison: <=
+    comparison: <
     action: block_payout
     source:
       url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-payouts/
@@ -547,6 +600,21 @@ phases:
       section: Trading Times
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://apextraderfunding.com/help-center/getting-started/prohibited-activities
+      quote: Holding open trade positions through the market close. Traders are responsible for ensuring
+        that all open trade positions are closed prior to the market close. Traders engaging in these
+        prohibited activities will forfeit their accounts and all associated balances.
+      snapshot_sha256: 494fd6da079ceaec93f14a5f8ea97299fb7cd9b212bf6fc5e62f00ba6d170c9c
+      retrieved_at: '2026-11-22T01:36:46Z'
+      section: Prohibited Activities, Holding open trade positions through the market close
+      synthetic: false
+    - url: https://apextraderfunding.com/help-center/getting-started/futures-trading-times/
+      quote: A trading day is defined from 6 PM ET one day to 4:59 PM ET the next day
+      snapshot_sha256: 639a215e3dc30105ff3c783d0c4df1a6fab04783f3bc5d668ae9bb32f29d7aef
+      retrieved_at: '2026-11-22T01:39:28Z'
+      section: Understanding Trading Days and System Updates
+      synthetic: false
   - kind: activity_requirement
     rule_id: pa_activity_requirement
     description: 'The PA must record at least 2 trading days with $50 or more of net profit within EVERY
@@ -646,6 +714,8 @@ not_modeled:
   description: Immaterial. Evaluations may not be passed by hedging one account against another; a single
     simulated account cannot express a cross-account hedge.
   materiality: immaterial
+  becomes_immaterial_if: becomes material if several accounts, copy trading or coordinated strategies
+    are simulated
   source:
     url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-evaluations/
     quote: You may not pass Evaluation Accounts by hedging them against each other.
@@ -657,7 +727,8 @@ not_modeled:
   description: Immaterial, declared so it is not silently ignored. The product record also carries max_eval_daily_profit_percent
     = 30, the same number as its consistency_rule_percentage; no rendered page explains the field, and
     it is most likely the same 30% consistency expressed a second time, so it is not modeled separately
-    (doing so would double count it).
+    (doing so would double count it). The owner review of 2026-11-23 (F18, delegated to the coordinator 2026-11-23) confirmed
+    that reading, so it stays not modelled on purpose.
   materiality: immaterial
   source:
     url: https://apextraderfunding.com/

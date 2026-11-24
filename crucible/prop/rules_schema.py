@@ -1005,6 +1005,10 @@ class ConsistencyRule(_Rule):
     separate windows, because a firm can measure the best day since the last payout against the
     whole account's profit. Declared separately they can differ; ``numerator_window`` and
     ``denominator_window`` are absent when the rule uses ``window`` for both.
+
+    ``comparison`` is the firm's own reading of the boundary and is READ by the evaluator:
+    ``<=`` ("at most 30%") admits a share equal to ``max_day_share``, ``<`` ("50% or more")
+    refuses it. The other comparisons describe no share limit and are refused by name.
     """
 
     kind: Literal["consistency"] = "consistency"
@@ -1016,6 +1020,18 @@ class ConsistencyRule(_Rule):
     denominator_window: Literal["since_last_payout", "all_time", "current_cycle"] | None = None
     comparison: Comparison
     action: Literal["promote_phase", "block_payout"]
+
+    @model_validator(mode="after")
+    def _share_comparison(self) -> ConsistencyRule:
+        """Only a ceiling on a share is a consistency rule; the boundary reading is declared."""
+        if self.comparison not in ("<", "<="):
+            msg = (
+                f"rule {self.rule_id}: consistency compares a share against a ceiling, so "
+                f"comparison must be '<' (a share equal to max_day_share fails, a firm's "
+                f"'50% or more') or '<=' ('at most'); {self.comparison!r} describes no limit"
+            )
+            raise ValueError(msg)
+        return self
 
     @property
     def best_day_window(self) -> Literal["all_time", "since_last_payout"]:

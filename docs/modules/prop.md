@@ -45,7 +45,9 @@
       `all_time` or `since_last_payout`) and `denominator_window` (which profit it is shared with:
       `all_time`, `since_last_payout` or `current_cycle`, the profit of the payout cycle measured
       from the balance the cycle opened at) override it separately when a firm measures the two
-      differently.
+      differently. Its `comparison` is READ: `<=` ("at most 30%") admits a share equal to
+      `max_day_share`, `<` ("50% or more") refuses it, and `>=`/`>` describe no share ceiling and
+      are refused by name.
     - `ActivityRequirementRule`: `days`, `window`, `unit: calendar_days|trading_days`,
       `qualifies_if {min_trades, min_abs_pnl_usd, min_pnl_usd}`, `observed`, `comparison`,
       `action: fail|close_account`. It is the mirror of `inactivity`: at least N qualifying days in
@@ -95,8 +97,10 @@
   conflict alternative, deterministic order) and `scenario(ruleset, id)`.
 - **`promotions.py`**: `resolve_promotions(ruleset, profile) -> (promoted, PromotionOutcome)` and
   `promotion_reason`. A rule may carry `promotions` (a better value for a limited offer: a doubled
-  payout cap for an account bought during the offer), each naming the numeric `field` it replaces,
-  its `value` or `multiplier`, the offer window and the profile facts it `requires`. Resolution is
+  payout cap for an account bought during the offer, or a percentage off a FEE when the offer is a
+  checkout coupon), each naming the numeric `field` it replaces (`max_usd`, `max_usd_by_payout[0]`,
+  a fee's `amount_usd`), its `value` or `multiplier`, the offer window and the profile facts it
+  `requires`. Resolution is
   per RUN: a promotion applies only when every requirement is declared and matches and the
   profile's `purchase_date` falls in `[starts_on, ends_on]` (`ends_on: unknown` never continues
   past the ruleset's `as_of`); anything missing or `unknown` leaves the base value and is reported
@@ -235,7 +239,7 @@ threshold: the fill pays the bar's open (or close) spread and slippage plus
 | `scaling_plan` | `steps` (`min_profit_usd` or `min_balance_usd` per rung, the first may omit it = the floor rung), `evaluated`, `basis`, `comparison` (the rung boundary of a balance ladder), `on_excess: clip\|reject` | the limit for the next rule-day, chosen at the close; a balance ladder reads the closing BALANCE (absolute tiers, no profit subtraction) |
 | `flat_by` | `time`+`tz` **or** `minutes_before_session_end`, `reopen`, `consequence` | a forced-flat clock; the session-relative form follows the CME early close |
 | `min_trading_days` | `days`, `unit: trading_days\|winning_days\|calendar_days\|trade_dates`, `day_counts_if` | pass condition |
-| `consistency` | `max_day_share`, `measure`, `applies_to`, `window`, `numerator_window`, `denominator_window` | the best day's share of total profit, with the two windows declared separately |
+| `consistency` | `max_day_share`, `measure`, `applies_to`, `window`, `numerator_window`, `denominator_window`, `comparison` | the best day's share of total profit, with the two windows declared separately; `<=` admits a share equal to the limit, `<` refuses it |
 | `payout` | `min_days_since_last`, `min_profitable_days`, `min_traded_days`, `min_day_profit_usd`, `window`, `buffer_usd`, `split`, `min_usd`, `max_usd: number\|unlimited\|unknown`, `max_usd_by_payout`, `max_pct_of_balance`, `max_share_of_withdrawable`, `min_new_profit_share_of_request`, `min_profit_since_last_usd`, `cycle_goal_usd`, `first_payout_after_calendar_days`, `payout_group`, `max_payouts`, `threshold_after_payout`, `set_threshold_to` | a withdrawal from a funded phase at the close |
 | `time_limit` | `max_calendar_days` or `max_trading_days` | a phase without a pass times out |
 | `fee` | `fee_kind: evaluation\|activation\|reset\|monthly`, `amount_usd`, `when` | attempt cost accounting only |

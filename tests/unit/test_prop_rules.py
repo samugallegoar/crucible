@@ -243,6 +243,43 @@ def test_consistency_is_the_best_days_share_of_total_profit() -> None:
     assert rl.consistency_ok(rule, losing) is False
 
 
+def test_consistency_comparison_reads_the_declared_boundary() -> None:
+    """F21: a firm's "50% or more" is `<`. A share EQUAL to the limit passes `<=` and fails `<`.
+
+    Two days of 458.50 out of 917.00 are exactly 0.5, so the boundary is the whole test: Apex's
+    payout page writes "No single profitable trading day may account for 50% or more of total
+    profit", which forbids the exact half, while "at most 30%" admits it. `>=` and `>` describe no
+    share ceiling and are refused by the schema, never silently read as a ceiling.
+    """
+
+    def consistency(comparison: str, share: str = "0.5") -> ConsistencyRule:
+        return ConsistencyRule(
+            rule_id="c",
+            max_day_share=Decimal(share),
+            measure="best_day_profit/total_profit",
+            applies_to="payout",
+            window="all_time",
+            comparison=comparison,  # type: ignore[arg-type]
+            action="block_payout",
+            source=SOURCE,
+        )
+
+    days = {1: rl.DayStats(0), 2: rl.DayStats(0)}
+    days[1].close_balance = 458_500_000
+    days[2].close_balance = 458_500_000
+    assert rl.consistency_ok(consistency("<="), days) is True
+    assert rl.consistency_ok(consistency("<"), days) is False
+    # 199.00 of 399.00 is 0.49874.., below the half, so the strict reading passes it
+    below = {1: rl.DayStats(0), 2: rl.DayStats(0), 3: rl.DayStats(0)}
+    below[1].close_balance = 100_000_000
+    below[2].close_balance = 100_000_000
+    below[3].close_balance = 199_000_000
+    assert rl.consistency_ok(consistency("<"), below) is True
+    for other in (">=", ">"):
+        with pytest.raises(ValidationError, match="describes no limit"):
+            consistency(other)
+
+
 def test_min_trading_days_counts_only_days_that_satisfy_the_day_test() -> None:
     """Two days are required; a day counts when it has at least one trade."""
     rule = MinTradingDaysRule(

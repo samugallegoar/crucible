@@ -245,3 +245,70 @@ def test_promotion_reason_is_none_when_every_fact_matches() -> None:
     assert promotion_reason(promotion, ELIGIBLE, as_of=AS_OF) is None
     missing = profile(purchase_date="2026-06-10")
     assert promotion_reason(promotion, missing, as_of=AS_OF) == "account_purchase not declared"
+
+
+SAVENOW = {
+    "id": "savenow_90_off_first_month",
+    "field": "amount_usd",
+    "multiplier": "0.1",
+    "starts_on": "2026-11-22",
+    "ends_on": "2026-11-24",
+    "purchase_on_or_after": "2026-11-22",
+    "requires": {"account_purchase": "new", "coupon_applied": "SAVENOW"},
+    "source": {
+        "url": "https://example.invalid/synthetic-offer",
+        "quote": "SYNTHETIC TEST VALUE: 90% off the first month with the coupon",
+        "snapshot_sha256": "0" * 64,
+        "retrieved_at": "2026-11-22T00:00:00Z",
+        "synthetic": True,
+    },
+}
+"""The Apex pre-purchase coupon shape: a percentage off a FEE, not off a payout cap."""
+
+FEE = {
+    "kind": "fee",
+    "rule_id": "evaluation_fee",
+    "fee_kind": "evaluation",
+    "amount_usd": "590.00",
+    "when": "at_start",
+    "comparison": ">=",
+    "action": "charge",
+    "source": {
+        "url": "https://example.invalid/synthetic-price",
+        "quote": "SYNTHETIC TEST VALUE: the list price of the evaluation",
+        "snapshot_sha256": "0" * 64,
+        "retrieved_at": "2026-11-22T00:00:00Z",
+        "synthetic": True,
+    },
+}
+
+
+def _fee_ruleset(promotion: dict[str, object]) -> PropRuleset:
+    """The payout fixture with one evaluation FEE carrying the promotion."""
+    raw = yaml.safe_load((FIXTURES / "synthetic_p_payout.yaml").read_text(encoding="utf-8"))
+    raw["as_of"] = AS_OF.isoformat()
+    fee = {**FEE, "promotions": [promotion]}
+    raw["phases"][0]["fees"] = [fee]
+    return PropRuleset.model_validate(raw)
+
+
+def test_a_percentage_discount_applies_to_a_fee_inside_its_window() -> None:
+    """A coupon on the first-month FEE is a promotion too: 590.00 x 0.1 = 59.00, never assumed.
+
+    Apex's checkout coupon is the case: 90% off the first month, for a NEW purchase with the coupon
+    applied, bought between the snapshot (2026-11-22) and the stated expiration (2026-11-24). The
+    base fee stays the list price, and a purchase outside the window keeps it.
+    """
+    who = profile(account_purchase="new", coupon_applied="SAVENOW", purchase_date="2026-11-23")
+    promoted, outcome = resolve_promotions(_fee_ruleset(SAVENOW), who)
+    assert promoted.phases[0].fees[0].amount_usd == Decimal("59.000")
+    assert outcome.applied_ids == ("savenow_90_off_first_month",)
+    assert outcome.promoted == {"evaluation_fee.amount_usd": "59.000"}
+
+    late = profile(account_purchase="new", coupon_applied="SAVENOW", purchase_date="2026-11-25")
+    kept, missed = resolve_promotions(_fee_ruleset(SAVENOW), late)
+    assert kept.phases[0].fees[0].amount_usd == Decimal("590.00")
+    assert missed.not_applied == (
+        "promotion savenow_90_off_first_month not applied: the purchase on 2026-11-25 is after "
+        "the offer end 2026-11-24",
+    )
