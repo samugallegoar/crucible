@@ -101,10 +101,12 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
-      assumption_kind: section7_default
-      rationale: The firm states the max-loss amount and the mark it trails from, and never says whether
-        open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified
-        observation frequency of a failure threshold as intraday, which is the stricter reading.
+      assumption_kind: owner_decision
+      rationale: The firm states the max-loss amount and the mark it trails from, and never says
+        whether open equity is tested against the threshold between closes. The test is taken on
+        equity intrabar, the stricter reading. The owner review of 2026-11-24 (F5, delegated to the
+        coordinator 2026-11-24) accepted the intraday test as the more restrictive reading and
+        recorded it as an owner decision rather than a section 7 default.
     amount_usd: '1000'
     mode: eod
     evaluated: intraday
@@ -147,12 +149,33 @@ phases:
       retrieved_at: '2026-11-22T01:53:35Z'
       section: LucidPro, LucidFlex and LucidDirect Accounts
     evidence: assumption
+    supporting_sources:
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Any open positions will be automatically closed by Lucid Trading at 4:45 PM EST
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Holding a position past this time does not result in a failed account
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Trading resumes at 6:00 PM EST, Sunday through Thursday
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: Market Reopen Times
     assumption:
       name: est_means_america_new_york
-      assumption_kind: section7_default
-      rationale: The page writes the cutoff in 'EST'. ADR-0107 section 7 reads a bare US Eastern label
-        as America/New_York including daylight saving, which keeps the 4:45 PM ET close at 4:45 PM local
-        all year; a literal UTC-5 clock would shift the cutoff an hour in summer.
+      assumption_kind: owner_decision
+      rationale: 'The page writes the cutoff in ''EST''. It is read as America/New_York WITH
+        daylight saving, so the cutoff stays 4:45 PM local all year: that is the market-clock
+        meaning. A fixed UTC-5 offset does not mean that: 4:45 PM EST is 21:45 UTC, which in summer
+        (EDT, UTC-4) is 5:45 PM local, 45 minutes AFTER the 5:00 PM ET futures close the offset is
+        measured from, so the firm would be flattening an account the session has already ended. The
+        owner review of 2026-11-24 (F7, delegated to the coordinator 2026-11-24) took that reading
+        as an owner decision; a fixed UTC-5 sensitivity scenario is not expressible in the scenario
+        vocabulary, which is recorded in RESEARCH.md section 17.'
     time: '16:45:00'
     tz: America/New_York
     reopen: '18:00:00'
@@ -179,6 +202,33 @@ phases:
     minutes_before_session_end: 15
     comparison: <=
     action: auto_liquidate
+  - kind: inactivity
+    rule_id: eval_inactivity
+    description: 'An account with no trade for more than 30 calendar days is deemed abandoned and
+      permanently deleted. The page says it outright: ''Accounts that have not been traded resulting
+      in at least a net profit or loss of 1$ within 30 calendar days will be deemed abandoned and
+      will be permanently deleted from our systems''. It is modelled as a hard fail at the start of
+      the 31st calendar day after the last EXECUTED trade, the pessimistic reading of a rule whose
+      page says the account is deleted. The page also asks for at least $1 of net profit or loss on
+      the trade, which the engine cannot separate from an executed trade at a zero result: a day
+      counts on an executed trade, as for Topstep. The owner review of 2026-11-24 (F22, delegated to
+      the coordinator 2026-11-24) added the rule; it was declared as modelled in RESEARCH.md section
+      1 before any file carried it.'
+    max_gap: 30
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>'
+    action: fail
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404632-inactivity-policy
+      quote: Accounts that have not been traded resulting in at least a net profit or loss of 1$
+        within 30 calendar days will be deemed abandoned and will be permanently deleted from our
+        systems.
+      snapshot_sha256: 4c693383bf9ed3e9c5407819abe0fff958d8d6ed4411438426102e2a8871833a
+      retrieved_at: '2026-11-24T15:56:33Z'
+      section: Active Status Policy
+    evidence: official_quote
   pass_conditions:
   - kind: profit_target
     rule_id: eval_profit_target
@@ -249,10 +299,12 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
-      assumption_kind: section7_default
-      rationale: The firm states the max-loss amount and the mark it trails from, and never says whether
-        open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified
-        observation frequency of a failure threshold as intraday, which is the stricter reading.
+      assumption_kind: owner_decision
+      rationale: The firm states the max-loss amount and the mark it trails from, and never says
+        whether open equity is tested against the threshold between closes. The test is taken on
+        equity intrabar, the stricter reading. The owner review of 2026-11-24 (F5, delegated to the
+        coordinator 2026-11-24) accepted the intraday test as the more restrictive reading and
+        recorded it as an owner decision rather than a section 7 default.
     amount_usd: '1000'
     mode: eod
     evaluated: intraday
@@ -278,6 +330,30 @@ phases:
       retrieved_at: '2026-11-22T01:53:35Z'
       section: LucidFlex Funded Account Scaling Plan
     evidence: official_quote
+    assumptions:
+    - name: flex_scaling_ladder_is_read_on_simulated_profit
+      rationale: 'The ladder is keyed on the simulated profit since the phase start, which the page
+        prints as its ''Simulated Profits'' column, not on an absolute balance. The vocabulary has
+        no profit basis for a scaling plan, so the steps declare min_profit_usd and basis: balance,
+        which is exactly equivalent here: profit is the balance above the starting balance, and a
+        payout only lowers that balance, which the page itself says adjusts the tier downward. The
+        printed bands are inclusive ($0-$999, $1,000-$1,999, ...), so a profit of exactly $1,000 is
+        in the $1,000-$1,999 band and a rung is read at >= its threshold, which is the engine''s own
+        reading of the profit form. The owner review of 2026-11-24 (F23, delegated to the
+        coordinator 2026-11-24) settled the basis and the boundary.'
+      assumption_kind: owner_decision
+    supporting_sources:
+    - url: https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan
+      quote: The scaling plan controls how much of your max size is available to trade based on the
+        simulated profits in your account.
+      snapshot_sha256: c4f7ea67af7544d588984366b6d4a70b1d8ba8ca5e481cd7aaad4f7abb30935f
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidFlex Funded Account Scaling Plan
+    - url: https://support.lucidtrading.com/en/articles/12945808-lucidflex-scaling-plan
+      quote: Your limit is tied directly to your simulated profit balance.
+      snapshot_sha256: c4f7ea67af7544d588984366b6d4a70b1d8ba8ca5e481cd7aaad4f7abb30935f
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: What is a Scaling Plan for a Futures Prop Firm Account?
     steps:
     - min_profit_usd: '0'
       max_contracts: '1'
@@ -301,12 +377,33 @@ phases:
       retrieved_at: '2026-11-22T01:53:35Z'
       section: LucidPro, LucidFlex and LucidDirect Accounts
     evidence: assumption
+    supporting_sources:
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Any open positions will be automatically closed by Lucid Trading at 4:45 PM EST
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Holding a position past this time does not result in a failed account
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Trading resumes at 6:00 PM EST, Sunday through Thursday
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: Market Reopen Times
     assumption:
       name: est_means_america_new_york
-      assumption_kind: section7_default
-      rationale: The page writes the cutoff in 'EST'. ADR-0107 section 7 reads a bare US Eastern label
-        as America/New_York including daylight saving, which keeps the 4:45 PM ET close at 4:45 PM local
-        all year; a literal UTC-5 clock would shift the cutoff an hour in summer.
+      assumption_kind: owner_decision
+      rationale: 'The page writes the cutoff in ''EST''. It is read as America/New_York WITH
+        daylight saving, so the cutoff stays 4:45 PM local all year: that is the market-clock
+        meaning. A fixed UTC-5 offset does not mean that: 4:45 PM EST is 21:45 UTC, which in summer
+        (EDT, UTC-4) is 5:45 PM local, 45 minutes AFTER the 5:00 PM ET futures close the offset is
+        measured from, so the firm would be flattening an account the session has already ended. The
+        owner review of 2026-11-24 (F7, delegated to the coordinator 2026-11-24) took that reading
+        as an owner decision; a fixed UTC-5 sensitivity scenario is not expressible in the scenario
+        vocabulary, which is recorded in RESEARCH.md section 17.'
     time: '16:45:00'
     tz: America/New_York
     reopen: '18:00:00'
@@ -347,6 +444,28 @@ phases:
       retrieved_at: '2026-11-22T01:53:35Z'
       section: 1. Trading Days with Profit
     evidence: official_quote
+    assumptions:
+    - name: max_payouts_is_a_lifetime_count_per_account
+      rationale: The live-structure page states a maximum payout level that applies to Flex, Pro and
+        Direct plans, and this programme's payout page states the same ceiling. It is read as a
+        LIFETIME count per account, never a per-year allowance, which is the more restrictive
+        reading. The owner review of 2026-11-24 (F25, delegated to the coordinator 2026-11-24) took
+        that reading.
+      assumption_kind: owner_decision
+    - name: flex_payout_day_floor_is_per_day
+      rationale: 'The payout needs 5 profitable days per cycle and the floor is PER DAY, not
+        cumulative: ''Traders must earn at least the minimum required profit on 5 separate days
+        during the payout cycle'', and the table beside it is titled ''Minimum Daily Profit''. The
+        owner review of 2026-11-24 (F30, delegated to the coordinator 2026-11-24) read the dollar
+        floor per day.'
+      assumption_kind: owner_decision
+    supporting_sources:
+    - url: https://support.lucidtrading.com/en/articles/12945796-lucidflex-payouts
+      quote: Traders must earn at least the minimum required profit on 5 separate days during the
+        payout cycle.
+      snapshot_sha256: f15acaee48bbd0eeb33aac5890ef1cbb96756acbaeb2ddde992b09b2b381d7e7
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: Payout Eligibility Criteria, 1. Trading Days with Profit
     min_days_since_last: 0
     min_profitable_days: 5
     min_traded_days: 0
@@ -407,6 +526,33 @@ phases:
     materiality: material
     comparison: <=
     action: block
+  - kind: inactivity
+    rule_id: funded_inactivity
+    description: 'An account with no trade for more than 30 calendar days is deemed abandoned and
+      permanently deleted. The page says it outright: ''Accounts that have not been traded resulting
+      in at least a net profit or loss of 1$ within 30 calendar days will be deemed abandoned and
+      will be permanently deleted from our systems''. It is modelled as a hard fail at the start of
+      the 31st calendar day after the last EXECUTED trade, the pessimistic reading of a rule whose
+      page says the account is deleted. The page also asks for at least $1 of net profit or loss on
+      the trade, which the engine cannot separate from an executed trade at a zero result: a day
+      counts on an executed trade, as for Topstep. The owner review of 2026-11-24 (F22, delegated to
+      the coordinator 2026-11-24) added the rule; it was declared as modelled in RESEARCH.md section
+      1 before any file carried it.'
+    max_gap: 30
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>'
+    action: fail
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404632-inactivity-policy
+      quote: Accounts that have not been traded resulting in at least a net profit or loss of 1$
+        within 30 calendar days will be deemed abandoned and will be permanently deleted from our
+        systems.
+      snapshot_sha256: 4c693383bf9ed3e9c5407819abe0fff958d8d6ed4411438426102e2a8871833a
+      retrieved_at: '2026-11-24T15:56:33Z'
+      section: Active Status Policy
+    evidence: official_quote
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null
@@ -424,12 +570,16 @@ not_modeled:
     retrieved_at: '2026-11-22T01:53:35Z'
     section: What Happens If I Microscalp?
 - rule: cross_account_hedging
-  description: 'Opposing positions on the same contract in separate accounts, and opposing positions on
-    correlated contracts across accounts, are prohibited: the accounts are reset to a prior day''s balance,
-    lose on-demand payout eligibility, and repeat offences breach every account. The attempt model simulates
-    one account with a one-sided book, so a cross-account hedge can neither arise nor be detected (ADR-0107
-    section 13).'
-  materiality: material
+  description: 'Immaterial. Opposing positions on the same contract in separate accounts, and
+    opposing positions on correlated contracts across accounts, are prohibited: the accounts are
+    reset to a prior day''s balance, lose on-demand payout eligibility, and repeat offences breach
+    every account. The attempt model simulates one account with a one-sided book, so a cross-account
+    hedge can neither arise nor be detected (ADR-0107 section 13). The owner review of 2026-11-24
+    (F16, delegated to the coordinator 2026-11-24) lowered the entry to immaterial, as the Apex
+    round did (Apex F10), and recorded the fact that would make it bind.'
+  materiality: immaterial
+  becomes_immaterial_if: becomes material if several accounts, copy trading or coordinated
+    strategies are simulated
   source:
     url: https://support.lucidtrading.com/en/articles/11404734-prohibited-hedging
     quote: Lucid Trading strictly prohibits all forms of hedging
@@ -495,11 +645,15 @@ not_modeled:
     retrieved_at: '2026-11-22T01:53:35Z'
     section: Consistency
 - rule: flex_dll_amount
-  description: 'A Daily Loss Limit is sold on LucidFlex as a checkout option and is said to be enforced
-    on the evaluation and the funded account, but no readable official page gives the amount for any account
-    size (unlike LucidPro, LucidDaily and LucidDirect, which all publish a table). The dll-on files therefore
-    carry no daily_loss rule, so a day the firm would have locked is simulated as tradable: the mechanical
-    result is optimistic for this configuration.'
+  description: 'OPTIMISTIC. A Daily Loss Limit is sold on LucidFlex as a checkout option and is said
+    to be enforced on the evaluation and the funded account, but no readable official page gives the
+    amount for any account size (unlike LucidPro, LucidDaily and LucidDirect, which all publish a
+    table). These 8 dll-on files therefore carry no daily_loss rule, so a day the firm would have
+    locked is simulated as tradable and every result for this configuration is OPTIMISTIC: the
+    mechanical outcome overstates what the account could have done, which is what keeps the estimate
+    partial. The owner review of 2026-11-24 (F14, delegated to the coordinator 2026-11-24) kept the
+    amount OPEN and the entry material: these 8 files must NOT be confirmed until the amount is
+    sourced.'
   materiality: material
   source:
     url: https://support.lucidtrading.com/en/articles/16226050-lucidflex-customization

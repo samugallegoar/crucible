@@ -884,6 +884,80 @@ F18), and it does not relax `not_modeled`: cross-account hedging stays immateria
 `becomes_immaterial_if` fact that would make it bind ("several accounts, copy trading or coordinated
 strategies are simulated", F10).
 
+## Amendment (2026-11-24, Lucid review round): a material block is a CONDITION, and what the pages' words decide
+
+The Lucid review (packet `internal/reviews/lucid.md`, F1-F33, delegated to the coordinator on
+2026-11-24) settled three engine readings and a long list of declarations. Everything else is a
+ruleset or `RESEARCH.md` change and is recorded there.
+
+**1. A `material` + `action: block` compliance rule is an obligation, not a silence (F20).**
+
+Section 11's two answers could not describe Lucid. Its HFT ban is `action: block` with
+`materiality: material`, applies to `automated`, and states no threshold any simulation could test,
+so an automated run reported `practical_eligibility: eligible` with ZERO conditions: the report
+claimed a clearance the engine had never checked. The owner delegation of 2026-11-23 had already
+ruled that an obligation the simulation cannot prove is a `condition` (the amendment above); this
+one says a ban the firm does not call critical belongs in that same list.
+
+- `practical_eligibility` now lists, beside every `effect: condition` text, one entry per applicable
+  `action: block` + `materiality: material` rule, as `<rule_id>: <restriction>` — the id a reader can
+  look up and the firm's own words, never a paraphrase.
+- The status becomes `eligible_conditional` and the passes count as `conditionally_valid_passes`,
+  never as `practically_valid_passes`.
+- A `critical` block still wins: `blocked_by_compliance`, no conditions listed. An `immaterial`
+  block contributes nothing (it is a conduct note, not an obligation this mode must meet).
+- `blocks_conditionally` and `blocking_condition` are the two pure functions that state the rule.
+  The reading follows the rule's own `applies_to_execution` LIST, never a hardcoded `automated`: a
+  ban that names both modes conditions both, one that names only `manual` leaves an automated run
+  plainly eligible, and one that names only `automated` does the mirror. The tests are
+  `test_a_material_block_conditions_every_execution_mode_it_lists` (both modes, `manual` only,
+  `automated` only),
+  `test_a_material_block_conditions_the_mode_it_applies_to_and_never_blocks_it`,
+  `test_a_critical_block_wins_over_every_condition_and_an_immaterial_block_is_silent` and
+  `test_a_material_block_conditions_an_automated_run_in_the_summary_and_the_parquet` (the summary
+  and `attempts.parquet`).
+- **Who changes label.** Every ruleset on `main` whose file carries such a rule changes, for the
+  affected execution mode only. Counted by loading every file and comparing the two readings: Lucid
+  44 files `automated` (`compliance_hft_prohibited`, 1 condition), Apex 90 `manual`
+  (`compliance_no_high_risk_strategy`, `compliance_no_trade_copying`, 2 conditions — its `automated`
+  stays `blocked_by_compliance`, the critical rule wins), FTMO 6 both modes
+  (`compliance_no_copy_or_third_party_trading`, 1), FundedNext 15 both modes
+  (`challenge_`/`funded_compliance_copy_and_group_trading`, 1), MyFundedFutures 20 both modes (five
+  conduct rules; 5 conditions for `automated` and 4 for `manual`). Topstep changes in none: its
+  obligations were already `effect: condition`. **175 rulesets**: 216 (ruleset, mode) labels move
+  from `eligible` to `eligible_conditional`, and no label anywhere moves to
+  `blocked_by_compliance`. The Apex round's own reference run is the one documented exception to "no
+  documented result changes": its `automated` column keeps `blocked_by_compliance` and its `manual`
+  column now reports two conditions.
+
+**2. The consistency boundary is read from the words that state it (Lucid F18).**
+
+The Apex round made `consistency.comparison` meaningful. Lucid's own pages then decide each rule:
+
+- "40% or less", "50% or less", "up to 50%" state an inclusive ceiling, so those rules keep `<=`;
+- "you must meet a Consistency Percentage of 40%" states no boundary, and the same page's worked
+  example resolves it: a day above 40% "would need to continue trading until your largest day is
+  below 40%". "Below 40%" excludes 40, so the 12 LucidPro/LucidDirect `funded_consistency_payout`
+  rules move to `<` and carry that sentence as a `supporting_source` plus a
+  `provisional_conservative` named assumption (`consistency_share_boundary_excludes_the_limit`).
+  A day at exactly 40.000% (20.000% for Direct) now blocks the payout.
+
+**3. The entry-block note is stated in the rule's own clock (Lucid F31).**
+
+A session-relative `flat_by` has no `tz` of its own — its instant comes from the CME calendar — so
+the overlay rendered its reopen in UTC ("until 21:00") beside the fixed-clock rule's "until 18:00
+ET" in the same attempt: two reopen times for one session. It now borrows the ruleset's rule-day
+zone (`reset.tz`, which is where a firm states its session times) and renders in that clock ("until
+17:00 ET"), exactly as the fixed-clock form does. Test:
+`test_the_entry_block_note_states_the_reopen_in_the_rules_own_clock` (2024-11-29, a 60-minute
+offset, `until 12:15 CT`). Cosmetic: no rule value, no artifact field.
+
+**What this amendment does NOT do.** It does not change the `effect: condition` vocabulary (a rule
+that states its own obligation keeps stating it), it does not lower any materiality by itself, and
+it changes no ruleset BYTE: the Lucid files are edited by the review's decisions, and the other
+firms' files are untouched (their label changes follow from the engine, not from an edit).
+`schema_version` stays 2 and `rulesets/prop/INDEX.json` changes only for the 44 Lucid files.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

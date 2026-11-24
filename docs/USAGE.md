@@ -649,7 +649,9 @@ uv run crucible futures prop     --config examples/futures/es_sma_cross.yaml    
   bans automated trading makes an automated strategy `blocked_by_compliance` even when the
   mechanical account passes, and a firm that allows it only under an obligation the simulation
   cannot prove (through its API, from the trader's own device, no HFT) makes it
-  `eligible_conditional` with every condition listed.
+  `eligible_conditional` with every condition listed. A `material` rule with `action: block` — a ban
+  the firm does not call critical, like HFT — is one of those conditions, listed as
+  `<rule_id>: <restriction>`.
 - `--payout-policy max_eligible|none` is the trader's choice, and `--scenarios primary|all` adds one
   sensitivity scenario per ruleset conflict.
 - `--participant-profile FILE` is a flat YAML mapping from classification dimension to value that
