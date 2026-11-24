@@ -2136,10 +2136,16 @@ def _prop_scenario_lines(entry: dict[str, object]) -> list[str]:
     ]
     cost_bound = entry.get("cost_bound")
     if cost_bound is not None:
-        lines.append(
-            f"  cost bound: {cost_bound} (every cost is a ceiling, so the net cash is a lower "
-            "bound: the cost can only come down)"
+        # the cash claim follows the statistic's own label: a cost bound on a run whose cost is
+        # still incomplete does not make the net cash a lower bound (ADR-0107, 2026-11-24)
+        claim = (
+            " (every cost is a ceiling, so the net cash is a lower bound: the cost can only come "
+            "down)"
+            if cash["status"] == "lower_bound"
+            else " (a ceiling on every cost the run priced; the net cash is "
+            f"{cash['status']}, never a bound of that cost)"
         )
+        lines.append(f"  cost bound: {cost_bound}{claim}")
     note = entry.get("comparability_note")
     if note is not None:
         lines.append(f"  compare:    {note}")

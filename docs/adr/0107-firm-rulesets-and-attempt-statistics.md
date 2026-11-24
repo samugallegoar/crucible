@@ -884,6 +884,66 @@ F18), and it does not relax `not_modeled`: cross-account hedging stays immateria
 `becomes_immaterial_if` fact that would make it bind ("several accounts, copy trading or coordinated
 strategies are simulated", F10).
 
+## Amendment (2026-11-24, FundedNext review round): a gap the assumption leaves is never a bound (F6)
+
+The FundedNext owner review (packet `internal/reviews/fundednext.md`, F6) exposed a contradiction
+in the cash statistic. The firm publishes a per-side commission for NQ only, so ES's `commission`
+stayed a gap; an `upper_bound` file priced the four components AROUND that gap and not the gap
+itself. Every attempt correctly recorded `cost_status: unavailable` and `cost_gaps: [commission]`,
+the sealed manifest listed `remaining_gaps: [commission]`, and `summary.json` nonetheless reported
+`cash_estimate_status: lower_bound` with a mean net cash and the reason "cost assumption
+'upper-bound-v1' covered every cost gap". Those claims could not all be true.
+
+**The decision: ANY gap that survives the assumption file makes the cash `unavailable`.**
+`crucible.prop.attempt.cash_estimate` used to fall through its `cost_status == "unavailable"`
+branch whenever an assumption was named, assuming the file had priced everything. It now takes the
+remaining `cost_gaps` and returns `unavailable` with them NAMED, before it can reach the
+`lower_bound`/`conditional` labels:
+
+- `cost assumption 'upper-bound-v1' does not price commission, so the net cash is not a number`
+  (an assumption was used and left a gap);
+- `the attempt's cost is not known (commission), so the net cash is not a number` (no assumption).
+
+A ceiling on four components is not a ceiling on the cost: under the old label the unpriced
+commission was implicitly free, which is the opposite of what the file claims. A bound that DOES
+price every gap still yields `lower_bound`, and a `point_estimate` that prices every gap still
+yields `conditional` — the only thing that changed is the label of a run whose cost is still
+missing a component.
+
+**Every surface is one document, so they agree by construction.** `attempts.parquet` carries
+`cash_estimate_status` and `cost_gaps` per start, `summary.json` takes the worst attempt status and
+reports NO mean when it is `unavailable` (a number never travels beside that label),
+`crucible futures prop` prints `net cash: - USD per attempt (unavailable)`, and the MCP tool returns
+the CLI's `--json` document. Two rendering rules follow: the CLI's `cost bound:` line claims a
+`lower_bound` net cash only when the cash statistic actually carries that label (a cost ceiling on
+an incomplete cost is a ceiling on what was priced, nothing more), and `UPPER_BOUND_REASON` reads
+`costs are an upper bound: the probability is pessimistic and any net cash under it is a lower
+bound`, which stays true when the cash statistic is absent.
+
+**Why the earlier shape was possible.** `CostPricing.status` already said `unavailable`; the
+information existed and the reporting layer overrode it. The fix therefore needs no new field and
+no new vocabulary: `cash_estimate` gains one keyword (`cost_gaps`, defaulting to `()`), and no
+`schema_version` moves because no column changes.
+
+**What changes in the artifacts.** A run that used an `upper_bound` file and left NO gap is
+byte-identical (the Apex reference run: its commission is stated per root and the bound prices the
+four `unknown` components, so its cash stays `lower_bound`). A run that left a gap under such a
+file changes label from `lower_bound` (with a mean) to `unavailable` (with none) — the FundedNext
+reference run is exactly that case. No golden fixture or blessed reference manifest in the
+repository carried either label (`experiments/manifests/` is empty), so nothing was regenerated;
+the historical run records in `rulesets/prop/apex/RESEARCH.md` and the released `CHANGELOG.md` entry
+that quote the OLD `UPPER_BOUND_REASON` string are left as written, because they are dated records
+of the text the engine emitted then.
+
+**Tests (hand-computed, not engine-derived).**
+`test_a_bound_that_leaves_the_commission_a_gap_is_never_a_lower_bound` (commission unpriced, four
+components priced: `unavailable`, reason names `commission`),
+`test_a_bound_that_fills_every_gap_is_still_a_lower_bound` (1.50 + 2.00 + 0.50 + 0.02 + 0.50 =
+4.52 per side: `conditional` cost, `lower_bound` cash) and
+`test_a_bound_that_leaves_a_cost_gap_makes_every_surface_say_unavailable` (summary, parquet rows,
+CLI text, CLI `--json` and the MCP tool's document all say `unavailable`, and none of them says
+`lower_bound`).
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

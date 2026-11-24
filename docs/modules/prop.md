@@ -298,6 +298,16 @@ includes or the dataset already priced, an `unknown` component it prices is ADDE
 strategy), and the recorded SHA-256 names the file. Because it is a user's statement and not a firm
 value, the resulting estimate is `conditional`, never `exact`.
 
+**A gap the file leaves is never a bound.** If ANY gap remains AFTER the assumption file was
+applied, `cash_estimate_status` is `unavailable` — never `lower_bound`, never `conditional` — and
+its reason names the components still missing (`cost assumption 'upper-bound-v1' does not price
+commission, so the net cash is not a number`). A ceiling on some of the components is not a ceiling
+on the cost, so a `lower_bound` label there would claim the unpriced component is free (ADR-0107,
+2026-11-24 amendment, F6). The four surfaces agree by construction: the attempt rows carry the
+label and `cost_gaps`, `summary.json` takes the worst attempt status and reports no mean at all,
+and the CLI text prints `net cash: - USD per attempt (unavailable)`; the MCP tool returns that same
+`--json` document.
+
 ### The kind of a cost assumption: `point_estimate` or `upper_bound`
 
 An assumption file says what its amounts CLAIM (`kind`, REQUIRED since the 2026-11-23
@@ -314,10 +324,11 @@ owner-decision amendment of ADR-0107; `docs/GLOSSARY.md`, "Upper-bound cost assu
   `conditional` — never `complete`.
 
 An upper-bound run labels the artifact: `cost_bound: upper` in `summary.json` (top level and every
-scenario) and in every `attempts.parquet` row, the cash statistic `lower_bound` (the cost is a
-ceiling, so the net cash can only rise once real costs arrive), the pass probability's reason
-`costs are an upper bound: the probability and the net cash are pessimistic (lower bounds) under
-it`, and the comparability note *firms with fewer sourced cost components receive more of the
+scenario) and in every `attempts.parquet` row, the cash statistic `lower_bound` WHEN the file
+priced every remaining gap (the cost is a ceiling, so the net cash can only rise once real costs
+arrive; a gap it left keeps the cash `unavailable`), the pass probability's reason
+`costs are an upper bound: the probability is pessimistic and any net cash under it is a lower
+bound`, and the comparability note *firms with fewer sourced cost components receive more of the
 bound, so cross-firm comparisons under it are pessimistic for the less documented firms* (the bound
 fills gaps, so a firm that states its costs is charged less of it). The file is hashed like a
 ruleset: its `sha256` is in `rulesets/prop/INDEX.json` (an entry of kind `cost_assumption`) and in
@@ -364,13 +375,14 @@ states inside the attempt's window is reported in `warnings` (one schedule per a
 silent mid-window change).
 
 `cash_estimate_status` is the label on the money: `exact`, `conditional` (a named cost assumption
-was used), `lower_bound` (the run's cost assumption is an `upper_bound` file: the cost is a ceiling,
-so every net-cash number is the LEAST it can be), `upper_bound` (a payout cap the sources do not
-state: the simulation pays what the other terms allow, so every payout amount and cash statistic is
-the MOST it can be) or `unavailable`; `cash_estimate_reasons` names the gap, and `estimate_status`
-is at best `partial` when a cap is unknown. An `unknown` cap is never read as `unlimited`.
-`lower_bound` wins over a payout cap's `upper_bound` on the cash statistic because it applies to
-every attempt of the run; the per-payout `bound` still says `upper_bound`.
+was used and it left no gap), `lower_bound` (the run's cost assumption is an `upper_bound` file that
+priced every remaining gap: the cost is a ceiling, so every net-cash number is the LEAST it can
+be), `upper_bound` (a payout cap the sources do not state: the simulation pays what the other terms
+allow, so every payout amount and cash statistic is the MOST it can be) or `unavailable` (a gap
+remains after the assumption file, so there is no number); `cash_estimate_reasons` names the gap,
+and `estimate_status` is at best `partial` when a cap is unknown. An `unknown` cap is never read as
+`unlimited`. `lower_bound` wins over a payout cap's `upper_bound` on the cash statistic because it
+applies to every attempt of the run; the per-payout `bound` still says `upper_bound`.
 
 ## The attempt sequence (C7b, ADR-0107 section 4)
 

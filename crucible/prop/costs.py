@@ -111,11 +111,13 @@ UPPER_BOUND_CASH_LABEL = "lower_bound"
 """The label of the cash statistic under an upper-bound cost: the net cash can only be worse."""
 
 UPPER_BOUND_REASON = (
-    "costs are an upper bound: the probability and the net cash are pessimistic (lower bounds) "
-    "under it"
+    "costs are an upper bound: the probability is pessimistic and any net cash under it is a "
+    "lower bound"
 )
 """Why a pass probability and a cash statistic computed under an upper-bound file are not point
-estimates: the cost can only come down, so the probability can only rise."""
+estimates: the cost can only come down, so the probability can only rise. The sentence stays true
+when the cash statistic is ABSENT (a gap the file did not price): it speaks of *any* net cash the
+file does support, never of a number the run does not report (ADR-0107, 2026-11-24 amendment)."""
 
 UPPER_BOUND_COMPARABILITY_NOTE = (
     "firms with fewer sourced cost components receive more of the bound, so cross-firm comparisons "

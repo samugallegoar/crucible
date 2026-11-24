@@ -8,6 +8,29 @@ kind of change is recorded).
 
 ## Unreleased
 
+### A cost gap the assumption file leaves keeps the cash `unavailable` (ADR-0107 amendment, 2026-11-24)
+- **The bug.** When a cost-assumption file left a component unpriced (the FundedNext review's case:
+  the firm states a commission for NQ only, and ES's `commission` stayed a gap), every attempt
+  recorded `cost_status: unavailable` with `cost_gaps: [commission]`, the sealed manifest listed
+  `remaining_gaps: [commission]`, and `summary.json` still labelled the cash `lower_bound` with a
+  mean and the reason "cost assumption 'upper-bound-v1' covered every cost gap".
+- **The fix.** `crucible.prop.attempt.cash_estimate` takes the remaining `cost_gaps` and returns
+  `unavailable` whenever one survives the assumption file, BEFORE it can reach `lower_bound` or
+  `conditional`; its reason names each remaining component (`cost assumption 'upper-bound-v1' does
+  not price commission, so the net cash is not a number`). A ceiling on some components is not a
+  ceiling on the cost. A bound that prices every gap still yields `lower_bound`, and a
+  `point_estimate` that prices every gap still yields `conditional`.
+- **Every surface agrees.** `attempts.parquet` (`cash_estimate_status`, `cost_gaps`), `summary.json`
+  (worst attempt status, no mean when unavailable), the `crucible futures prop` text (which now
+  claims a `lower_bound` net cash only when the statistic carries that label) and the MCP tool
+  (which returns the CLI's `--json` document). `UPPER_BOUND_REASON` reads `costs are an upper bound:
+  the probability is pessimistic and any net cash under it is a lower bound`, true in both cases.
+- **No schema change.** No column, key or `schema_version` moves; `experiments/manifests/` held no
+  blessed reference run with either label, so no golden fixture was regenerated.
+- **Docs:** `docs/modules/prop.md`, `docs/USAGE.md`, `docs/GLOSSARY.md`, ADR-0107 (2026-11-24
+  amendment). Tests: the two hand-computed label cases plus one that pins summary, parquet, CLI text,
+  CLI `--json` and the MCP document to the same `unavailable` label.
+
 ### Fathom C7b.1: participant profile, breach on fill, promotions, Topstep review decisions (ADR-0106, ADR-0107 amendments)
 - **Participant profile.**
   - A run declares an immutable participant profile (dimension to value); its sha256 is in the
