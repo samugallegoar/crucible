@@ -209,6 +209,65 @@ repeated, and nothing here is extrapolated to a standard Topstep product.
 
 **F16 — the current payout policy, and the superseded page.** See section 7.
 
+### Round 5 — the XFA scaling plan, modelled from the image (2026-11-23, owner delegation)
+
+The ladder that round 4 could only declare as `not_modeled` is now a rule in the 24 Trading
+Combine files. Three of the readings below were settled by the **coordinator under the owner's
+delegation of 2026-11-23** (recorded in the files as `assumption_kind: owner_decision`, each naming
+the delegation). Every file stays `unverified`, no sidecar exists, and nothing here is a
+verification: the owner confirms in a terminal with `crucible prop confirm`.
+
+**The values.** The page serves the ladder only as a picture; the transcription below is the whole
+of the evidence for the numbers, and it is checked by the image's sha256, never against page text:
+
+| account | balance band, as printed | lots, as printed |
+|---|---|---|
+| $50K | Below $1,500 / $1,500 - $2,000 / Above $2,000 | 2 / 3 / 5 |
+| $100K | Below $1,500 / $1,500 - $2,000 / $2,000 - $3,000 / Above $3,000 | 3 / 4 / 5 / 10 |
+| $150K | Below $1,500 / $1,500 - $2,000 / $2,000 - $3,000 / $3,000 - $4,500 / Above $4,500 | 3 / 4 / 5 / 10 / 15 |
+
+**D9 — the tier boundary belongs to the LOWER tier (delegated).** The image prints "Below $1,500",
+"$1,500 - $2,000" and "Above $2,000" and never says which side an exact boundary falls on. The
+coordinator read a balance exactly on a printed boundary as the lower tier, the conservative
+reading (the lower tier is the smaller size). In the files it is `comparison: '>'` on a ladder keyed
+on `min_balance_usd`: a $50K account at 1,500.00 holds 2 lots, at 1,500.01 it holds 3. The owner may
+reverse it at confirmation (it is one comparison, not a value).
+
+**D10 — "Below $1,500" includes every negative balance (delegated).** The first rung of the ladder
+is declared with no threshold at all: it is the FLOOR rung, the tier for everything below the next
+threshold, so a zero or negative balance is 2 lots (50K) and never zero contracts.
+
+**D11 — basis, timing and unit are SOURCED, not assumed.** "based on your current account balance"
+and "Your XFA starts at a $0 balance" (the basis), "Your max contracts do not increase mid-session.
+Hit the threshold to release more buying power? Wait for the next session." (the tier is read at the
+rule-day's close and holds the whole next rule-day) and "1 Mini = 10 Micro contracts" / "Limits are
+based on mini-contract equivalents" (lots are MINI equivalents, so the weight limit is the mini count
+and 25 micros against a 2-lot tier is 20 contracts) are `supporting_sources` of the rule: quoted,
+hashed, and covered by the self-check, never paraphrased into a description.
+
+**D12 — an excess is CLIPPED, never a breach (delegated).** The page ignores an excess corrected in
+under 10 seconds and says the account "may be reviewed" after 10+; a one-minute bar cannot see a
+10-second correction, so the engine never lets a position exceed the tier (`action: clip`) and never
+records a review it cannot time. That is the named assumption
+`scaling_plan_excess_is_clipped_not_a_breach`.
+
+**D13 — the Labs XFAs are NOT extrapolated (delegated).** The Scaling Plan article never says its
+table is the Topstep Labs XFA's, so the 2 Labs files keep `xfa_scaling_plan_ladder` as `material`
+`not_modeled`, now citing the decision and the drop page's own sentence ("XFA matches the standard
+$50K XFA scaling plan") as a pointer that was NOT turned into a rule.
+
+**D14 — the Trading Combine maximum is never the XFA limit.** The funded phase declares
+`xfa_max_contracts` (the ladder) and no `max_contracts`: substituting the Combine's 5/10/15 would be
+a firm rule the Scaling Plan article does not state.
+
+**The evidence type.** These values are the first `evidence: official_image_transcription` rules in
+the repository: the attribution carries the image's sha256, its path under the private snapshots
+root, the transcription, who transcribed it and when, and `crucible.prop.sources` verifies the FILE
+(a wrong sha256 is refused, and so is an image path that escapes the root). Its page `quote` is the
+article's own sentence about the plan, so it is checked like every other quote. A transcription is
+never compared with page text: the numbers exist only in the picture, which is the whole reason the
+type exists.
+
 ## 2. Snapshots used
 
 All saved bytes in the private snapshot folder, with the hash every attribution cites:
@@ -245,8 +304,12 @@ The scaling plan's ladder is published as an image, saved byte-for-byte beside t
 `20261123_hc_scaling-plan-xfa-charts.png` (PNG, 5515x2474, sha256
 `55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd`, from
 `https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan`, the `XFA charts - hc.png` the
-page serves). It is **not transcribed here**: the images are the owner's to read, and no contract
-number in a ruleset may come from a reading of them.
+page serves). Since round 5 it IS transcribed, in the rules that use it: each of the 24 Trading
+Combine files carries the twelve printed rows as `source.transcription` under
+`evidence: official_image_transcription`, with the image's sha256 and path, and
+`crucible prop validate <file> --snapshots-root <private folder>` refuses a file whose image bytes no
+longer hash to that value. The 2 Labs files quote the image's existence and sha256 in their
+`not_modeled` entry and transcribe nothing into a rule (see round 5, D13).
 
 The commissions page (`8284213`) was fetched in this pass; it was not in the first draft's snapshot
 set, which is why the drafts carried no commission table.
@@ -506,6 +569,9 @@ Only the defaults the owner fixed, each recorded as `evidence: assumption` with 
 | `unspecified_target_frequency_is_eod` | `profit_target` | 26 (every file) | The pages state the target amount but never its observation frequency. A target is a pass condition, so the conservative default is the opposite of the failure-threshold one: the target is tested at the end of the trade date on the closed balance, because the trader passes no earlier than the end of the trade date and a later same-day breach still counts. Never intraday for a target the firm does not date. |
 | `trading_day_is_a_trade_date_with_at_least_one_trade` | `minimum_trading_days` | 24 (the Trading Combine files; the Labs drop states no minimum) | The pages state a two-day minimum but never define a qualifying day. ADR-0107 section 7 default: a trading day is a trade date with at least one executed trade. **Owner decision (2026-11-23): confirmed** - an EXECUTED trade (an unfilled order does not count, a roll leg is not a trade) inside the Topstep session, 5:00 PM CT to 3:10 PM CT, which is the 17:00 America/Chicago rule-day the files declare (`crucible/prop/overlay.py` step 7). Payout qualifying days keep their own gates and never read this default. || `xfa_inactivity_may_be_closed_on_day_31` | funded `xfa_inactivity` | 24 (the Trading Combine files) | The page says an XFA with no activity for more than 30 days **may** be closed, a soft statement. The pessimistic reading closes it at the start of the 31st calendar day after the last trade date (30 full days of silence), the rule-day transition the overlay counts inactivity on, and never describes a guaranteed automatic close. `assumption_kind: provisional_conservative` (owner decision, 2026-11-23). The 2 Labs files carry no such assumption: their drop page states the closure itself, and it is declared as an `inactivity` rule of the EVALUATION phase (the phase whose table publishes it), with no funded-phase inactivity at all. |
 | `labs_five_winning_days_minimum_from_firm_policy` | `payout_five_winning_days` | 2 (the Labs files) | The drop page states the five-day eligibility, the buffer (none), the per-payout cap ($4,000 EOD / $8,000 Static), 50% of balance and the 90/10 split, but no minimum for that path. The firm-wide Express Funded Account minimum (`Minimum Payout: $125`) is used, and the owner ruled on 2026-11-23 that this general minimum is the 5 Winning Days path's minimum: `assumption_kind: owner_decision`, never a quote of the drop page. |
+| `scaling_plan_boundary_belongs_to_the_lower_tier` | funded `xfa_max_contracts` | 24 (the Trading Combine files) | The image prints the balance bands and never says which side an exact boundary falls on. Read as the LOWER tier - the conservative direction, because it is the smaller size - by the coordinator under the owner's delegation of 2026-11-23 (decision 1, delegated), and declared as `comparison: '>'`: 1,500.00 is 2 lots (50K), 1,500.01 is 3. `assumption_kind: owner_decision`. |
+| `scaling_plan_negative_balance_uses_the_floor_tier` | funded `xfa_max_contracts` | 24 | "Below $1,500" includes every balance below zero (coordinator, owner delegation of 2026-11-23, decision 2, delegated): the first rung has no threshold, so it is the floor and never zero contracts. `assumption_kind: owner_decision`. |
+| `scaling_plan_excess_is_clipped_not_a_breach` | funded `xfa_max_contracts` | 24 | The page ignores an excess corrected in under 10 seconds and only "may review" the account after 10+; a one-minute bar cannot see a 10-second correction, so the position is never allowed past the tier (`action: clip`). Coordinator, owner delegation of 2026-11-23, decision 4, delegated. `assumption_kind: owner_decision`. |
 
 The 90/10 split is no longer an assumption: `payout_split_taken_from_firm_payout_policy` is gone
 because the drop page states the split itself ("Profit Split 90/10", in its `Choose your Payout
@@ -522,17 +588,27 @@ session", DLL "during the trading day (5 PM CT - 3:10 PM CT)"), and the only uns
 the profit target's, which is why it carries the `unspecified_target_frequency_is_eod` assumption.
 The payout day is stated ("A day locks in at 4:00 PM CT"), so the payout rules carry no default.
 
+The scaling plan's three readings (round 5) are NOT defaults of any kind: the delegated decision
+chose the conservative side of a source that does not state it (the boundary), of a source that does
+not state it at all ("below $1,500" and a negative balance) and of a tolerance a one-minute bar
+cannot model (the 10-second correction). Two further points of that rule are sourced, not assumed:
+the tier is read at the rule-day's close and holds the whole next rule-day, and lots are
+mini-contract equivalents with micros at 10:1.
+
 ## 9. What is not modeled, by materiality
 
-Six entries in the 24 Trading Combine files, six in the trailing Labs drop, seven in the static one
-(three material everywhere; the static drop adds its drawdown substitution).
+Five entries in the 24 Trading Combine files (four material, one immaterial), five in the trailing
+Labs drop and six in the static one (three material everywhere; the static drop adds its drawdown
+substitution). `xfa_scaling_plan_ladder` left the Trading Combine files in round 5 - the ladder is
+the funded `xfa_max_contracts` rule now - and stays in the 2 Labs files, where the article's table is
+not extrapolated to the Labs XFA (round 5, D13).
 
 **Material** (the evaluation status is `conditional_on_modeled_rules` because of these), with the
 condition an audit would have to establish before the materiality could change:
 
 | rule | why | `becomes_immaterial_if` |
 |---|---|---|
-| `xfa_scaling_plan_ladder` | The XFA's contract limit follows the Scaling Plan, which the article calls "an Express Funded Account® (XFA) objective" setting the maximum position size by balance. The ladder exists **only as an image**, saved at `prop_snapshots/topstep/20261123_hc_scaling-plan-xfa-charts.png` (sha256 `55ec76b4…6cbd`), so no contract number is quoted and the funded phase's own limit is NOT declared — not "no limit", and never the Combine's maximum. | — (an owner transcription of the ladder is what would model it; until then the entry stands) |
+| `xfa_scaling_plan_ladder` | **Labs files only.** The XFA's contract limit follows the Scaling Plan, which the article calls "an Express Funded Account® (XFA) objective" setting the maximum position size by balance. The ladder exists only as an image (saved at `prop_snapshots/topstep/20261123_hc_scaling-plan-xfa-charts.png`, sha256 `55ec76b4…6cbd`) and the article never says its table is the Labs XFA's, so it is NOT extrapolated (round 5, D13): the funded phase declares no limit - not "no limit", and never the Combine's maximum. | — (an owner transcription applied to the Labs product is what would model it; until then the entry stands) |
 | `news_full_position_size_prohibited` | Discretionary news rule, no threshold, no invented window. | — (never self-service: the owner must decide) |
 | `sub_minute_holding_and_micro_scalping` | Material for one-minute granularity: the ban is on algorithmic scalping that exploits unrealistic SIM fills, and the page's seconds are an example, not a universal threshold. Never an automatic ban on holds under 60 s. | — (needs intra-bar data) |
 | `two_percent_price_limit_restriction` | A hard prohibition the engine cannot test: no CME price-limit band is carried. | an audit of the instruments and dates shows it never affected a trade |
@@ -1024,16 +1100,25 @@ cd /d/proyectos/crucible-notes/internal/prop_snapshots
 python fetch2.py topstep <short_name> <url>       # saves raw bytes + sha256 + retrieved_at
 python dump_text.py topstep                       # text dumps for grepping
 uv run python check_quotes2.py <repo>/rulesets/prop/topstep/*.yaml   # quotes + sha256
-# the rulesets
-for f in rulesets/prop/topstep/*.yaml; do uv run crucible prop validate "$f" --json ">/dev/null"; done
+# the rulesets, with the evidence self-check (quotes AND image bytes) in the engine
+for f in rulesets/prop/topstep/*.yaml; do
+  uv run crucible prop validate "$f" --snapshots-root D:/proyectos/crucible-notes/internal/prop_snapshots
+done
 uv run crucible prop list --firm topstep --json
 ```
 
 Generation: `topstep/migrate_v2.py` rewrote the drafts in schema 2 from the quoted values,
-`topstep/round2.py` applied the round-2 declarations and `topstep/round4.py` the round-4 owner
-decisions of 2026-11-23 (all abort if a quotation cannot be found in
-the saved bytes); `topstep/write_research.py` composes this page from the emitted YAML, so the matrix
-and the per-file checklist cannot drift from the files.
+`topstep/round2.py` applied the round-2 declarations, `topstep/round4.py` the round-4 owner
+decisions of 2026-11-23 and `topstep/round5.py` the round-5 scaling-plan rule (all abort if a
+quotation cannot be found in the saved bytes, and round 5 also aborts if the image's sha256 is not
+the transcribed one); `topstep/write_research.py` composes this page from the emitted YAML, so the
+matrix and the per-file checklist cannot drift from the files.
+
+The self-check over the 26 files is engine code, not a notebook: `crucible prop validate --snapshots-root
+<folder>` hashes every file under the folder, resolves each attribution's `snapshot_sha256` to the
+page it names, searches its quote there (tags stripped on the second pass) and verifies each
+image transcription's file against its `image_snapshot_sha256`. Round 5's pass: 26 of 26 files,
+1048 attributions, 24 image transcriptions, 0 synthetic, 0 mismatches.
 
 `rulesets/prop/INDEX.json` still lists these 26 files as `pending_migration`; it is regenerated by
 `uv run python -m tools.docgen --write` at the merge, which is where the content hashes enter the

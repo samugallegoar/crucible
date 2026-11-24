@@ -5,10 +5,16 @@
 - **`rules_schema.py`**: the Pydantic v2 rule models of schema version 2, split out from the
   loader so the file stays readable.
   - `Attribution`: `url` (null only for an owner-supplied value), `provided_by` (`owner`),
-    `quote`, `snapshot_sha256` (64 hex), `retrieved_at` (UTC), optional `section`, `synthetic`.
-  - `Assumption {name, rationale}` and the per-rule `evidence` field:
-    `official_quote | owner_provided | assumption | conflict_resolution`; a rule with
-    `evidence: assumption` must carry its named assumption.
+    `quote`, `snapshot_sha256` (64 hex), `retrieved_at` (UTC), optional `section`, `synthetic` —
+    and, for a value that is printed only inside an image, the image block
+    `image_snapshot_sha256` (the file's own sha256), `image_path` (relative to the private snapshots
+    root: never absolute, never through `..`), `transcription` (the values exactly as printed),
+    `transcribed_by` and `transcribed_at` (UTC). All five are present together or absent together.
+  - `Assumption {name, rationale, assumption_kind}` and the per-rule `evidence` field:
+    `official_quote | owner_provided | assumption | conflict_resolution |
+    official_image_transcription`; a rule with `evidence: assumption` must carry its named
+    assumption, `official_image_transcription` requires the source's image block, and a source that
+    carries one must declare that evidence.
   - `Commissions {status: known|unknown, components: {exchange, clearing, nfa, other each
     {status: included|excluded|unknown, evidence: official_quote|owner_provided|not_stated, text}},
     per_side_usd: {ROOT: Decimal}, platform, evidence, source}`. Unknown is never zero; a sentinel
@@ -25,7 +31,11 @@
     `ProfitTargetRule`, `StaticDrawdownRule`, `TrailingDrawdownRule` (with `TrailingLock`,
     including `on: [hwm, first_payout]` as a list of triggers and `hwm_basis`), `DailyLossRule`
     (amount, percentage, balance tiers, or a ratchet on peak profit), `MaxContractsRule`,
-    `ScalingPlanRule` (with `on_excess`), `FlatByRule` (a fixed clock or
+    `ScalingPlanRule` (`steps`, where a step is keyed on `min_profit_usd` - profit since the
+    phase's start - or `min_balance_usd` - the absolute balance at the rule-day's close -, the FIRST
+    step may omit its threshold and is then the FLOOR rung, and a balance ladder takes its boundary
+    from `comparison`: `>=` keeps a balance exactly on a threshold in the upper rung, `>` keeps it in
+    the lower one; plus `on_excess: clip|reject`), `FlatByRule` (a fixed clock or
     `minutes_before_session_end`), `MinTradingDaysRule` (with `unit` and a composable
     `DayCountsIf`), `ConsistencyRule` (with `window` and separate `numerator_window` /
     `denominator_window`), `PayoutRule` (the C7b payout vocabulary), `TimeLimitRule`, `FeeRule`
@@ -45,6 +55,11 @@
     `pass_conditions`, `max_calendar_days`/`max_trading_days`, `fees`. A rule that gates the phase
     must sit in `pass_conditions` (`is_pass_condition`; a `consistency` rule whose `applies_to` is
     `payout` stays in `rules`).
+  - Every rule carries its `source` and may carry `supporting_sources` (attributions that support
+    its basis, timing or units WITHOUT carrying the value, so a page quote never hides in a
+    description and the self-check covers it), `assumption` (the one that makes the value itself an
+    assumption) and `assumptions` (further NAMED readings the value depends on: the tier boundary, a
+    silent case, the excess action). Names are unique per rule and `all_assumptions()` reports them.
 - **`ruleset.py`**: `PropRuleset` (`schema_version: 2`; v1 is refused with a migration message),
   the hash lock, the sidecar reader/writer and the loaders.
   - `ruleset_sha256` is the canonical JSON hash of the content **excluding** `verification`, so
@@ -104,10 +119,10 @@
   `excluded_priced`, `excluded_unpriced`, `unknown`, `assumption`, and `known`/`unknown` for the
   commission), the charged USD, the gaps, and the cost status `complete | conditional |
   unavailable`. `CostAssumption` + `load_cost_assumption(path)` read the unverified, owner-provided
-  YAML file (`name`, `description`, `provided_by`, `status: unverified`, `evidence`, `amounts` per
-  root) that prices exactly the gaps it names; its SHA-256 is recorded. `price_components(...)` is
-  the one function that applies the order: commission, then each component by its declared status,
-  then the assumption.
+  YAML file (`name`, `kind`, `description`, `provided_by`, `status: unverified`, `evidence`,
+  `amounts` per root) that prices exactly the gaps it names; its SHA-256 is recorded.
+  `price_components(...)` is the one function that applies the order: commission, then each
+  component by its declared status, then the assumption.
 - **`attempt.py`**: `simulate_attempt(...) -> AttemptResult`, one attempt from one start trade
   date: phases in order, each a fresh `PropAccountOverlay` inside `simulate_futures`; outcome
   `pass`/`fail`/`timeout`/`censored`, `PhaseOutcome` per phase, `min_buffer_usd` with where it
@@ -129,6 +144,14 @@
   documents, same values: `tests/unit/test_prop_ruleset.py` pins that the two loaders agree on
   every shipped file.
 - **`list.py`**: `list_document`, what `crucible prop list --json` and `crucible_prop_list` print.
+- **`sources.py`**: the evidence self-check. `verify_sources(ruleset, root)` refuses a citation that
+  does not resolve to saved bytes and `check_sources` returns the same as a report (`SourceCheck`
+  with counts and every `SourceProblem`). It hashes every file under `root`, so each attribution's
+  `snapshot_sha256` must name a page that is there and its `quote` must appear in THAT page's text
+  (UTF-8, entities unescaped, whitespace collapsed, tags stripped on the second pass); an image
+  transcription must also resolve `image_path` under the root to a file whose sha256 is
+  `image_snapshot_sha256`, and its `transcription` is never compared with page text, because the
+  values are printed only in the picture. A `synthetic: true` attribution is skipped and counted.
 - **`validate.py`**: `validate_ruleset_document` (`crucible prop validate`), the two JSON Schemas,
   and `listing_document`.
 
@@ -214,7 +237,7 @@ threshold: the fill pays the bar's open (or close) spread and slippage plus
 | `trailing_drawdown` | `amount_usd`, `mode`, `evaluated`, `basis`, `hwm_basis`, `lock {on: [hwm, first_payout], ...}` | threshold `hwm - amount`; the lock freezes it at the FIRST trigger that fires. `on` is a LIST: a bare `on: hwm` is refused |
 | `daily_loss` | `amount_usd` / `pct_of_reference` / `amount_by_balance_tier` / `pct_of_peak_profit` (`non_decreasing`), `reference`, `basis`, `evaluated`, `reset {time, tz}`, `severity` | threshold `reference - amount`; soft locks, hard fails |
 | `max_contracts` | `limit` (weighted) or `per_instrument`, `on_excess` | admission |
-| `scaling_plan` | `steps`, `evaluated`, `basis`, `on_excess: clip\|reject` | the limit for the next rule-day |
+| `scaling_plan` | `steps` (`min_profit_usd` or `min_balance_usd` per rung, the first may omit it = the floor rung), `evaluated`, `basis`, `comparison` (the rung boundary of a balance ladder), `on_excess: clip\|reject` | the limit for the next rule-day, chosen at the close; a balance ladder reads the closing BALANCE (absolute tiers, no profit subtraction) |
 | `flat_by` | `time`+`tz` **or** `minutes_before_session_end`, `reopen`, `consequence` | a forced-flat clock; the session-relative form follows the CME early close |
 | `min_trading_days` | `days`, `unit: trading_days\|winning_days\|calendar_days\|trade_dates`, `day_counts_if` | pass condition |
 | `consistency` | `max_day_share`, `measure`, `applies_to`, `window`, `numerator_window`, `denominator_window` | the best day's share of total profit, with the two windows declared separately |
@@ -271,6 +294,32 @@ includes or the dataset already priced, an `unknown` component it prices is ADDE
 strategy), and the recorded SHA-256 names the file. Because it is a user's statement and not a firm
 value, the resulting estimate is `conditional`, never `exact`.
 
+### The kind of a cost assumption: `point_estimate` or `upper_bound`
+
+An assumption file says what its amounts CLAIM (`kind`, REQUIRED since the 2026-11-23
+owner-decision amendment of ADR-0107; `docs/GLOSSARY.md`, "Upper-bound cost assumption"):
+
+- `point_estimate` — the owner's best single figure. It names the costs it estimates, so an amount
+  that lands on a component the firm already has (an `included` one, one the fee dataset priced, a
+  stated commission) is a contradiction and is REFUSED.
+- `upper_bound` — an explicit, versioned ceiling (`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`)
+  that fills only the GAPS a firm's own sources leave, for a preliminary analysis across every firm.
+  It is a table over every root and component, so an amount that lands on a cost the firm already
+  has is skipped, never charged and never an error. It never prices an `included` component, never
+  one the dataset priced, never a commission the firm states, and its estimate is still
+  `conditional` — never `complete`.
+
+An upper-bound run labels the artifact: `cost_bound: upper` in `summary.json` (top level and every
+scenario) and in every `attempts.parquet` row, the cash statistic `lower_bound` (the cost is a
+ceiling, so the net cash can only rise once real costs arrive), the pass probability's reason
+`costs are an upper bound: the probability and the net cash are pessimistic (lower bounds) under
+it`, and the comparability note *firms with fewer sourced cost components receive more of the
+bound, so cross-firm comparisons under it are pessimistic for the less documented firms* (the bound
+fills gaps, so a firm that states its costs is charged less of it). The file is hashed like a
+ruleset: its `sha256` is in `rulesets/prop/INDEX.json` (an entry of kind `cost_assumption`) and in
+the run's `summary.json`, sealed manifest and every attempt row. A change is a NEW version
+(`upper_bound_v2.yaml`), never an edit in place once merged.
+
 ### The participant profile: classification resolved per component
 
 A fee row does not state a participant type. It states the ONE classification dimension it needs
@@ -311,10 +360,13 @@ states inside the attempt's window is reported in `warnings` (one schedule per a
 silent mid-window change).
 
 `cash_estimate_status` is the label on the money: `exact`, `conditional` (a named cost assumption
-was used), `upper_bound` (a payout cap the sources do not state: the simulation pays what the
-other terms allow, so every payout amount and cash statistic is the MOST it can be) or
-`unavailable`; `cash_estimate_reasons` names the gap, and `estimate_status` is at best `partial`
-when a cap is unknown. An `unknown` cap is never read as `unlimited`.
+was used), `lower_bound` (the run's cost assumption is an `upper_bound` file: the cost is a ceiling,
+so every net-cash number is the LEAST it can be), `upper_bound` (a payout cap the sources do not
+state: the simulation pays what the other terms allow, so every payout amount and cash statistic is
+the MOST it can be) or `unavailable`; `cash_estimate_reasons` names the gap, and `estimate_status`
+is at best `partial` when a cap is unknown. An `unknown` cap is never read as `unlimited`.
+`lower_bound` wins over a payout cap's `upper_bound` on the cash statistic because it applies to
+every attempt of the run; the per-payout `bound` still says `upper_bound`.
 
 ## The attempt sequence (C7b, ADR-0107 section 4)
 
@@ -362,10 +414,12 @@ assertions of `tests/integration/test_futures_prop.py`.
   (`store_component_fees(store, dataset="exchange_fees_v1")`, `StoreComponentFees(dataset=None)`),
   so a consumer that pinned a version reads that version and the content hash it cites is the table
   it priced with.
-- Entry points: `crucible prop validate|list|confirm`, `crucible futures prop` (the evaluation),
-  `crucible schema --kind prop-ruleset|prop-attempt|prop-evaluation`; the MCP tools
+- Entry points: `crucible prop validate [--snapshots-root DIR]|list|confirm`, `crucible futures prop`
+  (the evaluation), `crucible schema --kind prop-ruleset|prop-attempt|prop-evaluation`; the MCP tools
   `crucible_prop_validate`, `crucible_prop_list`, `crucible_prop_schema` and
-  `crucible_futures_prop` (never `confirm`).
+  `crucible_futures_prop` (never `confirm`). `--snapshots-root` runs `crucible.prop.sources` over the
+  file: every quote is looked for in the page its own hash names and every image transcription's file
+  is hashed, so the report says `N attribution(s), M image(s), 0 synthetic` and refuses a mismatch.
 
 ## Extension points
 
@@ -403,6 +457,12 @@ assertions of `tests/integration/test_futures_prop.py`.
   Chicago regime close because the 2023 Thanksgiving schedule was never archived (see the
   session-calendar paragraph above). The sourced 2024 instance (2024-11-29, 12:15 Chicago) is the
   hand test, and a firm rule that assumes the 2023 early close stays `not_modeled` for that date.
+- The upper-bound file (`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`) is a PRELIMINARY
+  stand-in, not a cost: its exchange margin, its clearing and its `other` amounts are the owner's
+  bounds, and a firm whose components are all sourced is charged none of it while a firm with no
+  sourced component is charged all of it — which is why the run carries the comparability note. It
+  prices no commission, so a firm whose per-side commission the sources do not state still reports
+  `commission` as a gap (the file is not a substitute for a commission).
 - An `activity_requirement` window is judged on the overlay's COMPLETE rule-days: a window is never
   judged on the rule-day in progress, it is judged at that day's close.
 - `crucible prop list` and the generated `rulesets/prop/INDEX.json` report a v2 file that does not
@@ -411,6 +471,16 @@ assertions of `tests/integration/test_futures_prop.py`.
   command that refuses, and its message names the missing field.
 - With several contract limits (`max_contracts` and `scaling_plan`), the smallest limit applies and
   a rejection in any of them wins over a clip.
+- A `scaling_plan` ladder keyed on `min_profit_usd` keeps the reading it has always had: the rung
+  applies at `>=` its threshold and its `comparison` is a vestigial required declaration (every
+  shipped profit ladder declares `<=` and the engine has never read it). Only a BALANCE ladder
+  (`min_balance_usd`) takes its boundary from that field, and it refuses `<=` / `<` by name. Making
+  the profit form honour it would silently change 112 shipped rulesets, so it is declared here
+  instead: `>` on a balance ladder is the boundary-in-the-lower-rung reading, `>=` the upper one.
+- The tier a scaling plan reads at a close is the BALANCE (realized plus commissions), never equity:
+  an open position that has doubled the account moves no tier until it is closed and the close is
+  marked, which is the pessimistic direction (a firm grows the size on the balance, and the balance
+  is what the next session's books carry).
 - A payout is a withdrawal in the overlay's accounting: the simulator's own balance column is the
   trading ledger and does not show it. A `daily_profit_cap` forfeit is the same kind of adjustment.
 - A session-relative `flat_by` reads the bar's scheduled session close, not a per-instrument

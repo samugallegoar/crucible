@@ -701,6 +701,126 @@ reused and no VERIFIED hash changes. ``attempts.parquet`` gains
 ``practical_eligibility_conditions`` and ``summary.json`` gains the eligibility block's
 ``conditions``/``conditionally_valid_passes`` plus ``unmodeled_rules``; both are additive.
 
+## Amendment (2026-11-23, owner delegation, scaling-plan round): values printed only in an image
+
+A firm publishes a rule the text never states. Topstep's XFA Scaling Plan is exactly that: the
+article says the plan "sets your Maximum Position Size — the max contracts you can hold at one time
+— based on your current account balance", and the ladder itself (balance bands against lots, per
+account size) exists only inside a picture the page serves. Section 7's evidence vocabulary could
+only say `not_modeled`, which is what the first four rounds did: a MATERIAL gap that overstated the
+size a funded account may hold, in every file.
+
+**1. `evidence: official_image_transcription`.** A rule whose value is printed only in an image
+declares that evidence, and its `source` carries the image block: `image_snapshot_sha256` (the
+file's own sha256), `image_path` (relative to the private snapshots root — absolute paths and `..`
+are refused), `transcription` (the values exactly as printed, never a paraphrase of the page),
+`transcribed_by` and `transcribed_at` (UTC). All five or none; the evidence and the block must agree
+in both directions, so an image-only value can never be labelled `official_quote`.
+
+**2. The self-check verifies the FILE, never the transcription.** `crucible.prop.sources` hashes the
+snapshots folder, so every attribution's `snapshot_sha256` must resolve to a saved page and its
+`quote` must appear in THAT page's text, and an image transcription's `image_path` must hash to
+`image_snapshot_sha256`. A wrong hash is REFUSED (`DataQualityError`), not warned about, and
+`crucible prop validate --snapshots-root DIR` runs the check. Nothing compares a transcription with
+page text: there is none, which is the whole reason the type exists. A transcription is a named
+person's reading of a picture, so it is checked for existence, completeness and the image's bytes —
+the reading itself stays the owner's to confirm.
+
+**3. `supporting_sources`, and `assumptions` as a list of named readings.** A rule carried ONE
+`source`, so the page quotes that settle its basis, timing or units had nowhere to live: they ended
+up paraphrased into a `description`, where the self-check could not see them. `supporting_sources`
+is a list of attributions that support a rule WITHOUT carrying its value, held to the same standard.
+And where one value depends on several named readings (a tier boundary, a silent case, an excess
+action), `assumptions` carries each one by name beside the single `assumption` that makes a value
+itself an assumption; `all_assumptions()` reports them, and names must be unique per rule.
+
+**4. Balance tiers in `scaling_plan`.** The kind could only express profit rungs at `>=`, with a
+lockout below the first rung — not an ABSOLUTE balance band, not a boundary that belongs to the
+lower band, not a floor for a negative balance. It now can, additively:
+
+- a step is keyed on `min_profit_usd` (the original form) or `min_balance_usd` (the absolute balance
+  at the rule-day's close); a ladder may not mix them;
+- the FIRST step may omit its threshold and is then the FLOOR rung: the size for every balance below
+  the next threshold, which is how a negative or zero balance has a size instead of none;
+- a balance ladder REQUIRES `basis: balance` and `evaluated: eod` (the tier is read at one close and
+  applies to the whole next rule-day, so a mid-session reading would be a different rule) and takes
+  its boundary from `comparison`: `>=` keeps a balance exactly on a threshold in the upper rung, `>`
+  keeps it in the lower one. `<=` / `<` on an ascending ladder is refused by name;
+- the profit form is untouched, INCLUDING its vestigial `comparison` (112 shipped rulesets declare
+  `<=` while the engine has always applied `>=`): honouring it there would silently change every one
+  of them, so the module's known gaps state that the field is meaningful only on a balance ladder.
+
+The tier still changes only at `new_day`, so "the limit never rises mid-session" is structural, not
+an assumption.
+
+**Mechanically**, three additive fields (`supporting_sources`, `assumptions`, the image block on
+`Attribution`) and one optional step key change no existing declaration of the 201 firm files; only
+the 24 Topstep Trading Combine files gained a rule, and each was re-hashed in place, so
+`rulesets/prop/INDEX.json` is regenerated and no verified hash changes.
+
+## Amendment (2026-11-23, owner decision): an explicit upper-bound cost-assumption file
+
+The per-firm cost-component table (`commissions.components` per firm file, priced per component where
+a source exists) is the tracker of which firms have sourced costs, and it stays exactly as it is: it
+will keep being filled with real data. What it cannot do is let a PRELIMINARY analysis run across
+ALL firms today — a firm whose sources state nothing is a named gap, and a gap makes the cash
+statistic `unavailable`, which is the correct answer and the wrong instrument for a first pass.
+
+The owner therefore adds ONE explicit, versioned UPPER-BOUND cost-assumption file, and a `kind` on
+every assumption file that says what its amounts claim. This is an addition to section 10 as the
+2026-11-22 amendment rewrote it; nothing in that amendment is relaxed.
+
+**1. `kind` is REQUIRED on a cost-assumption file: `point_estimate` or `upper_bound`.**
+
+- `point_estimate` keeps the meaning the file already had: the owner's best single figure, naming
+the costs it estimates. An amount that lands on a component the firm already has (`included`, priced
+by the fee dataset, or a commission the firm states) is still a contradiction and is refused.
+- `upper_bound` states CEILINGS. The file is a table over every root and component, so an amount that
+lands on such a component is SKIPPED — never charged, never an error — because the bound fills only
+the gaps. It never prices an `included` component, never a component the fee dataset priced, and
+never a commission a firm states: those rules are enforced per component, not trusted.
+- Either kind leaves the estimate `conditional`, never `complete`, and prices only gaps. A root the
+file does not list stays a named gap: no extrapolation, ever.
+
+**2. The artifact says what the cost is.** Under an `upper_bound` file:
+
+- `summary.json` (top level and every scenario) and every `attempts.parquet` row carry
+  `cost_bound: upper`;
+- the cash statistic is labelled `lower_bound` — the cost is a ceiling, so the net cash can only
+  rise once real costs arrive. It takes precedence over a payout cap's `upper_bound` label on the
+  cash statistic, which applies to fewer attempts; the per-payout `bound` still reports
+  `upper_bound`;
+- the pass probability carries the reason `costs are an upper bound: the probability and the net cash
+  are pessimistic (lower bounds) under it`, so a bound can never be read as a point estimate;
+- every report carries the comparability note: *firms with fewer sourced cost components receive more
+  of the bound, so cross-firm comparisons under it are pessimistic for the less documented firms*.
+  A firm that states all of its components is charged none of the bound and a firm that states none
+  is charged all of it, so the note is the honest reading of a cross-firm table under it.
+
+**3. The file is data, versioned whole.** `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` is
+committed, `status: unverified`, `provided_by: owner`, and hashed like a ruleset: its `sha256` is an
+entry of kind `cost_assumption` in `rulesets/prop/INDEX.json` (append-only, never edited in place
+once merged) and is recorded in `summary.json`, the sealed manifest and every attempt row, and it is
+part of the evaluation id. A change is a NEW file (`upper_bound_v2.yaml`), never an edit. It is NOT
+`exchange_fees_v1`: it is not a fee table, no engine module or `docs/data/cme-exchange-fees.md` row
+reads it, and its amounts are the owner's bounds, revisable when the real data arrive.
+
+**Values (USD per contract per side, `unit: per_contract_per_side`).** ES/NQ/YM/RTY: exchange 2.00,
+clearing 0.50, NFA 0.02, other 0.50. NKD: exchange 3.00, clearing 0.50, NFA 0.02, other 0.50.
+MES/MNQ/MYM/M2K: exchange 0.60, clearing 0.25, NFA 0.02, other 0.25. The evidence text states the
+rationale per row: Topstep publishes an ES exchange fee of $2.76 round turn (1.38 per side), which
+matches the owner's 1.38 reference, plus margin; NKD is unknown, hence a wider margin; clearing and
+`other` have no source and are deliberately generous bounds (the `other` entry is named
+`unidentified_per_side_charges_upper_bound`); the NFA assessment comes from the NFA bylaw.
+
+**Mechanically.** `CostAssumption` gains `kind` and its `cost_bound`; `validate`d file keys gain
+`kind` (existing fixtures migrated); `AttemptResult`/`CommissionApplication` gain `cost_bound` and
+`cost_assumption_kind`; `summary.json` gains `cost_bound`, `comparability_note` and
+`cost_assumption.kind`; `attempts.parquet` gains the `cost_bound` column; `cash_estimate_status`
+gains the `lower_bound` label; `rulesets/prop/INDEX.json` gains the assumption entry; `crucible prop
+list` keeps listing rulesets only. Every one of those is additive: no released artifact changes, and
+`/schema_version` stays where it is.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

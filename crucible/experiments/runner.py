@@ -17,6 +17,7 @@ from __future__ import annotations
 import importlib
 import json
 import multiprocessing
+import os
 import shutil
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
@@ -227,7 +228,22 @@ def _env_lock_hash() -> str:
     return sha256(lock.read_bytes()).hexdigest()
 
 
+CODE_FINGERPRINT_ENV = "CRUCIBLE_CODE_FINGERPRINT"
+"""Set **only** by the test harness (``tests/conftest.py``): pins the code fingerprint for a test
+session, so ~150 backtests make one git call instead of three each (ADR-0109). Nothing in
+production sets it, and a run that does not find it computes the fingerprint itself, so the
+overwrite guard keeps seeing an edit made between two runs (ADR-0079)."""
+
+
 def _code_fingerprint() -> str:
+    """The pinned fingerprint when the test harness set one, else the computed one (ADR-0079)."""
+    pinned = os.environ.get(CODE_FINGERPRINT_ENV)
+    if pinned:
+        return pinned
+    return _compute_code_fingerprint()
+
+
+def _compute_code_fingerprint() -> str:
     """SHA-256 over ``HEAD``, ``git status --porcelain`` and ``git diff HEAD --binary``.
 
     Unlike the commit alone this changes when the working tree changes, so an uncommitted edit
@@ -235,6 +251,9 @@ def _code_fingerprint() -> str:
     best effort: a checkout that git cannot read, or no checkout at all, gives ``"unknown"``
     (the guard then falls back to commit + dirty). ``git`` does not diff untracked files, so a
     brand-new untracked strategy file is represented by its path, not its contents.
+
+    Three git subprocesses per call (~0.15 s here): a run calls this once, a test session with
+    ~150 backtests calls it 150 times, which is why the harness pins it (``CODE_FINGERPRINT_ENV``).
     """
     for start in (_resolution_root(), Path.cwd()):
         root = _git_root(start)

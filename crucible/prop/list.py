@@ -13,6 +13,7 @@ from pathlib import Path
 import yaml
 
 from crucible.core.errors import ConfigurationError, DataQualityError
+from crucible.prop.index import is_cost_assumption
 from crucible.prop.ruleset import RULE_SCHEMA_VERSION, load_ruleset
 from crucible.prop.validate import listing_document
 
@@ -25,10 +26,13 @@ def default_root() -> Path:
 
 
 def _files(root: Path) -> list[Path]:
+    """The ruleset files under ``root``: a cost-assumption file is versioned data, not a ruleset."""
     return sorted(
         path
         for path in root.rglob("*.yaml")
-        if path.is_file() and not path.name.endswith(".verification.yaml")
+        if path.is_file()
+        and not path.name.endswith(".verification.yaml")
+        and not is_cost_assumption(path, root)
     )
 
 

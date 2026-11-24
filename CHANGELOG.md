@@ -75,6 +75,101 @@ kind of change is recorded).
   - The Labs drops declare the page's own 90-calendar-day lifespan and 30-calendar-day inactivity
     in the evaluation phase, counting executed trades only, and no funded-phase inactivity the
     page does not publish.
+- **Values printed only inside an image (ADR-0107 amendment, 2026-11-23).**
+  - New evidence type `official_image_transcription`: a rule whose value is printed only in a saved
+    picture carries the image's own sha256, its path under the private snapshots root, the values
+    exactly as printed, and who transcribed them when. The evidence and the block must agree in both
+    directions, and the block is all-or-nothing.
+  - `crucible.prop.sources`: the evidence self-check as code. Every attribution's page hash must
+    resolve to a saved file and its quote must appear in THAT page; an image transcription's file must
+    hash to its declared sha256. `crucible prop validate <file> --snapshots-root DIR` runs it and
+    refuses a mismatch (no more "the quotes verify" as a paragraph in a review). A transcription is
+    never compared with page text: the numbers exist only in the picture.
+  - `supporting_sources` on a rule (attributions that support its basis, timing or units without
+    carrying its value) and `assumptions` (further named readings the one value depends on, each
+    reported with the value).
+- **`scaling_plan` balance tiers.** A step may be keyed on `min_balance_usd` (the absolute balance at
+  the rule-day's close) instead of `min_profit_usd`; the first step may omit its threshold and is then
+  the floor rung (so a zero or negative balance has a size); a balance ladder requires `basis:
+  balance` and `evaluated: eod` and takes its rung boundary from its own `comparison` (`>=` upper
+  rung, `>` lower rung). The profit form is unchanged, including its vestigial `comparison`.
+- **Topstep XFA scaling-plan ladder (24 Trading Combine files, still unverified).**
+  - The funded phase declares `xfa_max_contracts`, the ladder transcribed from the official image for
+    its own size (50K: 2/3/5 lots; 100K: 3/4/5/10; 150K: 3/4/5/10/15), keyed on the balance, with the
+    boundary in the LOWER rung, a floor tier for a zero or negative balance, and `clip` on excess.
+  - The page quotes for the basis ("Your XFA starts at a $0 balance"), the timing ("Your max
+    contracts do not increase mid-session"), the 10:1 mini/micro ratio and the 10-second excess
+    tolerance are `supporting_sources`; three delegated decisions (boundary, negative balance, clip)
+    are `assumption_kind: owner_decision` assumptions naming the delegation of 2026-11-23.
+  - `xfa_scaling_plan_ladder` leaves `not_modeled` in those 24 files and stays in the 2 Labs files,
+    where the article's table is not extrapolated to the Labs XFA.
+  - The Trading Combine's maximum position size is never the XFA limit, and nothing in a funded
+    phase changes size mid-session.
+
+### A preliminary cross-firm cost: the versioned upper-bound cost-assumption file (ADR-0107 amendment, 2026-11-23)
+- **`kind` on a cost-assumption file (REQUIRED): `point_estimate` or `upper_bound`.**
+  - `point_estimate` keeps the meaning: the owner's best single figure, and an amount on a cost
+    the firm already has is refused.
+  - `upper_bound` states ceilings, fills only the gaps a firm's own sources leave, and skips (never
+    charges, never refuses) an amount on an `included` component, one the fee dataset priced or a
+    commission the firm states.
+  - Existing fixtures gained `kind: point_estimate`; a file without it is refused by name.
+- **`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`.** The owner's explicit, unverified bound
+  per root and component (ES/NQ/YM/RTY: exchange 2.00, clearing 0.50, NFA 0.02, other 0.50; NKD:
+  3.00, 0.50, 0.02, 0.50; MES/MNQ/MYM/M2K: 0.60, 0.25, 0.02, 0.25 USD per contract per side), with
+  the rationale per row in its evidence. Hashed like a ruleset: an INDEX.json entry of kind
+  `cost_assumption` plus the run's summary, manifest and attempt rows. A change is a new file
+  (`upper_bound_v2.yaml`), never an edit in place. It is not a fee table and never feeds
+  `exchange_fees_v1`.
+- **Labels under an upper-bound file.** `cost_bound: upper` in `summary.json` (top level and every
+  scenario) and in every `attempts.parquet` row; the cash statistic is `lower_bound`
+  (`cash.status`, `cash_estimate_status`); the pass probability reasons carry `costs are an upper
+  bound: the probability and the net cash are pessimistic (lower bounds) under it`; every report
+  carries the comparability note (`firms with fewer sourced cost components receive more of the
+  bound, so cross-firm comparisons under it are pessimistic for the less documented firms`). The
+  estimate stays `conditional`, never `complete`.
+- **The per-firm cost-component table is unchanged:** no ruleset value, hash or verification status
+  moved. `crucible prop list` keeps listing rulesets only, and the new directory is excluded from it.
+- **Docs:** `docs/modules/prop.md`, `docs/USAGE.md` (how to run the analysis and read the labels),
+  `docs/GLOSSARY.md` (upper-bound cost assumption), `docs/data/cme-exchange-fees.md` (the file is
+  not the fee table) and `docs/SCHEMAS.md` (the new columns and keys).
+
+### CI shape: shard the suite across runners, prove the shards add up (ADR-0109)
+- **One run per change.** `on: push: branches: [main]` plus `pull_request` (a PR branch used to run
+  the whole workflow twice) with `concurrency` + `cancel-in-progress`, so a superseded push stops
+  instead of queueing.
+- **The suite is sharded across runners, not only across cores.** `pytest-split` gives 6 shards on
+  ubuntu and macOS and 8 on Windows, each on `-n auto --dist loadscope`; every shard is a runner of
+  its own, so the full suite still runs on every OS for every PR.
+- **`tools/check_shards.py` and the `shard-union` job prove it**: each shard uploads the JUnit report
+  of what it ran, and the union of those reports must *be* the whole suite, per OS (no gap, no
+  duplicate). A `-k`/`--deselect` on a shard fails the PR.
+- **`.test_durations`** is committed and refreshed from ubuntu by a `workflow_dispatch` job; a stale
+  file only unbalances the shards.
+- **The code fingerprint is pinned once per test session** (0.143 s per backtest, ~21 s of the serial
+  suite). Production behaviour is unchanged and the overwrite guard still catches an edit between two
+  runs.
+- Each job's `timeout-minutes` is a budget at about 2x its measured p95, not a widened limit.
+- Measured on three green runs: the workflow went from 7.2 min p50 / 12.4 min p95 to
+  3:52 / 4:22 / 4:53 (median 4:22). The 2-minute target is not met; ADR-0109 records why (one
+  durations file for three different runners, the ~20-job concurrency ceiling, per-job fixed cost,
+  and the union job's tail).
+- **Amendment (ADR-0109): one durations file per OS, and a plan that fits in one wave.** The single
+  ubuntu-derived file left macOS and Windows shards 1.2-1.8x over plan; there are now three
+  (`.test_durations.ubuntu|macos|windows`, one `durations` matrix job each) and 6/3/6 shards, so the
+  workflow runs 18 jobs at once instead of 23 and no shard waits for a slot (every ubuntu and Windows
+  shard starts in 2-3 s). Measured on the final shape: 4:01, 6:53 and 12:53 of workflow wall, with
+  `checks` 33-52 s, `shard-union` 24-32 s and `clean-install` 18-20 s. macOS is the tail and the
+  reason the 2-minute target is still out of reach: its ~600 s suite over the 3 runners the pool
+  gives is ~200 s a shard, and on 2026-11-24 a macOS job waited 604 s (or was cancelled with no
+  runner) while every other shard started in 3 s.
+
+### One seed for the whole sharded run (ADR-0109 amendment 2)
+- The shard jobs now run with `--randomly-seed=${{ github.run_id }}`: `pytest-split` assigns tests by
+  their position in the shuffled collection, so per-process seeds let two shards take the same test
+  (and skip another) whenever a test is missing from the durations file -- which is what a PR that
+  adds one does. One seed per run keeps the order random, differs per run, and keeps the partition
+  exact; `tests/unit/test_ci_shard_plan.py` pins it.
 
 ### Faster, order-independent test suite (ADR-0108)
 - **The suite runs in random order** (`pytest-randomly`, a dev dependency) and prints its seed;

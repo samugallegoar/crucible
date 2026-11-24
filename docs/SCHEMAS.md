@@ -1606,16 +1606,33 @@ migration message, never silently upgraded. The required fields:
 Every rule, pass condition, fee and `not_modeled` entry carries `source`: `url` (null only with
 `provided_by: owner`), `quote`, `snapshot_sha256` (64 hex), `retrieved_at` (a UTC timestamp),
 optional `section`, `synthetic`, `provided_by`; and `evidence: official_quote | owner_provided |
-assumption | conflict_resolution`, with `assumption {name, rationale, assumption_kind}` required
-when the value is an assumption (`assumption_kind` is one of `section7_default`,
-`provisional_conservative` or `owner_decision`). A rule may carry `promotions`: a list of
+assumption | conflict_resolution | official_image_transcription`, with `assumption {name,
+rationale, assumption_kind}` required when the value is an assumption (`assumption_kind` is one of
+`section7_default`, `provisional_conservative` or `owner_decision`).
+
+A `source` may also carry the **image block** of a value that is printed only inside a saved picture
+(`official_image_transcription`): `image_snapshot_sha256` (the image file's sha256, 64 hex),
+`image_path` (relative to the private snapshots root: no absolute path, no `..`, `/` separators),
+`transcription` (the values exactly as printed), `transcribed_by`, `transcribed_at` (UTC). All five
+are present together or absent together, the evidence class and the block must agree in both
+directions, and `crucible prop validate <file> --snapshots-root DIR` verifies the FILE by its hash
+(a wrong sha256 is refused). The transcription is never compared with page text: the values exist
+only in the image (`docs/modules/prop.md`, "sources.py"). A rule may also carry
+`supporting_sources` (attributions that support its basis, timing or units without carrying its
+value, held to the same self-check) and `assumptions` (further NAMED readings the one value depends
+on, each `{name, rationale, assumption_kind}`, names unique per rule). A rule may carry
+`promotions`: a list of
 `{id, field, value | multiplier, starts_on, ends_on: <date>|unknown, purchase_on_or_after, requires,
 source}`, each applied only when the run's participant profile declares every `requires` entry and
 its `purchase_date` falls in the offer window (ADR-0107, amendment of 2026-11-23). A rule may
 declare its own `effective_from`/`effective_to`. A rule is a
 discriminated union on `kind`; the parameters of each kind are in `docs/modules/prop.md`
 ("The rule kinds"), and `evaluated` (`intraday`, `eod` or `on_request`) is required on every
-threshold rule.
+threshold rule. A `scaling_plan` step is `{min_profit_usd | min_balance_usd, max_contracts}`: the
+first key says which quantity the ladder is read against (profit since the phase's start, or the
+absolute balance at the rule-day's close), the first step may omit it as the FLOOR rung, and a
+balance ladder requires `basis: balance`, `evaluated: eod` and a rung boundary in `comparison`
+(`>=` upper rung, `>` lower rung).
 
 `ruleset_sha256` is the canonical JSON hash of the content **excluding** `verification` (not a
 field in the file): confirming a ruleset never changes its identity, and the loader refuses two
@@ -1636,7 +1653,7 @@ prints its JSON Schema. The fields:
 | `min_buffer_usd`, `min_buffer_bar`, `min_buffer_time_ns`, `min_buffer_rule` | decimal / integer / integer / string or null | the smallest basis-minus-threshold over every failure threshold, at each bar's conservative extreme, and where it happened |
 | `fees_usd`, `fees`, `payouts_usd`, `payouts`, `payout_policy`, `payout_modeled`, `net_cash_usd` | decimal / `{evaluation_usd, activation_usd, monthly_usd, reset_usd, total_usd}` / decimal / list of `{time_ns, gross_usd, net_usd, rule_id, bound}` / `max_eligible` or `none` / boolean / decimal | attempt costs broken out (monthly is per started calendar month); the trader's net payouts, the choice that produced them and whether withdrawals are modeled; `net_cash_usd = payouts_usd - fees_usd`. `bound` is `exact` or `upper_bound` (a payout cap the sources do not state) |
 | `mechanical_outcome`, `estimate_status`, `estimate_reasons`, `practical_eligibility`, `practical_eligibility_conditions`, `scenario_id` | outcome / `complete\|conditional\|partial\|unavailable` / list of strings / `eligible\|eligible_conditional\|blocked_by_compliance\|unknown` / list of strings / string | what the simulated account did, what the evidence allows it to claim (and why), whether the exact execution mode may trade the plan and under which conditions the trader must still meet them, and which scenario ran |
-| `commissions`, `news_covered`, `news_coverage_gaps`, `session_calendar_gaps`, `cash_estimate_status`, `cash_estimate_reasons` | `{status, per_side_usd, root, source, components: [{component, status, usd, detail}], cost_gaps, fees_incomplete, cost_status, participant_profile_sha256, cost_assumption, cost_assumption_sha256, priced_by_assumption}` / boolean or null / list of event ids / list of `"<first>..<last>"` / `exact\|conditional\|upper_bound\|unavailable` / list of strings | the commission table applied and every component's outcome (`included`, `excluded_priced`, `covered_by_row`, `excluded_unpriced`, `unknown`, `assumption`; `known`/`unknown`/`assumption` for the commission), with the USD it adds, the gaps that remain (`cost_gaps`) and the cost status `complete\|conditional\|unavailable`. The run's fee schedule is replaced, spread/slippage kept; a component the firm charges on top is added per side from the fee dataset as the run's participant profile resolves its classification `classification_dimension`/`classification_value`, and a `cost_assumption` file (recorded by its SHA-256, with `priced_by_assumption` naming what it priced) is the only route from a gap to a number. Also: whether the calendar covered the attempt; the events whose release TIME is unknown (`time_known: false`), whose whole trade date is therefore outside coverage, while timed events keep their windows enforced; the unsourced CME session-calendar windows the attempt trades through (`"<first>..<last>"`, which makes the estimate `partial` with the reason `session calendar unsourced <first>..<last>`); what the payout and net-cash numbers are allowed to claim and why (`upper_bound` when a payout cap is unknown) |
+| `commissions`, `news_covered`, `news_coverage_gaps`, `session_calendar_gaps`, `cash_estimate_status`, `cash_estimate_reasons` | `{status, per_side_usd, root, source, components: [{component, status, usd, detail}], cost_gaps, fees_incomplete, cost_status, participant_profile_sha256, cost_assumption, cost_assumption_sha256, cost_assumption_kind, priced_by_assumption}` / boolean or null / list of event ids / list of `"<first>..<last>"` / `exact\|conditional\|lower_bound\|upper_bound\|unavailable` / list of strings | the commission table applied and every component's outcome (`included`, `excluded_priced`, `covered_by_row`, `excluded_unpriced`, `unknown`, `assumption`; `known`/`unknown`/`assumption` for the commission), with the USD it adds, the gaps that remain (`cost_gaps`) and the cost status `complete\|conditional\|unavailable`. The run's fee schedule is replaced, spread/slippage kept; a component the firm charges on top is added per side from the fee dataset as the run's participant profile resolves its classification `classification_dimension`/`classification_value`, and a `cost_assumption` file (recorded by its SHA-256, with `priced_by_assumption` naming what it priced and `cost_assumption_kind` saying what its amounts claim) is the only route from a gap to a number. Also: whether the calendar covered the attempt; the events whose release TIME is unknown (`time_known: false`), whose whole trade date is therefore outside coverage, while timed events keep their windows enforced; the unsourced CME session-calendar windows the attempt trades through (`"<first>..<last>"`, which makes the estimate `partial` with the reason `session calendar unsourced <first>..<last>`); what the payout and net-cash numbers are allowed to claim and why (`upper_bound` when a payout cap is unknown, `lower_bound` under an `upper_bound` cost file) |
 | `overlay_events` | list of `{kind, bar, time_ns, rule_id, requested, allowed, note}` | resizes, rejections, locks, unlocks, breaches, forced flats, payouts, pass, timeout, censored |
 | `rule_coverage` | list of `{rule, description, modeled, materiality, source, becomes_immaterial_if}` | one row per rule, then one per `not_modeled` entry; `becomes_immaterial_if` is the audited fact that could change a declared entry's materiality (the materiality itself never changes) |
 | `evaluation_status`, `material_unmodeled`, `warnings` | `complete` / `conditional_on_modeled_rules` / `blocked`, list of strings, list of strings | what the declared gaps allow a result to claim |
@@ -1676,7 +1693,8 @@ the manifest records `trial_recorded: false` and no trial registry row is writte
 | `fees_reset_usd` | `Decimal(precision=38, scale=6)` | no | USD; reset fees bought by the attempt policy |
 | `fees_usd` | `Decimal(precision=38, scale=6)` | no | USD; every fee of the attempt, the four kinds above |
 | `net_cash_usd` | `Decimal(precision=38, scale=6)` | no | USD; payouts_usd - fees_usd (see cash_estimate_status) |
-| `cash_estimate_status` | `String` | no | exact \| conditional \| upper_bound \| unavailable |
+| `cash_estimate_status` | `String` | no | exact \| conditional \| lower_bound \| upper_bound \| … |
+| `cost_bound` | `String` | no | 'upper' when the cost assumption's amounts are ceilings, else '' |
 | `commission_usd` | `Decimal(precision=38, scale=6)` | yes | USD per side the firm's commission charges |
 | `commission_status` | `String` | no | known \| unknown \| assumption (never read as zero) |
 | `exchange_usd` | `Decimal(precision=38, scale=6)` | yes | USD per side added for the exchange fee |
@@ -1720,20 +1738,24 @@ simulated:
 | `scenario_id`, `scenario_label`, `ruleset_scenario_label`, `conflict_id`, `rationale` | `primary` with `official_primary` and `official`, or `<conflict_id>#<index>` with `alternative_sensitivity` and `sensitivity` |
 | `starts`, `complete_starts`, `counts` | the attempt count and the per-class counts |
 | `probability` | `{field, value, interval, bounds, passes, passes_complete, complete_starts, all_starts, censored, effective_independent_attempts, evaluation_status, definitive, reasons}`: `field` is `pass_probability` only when `definitive`; `value = passes_complete / complete_starts`; `bounds = {low: passes / all_starts, high: (passes + censored) / all_starts}`; `interval` is the seeded circular block bootstrap's percentile interval (`{status, low, high, reason}`) with blocks of `max(H, ceil(sqrt(n)))` trade dates; `effective_independent_attempts = n / H` |
-| `cash` | `{status, mean_net_cash_usd, interval, reasons}`: payouts minus the attempt's fees per complete start, labelled `exact`, `conditional`, `upper_bound` or `unavailable` (and then bounded/null, never both) |
+| `cash` | `{status, mean_net_cash_usd, interval, reasons}`: payouts minus the attempt's fees per complete start, labelled `exact`, `conditional`, `lower_bound`, `upper_bound` or `unavailable` (and then bounded/null, never both). `lower_bound` is the label under an `upper_bound` cost-assumption file: the cost is a ceiling, so the net cash can only rise once real costs arrive |
 | `funded` | `{passing_starts, no_funded_phase, survived, breached, unresolved, payouts_made, payout_total_usd, payout_gross_usd, fees_usd, mean_net_cash_usd}`: the funded phase, DESCRIPTIVELY, over the starts whose evaluation passed |
 | `bootstrap` | `{pass_probability, mean_net_cash_usd}`: each statistic's `{rng, seed, block_length_policy, block_length, resamples, confidence, observations}` |
 | `coverage_gap_starts`, `estimate_status`, `estimate_reasons`, `warnings` | how many starts hit a coverage gap, the worst attempt estimate status and every distinct reason |
 | `practical_eligibility` | `{execution_mode, status, conditions, mechanical_passes, practically_valid_passes, conditionally_valid_passes, reason}`: under `blocked_by_compliance` both valid-pass counters are 0, and under `eligible_conditional` the conditions are listed and the mechanical passes are `conditionally_valid_passes` only |
 | `unmodeled_rules` | `[{rule, materiality, becomes_immaterial_if}]`: every declared `not_modeled` entry with its materiality and the condition an audit would have to establish to change it |
+| `cost_bound`, `comparability_note` | `upper` and the cross-firm caveat when the run's cost-assumption file is an `upper_bound` (the bound fills only gaps, so a firm with fewer sourced components is charged more of it), `null` otherwise |
 
 The top level carries `evaluation_id`, `run_id` (the futures run the attempts replay), `candidate_id`,
 `trial_family`, `root`, `window`, `horizon_trading_days`, `execution_mode`, `payout_policy`,
-`cost_assumption`, `scenarios_requested`, `start_dates`, `ruleset` (id, version, content hash,
-verification status, effective dates), `news` (dataset, content hash, event types, events in the
-window, the events whose release time is unknown, the covered intervals and the declared gaps),
-`exchange_fees` (dataset and content hash, or null when no commission excludes the fees),
-`not_a_submission` and a `source_note` that says in words that no number there is a verdict.
+`cost_assumption` (`{name, kind, sha256, provided_by, status, description, evidence, source_path,
+roots, unused_roots, priced_components, remaining_gaps}`; `kind` is `point_estimate` or
+`upper_bound`), `cost_components`, `cost_bound`, `comparability_note`, `scenarios_requested`,
+`start_dates`, `ruleset` (id, version, content hash, verification status, effective dates), `news`
+(dataset, content hash, event types, events in the window, the events whose release time is unknown,
+the covered intervals and the declared gaps), `exchange_fees` (dataset and content hash, or null when
+no commission excludes the fees), `not_a_submission` and a `source_note` that says in words that no
+number there is a verdict.
 
 ## Known gaps
 

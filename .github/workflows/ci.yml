@@ -1,13 +1,24 @@
 name: CI
 
+# A PR runs this once. `push` is limited to main: the old `on: [push, pull_request]` ran every PR
+# branch twice, and the branch copy told nobody anything the PR copy did not (ADR-0109).
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch: # refresh .test_durations (the `durations` job below) or re-run on demand
+
+# One run per branch/PR: a new push cancels the run it supersedes instead of queueing behind it,
+# and the whole workflow stays inside the ~20 concurrent jobs GitHub gives a workflow run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # budget: 2x the measured p95 of this job (42-50 s: setup, ruff, mypy cold, layering, docgen, CLI)
+    timeout-minutes: 3
     env:
       CI: "true"
     steps:
@@ -28,15 +39,48 @@ jobs:
       - name: CLI smoke
         run: uv run crucible --help
 
-  # The full suite on every OS: the golden fixtures pin byte-identical artifacts, so a green run
-  # on all three is the continuous proof of ADR-0055's cross-platform determinism (ADR-0070).
+  # The full suite on every OS, split into duration-balanced shards (pytest-split, ADR-0109). Each
+  # shard is one runner of its own, still on `-n auto --dist loadscope` inside, so the suite still
+  # runs once, in full, for every PR -- it just runs in parallel across runners instead of across
+  # cores. Nothing reaches main without this job: the repository has no merge queue.
   tests:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # ubuntu 320 s, macOS 340 s, Windows 466 s (p50, 4 workers per job): 6/6/8 shards keep a
+        # shard at ~55-60 s of tests. The numbers are the plan in tools/check_shards.py, and
+        # tests/unit/test_ci_shard_plan.py fails when the two disagree.
+        # 15 jobs in this matrix + `checks` + `clean-install` + `shard-union` = 18 at once, under
+        # the workflow's ~20-job concurrency ceiling: the `durations` jobs are skipped on a PR and
+        # take no slot. 3/6/6 shards come from each OS's own measured suite (`.test_durations.<os>`,
+        # ADR-0109): ~200/130/120 s of estimated tests per shard. ubuntu shards run at half their
+        # estimate (four workers across many small modules); macOS shards run at it, because the
+        # runner has three cores and the suite's long tests do not overlap.
+        #
+        # macOS gets 3 shards and sits first in the matrix, because macOS runners are the scarce
+        # resource: a fourth macOS job has waited 335 s and been cancelled after 10 minutes without
+        # a runner, while every ubuntu and Windows shard started in 2-3 s. Starting the scarce OS
+        # first gives it the pool before the other 12 shards fill it. `extra` is ADR-0076's cut.
+        include:
+          - { os: macos-latest, tag: macos, splits: 3, group: 1, extra: '-m "not single_os"' }
+          - { os: macos-latest, tag: macos, splits: 3, group: 2, extra: '-m "not single_os"' }
+          - { os: macos-latest, tag: macos, splits: 3, group: 3, extra: '-m "not single_os"' }
+          - { os: windows-latest, tag: windows, splits: 6, group: 1, extra: '-m "not single_os"' }
+          - { os: windows-latest, tag: windows, splits: 6, group: 2, extra: '-m "not single_os"' }
+          - { os: windows-latest, tag: windows, splits: 6, group: 3, extra: '-m "not single_os"' }
+          - { os: windows-latest, tag: windows, splits: 6, group: 4, extra: '-m "not single_os"' }
+          - { os: windows-latest, tag: windows, splits: 6, group: 5, extra: '-m "not single_os"' }
+          - { os: windows-latest, tag: windows, splits: 6, group: 6, extra: '-m "not single_os"' }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 1, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 2, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 3, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 4, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 5, extra: "" }
+          - { os: ubuntu-latest, tag: ubuntu, splits: 6, group: 6, extra: "" }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # budget: 2x the measured p95 of a shard job (setup + sync + 60-165 s of tests). A shard that
+    # needs more than this is broken or unbalanced, not merely slow -- .test_durations balances it.
+    timeout-minutes: 6
     env:
       CI: "true"
       PYTHONUTF8: "1"
@@ -47,18 +91,104 @@ jobs:
           python-version: "3.12"
       - name: Sync (locked)
         run: uv sync --locked --all-extras
-      - name: Tests
-        # every core of the runner (3-4), a module or class per worker (ADR-0075); Windows and
-        # macOS skip the OS-independent plumbing marked single_os, which Ubuntu runs (ADR-0076)
+      - name: Tests (shard ${{ matrix.group }}/${{ matrix.splits }} on ${{ matrix.os }})
+        # Windows and macOS skip the OS-independent plumbing marked single_os, which Ubuntu runs
+        # (ADR-0076). `--splits/--group` read `.test_durations.<os>`, the durations measured on
+        # THIS OS's runner; a stale file only unbalances the shards, it never drops a test
+        # (pytest-split assigns every collected item to exactly one group, and the `shard-union` job
+        # below proves it on every run). The JUnit report is the shard's evidence: one case per test
+        # it ran (or skipped), which `shard-union` unions and compares with the whole suite.
+        #
+        # `--randomly-seed` is the run id: the SAME seed in every shard, a different order on every
+        # CI run. pytest-split assigns items by their position in the (shuffled) collection, so a
+        # per-process random seed would give each shard a different permutation -- and with a test
+        # whose duration is not in the file yet (a PR that adds one) that duplicates and drops
+        # tests, which `shard-union` then (correctly) fails. One seed for the run keeps the order
+        # random but the partition exact, and the seed is in the log.
         run: >-
-          uv run pytest -q -n auto --dist loadscope
-          ${{ matrix.os != 'ubuntu-latest' && '-m "not single_os"' || '' }}
+          uv run pytest -q --splits ${{ matrix.splits }} --group ${{ matrix.group }}
+          --durations-path .test_durations.${{ matrix.tag }}
+          --randomly-seed=${{ github.run_id }}
+          -n auto --dist loadscope --junitxml=junit.xml
+          ${{ matrix.extra }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.os }}-${{ matrix.group }}
+          path: junit.xml
+          retention-days: 3
+
+  # The shards must add up to the suite: every test exactly once, no gap. `pytest-split` cannot drop
+  # a test by itself (it assigns every collected item), but a wrong matrix, a wrong count or an
+  # option that stops being passed could, and then a PR would reach main with a hole in it.
+  # `python -m tools.check_shards --from-artifacts` unions what the shard jobs actually RAN (their
+  # JUnit reports), collects the whole suite per OS, and demands the two be the same set; it names
+  # what differs and exits 1.
+  shard-union:
+    needs: tests
+    runs-on: ubuntu-latest
+    # budget: 2x the measured p95 (25-38 s: 20 artifacts + 3 suite collections in one process)
+    timeout-minutes: 3
+    env:
+      CI: "true"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Sync (locked)
+        run: uv sync --locked --all-extras
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          path: shards
+      - name: The shards add up to the whole suite
+        run: uv run python -m tools.check_shards --from-artifacts shards
+
+  # Refreshes the per-OS durations files, the sharding hint: dispatch this workflow from the Actions
+  # tab (or `gh workflow run CI`), download the three artifacts, commit them. It must run on EACH
+  # OS: a shard of macOS is not a shard of ubuntu, and one file for all three (as ADR-0109 first
+  # had it) left the macOS and Windows shards 1.2-1.8x over their planned share. A stale file only
+  # unbalances the shards -- `pytest-split` assigns every collected item and drops none.
+  durations:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, tag: ubuntu }
+          - { os: macos-latest, tag: macos }
+          - { os: windows-latest, tag: windows }
+    runs-on: ${{ matrix.os }}
+    # budget: 2x the measured p95 (7-11 min of the whole suite on one runner + setup)
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Sync (locked)
+        run: uv sync --locked --all-extras
+      - name: Record the durations of the whole suite on ${{ matrix.os }}
+        run: >-
+          uv run pytest -q -n auto --dist loadscope --store-durations
+          --durations-path .test_durations.${{ matrix.tag }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-durations-${{ matrix.tag }}
+          path: .test_durations.${{ matrix.tag }}
+          # the file name starts with a dot: without this the upload silently finds nothing
+          include-hidden-files: true
 
   # The published wheel with runtime dependencies only (no dev or test tools): catches a runtime
   # import of a package that is not declared in [project.dependencies] (ADR-0070).
   clean-install:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # budget: 2x the measured p95 (15-19 s: wheel build + a fresh install + the imports)
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

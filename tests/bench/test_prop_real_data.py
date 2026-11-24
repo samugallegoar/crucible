@@ -27,19 +27,25 @@ would turn a data or ruleset update into a benchmark failure instead of a review
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
+from decimal import Decimal
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 from crucible.experiments.artifact_id import verify_artifact
 from crucible.experiments.futures_config import load_futures_config, parse_futures_config
 from crucible.experiments.futures_prop import OUTCOMES, run_prop_evaluation
+from crucible.prop.costs import UPPER_BOUND_COMPARABILITY_NOTE, UPPER_BOUND_REASON
 
 STORE = Path(os.environ.get("CRUCIBLE_DATA_STORE", "data/processed"))
 RULESET = Path("rulesets/prop/topstep/topstep-trading-combine-50k.v1.yaml")
+UPPER_BOUND = Path("rulesets/prop/cost_assumptions/upper_bound_v1.yaml")
+"""The owner's explicit upper-bound cost file: the preliminary cross-firm analysis (ADR-0107)."""
 CONFIG = Path("examples/futures/es_sma_cross.yaml")
 START, END = "2024-01-02", "2024-12-31"
 HORIZON = 20
@@ -63,6 +69,8 @@ def _need() -> None:
             pytest.skip(f"{dataset} is not built in {STORE}; see docs/data/glbx-futures-1m.md")
     if not RULESET.is_file():
         pytest.skip(f"no ruleset at {RULESET}")
+    if not UPPER_BOUND.is_file():
+        pytest.skip(f"no upper-bound cost file at {UPPER_BOUND}")
 
 
 def _config():
@@ -132,3 +140,68 @@ def test_a_real_year_of_one_minute_es_is_evaluated_against_a_real_ruleset(
     assert manifest["window"]["end"] == END  # never past the vault's start
     assert manifest["horizon"]["trading_days"] == HORIZON
     assert manifest["trial_recorded"] is False
+
+
+def test_the_upper_bound_cost_file_prices_the_real_rulesets_gaps(tmp_path: Path) -> None:
+    """The same ES 2024 year and the same 50K file, with the versioned upper-bound cost file.
+
+    Topstep's 50K file includes the exchange fee and the NFA assessment and leaves clearing and
+    ``other`` unknown, so under the bound the per-side cost is the firm's own 1.89 plus 0.50
+    (clearing) plus 0.50 (other) = 2.89, and nothing is charged for exchange or NFA. What this
+    asserts is the LABELLING and the PRICING of that file, which the two runs would otherwise
+    silently share: the cost is ``upper``, the cash statistic ``lower_bound``, the probability's
+    reason says the numbers are pessimistic, and the sealed manifest records the file's SHA-256.
+    The measured counts and the outcome classes are printed, never pinned: whether the extra 1.00
+    per side moves a rule outcome is a fact about the data, not a benchmark invariant.
+    """
+    _need()
+    started = time.perf_counter()
+    result = run_prop_evaluation(
+        _config(),
+        ruleset_path=RULESET,
+        horizon_trading_days=HORIZON,
+        execution_mode="automated",
+        cost_assumption=UPPER_BOUND,
+        store_root=STORE,
+        artifacts_root=tmp_path / "artifacts",
+        overwrite=True,
+    )
+    elapsed = time.perf_counter() - started
+    summary = result.summary["scenarios"][0]
+    counts = summary["counts"]
+    frame = pl.read_parquet(result.evaluation_dir / "attempts.parquet")
+    print(
+        f"\nprop upper-bound bench: {elapsed:.1f}s, {summary['starts']} starts, outcomes {counts}, "
+        f"cash {summary['cash']['status']} "
+        f"{summary['cash']['mean_net_cash_usd']} USD per attempt, "
+        f"breached rules {sorted(set(frame['breached_rule'].drop_nulls().to_list()))}"
+    )
+    # the cost: the firm's commission plus the two components the bound fills, per side in USD
+    assert set(frame["commission_usd"].drop_nulls().to_list()) == {Decimal("1.89")}
+    assert set(frame["commission_status"].to_list()) == {"known"}
+    assert set(frame["exchange_status"].to_list()) == {"included"}
+    assert set(frame["exchange_usd"].drop_nulls().to_list()) == {Decimal("0")}
+    assert set(frame["nfa_status"].to_list()) == {"included"}
+    assert set(frame["nfa_usd"].drop_nulls().to_list()) == {Decimal("0")}
+    assert set(frame["clearing_status"].to_list()) == {"assumption"}
+    assert set(frame["clearing_usd"].drop_nulls().to_list()) == {Decimal("0.50")}
+    assert set(frame["other_status"].to_list()) == {"assumption"}
+    assert set(frame["other_usd"].drop_nulls().to_list()) == {Decimal("0.50")}
+    assert set(frame["cost_gaps"].to_list()) == {""}
+    assert set(frame["cost_bound"].to_list()) == {"upper"}
+    # the labels
+    assert summary["cost_bound"] == "upper"
+    assert summary["comparability_note"] == UPPER_BOUND_COMPARABILITY_NOTE
+    assert set(frame["cash_estimate_status"].to_list()) == {"lower_bound"}
+    assert summary["cash"]["status"] == "lower_bound"
+    assert UPPER_BOUND_REASON in summary["cash"]["reasons"]
+    assert UPPER_BOUND_REASON in summary["probability"]["reasons"]
+    assert summary["estimate_status"] != "complete"
+    manifest = json.loads((result.evaluation_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cost_bound"] == "upper"
+    assert manifest["cost_assumption"]["kind"] == "upper_bound"
+    assert manifest["cost_assumption"]["sha256"] == (
+        hashlib.sha256(UPPER_BOUND.read_bytes()).hexdigest()
+    )
+    assert manifest["window"]["end"] == END
+    assert verify_artifact(result.evaluation_dir) == result.artifact_id

@@ -6,6 +6,10 @@
 # page, the materialities and their conditions, the payout policy's $0.01 net-profit
 # gate, and (Labs drops) the drop's own 90-day lifespan, 30-day inactivity, 90/10
 # split and two separate payout minima.
+# C7b round 5 (owner delegation of 2026-11-23): the XFA scaling-plan ladder modelled
+# from the official image (evidence: official_image_transcription) with the tier
+# boundary in the lower rung, a floor tier for a zero or negative balance, and clip on
+# excess; the Trading Combine maximum is never the XFA limit.
 # verification.status is unverified: only the owner can confirm a ruleset.
 schema_version: 2
 ruleset_id: topstep-labs-daily-payouts-plus-50k
@@ -887,12 +891,15 @@ not_modeled:
   description: 'Material. The Express Funded Account''s maximum position size follows the Scaling Plan:
     ''The Scaling Plan is an Express Funded Account® (XFA) objective. It sets your Maximum Position Size
     — the max contracts you can hold at one time — based on your current account balance'', and the max
-    contracts ''do not increase mid-session''. The ladder itself is published only as an image, saved
-    at prop_snapshots/topstep/20261123_hc_scaling-plan-xfa-charts.png (sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd),
-    so this file quotes no contract number from it and the funded phase''s own contract limit is NOT declared:
-    the omission is this declared gap, never a firm rule, and the Trading Combine''s maximum is never
-    substituted for it. A funded account therefore gets credit the plan would cap, which overstates the
-    size it may hold.'
+    contracts ''do not increase mid-session''. The ladder itself is printed only inside the saved image
+    (20261123_hc_scaling-plan-xfa-charts.png, sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd)
+    and is NOT extrapolated to this Labs XFA: the drop page''s own sentence - ''XFA matches the standard
+    $50K XFA scaling plan'' - points at the same ladder, but the Scaling Plan article never says its table
+    is the Labs XFA''s, and the coordinator, under the owner''s delegation of 2026-11-23 (decision 5,
+    delegated), refused to read one product''s table onto another''s phase. So this file declares no funded
+    contract limit: the omission is this declared gap, never a firm rule, and neither the Trading Combine''s
+    maximum nor the standard XFA''s ladder is substituted for it. A funded account therefore gets credit
+    the plan would cap, which overstates the size it may hold.'
   materiality: material
   source:
     url: https://help.topstep.com/en/articles/8284223-what-is-the-scaling-plan
@@ -900,10 +907,10 @@ not_modeled:
     retrieved_at: '2026-11-22T01:36:34Z'
     quote: The Scaling Plan is an Express Funded Account® (XFA) objective. It sets your Maximum Position
       Size — the max contracts you can hold at one time — based on your current account balance.
-    section: 'Overview (the plan is an XFA objective and sets the maximum position size by balance); the
-      ladder itself is the saved image 20261123_hc_scaling-plan-xfa-charts.png (sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd).
-      The drop page states it applies to this account too: ''Max Contracts 5 mini / 50 micro. XFA matches
-      the standard $50K XFA scaling plan.'''
+    section: Overview (the plan is an XFA objective and sets the maximum position size by balance); the
+      ladder itself is the saved image 20261123_hc_scaling-plan-xfa-charts.png (sha256 55ec76b4b293822849c9bf8a8ac2de362fa895010d39ce9c0d00f4ed275e6cbd);
+      the drop page says 'XFA matches the standard $50K XFA scaling plan' but that page is not the Scaling
+      Plan's article (owner delegation of 2026-11-23, decision 5)
     synthetic: false
 - rule: news_full_position_size_prohibited
   description: 'Material and discretionary. ''Purposefully trading your full Maximum Position Size directly

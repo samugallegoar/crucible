@@ -494,6 +494,7 @@ def write_assumption(path: Path, entries: list[dict[str, object]]) -> Path:
     """A SYNTHETIC cost-assumption file with the given ES entries, dumped as real YAML."""
     document: dict[str, object] = {
         "name": "synthetic-owner-estimate",
+        "kind": "point_estimate",
         "description": "SYNTHETIC TEST VALUE: an estimate invented for a test",
         "provided_by": "owner",
         "status": "unverified",
@@ -547,19 +548,32 @@ def test_an_assumption_for_other_without_a_charge_name_is_refused(tmp_path: Path
 
 
 def test_every_ruleset_still_validates_and_no_verification_status_changed() -> None:
-    """INDEX.json's 201 entries keep their hash and their ``unverified`` status.
+    """INDEX.json's 201 ruleset entries keep their hash and their ``unverified`` status.
 
     The lock is the repository's record of what the owner has and has not confirmed (ADR-0107
     section 1): this change touches no ruleset, so every file must still load to the SAME content
-    hash and the SAME verification value the index states.
+    hash and the SAME verification value the index states. The one non-ruleset entry is the
+    versioned upper-bound cost file (kind ``cost_assumption``), which carries a name and a sha256
+    and has no firm, version or verification to keep (ADR-0107, 2026-11-23 owner decision).
     """
+    from crucible.prop.index import COST_ASSUMPTION_ENTRY_KIND
     from crucible.prop.ruleset import load_ruleset
 
     root = Path(__file__).resolve().parents[2]
-    entries = json.loads((root / "rulesets/prop/INDEX.json").read_text(encoding="utf-8"))
-    assert len(entries["entries"]) == 201
-    for entry in entries["entries"]:
+    entries = json.loads((root / "rulesets" / "prop" / "INDEX.json").read_text(encoding="utf-8"))
+    rulesets = [
+        entry for entry in entries["entries"] if entry.get("kind") != COST_ASSUMPTION_ENTRY_KIND
+    ]
+    assumptions = [
+        entry for entry in entries["entries"] if entry.get("kind") == COST_ASSUMPTION_ENTRY_KIND
+    ]
+    assert len(rulesets) == 201
+    assert len(assumptions) == len(entries["entries"]) - len(rulesets)
+    for entry in rulesets:
         assert entry["verification"] == "unverified"
         ruleset = load_ruleset(root / str(entry["path"]))
         assert ruleset.ruleset_sha256 == entry["ruleset_sha256"]
         assert ruleset.verification.status == entry["verification"]
+    for entry in assumptions:
+        assert entry["path"].startswith("rulesets/prop/cost_assumptions/")
+        assert set(entry) == {"kind", "name", "assumption_kind", "path", "sha256"}

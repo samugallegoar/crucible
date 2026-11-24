@@ -265,6 +265,10 @@ Fixtures live in `tests/fixtures/prop/`: synthetic rulesets ("SyntheticFirm A",
 `example.invalid` URLs, invented values, every attribution `synthetic: true`), a registry with two
 versions, and the refusals (a duplicate version, a synthetic `verified` ruleset, a bad kind). Every
 money number in the tests is written out as arithmetic.
+`synthetic_c_scaling_plan_balance.yaml` is the balance-keyed ladder (a $0 starting balance, a
+floor rung at 2 lots, 3 above $1,500 and 5 above $2,000, boundary in the lower rung), which is what the
+XFA scaling-plan tests drive; `tests/unit/test_prop_image_transcription.py` builds its own written
+attributions in a temporary snapshots folder, so no real snapshot is read by the suite.
 
 ## 8. Running subsets
 
@@ -290,6 +294,63 @@ declaring a run green: three different seeds must pass before work is handed bac
 The CI job (`.github/workflows/ci.yml`) runs `ruff`, `mypy --strict`, the layering check (`tools.lint_imports`), the doc
 generator's `--check` and the full `pytest -q`, all from a locked install. Set `CI=true` locally to
 reproduce its derandomized hypothesis profile.
+
+## Sharding in CI, and the check that the shards add up (ADR-0109)
+
+CI does not run one suite per OS any more: it runs `pytest-split` shards of it. One job per
+`--splits N --group i` per OS (6 on ubuntu, 3 on macOS, 6 on Windows), each job on its own runner and
+still on `-n auto --dist loadscope` inside (ADR-0075). The shards are a distribution of the suite,
+never a selection of it, and two things enforce that on every PR:
+
+- `tests/unit/test_ci_shard_plan.py` — the matrix in `.github/workflows/ci.yml` and `SHARD_PLAN` in
+  `tools/check_shards.py` are the same plan, every group 1..N runs exactly once, both commands of a
+  shard carry the same `--splits/--group`, xdist and the `single_os` cut (ADR-0076).
+- the `shard-union` job (`uv run python -m tools.check_shards --from-artifacts <dir>`) — each shard
+  job uploads the JUnit report of what it ran (one case per test, skips included); the job demands
+  that, per OS, the union of those reports **is** the whole suite (no gap, no duplicate), so a `-k`
+  or a `--deselect` added to a shard fails it. Locally, `uv run python -m tools.check_shards` runs
+  the same comparison from the plan.
+
+**One durations file per OS** (`.test_durations.ubuntu`, `.test_durations.macos`,
+`.test_durations.windows`), each measured on that OS's own runner: a macOS shard is not a ubuntu
+shard, and a single file for all three left the macOS and Windows shards 1.2-1.8x over their planned
+share. They are a hint, never a filter, so a stale file only makes the shards uneven. Refresh all
+three from real runs, never by hand:
+
+```bash
+gh workflow run CI                                   # the `durations` matrix job (dispatch only)
+gh run download <run-id> --pattern "test-durations-*" --dir /tmp/durations
+cp /tmp/durations/test-durations-ubuntu/.test_durations.ubuntu .
+cp /tmp/durations/test-durations-macos/.test_durations.macos .
+cp /tmp/durations/test-durations-windows/.test_durations.windows .
+```
+
+**One seed for the whole run** (`--randomly-seed=${{ github.run_id }}` in every shard job).
+`pytest-split` assigns tests by their position in the shuffled collection, so a per-process random
+seed gives each shard a different permutation: with a test whose duration is not in the durations
+file yet (any PR that adds one) two shards then both take it and neither takes another — duplicated
+and dropped. Pinning the run id keeps the order random (a different one per run, printed in the log)
+and the partition exact.
+
+The plan is 6 shards on ubuntu, 3 on macOS and 6 on Windows: 15 shard jobs plus `checks`,
+`clean-install` and `shard-union` is **18 jobs at once**, under the workflow's ~20-job concurrency
+ceiling, so every shard starts in the same wave (a 20th job waits for a slot, and a waited-for shard
+is what puts the tail on the workflow). `tests/unit/test_ci_shard_plan.py` fails if the plan stops
+fitting in one wave. macOS gets fewer shards than its own durations would allow and sits first in
+the matrix: a fourth macOS job has waited 335 s and been cancelled after 10 minutes with no runner,
+while every ubuntu and Windows shard started in 2-3 s, so the macOS shards are cut to what the
+macOS pool gives at once and the scarce OS starts first.
+
+Job budgets (`timeout-minutes` in `ci.yml`; a budget fails the job, it does not widen a limit), at
+about 2x the measured p95 after ADR-0109:
+
+| Job | Budget | Measured p50/p95 | What it does |
+|-----|--------|------------------|--------------|
+| `checks` | 3 min | 42/50 s | ruff, `ruff format --check`, `mypy --strict` (cold), layering, generated docs, CLI smoke |
+| `tests` (each shard) | 6 min | 73-157 s | setup + sync (~10 s) + one shard of tests |
+| `shard-union` | 3 min | 24/38 s | downloads the 15 shard reports, collects the suite per OS, compares |
+| `clean-install` | 2 min | 16/19 s | builds the wheel, installs it with runtime deps only, imports every entry point |
+| `durations` | 15 min | 7 min | `workflow_dispatch` only: the whole suite with `--store-durations` |
 
 ## Running in parallel (ADR-0075)
 

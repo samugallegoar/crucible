@@ -537,6 +537,25 @@ terms allow and the payouts and cash statistics are labelled `upper_bound`. `unk
 read as `unlimited` and never as zero. A numeric sentinel (>= 1,000,000 USD for a cap) is refused
 (ADR-0107 section 7).
 
+**Image transcription (`official_image_transcription`)** — an evidence type for a firm value that is
+printed only inside a saved picture (Topstep's XFA scaling-plan ladder is the first): the attribution
+carries the image's own sha256, its path under the private snapshots root, the values exactly as
+printed, and who transcribed them when. The self-check (`crucible.prop.sources`, `crucible prop
+validate --snapshots-root`) verifies the image FILE by its hash and never compares the transcription
+with page text, because the numbers are only in the image. A transcription is a named person's
+reading, so it is checked for existence and for the file's bytes — the owner still confirms the
+ruleset (ADR-0107, amendment of 2026-11-23).
+
+**Supporting source** — an attribution on a rule that supports its basis, timing or units WITHOUT
+carrying its value (the page sentence that says a tier is read at the session close). Held to the
+same self-check as the value's own source, so a quote never hides inside a description.
+
+**Floor rung** — the first rung of a `scaling_plan` ladder when it declares no threshold: the size
+for every balance below the second rung's threshold, which is how a zero or negative balance has a
+tier instead of none. A ladder keyed on `min_balance_usd` reads the closing BALANCE and takes its
+boundary from its own `comparison` (`>=` keeps a balance exactly on a threshold in the upper rung,
+`>` keeps it in the lower one).
+
 **`upper_bound`** — the label on a cash number computed against a value the sources do not state
 (`cash_estimate_status: upper_bound`, `PayoutRecord.bound: upper_bound`): the payout paid as much
 as every other term allowed, so the real amount can only be lower. The attempt's `estimate_status`
@@ -605,9 +624,24 @@ gap (`classification <dim> not declared`), and there is no default and no fallba
 there is.
 
 **Cost-assumption file** — the YAML a user passes to price the cost gaps the sources leave
-(`--cost-assumption FILE`): `name`, `description`, `provided_by`, `status: unverified`, `evidence`
-and `amounts` keyed by root, each root a list of `{covers, per_side_usd}`. It prices only the root
-and components it names (no extrapolation), an `unknown` component it prices is ADDED (the
-pessimistic direction), it may not override an `included` or an already-priced `excluded` component,
-and it never turns a gap into a complete cost: the estimate is `conditional`, and the file's SHA-256
-plus the gaps it priced and the gaps it left are recorded in the artifact.
+(`--cost-assumption FILE`): `name`, `kind`, `description`, `provided_by`, `status: unverified`,
+`evidence` and `amounts` keyed by root, each root a list of `{covers, per_side_usd, unit}`. It
+prices only the root and components it names (no extrapolation), an `unknown` component it prices
+is ADDED (the pessimistic direction), it may not override an `included` or an already-priced
+`excluded` component, and it never turns a gap into a complete cost: the estimate is `conditional`,
+and the file's SHA-256 plus the gaps it priced and the gaps it left are recorded in the artifact.
+`kind` states what the amounts CLAIM: a `point_estimate` is the owner's best single figure (an
+amount on a cost the firm already has is refused), an `upper_bound` is a ceiling that fills only the
+gaps (an amount on such a cost is skipped).
+
+**Upper-bound cost assumption** — a cost-assumption file with `kind: upper_bound`: an explicit,
+versioned CEILING per root and component that prices only the gaps a firm's own sources leave, so a
+preliminary analysis can run across every firm before the per-firm cost table is complete
+(`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`). It is never a firm's value, it prices no
+commission the firm states, and it labels what it claims: `cost_bound: upper` in `summary.json` and
+every `attempts.parquet` row, the cash statistic `lower_bound` (the cost is a ceiling, so the net
+cash can only rise), the pass probability's reason `costs are an upper bound: the probability and
+the net cash are pessimistic (lower bounds) under it`, and the comparability note *firms with fewer
+sourced cost components receive more of the bound, so cross-firm comparisons under it are
+pessimistic for the less documented firms*. It is hashed like a ruleset and versioned by whole file:
+a change is `upper_bound_v2.yaml`, never an edit in place once merged.
