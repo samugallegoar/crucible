@@ -8,6 +8,41 @@ kind of change is recorded).
 
 ## Unreleased
 
+### MFFU review round: the cost page's inclusion, promotions, supporting sources and re-quotes (ADR-0107 amendment)
+- **Costs (F.1-F.5).** The instrument list's subtitle "Includes Contract Specifications,
+  Commissions, and Trading Fees" is a firm statement of what its Total Cost Round Trip column
+  contains, so `exchange` and `nfa` are `included` in all 20 MFFU files and `clearing` and `other`
+  stay `unknown`.
+  - Under `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` one ES side moves from 5.36 to
+    **3.34 USD** (2.34 + 0.50 + 0.50), and MES from 2.74 to 1.45.
+  - `tests/unit/test_prop_mffu_rulesets.py` pins the arithmetic and the declarations.
+- **Promotions (F.8).** Every published discount is a `promotion` on the evaluation fee it
+  discounts, with the list price as the base:
+  - CLUB 40% off any plan and 50% off the first evaluation, each quoting the file's own plan page;
+  - the Builder 50K 30% and 40% pricing rows as their printed values.
+  - `ends_on: unknown` where no end is stated; the 3 Studio files carry none because their fee's
+    source page is gone.
+- **Supporting sources (F.7, F.27, F.29, F.30).** The sentence a rule's action or timing rests on
+  is now a `supporting_source`: the flat clock's auto-liquidation sentence and the CME session row,
+  the drawdown locks, the news flatten example, the soft-pause DLL, the inactivity purchase date,
+  and the copy-trading article.
+- **Readings (F.9-F.12, F.20, F.24-F.28, F.31).**
+  - `cross_account_hedging` states the fact that would make it material, including a copier across
+    the trader's own accounts.
+  - The two firm-specific assumptions are `provisional_conservative`; the session-relative flat and
+    the inactivity `fail` are declared as `owner_decision` and `provisional_conservative`.
+  - The Pro files carry the current "Excess profits beyond $100,000 Sim cap will be placed in
+    Reserve Program, up to $5,000 per account" wording, the 60% in-buffer withdrawal and the dated
+    active-account rule as `not_modeled` entries.
+  - The consistency share stays primary; the page's `target / 2` example is declared `not_modeled`
+    material because no field expresses it.
+- **Re-quotes (F.34, F.35).** 25 attributions now quote a span that contains their own number, and
+  the Pro 100K/150K post-payout locks quote their own cells. No value changed.
+- **Not done here.** The automation condition (F.6) needs the engine change owned by the Lucid
+  round, so an MFFU automated run still reports `eligible`; the Studio files stay `unverified` with
+  a "do NOT confirm" decision because their only source answers 404, and the Signature successors
+  are a recorded follow-up.
+
 ### Fathom C7b.1: participant profile, breach on fill, promotions, Topstep review decisions (ADR-0106, ADR-0107 amendments)
 - **Participant profile.**
   - A run declares an immutable participant profile (dimension to value); its sha256 is in the

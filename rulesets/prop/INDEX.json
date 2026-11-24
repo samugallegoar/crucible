@@ -1251,7 +1251,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-100k.v1.yaml",
       "ruleset_id": "mffu-builder-100k",
-      "ruleset_sha256": "b31507bc94c63f060594a5f23aed35eb5e5779f0e5306e895a425d75b5526ac7",
+      "ruleset_sha256": "5a3f735fefaa722993567e43bf35137879a3356243b1ed3ad36f31ab8c85c617",
       "verification": "unverified",
       "version": 1
     },
@@ -1259,7 +1259,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-150k.v1.yaml",
       "ruleset_id": "mffu-builder-150k",
-      "ruleset_sha256": "1fd6259a490a616a525dc85ba24a7d3aa7da15ea21a2c89f6096381af78afb32",
+      "ruleset_sha256": "4aa24ba0642e58613641c866c86555e9b7572192c64ae23a9e9bf7b57c3885c3",
       "verification": "unverified",
       "version": 1
     },
@@ -1267,7 +1267,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-25k.v1.yaml",
       "ruleset_id": "mffu-builder-25k",
-      "ruleset_sha256": "8b57e2465b8e0f21552097239fca2c2f08e58d2682b6eb4306ef09fd1e0bf61a",
+      "ruleset_sha256": "7bcbed1fc9c28b9708054a3f920267f1a487eb06a2dc6a01940a39309ce1eeaf",
       "verification": "unverified",
       "version": 1
     },
@@ -1275,7 +1275,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-50k-addon.v1.yaml",
       "ruleset_id": "mffu-builder-50k-addon",
-      "ruleset_sha256": "4cf4340fbf300f1cbea21ebb90e7d79e20ae0b55e6a231314e888db73b58616e",
+      "ruleset_sha256": "5255d19ba43578a712306601f9530211e689b7917ec85217f8972e592951f8d9",
       "verification": "unverified",
       "version": 1
     },
@@ -1283,7 +1283,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-builder-50k.v1.yaml",
       "ruleset_id": "mffu-builder-50k",
-      "ruleset_sha256": "b83fe1930a630dfec11bb68a7a6e57578abd234a045f07b148f37c178512c87d",
+      "ruleset_sha256": "b580e783d4be3ef5b7cd3b89d494801f8e789353789e9c7590f3b2d0fe4f1b4c",
       "verification": "unverified",
       "version": 1
     },
@@ -1291,7 +1291,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-pro-100k.v1.yaml",
       "ruleset_id": "mffu-pro-100k",
-      "ruleset_sha256": "1dc5bab93f1e643d9b864fd09e64c8e9ff949cbd4cc226878321da266502f8cb",
+      "ruleset_sha256": "dd71f16534ad490ec1b02214d41fda46cc319c56f0cb40f3d10d500f5ab9795a",
       "verification": "unverified",
       "version": 1
     },
@@ -1299,7 +1299,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-pro-150k.v1.yaml",
       "ruleset_id": "mffu-pro-150k",
-      "ruleset_sha256": "0e6a084bb86e1a56c8ee86b2d374aa027e4ed4cd8fb19f2000ccd5fc03ee05b6",
+      "ruleset_sha256": "fb4d6b94ba40e61f4fc0aeabd7ce9ca3f3789f4e99ba6192fb0e5fe6e2f7acff",
       "verification": "unverified",
       "version": 1
     },
@@ -1307,7 +1307,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-pro-50k-1day.v1.yaml",
       "ruleset_id": "mffu-pro-50k-1day",
-      "ruleset_sha256": "137e7848508c8a792562611f2a0f6e748fe88b9215675a3e29d6fce7ab56e663",
+      "ruleset_sha256": "cfe52b20a7b1959d5795be549c0ce38b3bef070a8c907fa495f1fc9946684d1a",
       "verification": "unverified",
       "version": 1
     },
@@ -1315,7 +1315,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-pro-50k.v1.yaml",
       "ruleset_id": "mffu-pro-50k",
-      "ruleset_sha256": "85fa268a206cd30ad4a0ba1e892fd4f9d52cfe4a9211059690f5a243622166cb",
+      "ruleset_sha256": "719780a5c2663d52897106a85940221fd649d30d306e5cf496b082f0c8df6f80",
       "verification": "unverified",
       "version": 1
     },
@@ -1323,7 +1323,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapid-100k.v1.yaml",
       "ruleset_id": "mffu-rapid-100k",
-      "ruleset_sha256": "f0d6717842059c76bac1a5e5f1ec93ba0bcfc29f293a73448443498685e3eef0",
+      "ruleset_sha256": "8a9d2b2614b6de1f50380d88dbec53762db00f4a4bda435b9ab0fd14e4278ef6",
       "verification": "unverified",
       "version": 1
     },
@@ -1331,7 +1331,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapid-150k.v1.yaml",
       "ruleset_id": "mffu-rapid-150k",
-      "ruleset_sha256": "19d03476b6097cf434024ca22af3ee607ef4514b493812052687a090305cb37b",
+      "ruleset_sha256": "b3299de5be282ddc2da66a6d45a6817878fa0a357f85ae635c379354f7d2e910",
       "verification": "unverified",
       "version": 1
     },
@@ -1339,7 +1339,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapid-25k.v1.yaml",
       "ruleset_id": "mffu-rapid-25k",
-      "ruleset_sha256": "17de00d8ec41cb3748371b4c18dc15aeff9e160e6953136d9b06131a20e73478",
+      "ruleset_sha256": "c8cd9a147d70ed7d398d08f4567b71d40f4131b2ab1cfddd36ebdbba24db8998",
       "verification": "unverified",
       "version": 1
     },
@@ -1347,7 +1347,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapid-50k.v1.yaml",
       "ruleset_id": "mffu-rapid-50k",
-      "ruleset_sha256": "e19ab3364d2c9262201ab4c6a497ff0bb8fead2040bf46e4cfa4d9589b09daf3",
+      "ruleset_sha256": "2e8b7c78da954346433cfbcb5b973ac9160b053d6cb15f7af2991863424440df",
       "verification": "unverified",
       "version": 1
     },
@@ -1355,7 +1355,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapideod-25k-dll.v1.yaml",
       "ruleset_id": "mffu-rapideod-25k-dll",
-      "ruleset_sha256": "64cfb06367ace089c9fc05deeac8ed4aa5a6444170d5bf01dd0009326893aa6f",
+      "ruleset_sha256": "5874ebf92a2502c9102db05791dcf20a2e0860b734e89b37f738f10e26440efb",
       "verification": "unverified",
       "version": 1
     },
@@ -1363,7 +1363,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapideod-25k.v1.yaml",
       "ruleset_id": "mffu-rapideod-25k",
-      "ruleset_sha256": "5d5be93fb2fbbc260ad048b8506307bd7ae7c9fb8751c05cb2ac29f908c6b6b3",
+      "ruleset_sha256": "58bf8e5ba2fba1474e64455d7a34ab06f3272bc35fb1e8dc68e840657e4850b8",
       "verification": "unverified",
       "version": 1
     },
@@ -1371,7 +1371,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapideod-50k-dll.v1.yaml",
       "ruleset_id": "mffu-rapideod-50k-dll",
-      "ruleset_sha256": "cd71d0fbb200683b00379e49826a9274f2e809d546367be0baf1e8e522b9a142",
+      "ruleset_sha256": "3b0e635a2cf846059f7830eb328ca1374ec8e74922c8eac286f706405bb2b8b4",
       "verification": "unverified",
       "version": 1
     },
@@ -1379,7 +1379,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-rapideod-50k.v1.yaml",
       "ruleset_id": "mffu-rapideod-50k",
-      "ruleset_sha256": "880a8226bb8a363ddb7b27edd620637a2a7ebcbf6a9b0a395e18821ff2bcc34f",
+      "ruleset_sha256": "037713bc1fb46e063338b1b809071464c957592e0ba45454dffd01203b8c0a04",
       "verification": "unverified",
       "version": 1
     },
@@ -1387,7 +1387,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-studio001-10k.v1.yaml",
       "ruleset_id": "mffu-studio001-10k",
-      "ruleset_sha256": "59968d1bd3030c0c0fc78eac6237c2c2015710e4426951fac9ec4470954c2bf0",
+      "ruleset_sha256": "b9920ee60bc8797daf2e12981e7d621446ac48d567301c6fa122e845ccee4218",
       "verification": "unverified",
       "version": 1
     },
@@ -1395,7 +1395,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-studio002-20k.v1.yaml",
       "ruleset_id": "mffu-studio002-20k",
-      "ruleset_sha256": "cc9a233595ecfcc39e225eb3a906aa6f67bdfd227defc1e80908951f89e1f14d",
+      "ruleset_sha256": "1c06e6ce29018f41022893b77b679893461ff0a8c452a51d1657c1602ae6999a",
       "verification": "unverified",
       "version": 1
     },
@@ -1403,7 +1403,7 @@
       "firm": "mffu",
       "path": "rulesets/prop/mffu/mffu-studio003-5k.v1.yaml",
       "ruleset_id": "mffu-studio003-5k",
-      "ruleset_sha256": "928a981a01b507f41ac6e55e81f150e639d57cc5af97ac8c74032a7449064a27",
+      "ruleset_sha256": "99418e80125ca52fed2f24192ef58ce14197774faa21906c4294f454bf860602",
       "verification": "unverified",
       "version": 1
     },
