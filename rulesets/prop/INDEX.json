@@ -779,7 +779,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-direct-100k.v1.yaml",
       "ruleset_id": "fundednext-futures-direct-100k",
-      "ruleset_sha256": "e29885b5a53b9267f70c32cd9ed94b5299a9f9290dd32471a8510301791f8e2e",
+      "ruleset_sha256": "9b3f253cc913a15ecad73035f9e2fd916f316017a18e3854589a57578196b2d3",
       "verification": "unverified",
       "version": 1
     },
@@ -787,7 +787,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-direct-150k.v1.yaml",
       "ruleset_id": "fundednext-futures-direct-150k",
-      "ruleset_sha256": "8bfc50be0859b802533ebc9168521e04ae792176c9cfd1b79a42c3be46bf29a6",
+      "ruleset_sha256": "3de2f2a04a1152eb8e798fb265c9327ef4e6d2e00004cd5ed85512998c3d6c5e",
       "verification": "unverified",
       "version": 1
     },
@@ -795,7 +795,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-direct-50k.v1.yaml",
       "ruleset_id": "fundednext-futures-direct-50k",
-      "ruleset_sha256": "60a766839f40400b396f76430f5ff773d14ee01b84b0ad07ebac4b79ab8232c3",
+      "ruleset_sha256": "7e9f59384900a0bf10205ffd0d1a66b6f794a060fbb490e752546cd6bfb1ca0e",
       "verification": "unverified",
       "version": 1
     },
@@ -803,7 +803,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-flex-100k.v1.yaml",
       "ruleset_id": "fundednext-futures-flex-100k",
-      "ruleset_sha256": "586a7bf5732475f7c7d6cb4e3da7b82c7aa3cd7dcb4162687ca2e11714b13aaf",
+      "ruleset_sha256": "359dc6e618cd75c56df2d0e131059f92961cf0cc7059466b35285f587ac9ca36",
       "verification": "unverified",
       "version": 1
     },
@@ -811,7 +811,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-flex-150k.v1.yaml",
       "ruleset_id": "fundednext-futures-flex-150k",
-      "ruleset_sha256": "2b474e96446a9d5693bab166c6459490e0e7b2469491fc7b47794651fdf74c7c",
+      "ruleset_sha256": "8e8b7f26c82a57c586c4d76281e45f342bc7e6c64103c0c393d0663a714a9ccd",
       "verification": "unverified",
       "version": 1
     },
@@ -819,7 +819,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-flex-50k.v1.yaml",
       "ruleset_id": "fundednext-futures-flex-50k",
-      "ruleset_sha256": "3886d300873c3701392fae30aa8e331d4a7da84486bb8cdeeac80cda6ed83c93",
+      "ruleset_sha256": "bda2c55f27cb6fbd640678582dd4a712e3761cdb7fed4b0078a0ebd20a24d72c",
       "verification": "unverified",
       "version": 1
     },
@@ -827,7 +827,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapiddaily-100k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapiddaily-100k",
-      "ruleset_sha256": "ffb763c9e2ff90e1f5bac05e45ee879ef7220cf9470474bcfa9d12734a411b6a",
+      "ruleset_sha256": "70dea1fd552e998478d3d46c2e67a3efefcfe286001181283ee50d014eebfc60",
       "verification": "unverified",
       "version": 1
     },
@@ -835,7 +835,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapiddaily-25k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapiddaily-25k",
-      "ruleset_sha256": "5c28cf15918547c77dd50a4163c2ec95bc4e93594e945e00bc0a6dadf9e0c317",
+      "ruleset_sha256": "028a042302112b7adfdff21eabdc24a04ad2c79b76dc7f51996796da36507b79",
       "verification": "unverified",
       "version": 1
     },
@@ -843,7 +843,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapiddaily-50k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapiddaily-50k",
-      "ruleset_sha256": "bb20363380371aefc9d325d2b7d168230b2f14467be097105526adde69aa60d6",
+      "ruleset_sha256": "d42243588aaea59afe315400e9514aed5af2e649082ec18c09f602c0e4722298",
       "verification": "unverified",
       "version": 1
     },
@@ -851,7 +851,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-100k-dlladdon.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-100k-dlladdon",
-      "ruleset_sha256": "1756f8b6ed0cc67f53161a5723e14ba336f438d18f76636770bc011d69cb5d01",
+      "ruleset_sha256": "ea611e6e2daf73be716f0a2b6d4463bfcd6ec490b755dcaead9be1f0424bdf57",
       "verification": "unverified",
       "version": 1
     },
@@ -859,7 +859,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-100k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-100k",
-      "ruleset_sha256": "b0ae45bc4ae2b103df70773292fc47634095de6173a7e03b1d6ad5b0ff4329dc",
+      "ruleset_sha256": "cb357886e056b09fb6baf173e4f643229c0cbbbc246629ed801c2dc5073065ff",
       "verification": "unverified",
       "version": 1
     },
@@ -867,7 +867,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-25k-dlladdon.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-25k-dlladdon",
-      "ruleset_sha256": "f3392834a31f7bc2c85d6e3d88d647b460adda41912e246ee87c9b88c781cb2e",
+      "ruleset_sha256": "a34ee2cd9fbf6a20f4eebc31ccdd98a334e363be49683d5be718a6510205c353",
       "verification": "unverified",
       "version": 1
     },
@@ -875,7 +875,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-25k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-25k",
-      "ruleset_sha256": "9d14b8c36aaeb544a567239c560ec6eeeec5cf60a7d62480f8e65081d1d44597",
+      "ruleset_sha256": "581acc6979d7d703b4551f85d218bde0740d37edbd05e8cb0961073ad1c252af",
       "verification": "unverified",
       "version": 1
     },
@@ -883,7 +883,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-50k-dlladdon.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-50k-dlladdon",
-      "ruleset_sha256": "1bf52c8ba4ab31c5818bb2006b318e6f545eff90762bd47b80a96a425bd2ec31",
+      "ruleset_sha256": "d8123483ed1aa85a9a5ca28362e77f6331b98b9b6a7ef01f5ef24aae77d7ba38",
       "verification": "unverified",
       "version": 1
     },
@@ -891,7 +891,7 @@
       "firm": "fundednext",
       "path": "rulesets/prop/fundednext/fundednext-futures-rapidpro-50k.v1.yaml",
       "ruleset_id": "fundednext-futures-rapidpro-50k",
-      "ruleset_sha256": "10d4cfe727449caf8ceda6da63ac1be4ed83540222f5033b59d61b9cb41bcc12",
+      "ruleset_sha256": "7a81e9dbae24fc5d510f6cebcea8b88d90baba0bc3f8f40166dd4c5ead6a025e",
       "verification": "unverified",
       "version": 1
     },

@@ -180,6 +180,14 @@ label `official`) then one full `PropRuleset` per `(conflict, alternative)` with
 `<conflict_id>#<index>` and label `sensitivity`. A sensitivity scenario is never an official plan
 and a result computed from one reports its `scenario_id`.
 
+A sensitivity scenario can only express a CONTRADICTION: a `conflict` names a rule field and two
+values, each with its own attribution, and the engine applies the alternative. A reading the source
+does not contradict but merely SILENCES (a plan whose funded page says what locks the maximum loss
+limit and nothing about what a payout does to it) cannot be a scenario: it is a named
+`assumption_kind: provisional_conservative` assumption on the primary rule, and the alternative
+reading is recorded in the firm's `RESEARCH.md` instead (ADR-0107, 2026-11-24 amendment; the
+FundedNext Rapid Pro and Rapid Daily `threshold_after_payout: lock_on_first_payout` is that case).
+
 ## Estimate status and practical eligibility (ADR-0107 section 11)
 
 - `estimate_status` is `unavailable` when a critical rule is unmodeled, or the commissions (or a
@@ -462,7 +470,13 @@ assertions of `tests/integration/test_futures_prop.py`.
   classes would need a per-component profile (not built).
 - A promotion's `requires` are string comparisons on the profile: a fact the profile states in
   another spelling (`yes` for `'true'`) does not match, so the base value stands and the reason is
-  recorded. That is the conservative direction, not a normalisation step.
+  recorded. That is the conservative direction, not a normalisation step. There is also no ORDER or
+  RANGE operator: `requires` cannot say "the third purchase onwards" or "ordinal <= 2", because the
+  value is compared for equality with the string the profile declares. A firm's ladder is therefore
+  written as one promotion per ordinal the engine can name (a two-tier "first 2 purchases" is two
+  promotions, on `purchase_ordinal: '1'` and `'2'`), and a tier above the last named ordinal stays
+  unpromoted — the list price, which is the conservative direction for net cash
+  (`rulesets/prop/fundednext/RESEARCH.md`, section 0.4).
 - A static threshold (`static_drawdown`) has no post-payout reset or lock: a file that wants one
   has to express it as a locked `trailing_drawdown` (ADR-0107, amendment of 2026-11-23, section 3).
 - A row that covers several components is charged once, under the first component in report order:

@@ -8,6 +8,49 @@ kind of change is recorded).
 
 ## Unreleased
 
+### FundedNext rulesets: the owner review's decisions applied (ADR-0107 amendment, 2026-11-24)
+- **The fifteen files are corrected in place** (all still `verification.status: unverified`, no
+  `prop confirm`, no sidecar, version 1). Every question of `internal/reviews/fundednext.md` (F1-F25)
+  is answered in `rulesets/prop/fundednext/RESEARCH.md` section 0; each decision is a named
+  `assumption_kind: owner_decision` assumption whose rationale says "delegated to the coordinator
+  2026-11-24", or a verbatim quote.
+- **The reset-fee quote passes again (F20).** The 12 Challenge files dropped the zero-width space
+  the page prints after "Your balance returns to the initial amount."; with it restored, all
+  fifteen files pass `crucible prop validate <file> --snapshots-root ...` (534 attributions, 0
+  quotes missing, 0 `synthetic`).
+- **A discount is a promotion on the list price (F4, F21).** Flex carries the first-two-purchases
+  price, Rapid Pro, Rapid Daily and Rapid Pro + Add-On the first-purchase price, Direct the
+  first-purchase price, each gated on `account_purchase: new` plus a `purchase_ordinal` the run
+  declares. The base is the HIGHEST published original or current price for the account, so four
+  files moved (Rapid Pro and Rapid Daily 25K 125.99 -> 159.98, 100K 483.99 -> 499.98) and every
+  published figure is recorded.
+- **Two sentences the timing depended on are now sources (F2, F9).** The inactivity clock ("no trade
+  is placed by 04:01:00 PM CT") and the rule-day reset ("It updates once per day at the end of the
+  trading day (05:00 PM CT)", "Resets daily at 5:00 PM CT.") are `supporting_sources` on the rules
+  whose timing they set, and the Rapid Pro consistency's current-cycle window cites the payout
+  criteria's "current cycle" column.
+- **Readings confirmed and declared (F5, F10, F11, F12, F13, F17, F22, F23, F25).**
+  cross-account hedging becomes `immaterial` with its `becomes_immaterial_if`; the 3-day reward
+  cadence counts trading days (`provisional_conservative`); the Rapid Pro and Rapid Daily funded
+  maximum loss limit now locks at initial + $100 on the FIRST payout (`lock.on: [hwm,
+  first_payout]`, `threshold_after_payout: lock_on_first_payout`, `provisional_conservative` — the
+  more restrictive reading of a silent page, with `unchanged` recorded in `RESEARCH.md` because a
+  scenario can only carry a contradiction); the lock level, the deactivation-as-failure, the
+  profit target's end-of-day observation, Direct's cycle-balance denominator and both Flex payout
+  caps are `owner_decision` assumptions.
+- **The commission stays a gap (F7).** NinjaTrader's and Tradovate's public pricing pages were read:
+  they agree with each other, publish three plan tiers per market class and state the amounts
+  EXCLUDE the exchange, clearing and NFA fees, so no single per-root value holds. The rulesets are
+  not split and `commission` stays a material gap on ES, MES and MNQ; after the cost-label fix
+  above, every non-NQ attempt reports the cash statistic `unavailable`, which is correct.
+- **`other` stays `unknown` (F8), the four-root universe is confirmed (F18), Legacy stays undrafted
+  with the firm's discontinuation notice quoted (F19), and F14/F15/F16 stay `material`.** F1 (a
+  `material` + `block` compliance rule making automated eligibility `eligible_conditional`) is an
+  engine change in a separate PR and is NOT applied here.
+- **Docs:** `docs/modules/prop.md` (a scenario cannot carry a silent default; a promotion's
+  `requires` has no range operator), `rulesets/prop/fundednext/RESEARCH.md` (the whole review round)
+  and `rulesets/prop/INDEX.json` (regenerated).
+
 ### A cost gap the assumption file leaves keeps the cash `unavailable` (ADR-0107 amendment, 2026-11-24)
 - **The bug.** When a cost-assumption file left a component unpriced (the FundedNext review's case:
   the firm states a commission for NQ only, and ES's `commission` stayed a gap), every attempt

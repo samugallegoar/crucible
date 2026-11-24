@@ -101,6 +101,22 @@ phases:
       section: What is the Maximum Loss Limit on the FundedNext Futures Direct Account?
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17230292-daily-loss-limit-and-maximum-loss-limit-at-fundednext-futures
+      quote: 'It updates once per day at the end of the trading day (05:00 PM CT) — not in real time. Once it reaches your initial balance , it locks and no longer increases. (For Flex, Rapid Pro & Daily, and Direct Account it locks at initial balance + $100.)'
+      snapshot_sha256: dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Part 2 — The Maximum Loss Limit (MLL)
+      synthetic: false
+    assumptions:
+    - name: mll_lock_level_is_initial_plus_100
+      assumption_kind: owner_decision
+      rationale: >-
+        The conflict keeps the table column 'MLL Locks At' (the lock point, the initial balance
+        + $100) as the primary reading and the page's 'balance reaches the lock point' note as
+        the sensitivity scenario. The owner review of 2026-11-24 confirmed the level reading
+        (F12), delegated to the coordinator 2026-11-24; the firm-wide loss-limit article states
+        the same level in words, and that sentence is now a supporting source.
   - kind: daily_loss
     rule_id: funded_daily_loss
     description: Daily loss limit of $1,000 on the day-start balance, tested against equity intrabar;
@@ -122,6 +138,29 @@ phases:
       synthetic: false
       section: Is there a daily loss limit on the FundedNext Futures Direct Account?
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17230292-daily-loss-limit-and-maximum-loss-limit-at-fundednext-futures
+      quote: 'Which models have a daily loss limit? Model Daily Loss Limit Rapid Daily ($25K / $50K / $100K) $500 / $1,000 / $1,250 Rapid Pro (only if the Add-On is selected) $500 / $1,000 / $1,250 Legacy None Flex None Direct Account $1,000 / $2,000 / $3,000 The daily loss limit applies equally to the Challenge Account and the FundedNext Account .'
+      snapshot_sha256: dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Part 1 — The Daily Loss Limit
+      synthetic: false
+    - url: https://fundednext.com/general-rules/futures/trading-objectives
+      quote: 'On Rapid and Direct, breaching the DLL is a soft breach — trading pauses for the rest of the session and resumes the next day. Resets daily at ⁦⁦5:00⁩ PM CT..'
+      snapshot_sha256: e903fbb58fe67481c98c1924bdd160f23662bd0d9ebdbf2c5aecb576a86e8845
+      retrieved_at: '2026-11-22T01:39:29Z'
+      section: 2 Daily Loss Limit
+      synthetic: false
+    assumptions:
+    - name: dll_plan_mapping_is_per_plan
+      assumption_kind: owner_decision
+      rationale: >-
+        The firm-wide article's table gives the limit per model and adds that it 'applies
+        equally to the Challenge Account and the FundedNext Account', so Rapid Daily carries it
+        by default in both phases, Direct has a permanent one, and Rapid Pro has none unless the
+        add-on is bought. The owner review of 2026-11-24 confirmed the mapping and that the add-
+        on variants' limit is soft_lock_until_reset in BOTH phases (F25), delegated to the
+        coordinator 2026-11-24.
   - kind: max_contracts
     rule_id: funded_contract_limit
     description: 3 e-mini or 30 micro e-mini contracts, fixed at account creation, with the firm's 1:10
@@ -228,6 +267,14 @@ phases:
       section: Is there a Consistency Rule on the FundedNext Futures Direct Account?
       synthetic: false
     evidence: official_quote
+    assumptions:
+    - name: cycle_balance_denominator_is_confirmed
+      assumption_kind: owner_decision
+      rationale: >-
+        The best day is all-time and the denominator re-anchors at every withdrawal ('your
+        current cycle's total profit'), read on the closed balance; the 20% test is '<=' because
+        the page says 'must stay at 20% or less of what you've earned in your active cycle'
+        (F22), delegated to the coordinator 2026-11-24.
   - kind: compliance
     rule_id: funded_compliance_copy_and_group_trading
     description: Unauthorized copying and coordinated group trading are prohibited in both phases; copying
@@ -289,6 +336,21 @@ phases:
       section: How is the inactivity counted?
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17228935-is-there-any-inactivity-period-in-fundednext-futures
+      quote: 'Inactivity count starts if no trade is placed by 04:01:00 PM CT after purchase on the same day, It counts calendar days including weekends , and the timer resets when at least one trade is placed .'
+      snapshot_sha256: 116be1418da5d4d2d3a27793abd32e5c38bcc4b4b4bd36916442d52273302c8f
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: TL;DR
+      synthetic: false
+    assumptions:
+    - name: deactivation_is_modelled_as_a_fail
+      assumption_kind: owner_decision
+      rationale: >-
+        The page distinguishes a Challenge account 'marked as breached' from a FundedNext
+        account 'marked as inactive and deactivated'. Both end the account, so both are modelled
+        as action: fail; the owner review of 2026-11-24 confirmed it (F17), delegated to the
+        coordinator 2026-11-24.
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null
@@ -310,6 +372,29 @@ phases:
       synthetic: false
       section: What account sizes and prices are available?
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17228852-what-are-the-reset-conditions-and-fees-at-fundednext-futures
+      quote: 'Reset Fees for FundedNext Futures Challenge Reset fees vary by Challenge type and size. Model Current Price Reset Price Flex 50K $141.99 $82.99 Flex 100K $273.99 $157.99 Flex 150K $490.99 $284.99 Rapid Pro 25K $125.99 $72.99 Rapid Pro 50K $299.99 $172.99 Rapid Pro 100K $483.99 $287.99 Rapid Pro with Add-On 25K $105.99 $52.99 Rapid Pro with Add-On 50K $259.99 $132.99 Rapid Pro with Add-On 100K $433.99 $237.99 Rapid Daily 25K $125.99 $72.99 Rapid Daily 50K $299.99 $177.99 Rapid Daily 100K $483.99 $287.99'
+      snapshot_sha256: ca596516c69b9006049a476fbb45526fbff36c169c8eb5ab42291ef7000f2d97
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: Reset Fees for FundedNext Futures Challenge
+      synthetic: false
+    promotions:
+    - id: direct_50k_first_purchase_discount
+      field: amount_usd
+      value: '144.99'
+      starts_on: '2026-11-22'
+      ends_on: unknown
+      requires:
+        account_purchase: 'new'
+        purchase_ordinal: '1'
+      source:
+        url: https://helpfutures.fundednext.com/en/articles/17228899-what-are-the-available-account-sizes-and-their-prices-in-fundednext-futures
+        quote: 'Direct $50K $284.99 $144.99 $169.99'
+        snapshot_sha256: 1aa81226bb6688c4d58fc8b263e3676aa5a883676236916aecf05437f2f7297f
+        retrieved_at: '2026-11-22T01:41:16Z'
+        section: 1. Direct Account
+        synthetic: false
 not_modeled:
 - rule: cme_price_limit_2pct_entry_ban
   description: No new position may be opened within 2% of the CME daily price limit; there is no entry-distance
@@ -343,7 +428,11 @@ not_modeled:
     in both phases. A single simulated account cannot show a cross-account or a correlated hedge, and
     no rule kind screens for one, so a hedged strategy is reported as practically eligible when the firm
     would refuse it.
-  materiality: material
+    No single simulated account can show one, so the entry is immaterial here and names the fact
+    that would make it bind (F5); the owner review of 2026-11-24 ruled the materiality
+    immaterial, delegated to the coordinator 2026-11-24.
+  materiality: immaterial
+  becomes_immaterial_if: becomes material if several accounts, copy trading or coordinated strategies are simulated
   source:
     url: https://fundednext.com/general-rules/futures/what-is-forbidden
     quote: Reverse Hedge Opposite positions across accounts to guarantee a win. Hedging with Correlated
@@ -390,7 +479,9 @@ not_modeled:
 - rule: excess_contract_penalty
   description: 'Above the contract limit only the excess contracts are violations: their profit is deducted
     while their losses still count; max_contracts clips the order at admission instead, which keeps the
-    excess contracts out of the book entirely.'
+    excess contracts out of the book entirely.
+    The owner review of 2026-11-24 confirmed the materiality stays immaterial (F24), delegated
+    to the coordinator 2026-11-24.'
   materiality: immaterial
   source:
     url: https://helpfutures.fundednext.com/en/articles/17430065-fundednext-futures-direct-account-all-rules
@@ -404,6 +495,8 @@ not_modeled:
   description: A trade placed on the same day removes the transfer-to-wallet option for that day, so a
     request must be made on a day with no new trade; the payout rule evaluates at every rule-day close
     regardless of that day's trading, so a payout can be taken a day earlier than the firm would allow.
+    The owner review of 2026-11-24 confirmed the materiality stays immaterial (F24), delegated
+    to the coordinator 2026-11-24.
   materiality: immaterial
   source:
     url: https://helpfutures.fundednext.com/en/articles/17430065-fundednext-futures-direct-account-all-rules
