@@ -58,6 +58,7 @@
 | `import-linter` | Enforces the layering rule of `docs/ARCHITECTURE.md` (`uv run python -m tools.lint_imports`) | CI, `tests/unit/test_architecture_conformance.py` |
 | `psutil` | Peak-memory measurement for the opt-in scale benchmarks (`uv run pytest -m bench tests/bench -s`, ADR-0054) | `tests/bench/test_real_data_scale.py` only |
 | `pytest-xdist` | Runs the suite on several processes (`-n auto --dist loadscope`: a module stays on one worker, so its module fixtures are built once); test-only, never imported by `crucible` (ADR-0075) | CI, `tools.check` |
+| `pytest-split` | Splits the suite across CI *runners* (`--splits N --group i`), balanced by `.test_durations`; each shard still uses xdist inside. A stale `.test_durations` only unbalances the shards -- it can never drop a test -- and `tools/check_shards.py` proves on every run that the shards add up to the suite (ADR-0109). Test-only, never imported by `crucible` | `.github/workflows/ci.yml`, `tools/check_shards.py` |
 
 The standard library carries the rest: `decimal`, `dataclasses`, `hashlib`,
 `statistics.NormalDist` (DSR), `argparse` (CLI), `json`, `concurrent.futures` (sweeps).

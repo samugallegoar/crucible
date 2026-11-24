@@ -134,6 +134,36 @@ kind of change is recorded).
   `docs/GLOSSARY.md` (upper-bound cost assumption), `docs/data/cme-exchange-fees.md` (the file is
   not the fee table) and `docs/SCHEMAS.md` (the new columns and keys).
 
+### CI shape: shard the suite across runners, prove the shards add up (ADR-0109)
+- **One run per change.** `on: push: branches: [main]` plus `pull_request` (a PR branch used to run
+  the whole workflow twice) with `concurrency` + `cancel-in-progress`, so a superseded push stops
+  instead of queueing.
+- **The suite is sharded across runners, not only across cores.** `pytest-split` gives 6 shards on
+  ubuntu and macOS and 8 on Windows, each on `-n auto --dist loadscope`; every shard is a runner of
+  its own, so the full suite still runs on every OS for every PR.
+- **`tools/check_shards.py` and the `shard-union` job prove it**: each shard uploads the JUnit report
+  of what it ran, and the union of those reports must *be* the whole suite, per OS (no gap, no
+  duplicate). A `-k`/`--deselect` on a shard fails the PR.
+- **`.test_durations`** is committed and refreshed from ubuntu by a `workflow_dispatch` job; a stale
+  file only unbalances the shards.
+- **The code fingerprint is pinned once per test session** (0.143 s per backtest, ~21 s of the serial
+  suite). Production behaviour is unchanged and the overwrite guard still catches an edit between two
+  runs.
+- Each job's `timeout-minutes` is a budget at about 2x its measured p95, not a widened limit.
+- Measured on three green runs: the workflow went from 7.2 min p50 / 12.4 min p95 to
+  3:52 / 4:22 / 4:53 (median 4:22). The 2-minute target is not met; ADR-0109 records why (one
+  durations file for three different runners, the ~20-job concurrency ceiling, per-job fixed cost,
+  and the union job's tail).
+- **Amendment (ADR-0109): one durations file per OS, and a plan that fits in one wave.** The single
+  ubuntu-derived file left macOS and Windows shards 1.2-1.8x over plan; there are now three
+  (`.test_durations.ubuntu|macos|windows`, one `durations` matrix job each) and 6/3/6 shards, so the
+  workflow runs 18 jobs at once instead of 23 and no shard waits for a slot (every ubuntu and Windows
+  shard starts in 2-3 s). Measured on the final shape: 4:01, 6:53 and 12:53 of workflow wall, with
+  `checks` 33-52 s, `shard-union` 24-32 s and `clean-install` 18-20 s. macOS is the tail and the
+  reason the 2-minute target is still out of reach: its ~600 s suite over the 3 runners the pool
+  gives is ~200 s a shard, and on 2026-11-24 a macOS job waited 604 s (or was cancelled with no
+  runner) while every other shard started in 3 s.
+
 ### Fathom C7b: firm rulesets and prop evaluation over a futures run (ADR-0107)
 - **201 sourced firm rulesets.**
   - Files `rulesets/prop/<firm>/` cover Topstep, Apex, MyFundedFutures, Lucid, FTMO and FundedNext.
