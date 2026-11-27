@@ -38,6 +38,8 @@ from crucible.execution.futures_sim import CostSchedule
 from crucible.prop.attempt import cash_estimate, estimate_status
 from crucible.prop.costs import (
     PARTICIPANT_PROFILE_REASON,
+    UPPER_BOUND_CASH_LABEL,
+    UPPER_BOUND_REASON,
     ComponentCharge,
     ComponentFeeRow,
     ComponentFeeTable,
@@ -302,6 +304,85 @@ def test_an_assumption_covering_every_component_makes_the_cost_conditional(
     )
     assert status == "conditional"
     assert any("synthetic-owner-estimate" in reason for reason in reasons)
+
+
+def test_a_bound_that_leaves_the_commission_a_gap_is_never_a_lower_bound(tmp_path: Path) -> None:
+    """A ceiling on four components does NOT make the cash a ``lower_bound`` (F6).
+
+    The firm states a commission for NQ and nothing for ES, and the bound prices the four
+    components around it: ``commission`` stays a gap. Hand-computed, the cash is therefore
+    ``unavailable`` -- not ``lower_bound`` (which would claim the missing commission is free) and
+    not ``conditional`` -- and its reason names the one component still missing.
+    """
+    bound = load_cost_assumption(
+        write_assumption(
+            tmp_path / "bound.yaml",
+            {
+                "ES": [
+                    {"covers": ["exchange"], "per_side_usd": "2.00"},
+                    {"covers": ["clearing"], "per_side_usd": "0.50"},
+                    {"covers": ["nfa"], "per_side_usd": "0.02"},
+                    {"covers": ["other"], "per_side_usd": "0.50", "charge_name": OTHER_CHARGE},
+                ]
+            },
+            name="upper-bound-v1",
+            kind="upper_bound",
+        )
+    )
+    pricing = price(commissions(per_side={"NQ": "2.88"}), assumption=bound)
+    assert pricing.gaps == ("commission",)
+    assert pricing.priced_by_assumption == ("exchange", "clearing", "nfa", "other")
+    assert pricing.status == "unavailable"
+    status, reasons = cash_estimate(
+        payouts_modeled=True,
+        payout_cap_unknown=False,
+        cost_status=pricing.status,
+        cost_assumption="upper-bound-v1",
+        cost_gaps=pricing.gaps,
+        cost_assumption_kind=pricing.assumption_kind,
+    )
+    assert status == "unavailable"
+    assert any("does not price commission" in reason for reason in reasons)
+    assert not any("covered every cost gap" in reason for reason in reasons)
+
+
+def test_a_bound_that_fills_every_gap_is_still_a_lower_bound(tmp_path: Path) -> None:
+    """The same file, with the commission priced: nothing is missing, so the label stands.
+
+    ``commission`` 1.50 + exchange 2.00 + clearing 0.50 + NFA 0.02 + other 0.50 = 4.52 per side,
+    every gap filled, so the cost is ``conditional`` (an assumption supplied amounts) and the cash
+    is the floor of that ceiling: ``lower_bound`` with the upper-bound reason beside it.
+    """
+    bound = load_cost_assumption(
+        write_assumption(
+            tmp_path / "bound-all.yaml",
+            {
+                "ES": [
+                    {"covers": ["commission"], "per_side_usd": "1.50"},
+                    {"covers": ["exchange"], "per_side_usd": "2.00"},
+                    {"covers": ["clearing"], "per_side_usd": "0.50"},
+                    {"covers": ["nfa"], "per_side_usd": "0.02"},
+                    {"covers": ["other"], "per_side_usd": "0.50", "charge_name": OTHER_CHARGE},
+                ]
+            },
+            name="upper-bound-v1",
+            kind="upper_bound",
+        )
+    )
+    pricing = price(commissions(per_side={"NQ": "2.88"}), assumption=bound)
+    assert pricing.gaps == ()
+    assert pricing.status == "conditional"
+    assert pricing.fees_per_side == Decimal("4.52")
+    status, reasons = cash_estimate(
+        payouts_modeled=True,
+        payout_cap_unknown=False,
+        cost_status=pricing.status,
+        cost_assumption="upper-bound-v1",
+        cost_gaps=pricing.gaps,
+        cost_assumption_kind=pricing.assumption_kind,
+    )
+    assert status == UPPER_BOUND_CASH_LABEL
+    assert UPPER_BOUND_REASON in reasons
 
 
 # ------------------------------------------- 2. a firm that charges the fees on top (FTMO-like)

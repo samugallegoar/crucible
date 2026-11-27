@@ -640,9 +640,10 @@ versioned CEILING per root and component that prices only the gaps a firm's own 
 preliminary analysis can run across every firm before the per-firm cost table is complete
 (`rulesets/prop/cost_assumptions/upper_bound_v1.yaml`). It is never a firm's value, it prices no
 commission the firm states, and it labels what it claims: `cost_bound: upper` in `summary.json` and
-every `attempts.parquet` row, the cash statistic `lower_bound` (the cost is a ceiling, so the net
-cash can only rise), the pass probability's reason `costs are an upper bound: the probability and
-the net cash are pessimistic (lower bounds) under it`, and the comparability note *firms with fewer
+every `attempts.parquet` row, the cash statistic `lower_bound` when it priced every remaining gap
+(the cost is a ceiling, so the net cash can only rise; a gap it left keeps the cash `unavailable`),
+the pass probability's reason `costs are an upper bound: the probability is pessimistic and any net
+cash under it is a lower bound`, and the comparability note *firms with fewer
 sourced cost components receive more of the bound, so cross-firm comparisons under it are
 pessimistic for the less documented firms*. It is hashed like a ruleset and versioned by whole file:
 a change is `upper_bound_v2.yaml`, never an edit in place once merged.

@@ -186,6 +186,14 @@ label `official`) then one full `PropRuleset` per `(conflict, alternative)` with
 `<conflict_id>#<index>` and label `sensitivity`. A sensitivity scenario is never an official plan
 and a result computed from one reports its `scenario_id`.
 
+A sensitivity scenario can only express a CONTRADICTION: a `conflict` names a rule field and two
+values, each with its own attribution, and the engine applies the alternative. A reading the source
+does not contradict but merely SILENCES (a plan whose funded page says what locks the maximum loss
+limit and nothing about what a payout does to it) cannot be a scenario: it is a named
+`assumption_kind: provisional_conservative` assumption on the primary rule, and the alternative
+reading is recorded in the firm's `RESEARCH.md` instead (ADR-0107, 2026-11-24 amendment; the
+FundedNext Rapid Pro and Rapid Daily `threshold_after_payout: lock_on_first_payout` is that case).
+
 ## Estimate status and practical eligibility (ADR-0107 section 11)
 
 - `estimate_status` is `unavailable` when a critical rule is unmodeled, or the commissions (or a
@@ -313,6 +321,16 @@ includes or the dataset already priced, an `unknown` component it prices is ADDE
 strategy), and the recorded SHA-256 names the file. Because it is a user's statement and not a firm
 value, the resulting estimate is `conditional`, never `exact`.
 
+**A gap the file leaves is never a bound.** If ANY gap remains AFTER the assumption file was
+applied, `cash_estimate_status` is `unavailable` — never `lower_bound`, never `conditional` — and
+its reason names the components still missing (`cost assumption 'upper-bound-v1' does not price
+commission, so the net cash is not a number`). A ceiling on some of the components is not a ceiling
+on the cost, so a `lower_bound` label there would claim the unpriced component is free (ADR-0107,
+2026-11-24 amendment, F6). The four surfaces agree by construction: the attempt rows carry the
+label and `cost_gaps`, `summary.json` takes the worst attempt status and reports no mean at all,
+and the CLI text prints `net cash: - USD per attempt (unavailable)`; the MCP tool returns that same
+`--json` document.
+
 ### The kind of a cost assumption: `point_estimate` or `upper_bound`
 
 An assumption file says what its amounts CLAIM (`kind`, REQUIRED since the 2026-11-23
@@ -329,10 +347,11 @@ owner-decision amendment of ADR-0107; `docs/GLOSSARY.md`, "Upper-bound cost assu
   `conditional` — never `complete`.
 
 An upper-bound run labels the artifact: `cost_bound: upper` in `summary.json` (top level and every
-scenario) and in every `attempts.parquet` row, the cash statistic `lower_bound` (the cost is a
-ceiling, so the net cash can only rise once real costs arrive), the pass probability's reason
-`costs are an upper bound: the probability and the net cash are pessimistic (lower bounds) under
-it`, and the comparability note *firms with fewer sourced cost components receive more of the
+scenario) and in every `attempts.parquet` row, the cash statistic `lower_bound` WHEN the file
+priced every remaining gap (the cost is a ceiling, so the net cash can only rise once real costs
+arrive; a gap it left keeps the cash `unavailable`), the pass probability's reason
+`costs are an upper bound: the probability is pessimistic and any net cash under it is a lower
+bound`, and the comparability note *firms with fewer sourced cost components receive more of the
 bound, so cross-firm comparisons under it are pessimistic for the less documented firms* (the bound
 fills gaps, so a firm that states its costs is charged less of it). The file is hashed like a
 ruleset: its `sha256` is in `rulesets/prop/INDEX.json` (an entry of kind `cost_assumption`) and in
@@ -379,13 +398,14 @@ states inside the attempt's window is reported in `warnings` (one schedule per a
 silent mid-window change).
 
 `cash_estimate_status` is the label on the money: `exact`, `conditional` (a named cost assumption
-was used), `lower_bound` (the run's cost assumption is an `upper_bound` file: the cost is a ceiling,
-so every net-cash number is the LEAST it can be), `upper_bound` (a payout cap the sources do not
-state: the simulation pays what the other terms allow, so every payout amount and cash statistic is
-the MOST it can be) or `unavailable`; `cash_estimate_reasons` names the gap, and `estimate_status`
-is at best `partial` when a cap is unknown. An `unknown` cap is never read as `unlimited`.
-`lower_bound` wins over a payout cap's `upper_bound` on the cash statistic because it applies to
-every attempt of the run; the per-payout `bound` still says `upper_bound`.
+was used and it left no gap), `lower_bound` (the run's cost assumption is an `upper_bound` file that
+priced every remaining gap: the cost is a ceiling, so every net-cash number is the LEAST it can
+be), `upper_bound` (a payout cap the sources do not state: the simulation pays what the other terms
+allow, so every payout amount and cash statistic is the MOST it can be) or `unavailable` (a gap
+remains after the assumption file, so there is no number); `cash_estimate_reasons` names the gap,
+and `estimate_status` is at best `partial` when a cap is unknown. An `unknown` cap is never read as
+`unlimited`. `lower_bound` wins over a payout cap's `upper_bound` on the cash statistic because it
+applies to every attempt of the run; the per-payout `bound` still says `upper_bound`.
 
 ## The attempt sequence (C7b, ADR-0107 section 4)
 
@@ -465,7 +485,13 @@ assertions of `tests/integration/test_futures_prop.py`.
   classes would need a per-component profile (not built).
 - A promotion's `requires` are string comparisons on the profile: a fact the profile states in
   another spelling (`yes` for `'true'`) does not match, so the base value stands and the reason is
-  recorded. That is the conservative direction, not a normalisation step.
+  recorded. That is the conservative direction, not a normalisation step. There is also no ORDER or
+  RANGE operator: `requires` cannot say "the third purchase onwards" or "ordinal <= 2", because the
+  value is compared for equality with the string the profile declares. A firm's ladder is therefore
+  written as one promotion per ordinal the engine can name (a two-tier "first 2 purchases" is two
+  promotions, on `purchase_ordinal: '1'` and `'2'`), and a tier above the last named ordinal stays
+  unpromoted — the list price, which is the conservative direction for net cash
+  (`rulesets/prop/fundednext/RESEARCH.md`, section 0.4).
 - A static threshold (`static_drawdown`) has no post-payout reset or lock: a file that wants one
   has to express it as a locked `trailing_drawdown` (ADR-0107, amendment of 2026-11-23, section 3).
 - A row that covers several components is charged once, under the first component in report order:

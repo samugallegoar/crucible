@@ -488,22 +488,24 @@ def cash_estimate(
     payout_cap_unknown: bool,
     cost_status: str,
     cost_assumption: str | None,
+    cost_gaps: tuple[str, ...] = (),
     participant_profile: str | None = None,
     fees_incomplete: str | None = None,
     cost_assumption_kind: str | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     """``exact | conditional | lower_bound | upper_bound | unavailable`` for payouts and net cash.
 
-    A cash number needs every cost the account pays, so ``cost_status`` decides first:
-    ``unavailable`` (any component is a gap) makes the cash ``unavailable`` unless a
-    ``cost_assumption`` file covered EVERY gap — then it is ``conditional`` and the attempt says
-    which file, and which gaps it priced. ``complete`` costs are ``exact`` only when no assumption
-    and no declared participant profile was needed; either one keeps the number ``conditional``,
-    never
+    A cash number needs every cost the account pays, so ``cost_gaps`` decides first: ANY component
+    the sources leave unpriced AFTER the cost-assumption file was applied makes the cash
+    ``unavailable``, and its reason NAMES the remaining gaps. A gap a ``cost_assumption`` file did
+    not price never lets the number be a bound: a ceiling on SOME of the components is not a
+    ceiling on the cost, and ``lower_bound`` on the cash would claim the missing component is free
+    (ADR-0107, 2026-11-24 amendment). ``complete`` costs are ``exact`` only when no assumption and
+    no declared participant profile was needed; either one keeps the number ``conditional``, never
     ``complete``. A payout cap the sources do not state does not stop the number: the payouts are
     paid as the other terms allow and the statistic is an ``upper_bound``. An assumption of kind
-    ``upper_bound`` makes the COST a ceiling, so the net cash is its floor: the statistic is
-    ``lower_bound`` and carries :data:`UPPER_BOUND_REASON`, which wins over the cap's
+    ``upper_bound`` that leaves NO gap makes the COST a ceiling, so the net cash is its floor: the
+    statistic is ``lower_bound`` and carries :data:`UPPER_BOUND_REASON`, which wins over the cap's
     ``upper_bound`` label because it applies to every attempt of the run and the per-payout label
     still says ``upper_bound``.
     """
@@ -514,14 +516,18 @@ def cash_estimate(
     if cost_status == "unavailable":
         if fees_incomplete is not None:
             reasons.append(fees_incomplete)
+        named = ", ".join(cost_gaps) if cost_gaps else "a component no source prices"
         if cost_assumption is None:
-            reasons.append("the attempt's cost is not known, so the net cash is not a number")
-            return "unavailable", tuple(reasons)
-        reasons.append(
-            f"cost assumption {cost_assumption!r} covered every cost gap, so the net cash is that "
-            "assumption's number"
-        )
-    elif cost_assumption is not None:
+            reasons.append(
+                f"the attempt's cost is not known ({named}), so the net cash is not a number"
+            )
+        else:
+            reasons.append(
+                f"cost assumption {cost_assumption!r} does not price {named}, so the net cash is "
+                "not a number"
+            )
+        return "unavailable", tuple(reasons)
+    if cost_assumption is not None:
         reasons.append(f"cost assumption {cost_assumption!r} was used")
     if cost_status != "unavailable" and participant_profile is not None:
         reasons.append(PARTICIPANT_PROFILE_REASON)
@@ -924,6 +930,7 @@ def simulate_attempt(
         payout_cap_unknown=payout_cap_unknown,
         cost_status=cost_status,
         cost_assumption=None if cost_assumption is None else cost_assumption.name,
+        cost_gaps=commission.cost_gaps,
         participant_profile=(
             commission.participant_profile_sha256 if commission.priced_from_dataset else None
         ),

@@ -110,6 +110,7 @@ conflicts:
   selected_value:
     'on':
     - hwm
+    - first_payout
     at_offset_usd: '1100'
     locked_offset_usd: '100'
   alternatives:
@@ -170,6 +171,29 @@ phases:
       synthetic: false
       section: Is there a daily loss limit in the Rapid Pro Challenge?
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17230292-daily-loss-limit-and-maximum-loss-limit-at-fundednext-futures
+      quote: 'Which models have a daily loss limit? Model Daily Loss Limit Rapid Daily ($25K / $50K / $100K) $500 / $1,000 / $1,250 Rapid Pro (only if the Add-On is selected) $500 / $1,000 / $1,250 Legacy None Flex None Direct Account $1,000 / $2,000 / $3,000 The daily loss limit applies equally to the Challenge Account and the FundedNext Account .'
+      snapshot_sha256: dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Part 1 — The Daily Loss Limit
+      synthetic: false
+    - url: https://fundednext.com/general-rules/futures/trading-objectives
+      quote: 'On Rapid and Direct, breaching the DLL is a soft breach — trading pauses for the rest of the session and resumes the next day. Resets daily at ⁦⁦5:00⁩ PM CT..'
+      snapshot_sha256: e903fbb58fe67481c98c1924bdd160f23662bd0d9ebdbf2c5aecb576a86e8845
+      retrieved_at: '2026-11-22T01:39:29Z'
+      section: 2 Daily Loss Limit
+      synthetic: false
+    assumptions:
+    - name: dll_plan_mapping_is_per_plan
+      assumption_kind: owner_decision
+      rationale: >-
+        The firm-wide article's table gives the limit per model and adds that it 'applies
+        equally to the Challenge Account and the FundedNext Account', so Rapid Daily carries it
+        by default in both phases, Direct has a permanent one, and Rapid Pro has none unless the
+        add-on is bought. The owner review of 2026-11-24 confirmed the mapping and that the add-
+        on variants' limit is soft_lock_until_reset in BOTH phases (F25), delegated to the
+        coordinator 2026-11-24.
   - kind: trailing_drawdown
     rule_id: challenge_max_loss_limit
     description: Trailing end-of-day Maximum Loss Limit of $1,000 marked on the highest end-of-day balance
@@ -198,6 +222,22 @@ phases:
       synthetic: false
       section: What is the Maximum Loss Limit in the Rapid Pro Challenge?
     evidence: conflict_resolution
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17230292-daily-loss-limit-and-maximum-loss-limit-at-fundednext-futures
+      quote: 'It updates once per day at the end of the trading day (05:00 PM CT) — not in real time. Once it reaches your initial balance , it locks and no longer increases. (For Flex, Rapid Pro & Daily, and Direct Account it locks at initial balance + $100.)'
+      snapshot_sha256: dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Part 2 — The Maximum Loss Limit (MLL)
+      synthetic: false
+    assumptions:
+    - name: mll_lock_level_is_initial_plus_100
+      assumption_kind: owner_decision
+      rationale: >-
+        The conflict keeps the table column 'MLL Locks At' (the lock point, the initial balance
+        + $100) as the primary reading and the page's 'balance reaches the lock point' note as
+        the sensitivity scenario. The owner review of 2026-11-24 confirmed the level reading
+        (F12), delegated to the coordinator 2026-11-24; the firm-wide loss-limit article states
+        the same level in words, and that sentence is now a supporting source.
   - kind: max_contracts
     rule_id: challenge_contract_limit
     description: 2 e-mini or 20 micro e-mini contracts, fixed at account creation, with the firm's 1:10
@@ -295,6 +335,21 @@ phases:
       section: How is the inactivity counted?
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17228935-is-there-any-inactivity-period-in-fundednext-futures
+      quote: 'Inactivity count starts if no trade is placed by 04:01:00 PM CT after purchase on the same day, It counts calendar days including weekends , and the timer resets when at least one trade is placed .'
+      snapshot_sha256: 116be1418da5d4d2d3a27793abd32e5c38bcc4b4b4bd36916442d52273302c8f
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: TL;DR
+      synthetic: false
+    assumptions:
+    - name: deactivation_is_modelled_as_a_fail
+      assumption_kind: owner_decision
+      rationale: >-
+        The page distinguishes a Challenge account 'marked as breached' from a FundedNext
+        account 'marked as inactive and deactivated'. Both end the account, so both are modelled
+        as action: fail; the owner review of 2026-11-24 confirmed it (F17), delegated to the
+        coordinator 2026-11-24.
   pass_conditions:
   - kind: profit_target
     rule_id: challenge_profit_target
@@ -319,13 +374,15 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
-      assumption_kind: provisional_conservative
+      assumption_kind: owner_decision
       rationale: The profit target is quoted on closed-position P&L, but no page says when it is tested.
         The intraday default belongs to failure thresholds, where it makes enforcement stricter; for a
         pass condition the conservative reading is the end of the trade date on the closed balance, because
         the trader then passes no earlier than the close and a later same-day breach still counts against
         the attempt. The same silence covers require_flat, which stays false because the target is defined
         on closed positions.
+        The owner review of 2026-11-24 confirmed the end-of-day observation of the quoted target
+        (F13), delegated to the coordinator 2026-11-24.
   max_calendar_days: null
   max_trading_days: null
   fees:
@@ -349,6 +406,29 @@ phases:
       synthetic: false
       section: Reset Fees for FundedNext Futures Challenge
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17228899-what-are-the-available-account-sizes-and-their-prices-in-fundednext-futures
+      quote: 'Rapid Pro: Account Size Base Price First Purchase Recurring Purchase $25K $159.98 $64.99 $74.99 $50K $299.98 $149.99 $174.99 $100K $499.98 $249.99 $289.99'
+      snapshot_sha256: 1aa81226bb6688c4d58fc8b263e3676aa5a883676236916aecf05437f2f7297f
+      retrieved_at: '2026-11-22T01:41:16Z'
+      section: 2. Rapid Pro and Daily Challenge
+      synthetic: false
+    promotions:
+    - id: rapidpro_dll_25k_first_purchase_discount
+      field: amount_usd
+      value: '44.99'
+      starts_on: '2026-11-22'
+      ends_on: unknown
+      requires:
+        account_purchase: 'new'
+        purchase_ordinal: '1'
+      source:
+        url: https://helpfutures.fundednext.com/en/articles/17229677-fundednext-futures-rapid-pro-challenge-all-rules
+        quote: 'Discounted Price (47% Off) Price with DLL Add-On $25,000 $64.99 $44.99 $50,000 $149.99 $109.99 $100,000 $249.99 $199.99'
+        snapshot_sha256: 91ed6f6a065f759231231f686050253062f8fb01b5a02dc4e7b8dffb6bb235ff
+        retrieved_at: '2026-11-22T01:52:44Z'
+        section: Rapid Pro Daily Loss Limit Add-On
+        synthetic: false
   - kind: fee
     rule_id: challenge_reset_fee
     description: Resetting the Challenge costs 52.99 USD and restarts the account from the initial balance;
@@ -362,7 +442,7 @@ phases:
       url: https://helpfutures.fundednext.com/en/articles/17228852-what-are-the-reset-conditions-and-fees-at-fundednext-futures
       quote: 'Reset fees vary by Challenge type and size. What happens when I reset my account? When you
         reset your Challenge, you will receive a new Challenge with everything starting from the beginning
-        , as if you are beginning fresh: Your balance returns to the initial amount. Your trading metrics
+        , as if you are beginning fresh: Your balance returns to the initial amount.​ Your trading metrics
         are reset. Your loss limit is refreshed. Note: If you had your previous Challenge connected to
         a trade copier or trading journal, that connection will no longer be active. You will need to
         reconnect using your New Account Name before you resume trading. This applies to any third-party
@@ -396,6 +476,7 @@ phases:
     lock:
       'on':
       - hwm
+      - first_payout
       at_offset_usd: '1100'
       locked_offset_usd: '100'
     source:
@@ -408,6 +489,22 @@ phases:
       section: What is the Maximum Loss Limit on the Rapid Pro FundedNext Account?
       synthetic: false
     evidence: conflict_resolution
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17230292-daily-loss-limit-and-maximum-loss-limit-at-fundednext-futures
+      quote: 'It updates once per day at the end of the trading day (05:00 PM CT) — not in real time. Once it reaches your initial balance , it locks and no longer increases. (For Flex, Rapid Pro & Daily, and Direct Account it locks at initial balance + $100.)'
+      snapshot_sha256: dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Part 2 — The Maximum Loss Limit (MLL)
+      synthetic: false
+    assumptions:
+    - name: mll_lock_level_is_initial_plus_100
+      assumption_kind: owner_decision
+      rationale: >-
+        The conflict keeps the table column 'MLL Locks At' (the lock point, the initial balance
+        + $100) as the primary reading and the page's 'balance reaches the lock point' note as
+        the sensitivity scenario. The owner review of 2026-11-24 confirmed the level reading
+        (F12), delegated to the coordinator 2026-11-24; the firm-wide loss-limit article states
+        the same level in words, and that sentence is now a supporting source.
   - kind: daily_loss
     rule_id: funded_daily_loss
     description: Daily loss limit of $500 on the day-start balance, tested against equity intrabar; breaching
@@ -430,6 +527,29 @@ phases:
       synthetic: false
       section: Is there a daily loss limit on the Rapid Pro FundedNext Account?
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17230292-daily-loss-limit-and-maximum-loss-limit-at-fundednext-futures
+      quote: 'Which models have a daily loss limit? Model Daily Loss Limit Rapid Daily ($25K / $50K / $100K) $500 / $1,000 / $1,250 Rapid Pro (only if the Add-On is selected) $500 / $1,000 / $1,250 Legacy None Flex None Direct Account $1,000 / $2,000 / $3,000 The daily loss limit applies equally to the Challenge Account and the FundedNext Account .'
+      snapshot_sha256: dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Part 1 — The Daily Loss Limit
+      synthetic: false
+    - url: https://fundednext.com/general-rules/futures/trading-objectives
+      quote: 'On Rapid and Direct, breaching the DLL is a soft breach — trading pauses for the rest of the session and resumes the next day. Resets daily at ⁦⁦5:00⁩ PM CT..'
+      snapshot_sha256: e903fbb58fe67481c98c1924bdd160f23662bd0d9ebdbf2c5aecb576a86e8845
+      retrieved_at: '2026-11-22T01:39:29Z'
+      section: 2 Daily Loss Limit
+      synthetic: false
+    assumptions:
+    - name: dll_plan_mapping_is_per_plan
+      assumption_kind: owner_decision
+      rationale: >-
+        The firm-wide article's table gives the limit per model and adds that it 'applies
+        equally to the Challenge Account and the FundedNext Account', so Rapid Daily carries it
+        by default in both phases, Direct has a permanent one, and Rapid Pro has none unless the
+        add-on is bought. The owner review of 2026-11-24 confirmed the mapping and that the add-
+        on variants' limit is soft_lock_until_reset in BOTH phases (F25), delegated to the
+        coordinator 2026-11-24.
   - kind: max_contracts
     rule_id: funded_contract_limit
     description: 2 e-mini or 20 micro e-mini contracts, fixed at account creation, with the firm's 1:10
@@ -469,7 +589,10 @@ phases:
     rule_id: funded_consistency
     description: 'The best single rule-day''s profit may not exceed 40% of the profit in the current payout
       cycle: the page compares the highest day with total profit and does not say whether the total is
-      all-time or per cycle, so the cycle window (more restrictive) is used.'
+      all-time or per cycle, so the cycle window (more restrictive) is used.
+      The page says only ''total profit''; the review of 2026-11-24 chose the current payout
+      cycle, the more restrictive of the two windows that sentence supports and the one the
+      payout criteria''s ''current cycle'' column states (F2).'
     max_day_share: '0.4'
     measure: best_day_profit/total_profit
     applies_to: payout
@@ -488,6 +611,13 @@ phases:
       synthetic: false
       section: Is there a Consistency Rule on the Rapid Pro FundedNext Account?
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17229713-fundednext-futures-rapid-pro-fundednext-account-all-rules
+      quote: 'Before each withdrawal, you must meet the criteria for your account size: Criteria $25K Account $50K Account $100K Account Consistency Rule 40% 40% 40% Minimum Profit (current cycle) $500 $500 $500'
+      snapshot_sha256: 03b1242a71e9565b345b7a5142351ea97d70e010364c827ab642d09afec87deb
+      retrieved_at: '2026-11-22T01:52:45Z'
+      section: How much can I withdraw, and how often, from the Rapid Pro FundedNext Account?
+      synthetic: false
   - kind: payout
     rule_id: funded_performance_reward
     description: A Performance Reward needs $500 of profit since the last withdrawal and the 40% consistency
@@ -514,7 +644,7 @@ phases:
     max_payouts: 5
     comparison: '>='
     action: withdraw
-    threshold_after_payout: unchanged
+    threshold_after_payout: lock_on_first_payout
     source:
       url: https://helpfutures.fundednext.com/en/articles/17229713-fundednext-futures-rapid-pro-fundednext-account-all-rules
       quote: 'Before each withdrawal, you must meet the criteria for your account size: Criteria $25K
@@ -534,6 +664,24 @@ phases:
       section: How much can I withdraw, and how often, from the Rapid Pro FundedNext Account?
       synthetic: false
     evidence: official_quote
+    assumptions:
+    - name: reward_cadence_days_are_trading_days
+      assumption_kind: provisional_conservative
+      rationale: >-
+        The page says 'Rewards can be withdrawn every 3 days' and names no unit. Trading days
+        are the more restrictive reading (a span of 3 trading days is at least 3 calendar days),
+        so min_days_since_last: 3 counts trading days; provisional because the page is silent
+        (F10), delegated to the coordinator 2026-11-24.
+    - name: mll_resets_to_initial_plus_100_after_a_payout
+      assumption_kind: provisional_conservative
+      rationale: >-
+        This plan's funded page names the only lock trigger as the balance reaching the lock
+        point and says nothing about what a withdrawal does to the Maximum Loss Limit, so the
+        reading is assumed: the first payout locks the threshold at the initial balance + $100,
+        mirroring the firm's Flex and Direct pages ('Your first withdrawal resets the MLL to
+        your account initial balance + $100'). It is the more restrictive reading, because it
+        raises the floor the moment a reward is taken (F11), delegated to the coordinator
+        2026-11-24.
   - kind: compliance
     rule_id: funded_compliance_copy_and_group_trading
     description: Unauthorized copying and coordinated group trading are prohibited in both phases; copying
@@ -595,6 +743,21 @@ phases:
       section: How is the inactivity counted?
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17228935-is-there-any-inactivity-period-in-fundednext-futures
+      quote: 'Inactivity count starts if no trade is placed by 04:01:00 PM CT after purchase on the same day, It counts calendar days including weekends , and the timer resets when at least one trade is placed .'
+      snapshot_sha256: 116be1418da5d4d2d3a27793abd32e5c38bcc4b4b4bd36916442d52273302c8f
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: TL;DR
+      synthetic: false
+    assumptions:
+    - name: deactivation_is_modelled_as_a_fail
+      assumption_kind: owner_decision
+      rationale: >-
+        The page distinguishes a Challenge account 'marked as breached' from a FundedNext
+        account 'marked as inactive and deactivated'. Both end the account, so both are modelled
+        as action: fail; the owner review of 2026-11-24 confirmed it (F17), delegated to the
+        coordinator 2026-11-24.
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null
@@ -632,7 +795,11 @@ not_modeled:
     in both phases. A single simulated account cannot show a cross-account or a correlated hedge, and
     no rule kind screens for one, so a hedged strategy is reported as practically eligible when the firm
     would refuse it.
-  materiality: material
+    No single simulated account can show one, so the entry is immaterial here and names the fact
+    that would make it bind (F5); the owner review of 2026-11-24 ruled the materiality
+    immaterial, delegated to the coordinator 2026-11-24.
+  materiality: immaterial
+  becomes_immaterial_if: becomes material if several accounts, copy trading or coordinated strategies are simulated
   source:
     url: https://fundednext.com/general-rules/futures/what-is-forbidden
     quote: Reverse Hedge Opposite positions across accounts to guarantee a win. Hedging with Correlated
@@ -679,7 +846,9 @@ not_modeled:
 - rule: excess_contract_penalty
   description: 'Above the contract limit only the excess contracts are violations: their profit is deducted
     while their losses still count; max_contracts clips the order at admission instead, which keeps the
-    excess contracts out of the book entirely.'
+    excess contracts out of the book entirely.
+    The owner review of 2026-11-24 confirmed the materiality stays immaterial (F24), delegated
+    to the coordinator 2026-11-24.'
   materiality: immaterial
   source:
     url: https://helpfutures.fundednext.com/en/articles/17229713-fundednext-futures-rapid-pro-fundednext-account-all-rules
@@ -693,6 +862,8 @@ not_modeled:
   description: A trade placed on the same day removes the transfer-to-wallet option for that day, so a
     request must be made on a day with no new trade; the payout rule evaluates at every rule-day close
     regardless of that day's trading, so a payout can be taken a day earlier than the firm would allow.
+    The owner review of 2026-11-24 confirmed the materiality stays immaterial (F24), delegated
+    to the coordinator 2026-11-24.
   materiality: immaterial
   source:
     url: https://helpfutures.fundednext.com/en/articles/17229713-fundednext-futures-rapid-pro-fundednext-account-all-rules
