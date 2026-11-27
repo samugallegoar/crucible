@@ -13,7 +13,7 @@ The schema-v2 migration:
 
 Vocabulary round 2 (the count of files it touched is in each bullet):
 
-- `commissions.components`: every component is **`unknown`** in all 20 files. The instrument list's own subtitle says it "Includes Contract Specifications, Commissions, and Trading Fees" and its column is the *Total Cost* Round Trip, but neither names exchange, clearing, NFA or other fees separately, so no component can be assigned to it (section 2). The per-side figure is still the whole figure the firm publishes; what changed is that the engine no longer reads it as all-in.
+- `commissions.components`: **round 2 declared every component `unknown`**; the owner review of 2026-11-24 settled the reading (section 12, F.1-F.5): the instrument list's subtitle is an explicit statement of what the Total Cost Round Trip column contains, so `exchange` and `nfa` are `included` on that subtitle (the treatment Topstep's included components get) and `clearing` and `other` stay `unknown` because it does not name them. Under the owner's upper bound one ES side is therefore 2.34 + 0.50 + 0.50 = 3.34 USD, not 5.36 (section 2).
 - `news_restriction.effect: block` in the 12 files that carry a news rule, and `FOMC_MINUTES` added to their `event_types`: all four T1 types the firm names are now in the economic calendar (section 3).
 - `lock.on` is a list everywhere (`['hwm']`, `['first_payout']`), including the conflict values that override a lock, because a bare `on: hwm` is refused by schema version 2.
 - `payout.max_usd: unknown` in the 4 Rapid intraday files: the ceiling is unpublished, and `unknown` is never `unlimited`. The `unspecified_rapid_per_request_payout_ceiling_is_unlimited` assumption and the `payout_ceiling_not_published` entry are gone; the payout and the cash statistics report `upper_bound` instead (section 8).
@@ -67,7 +67,7 @@ Every file below is the raw HTTP response, saved unchanged under `D:\proyectos\c
 
 ## 2. Commissions
 
-MFFU publishes **no commission-only schedule and no platform-specific commission page**. What it does publish, on the official futures instrument list, is a **Total Cost Round Trip** column per contract, and the article's own subtitle describes the list as one that "Includes Contract Specifications, Commissions, and Trading Fees". That column is the firm's own all-in trading cost, so every file now declares all four components `unknown`: the subtitle names "Commissions, and Trading Fees" as a group and never exchange, clearing, NFA or other, and a component the sources do not name is `unknown`, never zero (ADR-0107 section 10). One round trip is two sides, so `per_side_usd` is that figure divided by two:
+MFFU publishes **no commission-only schedule and no platform-specific commission page**. What it does publish, on the official futures instrument list, is a **Total Cost Round Trip** column per contract, and the article's own subtitle describes the list as one that "Includes Contract Specifications, Commissions, and Trading Fees". One round trip is two sides, so `per_side_usd` is that figure divided by two:
 
 | root | Total Cost Round Trip | per side (USD) |
 |---|---|---|
@@ -81,7 +81,19 @@ MFFU publishes **no commission-only schedule and no platform-specific commission
 | MYM | $1.90 | 0.95 |
 | M2K | $1.90 | 0.95 |
 
-Source: `https://help.myfundedfutures.com/en/articles/9735811-futures-instrument-list`, snapshot `20261122_art_instruments_b.html`, sha256 `61a15116c3e36c1daead0587c59d2a558f34a74f42172f40728eac85aae60901`, retrieved 2026-11-22T01:59:33Z. The quotation carried by every file is the table's CME, COMEX and CBOT rows from the E-mini NASDAQ row through the Micro E-mini Dow row, verbatim; the all-in reading is stated in each file's `section` note. No page states a platform-dependent difference (the schedule is per instrument, not per platform), so `commissions.platform` is null in every file; separate platform licence or data fees are the platform's, not MFFU's, and are not modeled. **Owner: confirm that the Total Cost Round Trip column is all-in** (it is the only cost figure the firm publishes, and nothing is split out as "commission only").
+**The components (owner decision, F.1-F.5, delegated to the coordinator 2026-11-24).** The subtitle is an explicit firm statement of what the column includes: "Includes Contract Specifications, Commissions, and Trading Fees". "Trading Fees" standardly denotes the exchange fee and the NFA assessment, so the two are declared `included` on that subtitle, exactly as Topstep's included components are (`exchange` and `nfa`, `evidence: official_quote`, with the subtitle as their `text`). The subtitle does not name clearing, so `clearing` and `other` stay `unknown` - the conservative reading, never a zero cost:
+
+| component | status | evidence | what the page says |
+|---|---|---|---|
+| commission | known (the per-side table above) | `official_quote` | `Total Cost Round Trip`, subtitle "Includes Contract Specifications, Commissions, and Trading Fees" |
+| `exchange` | `included` | `official_quote` | "Trading Fees" in that subtitle, read as the exchange fee |
+| `nfa` | `included` | `official_quote` | the same sentence, read as the NFA assessment |
+| `clearing` | `unknown` | `not_stated` | the subtitle never names clearing |
+| `other` | `unknown` | `not_stated` | the subtitle names no other per-side charge |
+
+**The per-side bound.** With `exchange` and `nfa` inside the firm's own figure and two gaps left, `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` fills only clearing and other: an ES side is **2.34 + 0.50 + 0.50 = 3.34 USD** (MES 0.95 + 0.25 + 0.25 = 1.45). The earlier reading, all four components `unknown`, charged 5.36 per side, i.e. 2.3x the firm's own 4.68 round trip. `tests/unit/test_prop_mffu_rulesets.py` pins the 3.34 against the committed bound file, and the reference run of section 12.1 reports it.
+
+Source: `https://help.myfundedfutures.com/en/articles/9735811-futures-instrument-list`, snapshot `20261122_art_instruments_b.html`, sha256 `61a15116c3e36c1daead0587c59d2a558f34a74f42172f40728eac85aae60901`, retrieved 2026-11-22T01:59:33Z. The quotation carried by every file is the table's CME, COMEX and CBOT rows from the E-mini NASDAQ row through the Micro E-mini Dow row, verbatim; the all-in reading, the owner decision and the 3.34 arithmetic are stated in each file's `section` note and comment. No page states a platform-dependent difference (the schedule is per instrument, not per platform), so `commissions.platform` is null in every file; separate platform licence or data fees are the platform's, not MFFU's, and are not modeled.
 
 ## 3. News rules
 
@@ -94,7 +106,11 @@ Modeled as `news_restriction` in the funded phase of the 12 Rapid, Rapid EOD and
 
 ## 4. Compliance rules
 
-Every file carries five `compliance` rules from the fair play / prohibited practices article (`https://help.myfundedfutures.com/en/articles/8444599-...`, snapshot `20261122_art_fairplay.html`, sha256 `29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9`) and the hedging article: no high-frequency trading, automation only where it does not exploit the simulated fills, no fill/quote exploitation, no copy trading or account sharing, no hedging. **Automation is PERMITTED at MFFU**, so no compliance rule is `critical` and an automated strategy stays `practical_eligibility: eligible` - the opposite of Apex. The materiality is `material` on all five because a real submission has to survive them.
+Every file carries five `compliance` rules from the fair play / prohibited practices article (`https://help.myfundedfutures.com/en/articles/8444599-...`, snapshot `20261122_art_fairplay.html`, sha256 `29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9`) and the hedging article: no high-frequency trading, automation only where it does not exploit the simulated fills, no fill/quote exploitation, no copy trading or account sharing, no hedging. **Automation is PERMITTED at MFFU**, so no compliance rule is `critical` and an automated strategy is `practical_eligibility: eligible` today - the opposite of Apex. The materiality is `material` on all five because a real submission has to survive them.
+
+**Automation eligibility (F.6).** The automation rule is `material` with `action: block` on `[automated]` and carries **no `effect: condition`**; the cross-firm Lucid decision landed the reading in the ENGINE instead (PR #36, ADR-0107 amendment of 2026-11-24): a `material` + `block` compliance rule conditions the eligibility of every execution mode it lists, listed as `<rule_id>: <restriction>`. So `practical_eligibility` is `eligible_conditional` for both modes and the conditions are the conduct bans the firm states and no simulation can check: five for `automated` (the automation rule plus the four bans that also apply to manual) and four for `manual`, listed in section 12.1. No MFFU file needed an edit for that, and a mechanical pass under a condition is a `conditionally_valid_pass`, never a practically valid one.
+
+**Copy trading (F.30).** The copy-trading article (`https://help.myfundedfutures.com/en/articles/10771500-copy-trading-at-myfundedfutures`, snapshot `20261124_copy-trading-at-myfundedfutures.html`, sha256 `b3c301571dc5d129f243e4102bf3e07109586c08f9fffd11ae115a5b1871f77c`) permits "copy trading across all account types" and names Tradesyncer and a group copier. It is a `supporting_source` on `compliance_no_copy_trading_or_account_sharing` in all 20 files, and it is what tells the two pages apart: copying ANOTHER trader is banned, a copier across the trader's own accounts is not, and that is what the `becomes_immaterial_if` of `cross_account_hedging` turns on.
 
 
 ## 5. Conflicts (both sources, the selected value, the alternative)
@@ -111,7 +127,15 @@ Applicability was checked in every case: same firm, plan, account size, phase, p
 
 ## 6. Assumptions (named, each with its rationale)
 
-Only the ADR-0107 section 7 defaults, each declared where the firm is silent. There is no assumption of an unlimited payout cap any more (round 2): a cap the sources do not state is `unknown`, which labels the payout and the cash statistics `upper_bound`.
+Only the ADR-0107 section 7 defaults, each declared where the firm is silent, plus the readings the review round declared. There is no assumption of an unlimited payout cap any more (round 2): a cap the sources do not state is `unknown`, which labels the payout and the cash statistics `upper_bound`.
+
+`assumption_kind` (ADR-0107, 2026-11-23 amendment) says what kind of default each one is. The review round of 2026-11-24 relabelled the two that are not section-7 defaults and added two readings (section 12):
+
+- `daily_loss_basis_and_reference_are_not_published` (7 files) is `provisional_conservative`, not `section7_default`: ADR-0107 section 7 documents no default for the reference balance or the basis, only for the intraday observation (F.11).
+- `pro_funded_micro_limit_read_as_mini_equivalence` (4 files) is `provisional_conservative`: reading the funded "3 mini / 3 micro" as mini-equivalents is a firm-specific reading no default covers (F.12).
+- `session_relative_flat_follows_the_cme_early_close` (both `flat_by` rules of every file) is `owner_decision`: the firm states a fixed 4:10 PM ET clock and the model keeps the 50 minutes fixed against the CME session close, so a half day closes at 12:25 ET (F.31).
+- `inactivity_closure_is_a_fail` (both inactivity rules of every file) is `provisional_conservative`: the page says the account "could be closed", its purchase-date condition (the one-time payment model effective 2026-08-25) is met by the new account this review simulates, and a Sim Funded breach forfeits the profits (F.27).
+- `trading_day_is_a_trade_date_with_at_least_one_trade`, `unspecified_failure_frequency_is_intraday` and `unspecified_target_frequency_is_eod` are unchanged (F.13, F.14, F.15 accepted as they stand).
 
 | assumption | files | rationale |
 |---|---|---|
@@ -124,9 +148,12 @@ Only the ADR-0107 section 7 defaults, each declared where the firm is silent. Th
 
 ## 7. `not_modeled`, by materiality
 
+190 instances over 17 distinct names after the review round of 2026-11-24 (102 material, 88
+immaterial, 0 critical; 24 instances carry `becomes_immaterial_if`).
+
 ### critical (0 rules)
 
-### material (7 rules)
+### material (9 rules)
 
 **`discretionary_news_trading_practices`** - 20 file(s): `mffu-builder-100k`, `mffu-builder-150k`, `mffu-builder-25k`, `mffu-builder-50k-addon`, `mffu-builder-50k`, `mffu-pro-100k`, `mffu-pro-150k`, `mffu-pro-50k-1day`, `mffu-pro-50k`, `mffu-rapid-100k`, `mffu-rapid-150k`, `mffu-rapid-25k`, `mffu-rapid-50k`, `mffu-rapideod-25k-dll`, `mffu-rapideod-25k`, `mffu-rapideod-50k-dll`, `mffu-rapideod-50k`, `mffu-studio001-10k`, `mffu-studio002-20k`, `mffu-studio003-5k`
 
@@ -148,6 +175,18 @@ Only the ADR-0107 section 7 defaults, each declared where the firm is silent. Th
 
 > Material. The Pro payout policy says "Request a payout every 14 calendar days from your first trade" while the plan article states the 14-day qualification only for the first payout. The first-payout gate is modeled (first_payout_after_calendar_days 14); a recurring calendar-day cadence is not expressible (min_days_since_last counts rule-days), so a simulated attempt can take a payout at every rule-day close after the first while the firm would require 14 calendar days between them.
 
+> Review round 2026-11-24 (F.25): the cadence stays `not_modeled` material.
+
+**`pro_buffer_withdrawal_while_in_buffer`** - 4 file(s): `mffu-pro-100k`, `mffu-pro-150k`, `mffu-pro-50k-1day`, `mffu-pro-50k`
+
+> Material. The Pro payout policy allows a withdrawal BEFORE the buffer is fully cleared, up to 60% of the profits made. The payout vocabulary cannot express it: `withdrawable` is the balance minus the buffer and a non-positive withdrawable pays nothing, so every Pro file requires the whole buffer before any payout, and `max_share_of_withdrawable` applies a share to the post-buffer amount rather than to the profit while the buffer is uncleared. A trader who takes the 60% early holds less capital and a shorter distance to the drawdown threshold than this model (F.25).
+
+**`consistency_target_over_two_max_daily_profit`** - 16 file(s): `mffu-builder-100k`, `mffu-builder-150k`, `mffu-builder-25k`, `mffu-builder-50k-addon`, `mffu-builder-50k`, `mffu-pro-100k`, `mffu-pro-150k`, `mffu-pro-50k`, `mffu-rapid-100k`, `mffu-rapid-150k`, `mffu-rapid-25k`, `mffu-rapid-50k`, `mffu-rapideod-25k-dll`, `mffu-rapideod-25k`, `mffu-rapideod-50k-dll`, `mffu-rapideod-50k`
+
+> Material. The consistency page states the share measure these files model and, in its worked example, a second and stricter reading: the maximum profit a trader should achieve is the profit target divided by two. The share measure stays primary; the target/2 cap binds whenever total profit exceeds the target, and no field of the vocabulary expresses it exactly (`consistency.measure` is fixed to `best_day_profit/total_profit` and no rule kind compares one day's profit with the profit target), so it is declared instead of modelled - it produces NO sensitivity scenario (F.28).
+
+> Review round 2026-11-24 (F.25): the cadence stays `not_modeled` material.
+
 **`price_limit_2pct_prohibition`** - 20 file(s): `mffu-builder-100k`, `mffu-builder-150k`, `mffu-builder-25k`, `mffu-builder-50k-addon`, `mffu-builder-50k`, `mffu-pro-100k`, `mffu-pro-150k`, `mffu-pro-50k-1day`, `mffu-pro-50k`, `mffu-rapid-100k`, `mffu-rapid-150k`, `mffu-rapid-25k`, `mffu-rapid-50k`, `mffu-rapideod-25k-dll`, `mffu-rapideod-25k`, `mffu-rapideod-50k-dll`, `mffu-rapideod-50k`, `mffu-studio001-10k`, `mffu-studio002-20k`, `mffu-studio003-5k`
 
 > Material. Trading is prohibited while a product trades within 2% of its CME price limit, on Sim Funded and Live accounts (the firm says equity index price limits are suspended for it in that band). The ruleset holds no price-limit bands, so a bar in a limit move stays tradable here and a strategy that trades a limit day would differ.
@@ -158,7 +197,7 @@ Only the ADR-0107 section 7 defaults, each declared where the firm is silent. Th
 
 ### immaterial (8 rules)
 
-**`active_account_count_limit`** - 14 file(s): `mffu-builder-25k`, `mffu-builder-50k-addon`, `mffu-builder-50k`, `mffu-rapid-100k`, `mffu-rapid-150k`, `mffu-rapid-25k`, `mffu-rapid-50k`, `mffu-rapideod-25k-dll`, `mffu-rapideod-25k`, `mffu-rapideod-50k-dll`, `mffu-rapideod-50k`, `mffu-studio001-10k`, `mffu-studio002-20k`, `mffu-studio003-5k`
+**`active_account_count_limit`** - 18 file(s): `mffu-builder-25k`, `mffu-builder-50k-addon`, `mffu-builder-50k`, `mffu-pro-100k`, `mffu-pro-150k`, `mffu-pro-50k`, `mffu-pro-50k-1day`, `mffu-rapid-100k`, `mffu-rapid-150k`, `mffu-rapid-25k`, `mffu-rapid-50k`, `mffu-rapideod-25k-dll`, `mffu-rapideod-25k`, `mffu-rapideod-50k-dll`, `mffu-rapideod-50k`, `mffu-studio001-10k`, `mffu-studio002-20k`, `mffu-studio003-5k`
 
 > Immaterial. 2 Builder accounts per user. A single simulated attempt is one account, so the cap cannot change its outcome.
 
@@ -170,9 +209,13 @@ Only the ADR-0107 section 7 defaults, each declared where the firm is silent. Th
 
 > Immaterial. One active Studio account at a time, evaluation or Sim Funded. A single simulated attempt is one account, so the cap cannot change its outcome.
 
+> Immaterial. The Pro article states, effective 2026-11-23, one active Sim Funded Pro account at each size (50K, 100K, 150K), all three active at the same time. `becomes_immaterial_if`: becomes material if several accounts are simulated at once, since the cap decides how many Pro accounts one trader may hold (F.26, delegated to the coordinator 2026-11-24).
+
 **`cross_account_hedging`** - 20 file(s): `mffu-builder-100k`, `mffu-builder-150k`, `mffu-builder-25k`, `mffu-builder-50k-addon`, `mffu-builder-50k`, `mffu-pro-100k`, `mffu-pro-150k`, `mffu-pro-50k-1day`, `mffu-pro-50k`, `mffu-rapid-100k`, `mffu-rapid-150k`, `mffu-rapid-25k`, `mffu-rapid-50k`, `mffu-rapideod-25k-dll`, `mffu-rapideod-25k`, `mffu-rapideod-50k-dll`, `mffu-rapideod-50k`, `mffu-studio001-10k`, `mffu-studio002-20k`, `mffu-studio003-5k`
 
 > Immaterial. The firm's hedging ban extends to the CME Rule 534 guideline against hedging across accounts. One simulated attempt is one account, so a cross-account hedge cannot exist inside it and the ban cannot change a simulated outcome.
+
+> `becomes_immaterial_if` (F.9, F.30): becomes material if several accounts, copy trading or coordinated strategies are simulated - a trade copier that mirrors one of the trader's own accounts onto another can hold opposite exposure on the same underlying across the two, which is exactly the cross-account hedge this entry does not model.
 
 **`energy_and_agricultural_report_news_types`** - 12 file(s): `mffu-pro-100k`, `mffu-pro-150k`, `mffu-pro-50k-1day`, `mffu-pro-50k`, `mffu-rapid-100k`, `mffu-rapid-150k`, `mffu-rapid-25k`, `mffu-rapid-50k`, `mffu-rapideod-25k-dll`, `mffu-rapideod-25k`, `mffu-rapideod-50k-dll`, `mffu-rapideod-50k`
 
@@ -251,7 +294,7 @@ Vocabulary round 2 (this pass):
 
 ## 10. Owner review checklist, per file
 
-Each file below lists the values the owner must confirm, grouped. `[official_quote]` = a verbatim quotation from an official page; `[assumption <name>]` = a stated default or a declared reading; conflicts and `not_modeled` entries are listed last.
+Each file below lists the values the owner must confirm, grouped. `[official_quote]` = a verbatim quotation from an official page; `[assumption <name>]` = a stated default or a declared reading; conflicts and `not_modeled` entries are listed last. Each block now closes with the review round's decision line (2026-11-24, delegated to the coordinator; section 12): the coordinator recommends confirming every file as sourced and still waits for the owner's own `crucible prop confirm`, except the three Studio files, whose only source page answers HTTP 404.
 
 ### `mffu-builder-100k` - Builder $100,000
 
@@ -303,6 +346,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - material `discretionary_news_trading_practices`: Material. Beyond the Tier 1 windows, the firm prohibits news strategies as such: straddles or strangles around an immediate news burst, and masking a news trade as a standard strategy, "for all news releases" on every account. That is a judgement about intent and cannot be decided from OHLC bars or from a calendar window, so it is declared here and never enforced mechanically.
 - immaterial `five_payout_ladder_to_live`: Immaterial. After the 5th approved sim payout the account is promoted to a live brokerage seat, and a live breach triggers a 21-day cooldown. max_payouts 5 stops further sim payouts, but no rule kind promotes a phase on a payout count, so the ladder and the cooldown are not modeled.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-builder-150k` - Builder $150,000
 
 **account / thresholds**
@@ -352,6 +399,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - material `holiday_early_close_is_the_traders_job`: Material. The flat clock now follows the CME calendar's own early close, but the firm does not liquidate anyone at the half-day close - the trader is responsible for being flat and holding past it breaches the account - while flat_by liquidates for the trader. So where a real account that held into a half-day close would be breached, this model closes the position 50 minutes before it and the attempt can survive.
 - material `discretionary_news_trading_practices`: Material. Beyond the Tier 1 windows, the firm prohibits news strategies as such: straddles or strangles around an immediate news burst, and masking a news trade as a standard strategy, "for all news releases" on every account. That is a judgement about intent and cannot be decided from OHLC bars or from a calendar window, so it is declared here and never enforced mechanically.
 - immaterial `five_payout_ladder_to_live`: Immaterial. After the 5th approved sim payout the account is promoted to a live brokerage seat, and a live breach triggers a 21-day cooldown. max_payouts 5 stops further sim payouts, but no rule kind promotes a phase on a payout count, so the ladder and the cooldown are not modeled.
+
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
 
 ### `mffu-builder-25k` - Builder $25,000
 
@@ -404,6 +455,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `active_account_count_limit`: Immaterial. 2 Builder accounts per user. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `five_payout_ladder_to_live`: Immaterial. After the 5th approved sim payout the account is promoted to a live brokerage seat, and a live breach triggers a 21-day cooldown. max_payouts 5 stops further sim payouts, but no rule kind promotes a phase on a payout count, so the ladder and the cooldown are not modeled.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-builder-50k-addon` - Builder (Add-On) $50,000
 
 **account / thresholds**
@@ -455,6 +510,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `active_account_count_limit`: Immaterial. 1 Builder account per user. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `five_payout_ladder_to_live`: Immaterial. After the 5th approved sim payout the account is promoted to a live brokerage seat, and a live breach triggers a 21-day cooldown. max_payouts 5 stops further sim payouts, but no rule kind promotes a phase on a payout count, so the ladder and the cooldown are not modeled.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-builder-50k` - Builder $50,000
 
 **account / thresholds**
@@ -505,6 +564,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - material `discretionary_news_trading_practices`: Material. Beyond the Tier 1 windows, the firm prohibits news strategies as such: straddles or strangles around an immediate news burst, and masking a news trade as a standard strategy, "for all news releases" on every account. That is a judgement about intent and cannot be decided from OHLC bars or from a calendar window, so it is declared here and never enforced mechanically.
 - immaterial `active_account_count_limit`: Immaterial. 1 Builder account per user. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `five_payout_ladder_to_live`: Immaterial. After the 5th approved sim payout the account is promoted to a live brokerage seat, and a live breach triggers a 21-day cooldown. max_payouts 5 stops further sim payouts, but no rule kind promotes a phase on a payout count, so the ladder and the cooldown are not modeled.
+
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
 
 ### `mffu-pro-100k` - Pro $100,000
 
@@ -558,6 +621,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - material `lifetime_payout_cap_100000`: Material. The $100,000 figure is stated both as a per-request cap ("Maximum Request in Sim-Funded stage: $100,000") and as a per-user lifetime cap whose excess is forfeited ("Maximum Payout (per user) $100,000", "Profits above $100,000 are forfeited"). Only the per-withdrawal cap is modeled; there is no lifetime cap in the engine, so a long funded attempt can report more net cash than the firm would pay, and the stricter per-user reading is the one a reader should apply.
 - immaterial `live_transition_after_three_payouts`: Immaterial. Three consecutive payouts, or reaching the $100,000 payout cap, or a risk team invitation move the account to a live brokerage seat and end the simulated stage. No rule kind promotes a phase on a payout count, so the ladder is not modeled and an attempt that reaches it is reported as a funded survive.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-pro-150k` - Pro $150,000
 
 **account / thresholds**
@@ -610,6 +677,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - material `lifetime_payout_cap_100000`: Material. The $100,000 figure is stated both as a per-request cap ("Maximum Request in Sim-Funded stage: $100,000") and as a per-user lifetime cap whose excess is forfeited ("Maximum Payout (per user) $100,000", "Profits above $100,000 are forfeited"). Only the per-withdrawal cap is modeled; there is no lifetime cap in the engine, so a long funded attempt can report more net cash than the firm would pay, and the stricter per-user reading is the one a reader should apply.
 - immaterial `live_transition_after_three_payouts`: Immaterial. Three consecutive payouts, or reaching the $100,000 payout cap, or a risk team invitation move the account to a live brokerage seat and end the simulated stage. No rule kind promotes a phase on a payout count, so the ladder is not modeled and an attempt that reaches it is reported as a funded survive.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-pro-50k-1day` - Pro (One Day add-on) $50,000
 
 **account / thresholds**
@@ -660,6 +731,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - material `payout_cadence_14_calendar_days`: Material. The Pro payout policy says "Request a payout every 14 calendar days from your first trade" while the plan article states the 14-day qualification only for the first payout. The first-payout gate is modeled (first_payout_after_calendar_days 14); a recurring calendar-day cadence is not expressible (min_days_since_last counts rule-days), so a simulated attempt can take a payout at every rule-day close after the first while the firm would require 14 calendar days between them.
 - material `lifetime_payout_cap_100000`: Material. The $100,000 figure is stated both as a per-request cap ("Maximum Request in Sim-Funded stage: $100,000") and as a per-user lifetime cap whose excess is forfeited ("Maximum Payout (per user) $100,000", "Profits above $100,000 are forfeited"). Only the per-withdrawal cap is modeled; there is no lifetime cap in the engine, so a long funded attempt can report more net cash than the firm would pay, and the stricter per-user reading is the one a reader should apply.
 - immaterial `live_transition_after_three_payouts`: Immaterial. Three consecutive payouts, or reaching the $100,000 payout cap, or a risk team invitation move the account to a live brokerage seat and end the simulated stage. No rule kind promotes a phase on a payout count, so the ladder is not modeled and an attempt that reaches it is reported as a funded survive.
+
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
 
 ### `mffu-pro-50k` - Pro $50,000
 
@@ -712,6 +787,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - material `payout_cadence_14_calendar_days`: Material. The Pro payout policy says "Request a payout every 14 calendar days from your first trade" while the plan article states the 14-day qualification only for the first payout. The first-payout gate is modeled (first_payout_after_calendar_days 14); a recurring calendar-day cadence is not expressible (min_days_since_last counts rule-days), so a simulated attempt can take a payout at every rule-day close after the first while the firm would require 14 calendar days between them.
 - material `lifetime_payout_cap_100000`: Material. The $100,000 figure is stated both as a per-request cap ("Maximum Request in Sim-Funded stage: $100,000") and as a per-user lifetime cap whose excess is forfeited ("Maximum Payout (per user) $100,000", "Profits above $100,000 are forfeited"). Only the per-withdrawal cap is modeled; there is no lifetime cap in the engine, so a long funded attempt can report more net cash than the firm would pay, and the stricter per-user reading is the one a reader should apply.
 - immaterial `live_transition_after_three_payouts`: Immaterial. Three consecutive payouts, or reaching the $100,000 payout cap, or a risk team invitation move the account to a live brokerage seat and end the simulated stage. No rule kind promotes a phase on a payout count, so the ladder is not modeled and an attempt that reaches it is reported as a funded survive.
+
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
 
 ### `mffu-rapid-100k` - Rapid $100,000
 
@@ -766,6 +845,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `reset_fee_amount`: Immaterial. A breached Rapid evaluation can be reset for a fee the official pages never quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt bought with a reset.
 - immaterial `live_transition_on_10k_session`: Immaterial. A $10,000 single-session result moves the account to a live brokerage seat, which ends the simulated stage. The per-day cap is modeled (funded_daily_profit_cap_10000); the milestone transition itself has no rule kind, so an attempt that hits it is reported as a funded survive rather than a transition.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-rapid-150k` - Rapid $150,000
 
 **account / thresholds**
@@ -818,6 +901,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `active_account_count_limit`: Immaterial. At most five active sim funded accounts for $25K/$50K and three across all plans for $100K/$150K. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `reset_fee_amount`: Immaterial. A breached Rapid evaluation can be reset for a fee the official pages never quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt bought with a reset.
 - immaterial `live_transition_on_10k_session`: Immaterial. A $10,000 single-session result moves the account to a live brokerage seat, which ends the simulated stage. The per-day cap is modeled (funded_daily_profit_cap_10000); the milestone transition itself has no rule kind, so an attempt that hits it is reported as a funded survive rather than a transition.
+
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
 
 ### `mffu-rapid-25k` - Rapid $25,000
 
@@ -872,6 +959,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `reset_fee_amount`: Immaterial. A breached Rapid evaluation can be reset for a fee the official pages never quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt bought with a reset.
 - immaterial `live_transition_on_10k_session`: Immaterial. A $10,000 single-session result moves the account to a live brokerage seat, which ends the simulated stage. The per-day cap is modeled (funded_daily_profit_cap_10000); the milestone transition itself has no rule kind, so an attempt that hits it is reported as a funded survive rather than a transition.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-rapid-50k` - Rapid $50,000
 
 **account / thresholds**
@@ -925,6 +1016,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `active_account_count_limit`: Immaterial. At most five active sim funded accounts for $25K/$50K and three across all plans for $100K/$150K. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `reset_fee_amount`: Immaterial. A breached Rapid evaluation can be reset for a fee the official pages never quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt bought with a reset.
 - immaterial `live_transition_on_10k_session`: Immaterial. A $10,000 single-session result moves the account to a live brokerage seat, which ends the simulated stage. The per-day cap is modeled (funded_daily_profit_cap_10000); the milestone transition itself has no rule kind, so an attempt that hits it is reported as a funded survive rather than a transition.
+
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
 
 ### `mffu-rapideod-25k-dll` - Rapid EOD (DLL add-on) $25,000
 
@@ -981,6 +1076,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `reset_fee_amount`: Immaterial. A breached Rapid EOD evaluation can be reset for a fee the official pages never quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt bought with a reset.
 - immaterial `live_transition_on_10k_session`: Immaterial. The $10,000 single-session result also moves the account to a live seat, which ends the simulated stage (the Rapid EOD article says it follows the standard Rapid live rules). The per-day cap is modeled; the milestone transition has no rule kind.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-rapideod-25k` - Rapid EOD $25,000
 
 **account / thresholds**
@@ -1032,6 +1131,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `active_account_count_limit`: Immaterial. At most three active Sim Funded accounts per trader. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `reset_fee_amount`: Immaterial. A breached Rapid EOD evaluation can be reset for a fee the official pages never quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt bought with a reset.
 - immaterial `live_transition_on_10k_session`: Immaterial. The $10,000 single-session result also moves the account to a live seat, which ends the simulated stage (the Rapid EOD article says it follows the standard Rapid live rules). The per-day cap is modeled; the milestone transition has no rule kind.
+
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
 
 ### `mffu-rapideod-50k-dll` - Rapid EOD (DLL add-on) $50,000
 
@@ -1088,6 +1191,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `reset_fee_amount`: Immaterial. A breached Rapid EOD evaluation can be reset for a fee the official pages never quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt bought with a reset.
 - immaterial `live_transition_on_10k_session`: Immaterial. The $10,000 single-session result also moves the account to a live seat, which ends the simulated stage (the Rapid EOD article says it follows the standard Rapid live rules). The per-day cap is modeled; the milestone transition has no rule kind.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-rapideod-50k` - Rapid EOD $50,000
 
 **account / thresholds**
@@ -1140,6 +1247,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `reset_fee_amount`: Immaterial. A breached Rapid EOD evaluation can be reset for a fee the official pages never quantify, so the ruleset carries no reset fee and attempt cost accounting understates a second attempt bought with a reset.
 - immaterial `live_transition_on_10k_session`: Immaterial. The $10,000 single-session result also moves the account to a live seat, which ends the simulated stage (the Rapid EOD article says it follows the standard Rapid live rules). The per-day cap is modeled; the milestone transition has no rule kind.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- coordinator recommendation (owner delegation 2026-11-24): confirm as sourced; pending the owner's `crucible prop confirm`
+
 ### `mffu-studio001-10k` - Studio #001 $10,000
 
 **account / thresholds**
@@ -1186,6 +1297,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - material `discretionary_news_trading_practices`: Material. Beyond the Tier 1 windows, the firm prohibits news strategies as such: straddles or strangles around an immediate news burst, and masking a news trade as a standard strategy, "for all news releases" on every account. That is a judgement about intent and cannot be decided from OHLC bars or from a calendar window, so it is declared here and never enforced mechanically.
 - immaterial `active_account_count_limit`: Immaterial. One active Studio account at a time, evaluation or Sim Funded. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `live_eligibility_after_five_payouts`: Immaterial. A live account becomes available after 5 approved payouts or $5,000 requested, at 40% of the requested total capped at $2,000. That transition ends the simulated stage and is not a pass condition, so no rule kind expresses it.
+
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- do NOT confirm: the source page is gone (F.10)
 
 ### `mffu-studio002-20k` - Studio #002 $20,000
 
@@ -1234,6 +1349,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `active_account_count_limit`: Immaterial. One active Studio account at a time, evaluation or Sim Funded. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `live_eligibility_after_five_payouts`: Immaterial. A live account becomes available after 5 approved payouts or $5,000 requested, at 40% of the requested total capped at $2,000. That transition ends the simulated stage and is not a pass condition, so no rule kind expresses it.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- do NOT confirm: the source page is gone (F.10)
+
 ### `mffu-studio003-5k` - Studio #003 $5,000
 
 **account / thresholds**
@@ -1281,7 +1400,13 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 - immaterial `active_account_count_limit`: Immaterial. One active Studio account at a time, evaluation or Sim Funded. A single simulated attempt is one account, so the cap cannot change its outcome.
 - immaterial `live_eligibility_after_five_payouts`: Immaterial. A live account becomes available after 5 approved payouts or $5,000 requested, at 40% of the requested total capped at $2,000. That transition ends the simulated stage and is not a pass condition, so no rule kind expresses it.
 
+**decision (review round 2026-11-24)**
+- [ ] confirm   [ ] correct: _____   [ ] reject
+- do NOT confirm: the source page is gone (F.10)
+
 ## 11. Legacy products and open questions for the owner
+
+Every question below was answered by the owner review of 2026-11-24 (delegated to the coordinator): section 12 records the disposition of each packet question F.1-F.35. The questions stay verbatim as the record of what was open.
 
 ### Per-component costs (C7b fix, 2026-11-22)
 
@@ -1289,10 +1414,10 @@ Each file below lists the values the owner must confirm, grouped. `[official_quo
 
 | Component | Status in the files | Evidence kind | Evidence |
 |---|---|---|---|
-| `exchange` | `unknown` | `not_stated` | the subtitle "Includes Contract Specifications, Commissions, and Trading Fees" and the Total Cost Round Trip column name no component separately |
-| `clearing` | `unknown` | `not_stated` | the same |
-| `nfa` | `unknown` | `not_stated` | the same |
-| `other` | `unknown` | `not_stated` | the same |
+| `exchange` | `included` | `official_quote` | "Trading Fees" in the subtitle "Includes Contract Specifications, Commissions, and Trading Fees", read as the exchange fee (owner decision, F.1/F.2) |
+| `nfa` | `included` | `official_quote` | the same sentence, read as the NFA assessment (owner decision, F.4) |
+| `clearing` | `unknown` | `not_stated` | the subtitle never names clearing (F.3) |
+| `other` | `unknown` | `not_stated` | the subtitle names no other per-side charge (F.5) |
 
 An `excluded` component needs the run's participant PROFILE (`--participant-profile`): each fee row names the one classification dimension it needs (`cme_membership_status`, `nfa_assessment_eligibility`, ...), a dimension the profile leaves out makes that component a gap, and using the profile makes the cost `conditional`. An `unknown` component is a gap, and the only way to a number is a cost-assumption FILE the user passes, which prices exactly the root and component it names and is recorded by its SHA-256. The unverified owner reference in `docs/data/cme-exchange-fees.md` ("Estimated fee per side") is documentation only: the engine never reads it.
 
@@ -1302,6 +1427,8 @@ Owner questions, one per component the files declare `unknown`:
 2. **clearing**: Does the per-side commission already contain the clearing fee, or is the clearing fee charged on top of it?
 3. **nfa**: Does the per-side commission already contain the NFA assessment, or is it charged on top of it?
 4. **other**: Is there any other per-side charge beside the commission, the exchange fee, the clearing fee and the NFA assessment?
+
+Answered 2026-11-24 (F.1-F.5, delegated to the coordinator): `exchange` and `nfa` are `included` on the subtitle's "Trading Fees", `clearing` and `other` stay `unknown`, and the bound charges only those two gaps (ES 2.34 + 0.50 + 0.50 = 3.34 per side).
 
 
 - **Legacy, not drafted**: Flex ($25K/$50K, filed under Legacy Plans, `/plans/flex` returns the site's 404), Builder 25K Legacy No DLL, Legacy Pro, MyFunded Perps (a separate company). No page dates any current rule set, so `effective_from` is the retrieval date in every file.
@@ -1316,3 +1443,134 @@ Owner questions, one per component the files declare `unknown`:
 - **Half-day close**: the firm does not liquidate at a half-day close, the trader must; `flat_by` liquidates. Declared as `holiday_early_close_is_the_traders_job`. Model it as `action: fail` if the firm's position (holding past the deadline breaches the account) is the one to enforce.
 - **Builder consistency attribution**: the five Builder files source the 50% from the firm-wide consistency article, which names the Rapid EOD, Rapid Intraday and Pro plans rather than Builder, while each Builder plan article states the 50%, the cycle and the reset itself. Round 2 declared the cycle windows; re-sourcing to each plan article would make them quote-sourced per file.
 - **No phase time limit**: no MFFU page states an access period or a deadline to pass, so no `time_limit` rule is declared in any file.
+
+## 12. The owner review round (2026-11-24)
+
+The owner delegated the packet's questions F.1-F.35 (`internal/reviews/mffu.md`) to the coordinator
+on 2026-11-24 and this round applies every decision to all 20 files. Nothing is verified: no
+`crucible prop confirm` was run, no `*.verification.yaml` exists, and every `verification.status` is
+still `unverified`, so every decision line in section 10 carries the coordinator's recommendation
+and still waits for the owner's own confirmation.
+
+| # | question | decision (delegated 2026-11-24) | what the files now declare |
+|---|---|---|---|
+| F.1-F.5 | the all-in Total Cost Round Trip, and the four components | the subtitle "Includes Contract Specifications, Commissions, and Trading Fees" is an explicit firm statement of inclusion; "Trading Fees" standardly denotes the exchange fee and the NFA assessment, so those two are `included` and `clearing` and `other` stay `unknown` because the subtitle does not name them | `exchange` and `nfa` are `status: included` with `evidence: official_quote` and the subtitle as their `text`, plus the owner decision and the arithmetic in each file's `commissions.source.section` and comment; `clearing` and `other` stay `unknown` with a note naming what was checked. One ES side under `upper_bound_v1` is 2.34 + 0.50 + 0.50 = **3.34 USD** |
+| F.6 | automation is `block` but never a condition | landed in the ENGINE by the Lucid review (PR #36 merged as `03bbe60`, ADR-0107 amendment of 2026-11-24): a `material` + `action: block` compliance rule conditions the eligibility of every execution mode it lists. The MFFU files needed no edit and add no `effect: condition` | `eligible_conditional` in both modes: **5 conditions** for `automated` (the automation rule plus the four conduct bans that also apply to manual) and **4** for `manual`, listed by `practical_eligibility` and in 12.1 |
+| F.7, F.29 | no `supporting_sources` in any file | every rule whose action or timing rests on a sentence outside its own quote carries that sentence as a `supporting_source` | `eval_/funded_flat_by_ny_close` gain the auto-liquidation sentence and the instrument list's own `17:00 - 16:00 CT` session row; the funded drawdown rules gain the "$100 lock" (for Builder, the EOD article's lock sentence together with the funded table); `funded_t1_news_blackout` gains the "8:28:00 / 8:32:00" flatten example; the soft-pause `daily_loss` rules gain the page's soft-pause sentence; the inactivity rules gain the purchase-date sentence; the copy-trading rule gains the copy-trading article (F.30) |
+| F.8 | no `promotions` although the firm publishes discounts | every published discount becomes a `promotion` on the fee it discounts, and the list price stays the base | 17 files (all but the 3 Studio ones): `club_40_off_any_plan` (`multiplier: '0.6'`, `requires {account_purchase: new, coupon_applied: CLUB}`, `ends_on: unknown`) and `new_trader_50_off_first_evaluation` (`multiplier: '0.5'`, `requires {account_purchase: new}`), each quoting the file's own plan page; `mffu-builder-50k` and `mffu-builder-50k-addon` also carry `builder_guide_30_off` (107 / 87) and `builder_guide_40_off_two_uses_only` (92 / 75) as the printed VALUES of the guide's pricing rows |
+| F.9 | `becomes_immaterial_if` is absent from every entry | the field is declared where the packet requires it; the material entries' audit fact is left to the audit pass | `cross_account_hedging` (20 files) carries "becomes material if several accounts, copy trading or coordinated strategies are simulated", including the copier across the trader's own accounts (F.30); the new `active_account_count_limit` of the 4 Pro files carries its own condition |
+| F.10 | the Studio guide answers 404 and the line is now Signature | keep the 3 Studio files unverified, record the 404, do NOT build Signature rulesets | the 3 Studio files keep every value and their decision line reads "do NOT confirm: the source page is gone (F.10)" in section 10 and in the packet; the 404 (re-checked 2026-11-24T16:40Z) and the Signature follow-up are recorded in 12.2 |
+| F.11, F.12 | two assumptions labelled `section7_default` that no section-7 default produces | relabel `provisional_conservative` | `daily_loss_basis_and_reference_are_not_published` (7 files) and `pro_funded_micro_limit_read_as_mini_equivalence` (4 files) |
+| F.13-F.15 | the target's observation frequency, the trading day, the Studio static MLL test | accepted as they stand (F.15 stays intraday) | unchanged |
+| F.16-F.18 | the three conflicts | the stricter reading stays primary and the alternatives stay sensitivity scenarios; F.18 also re-quotes the other three Rapid files | values unchanged ($3,500 over $4,500, the +100 lock over $0, 2 contracts over 5); `funded_max_contracts` of `rapid-25k/100k/150k` now quotes the funded section's own "You may trade up to N minis and/or M micros total." sentence, and the Rapid 50K conflict's alternative does too |
+| F.19-F.23 | the material `not_modeled` entries | they stay `material`; F.20 gains the audit note | materiality unchanged; `price_limit_2pct_prohibition` records that the 2024 ES audit is not the firm's band test |
+| F.24 | what happens past the $100,000 Sim cap, and the page that changed | model the current page: excess profits go to the Reserve Program, up to $5,000 per account; the lifetime cap stays `not_modeled` material | `lifetime_payout_cap_100000` (4 Pro files) is re-sourced to a fresh 2026-11-24 snapshot with the new wording (sha256 `712754643fe1...`) |
+| F.25 | the Pro buffer withdrawal and the 14-day cadence | the vocabulary cannot express "up to 60% of your profits before fully clearing the buffer" (`withdrawable` is the balance minus the buffer and pays nothing when non-positive, and `max_share_of_withdrawable` multiplies the post-buffer amount), so it is `not_modeled` material; the cadence stays `not_modeled` material | new `pro_buffer_withdrawal_while_in_buffer` (material) naming the sentence and why no field fits; `payout_cadence_14_calendar_days` keeps its entry with the decision recorded |
+| F.26 | the Pro page's dated account-count rule | `not_modeled` immaterial, with the fact that would make it bind | new `active_account_count_limit` on the 4 Pro files, quoting the dated sentence from the 2026-11-24 Pro snapshot |
+| F.27 | inactivity: a soft sentence modelled as a hard `fail` | keep `action: fail` as `provisional_conservative` and declare the purchase-date condition | the named assumption `inactivity_closure_is_a_fail` (`provisional_conservative`) on both inactivity rules of every file, the purchase-date sentence as a `supporting_source`, and the reasoning in the description |
+| F.28 | the consistency measure: share of total profit vs the page's `target / 2` | the share measure stays primary; no existing field expresses the target/2 cap (`measure` is fixed and no rule kind compares a day's profit with the target), so it is declared, not modelled | new `consistency_target_over_two_max_daily_profit` (material) in the 16 files that carry a consistency rule, plus a sentence on the rule itself; NO sensitivity scenario is generated |
+| F.30 | the copy-trading article is not cited | add it as a `supporting_source` and say how a copier across one's own accounts interacts with the hedging ban | `compliance_no_copy_trading_or_account_sharing` (20 files) cites it and `cross_account_hedging`'s condition names the copier |
+| F.31 | the flat clock on a half day | confirm the session-relative reading as `owner_decision` | `session_relative_flat_follows_the_cme_early_close` (`owner_decision`) on both `flat_by` rules of every file, plus the reasoning sentence in each description |
+| F.32 | a breach completed by the liquidating fill's own costs | confirm the pessimistic reading as `owner_decision` | recorded here and in the ADR-0107 amendment: it is the engine's own reading (ADR-0106, `docs/TIMING.md`), declared once for every firm because no rule field carries it, and the reference run of 12.1 shows it |
+| F.33 | the reference run cannot validate most of the file | no action: a second reference run belongs to C7c | unchanged |
+| F.34, F.35 | 25 attributions quote a neighbouring sentence, and the Pro 100K/150K lock quotes the 50K cell | re-quote all of them to spans that carry their own number; no value changes | 8 attributions re-pointed (the Builder and Pro funded drawdown amounts, the Builder funded contract limits, the Builder 150K payout cap, the Studio contract rows) and the rest carried as supporting spans; `pro-100k` and `pro-150k` quote their own `$100,100` / `$150,100` cells. Values unchanged |
+
+**Mechanically.** The 20 files are re-hashed in place (they are unverified and unreleased, so the
+INDEX lock rule allows it: no version number disappears and no VERIFIED hash changes),
+`rulesets/prop/INDEX.json` is regenerated, and the quote self-check now covers **866 attributions**
+(608 before) with 0 mismatches: every quote resolves to a saved page and every hash matches its
+bytes.
+
+### 12.1 The ES 2024 reference run under the upper bound (H = 20)
+
+`crucible.experiments.futures_prop.run_prop_evaluation` on `examples/futures/es_sma_cross.yaml`,
+prepared exactly as `tests/bench/test_prop_real_data.py` prepares it (window 2024-01-02 ..
+2024-12-31, 5 warmup trade dates, `flat_by_close: false`, `allow_unverified_sessions: true`), with
+`cost_assumption: rulesets/prop/cost_assumptions/upper_bound_v1.yaml`, `payout_policy: max_eligible`,
+`scenarios: primary`, `CRUCIBLE_DATA_STORE=D:/proyectos/crucible/data/processed` and one temporary
+Crucible home and artifacts root per mode under `D:/tmp/mffu_review/`. Nothing was written to the
+user's Crucible home, the data window ends 2024-12-31 and H = 20 is the analyst's horizon (no MFFU
+phase declares a time limit). The file is `mffu-rapid-50k.v1.yaml`, content hash
+`2e8b7c78da954346433cfbcb5b973ac9160b053d6cb15f7af2991863424440df`; the packet's run used
+`e19ab336...`, the file before this round.
+
+| measure | `automated` | `manual` |
+|---|---|---|
+| evaluation id | `PRP-60add4884bb3dfe6` | `PRP-905652d3d88ee1d7` |
+| run id (same config) | `FUT-7ac5712b884dcdd6` | same |
+| ruleset | `mffu-rapid-50k` v1, unverified, content hash `2e8b7c78...` | same |
+| window / H | 2024-01-02 .. 2024-12-31, last trade date 2024-12-31, H = 20 | same |
+| starts / complete starts | 253 / 234 (the last 19 cannot complete under H = 20) | identical |
+| outcomes | pass 0, fail 253, timeout 0, horizon 0, censored 0 | identical |
+| breached rule | `eval_eod_trailing_drawdown` 253 of 253 | identical |
+| `min_buffer_usd` over the 253 | -33.80 .. -0.07 | identical |
+| probability | `conditional_pass_probability` 0.0, interval 0.0 .. 0.0, `definitive: false` | identical |
+| effective independent attempts | 11.7 | identical |
+| estimate status | `partial` | identical |
+| **cost per side (ES)** | **2.34 + 0.50 + 0.50 = 3.34 USD**, `cost_status: conditional`, no gaps, `cost_bound: upper` | identical |
+| cash | mean net cash `-209.000000` USD, status `lower_bound`, interval [-209.00 .. -209.00] | identical |
+| funded phase | 0 starts reached it (breached 0, survived 0, unresolved 0, payouts 0) | identical |
+| **practical eligibility** | **`eligible_conditional`**, 5 conditions, 0 blocker | **`eligible_conditional`**, 4 conditions, 0 blocker |
+
+**Against the packet's run (section E).** The start count, the completeness, every outcome class,
+the single breached rule, the 0.0 probability and the -209.00 cash (the evaluation fee alone: no
+payout was ever taken) are unchanged. What moved is the COST: the packet charged 5.36 per side
+because all four components were `unknown` and the bound priced all four on top of the firm's own
+all-in figure; with `exchange` and `nfa` `included` it is 3.34, so a 253-attempt frame pays 2.02 less
+per side. **The attempts still fail 253 of 253 on the same rule**, and the deepest breach goes from
+the packet's walked -14.52 to -33.80: the cost double count was not what made these attempts fail,
+and removing it lets them run longer before the same end. The packet's `estimate_reasons` list keeps
+its shape (cost assumption used, payout cap unknown, the unsourced CME session 2024-01-14..2024-01-15,
+`FOMC_MINUTES-20241126` without a known time, unverified, and the material unmodeled rules, which now
+include `consistency_target_over_two_max_daily_profit`), and `coverage_gap_starts` stays 33.
+
+**The cost-label fix (#38) does not move this run's cash label.** The cash statistic follows the
+attempt's remaining cost GAPS, and these files leave none: `exchange` and `nfa` are `included`
+and the bound prices `clearing` and `other`, so `cost_gaps` is empty and the label stays
+`lower_bound` at -209.00, as before the fix. Only the reason's wording changed, to "costs are an
+upper bound: the probability is pessimistic and any net cash under it is a lower bound". A firm
+that keeps a gap after the bound is applied (FundedNext's commission, for one) is the case the
+fix moves to `unavailable`.
+
+**The promotions are recorded, not applied.** The manifest's `promotions_not_applied` says
+`promotion club_40_off_any_plan not applied: no participant profile was declared` and the same for
+`new_trader_50_off_first_evaluation`: a run that does not declare the discount it bought keeps the
+list price, which is the pessimistic direction and the one this review's arithmetic uses.
+
+**Automation (F.6) - the one column that moved.** Since PR #36 merged, a `material` + `block`
+compliance rule conditions the eligibility of every mode it lists, so both frames now read
+`eligible_conditional` and the conditions are the conduct bans the firm states and no simulation can
+check, listed by rule id and in the firm's own words:
+
+- `automated`, 5 conditions: `compliance_automation_must_not_exploit_simulated_fills` (automation
+  only where it does not aim to exploit the simulated fills), `compliance_no_copy_trading_or_account_sharing`,
+  `compliance_no_fill_or_quote_exploitation`, `compliance_no_hedging`,
+  `compliance_no_high_frequency_trading`;
+- `manual`, 4 conditions: the same list without the automation rule.
+
+`mechanical_passes` stays 0 and `conditionally_valid_passes` stays 0 (no attempt passed at all), and
+the two frames remain identical in every other column. Nothing else moved against the pre-merge run of
+this round: the same 253 starts / 234 complete / 253 failures, the same 0.0 probability, the same
+-209.00 cash and the same 3.34 per side.
+
+**What the run does not exercise.** Exactly as in the packet (its section E.5): 253 breaches on the
+evaluation MLL, nothing else. The profit target, the two minimum trading days, the 50% consistency
+rule, the 7-day inactivity rule, the contract limit (`clip` never binds at one contract) and the
+whole funded phase are never reached, so this run cannot validate them. Read it as one ES strategy
+under one unverified ruleset, never as evidence about MFFU.
+
+### 12.2 Studio -> Signature: the page is gone, and what that leaves open
+
+`https://help.myfundedfutures.com/en/articles/17589665-studio-plans-a-comprehensive-guide` answered
+HTTP 404 again on 2026-11-24 at 16:40Z (the packet recorded the same on its own pass). It is the only
+source of the 30 attributions across the 3 Studio files. Those citations still resolve to the saved
+bytes of 2026-11-22, so the self-check passes while the page itself is gone; the decision is therefore
+"do NOT confirm".
+
+**Follow-up task (not done in this round, per F.10): draft the Signature rulesets.** `/studio` says
+Studio #001-#003 "have moved over to Signature" and `/plans/signature` publishes the successors:
+list prices $125 / $233 / $467 with a 50% launch offer ($62.50 / $116.50 / $233.50), minimum trading
+days **1** (the old guide said None), and the same static MLL, target, contract cap, split, minimum
+payout and daily profit cap. That is 3 new product files with a `promotion` for the launch offer, a
+`min_trading_days` rule the Studio files do not carry, and a product rename - a new version (v2),
+never an edit of the 3 unverified Studio files.

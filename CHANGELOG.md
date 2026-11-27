@@ -61,6 +61,43 @@ kind of change is recorded).
   `requires` has no range operator), `rulesets/prop/fundednext/RESEARCH.md` (the whole review round)
   and `rulesets/prop/INDEX.json` (regenerated).
 
+### MFFU review round: the cost page's inclusion, promotions, supporting sources and re-quotes (ADR-0107 amendment)
+- **Costs (F.1-F.5).** The instrument list's subtitle "Includes Contract Specifications,
+  Commissions, and Trading Fees" is a firm statement of what its Total Cost Round Trip column
+  contains, so `exchange` and `nfa` are `included` in all 20 MFFU files and `clearing` and `other`
+  stay `unknown`.
+  - Under `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` one ES side moves from 5.36 to
+    **3.34 USD** (2.34 + 0.50 + 0.50), and MES from 2.74 to 1.45.
+  - `tests/unit/test_prop_mffu_rulesets.py` pins the arithmetic and the declarations.
+- **Promotions (F.8).** Every published discount is a `promotion` on the evaluation fee it
+  discounts, with the list price as the base:
+  - CLUB 40% off any plan and 50% off the first evaluation, each quoting the file's own plan page;
+  - the Builder 50K 30% and 40% pricing rows as their printed values.
+  - `ends_on: unknown` where no end is stated; the 3 Studio files carry none because their fee's
+    source page is gone.
+- **Supporting sources (F.7, F.27, F.29, F.30).** The sentence a rule's action or timing rests on
+  is now a `supporting_source`: the flat clock's auto-liquidation sentence and the CME session row,
+  the drawdown locks, the news flatten example, the soft-pause DLL, the inactivity purchase date,
+  and the copy-trading article.
+- **Readings (F.9-F.12, F.20, F.24-F.28, F.31).**
+  - `cross_account_hedging` states the fact that would make it material, including a copier across
+    the trader's own accounts.
+  - The two firm-specific assumptions are `provisional_conservative`; the session-relative flat and
+    the inactivity `fail` are declared as `owner_decision` and `provisional_conservative`.
+  - The Pro files carry the current "Excess profits beyond $100,000 Sim cap will be placed in
+    Reserve Program, up to $5,000 per account" wording, the 60% in-buffer withdrawal and the dated
+    active-account rule as `not_modeled` entries.
+  - The consistency share stays primary; the page's `target / 2` example is declared `not_modeled`
+    material because no field expresses it.
+- **Re-quotes (F.34, F.35).** 25 attributions now quote a span that contains their own number, and
+  the Pro 100K/150K post-payout locks quote their own cells. No value changed.
+- **Automation (F.6) is the engine's, not the files'.** The change that landed with PR #36 makes a
+  `material` + `block` compliance rule condition the eligibility of every mode it lists, so an MFFU
+  run now reports `eligible_conditional` - 5 conditions for `automated`, 4 for `manual` - and no
+  MFFU file needed an `effect: condition`. The Studio files stay `unverified` with a "do NOT
+  confirm" decision because their only source answers 404, and the Signature successors are a
+  recorded follow-up.
+
 ### A cost gap the assumption file leaves keeps the cash `unavailable` (ADR-0107 amendment, 2026-11-24)
 - **The bug.** When a cost-assumption file left a component unpriced (the FundedNext review's case:
   the firm states a commission for NQ only, and ES's `commission` stayed a gap), every attempt
@@ -1182,39 +1219,6 @@ kind of change is recorded).
   a test that every `__main__.py` guards its call. `docs/DEPENDENCIES.md` states the `yfinance` and
   `mcp` exceptions to the network-client rule.
 
-### Apex review decisions (owner delegation of 2026-11-23, ADR-0107 amendment)
-- **`consistency.comparison` is read.** The evaluator computed `share <= max_day_share` and ignored
-  the rule's required `comparison`. `<=` now admits a share equal to the limit and `<` refuses it
-  (the Apex payout page's "50% or more"); `>=`/`>` describe no share ceiling and are refused by the
-  model by name. A file declaring `<=` behaves exactly as before; only the Apex payout rules move to
-  `<`, so a best day at exactly 50.000% of the profit since the last payout blocks the payout.
-  Unit test: `test_consistency_comparison_reads_the_declared_boundary`.
-- **A promotional FEE.** `promotions` already applies to any numeric rule field; a checkout coupon
-  is declared on a `fee`'s `amount_usd` (`multiplier: '0.1'` for 90% off) with the offer window and
-  the purchase facts it requires. The base fee stays the list price and an ineligible run records
-  why. Covered by `test_a_percentage_discount_applies_to_a_fee_inside_its_window`.
-- **Apex rulesets (90, re-hashed in place, all still unverified).** The owner's delegated decisions:
-  - the 30% evaluation consistency stays PRIMARY (`<=`), with `absent` as the sensitivity scenario
-    `evaluation_consistency#0`, and the measure is best-day profit / total profit
-    (`owner_decision`); `max_eval_daily_profit_percent` is not modelled separately (F5, F6, F18);
-  - the Tradovate EOD lock's primary reading stays "no lock", with the product record's lock as
-    `tradovate_eod_lock#0` (F7);
-  - the two intraday lock readings are `owner_decision`, not engine defaults (F8, F9);
-  - the profit target's observation frequency is the `unspecified_target_frequency_is_eod`
-    `provisional_conservative` assumption while its value stays quoted (F12);
-  - `hedging_between_evaluation_accounts` gains `becomes_immaterial_if` (F10);
-  - the SAVENOW coupon is declared as a promotion on the evaluation fee (F11);
-  - the payout consistency is strict (`<`, F21);
-  - `flat_before_session_end` carries the forfeiture sentence and the 6 PM ET rule-day sentence as
-    `supporting_sources` (F19), and a position open at 16:59 ET fails the account (F20, unchanged
-    declaration, now sourced);
-  - sub-minute/HFT, correlated within-account hedging and discretionary news stay `material` (F13-F15),
-    the five-pack stays one account at a fifth of the pack price (F16) and the no-activation-fee path
-    stays $0 (F17).
-  Every file stays `unverified`; `crucible prop confirm` was never run.
-- **Apex `RESEARCH.md`** gains section 15 (the review round, every disposition and the reference
-  run under the upper-bound cost file), and sections 7, 8, 9 and 12 record the same decisions.
-
 ### Lucid review decisions (owner delegation of 2026-11-24, ADR-0107 amendment)
 - **A `material` + `action: block` compliance rule is a CONDITION, not a clearance.**
   `practical_eligibility` listed only `effect: condition` rules, so Lucid's HFT ban (a material ban
@@ -1264,6 +1268,39 @@ kind of change is recorded).
     numbers and section C of the packet checked them against its sha256, and the owner moves the
     label to `official_quote` at confirmation.
   Every file stays `unverified`; `crucible prop confirm` was never run.
+
+### Apex review decisions (owner delegation of 2026-11-23, ADR-0107 amendment)
+- **`consistency.comparison` is read.** The evaluator computed `share <= max_day_share` and ignored
+  the rule's required `comparison`. `<=` now admits a share equal to the limit and `<` refuses it
+  (the Apex payout page's "50% or more"); `>=`/`>` describe no share ceiling and are refused by the
+  model by name. A file declaring `<=` behaves exactly as before; only the Apex payout rules move to
+  `<`, so a best day at exactly 50.000% of the profit since the last payout blocks the payout.
+  Unit test: `test_consistency_comparison_reads_the_declared_boundary`.
+- **A promotional FEE.** `promotions` already applies to any numeric rule field; a checkout coupon
+  is declared on a `fee`'s `amount_usd` (`multiplier: '0.1'` for 90% off) with the offer window and
+  the purchase facts it requires. The base fee stays the list price and an ineligible run records
+  why. Covered by `test_a_percentage_discount_applies_to_a_fee_inside_its_window`.
+- **Apex rulesets (90, re-hashed in place, all still unverified).** The owner's delegated decisions:
+  - the 30% evaluation consistency stays PRIMARY (`<=`), with `absent` as the sensitivity scenario
+    `evaluation_consistency#0`, and the measure is best-day profit / total profit
+    (`owner_decision`); `max_eval_daily_profit_percent` is not modelled separately (F5, F6, F18);
+  - the Tradovate EOD lock's primary reading stays "no lock", with the product record's lock as
+    `tradovate_eod_lock#0` (F7);
+  - the two intraday lock readings are `owner_decision`, not engine defaults (F8, F9);
+  - the profit target's observation frequency is the `unspecified_target_frequency_is_eod`
+    `provisional_conservative` assumption while its value stays quoted (F12);
+  - `hedging_between_evaluation_accounts` gains `becomes_immaterial_if` (F10);
+  - the SAVENOW coupon is declared as a promotion on the evaluation fee (F11);
+  - the payout consistency is strict (`<`, F21);
+  - `flat_before_session_end` carries the forfeiture sentence and the 6 PM ET rule-day sentence as
+    `supporting_sources` (F19), and a position open at 16:59 ET fails the account (F20, unchanged
+    declaration, now sourced);
+  - sub-minute/HFT, correlated within-account hedging and discretionary news stay `material` (F13-F15),
+    the five-pack stays one account at a fifth of the pack price (F16) and the no-activation-fee path
+    stays $0 (F17).
+  Every file stays `unverified`; `crucible prop confirm` was never run.
+- **Apex `RESEARCH.md`** gains section 15 (the review round, every disposition and the reference
+  run under the upper-bound cost file), and sections 7, 8, 9 and 12 record the same decisions.
 
 ## 0.1.0 - 2026-10-09
 

@@ -312,6 +312,15 @@ per-side commission contains it (`included`), excludes it (`excluded`: the amoun
 the commission figures themselves are `official_quote` or `owner_provided`. The old
 `commissions.includes_exchange_and_regulatory_fees` flag is REFUSED by name, with a message naming
 this block.
+- **What counts as "a quotation that says so" (MFFU review, F.1-F.5, ADR-0107 amendment of
+  2026-11-24).** A firm that publishes ONE all-in number and a group phrase for what it contains
+  ("Includes Contract Specifications, Commissions, and Trading Fees") HAS stated inclusion: that
+  phrase is the quotation, and the owner decided that "Trading Fees" standardly denotes the exchange
+  fee and the NFA assessment, so `exchange` and `nfa` are `included` with the subtitle as their
+  `text`. What the phrase does NOT name stays `unknown` (`clearing`, `other` here), never `included`
+  by association - the conservative reading, and the same shape Topstep's files carry. The owner
+  decision and the resulting arithmetic are recorded in the file's `commissions.source.section`,
+  because the schema has no assumption field on a cost component.
 
 Every gap — an `unknown` component, an `excluded` one the dataset cannot price, an unknown
 commission — makes `cash_estimate_status` `unavailable`. The only way to a number is a

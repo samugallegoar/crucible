@@ -3,6 +3,22 @@
 # verification.status is unverified: only the owner confirms a ruleset (ADR-0106).
 # Every value carries its official URL, the verbatim quotation and the snapshot hash, or is
 # a named assumption / a not_modeled entry; the sourcing notes live in RESEARCH.md.
+# C7b owner review round (2026-11-24, delegated to the coordinator; packet internal/reviews/mffu.md
+# section F). The cost components are read from the cost page's own subtitle (exchange and nfa
+# `included`, clearing and other `unknown`), every published discount is a promotion on the
+# evaluation fee, every rule whose action or timing rests on a sentence outside its own quote
+# carries that sentence as a supporting source, the two firm-specific readings are
+# `provisional_conservative`, every not_modeled entry says what would change its materiality where
+# the packet asked for it, and the attributions that quoted a neighbouring sentence are re-quoted to
+# spans that carry their own number. Nothing here is verified: only the owner confirms a ruleset.
+# C7b owner review round (2026-11-24, delegated to the coordinator; packet internal/reviews/mffu.md
+# section F). The cost components are read from the cost page's own subtitle (exchange and nfa
+# `included`, clearing and other `unknown`), every published discount is a promotion on the
+# evaluation fee, every rule whose action or timing rests on a sentence outside its own quote
+# carries that sentence as a supporting source, the two firm-specific readings are
+# `provisional_conservative`, every not_modeled entry says what would change its materiality where
+# the packet asked for it, and the attributions that quoted a neighbouring sentence are re-quoted to
+# spans that carry their own number. Nothing here is verified: only the owner confirms a ruleset.
 schema_version: 2
 ruleset_id: mffu-builder-150k
 version: 1
@@ -39,24 +55,32 @@ reset:
   tz: America/New_York
 commissions:
   status: known
-  # The firm names "Commissions, and Trading Fees" in the list's subtitle and publishes a Total Cost Round Trip column, neither of which splits exchange, clearing, NFA or other fees out: every component is unknown, never zero.
+  # The firm publishes ONE number per contract, the Total Cost Round Trip column, whose subtitle
+  # reads "Includes Contract Specifications, Commissions, and Trading Fees". Owner decision
+  # (assumption_kind: owner_decision, delegated to the coordinator 2026-11-24, packet F.1-F.5):
+  # "Trading Fees" is read as the exchange fee and the NFA assessment it standardly denotes, so
+  # exchange and nfa are `included` in the firm's own figure - the treatment Topstep's included
+  # components get. clearing and other stay `unknown` because the subtitle does not name them: the
+  # conservative reading, and never a zero cost.
   components:
     exchange:
-      status: unknown
-      evidence: not_stated
-      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+      status: included
+      evidence: official_quote
+      text: Includes Contract Specifications, Commissions, and Trading Fees
     clearing:
       status: unknown
       evidence: not_stated
-      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+      text: the list's subtitle names only "Commissions, and Trading Fees", so no clearing charge is named
+        and none can be assigned to the Total Cost Round Trip column
     nfa:
-      status: unknown
-      evidence: not_stated
-      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+      status: included
+      evidence: official_quote
+      text: Includes Contract Specifications, Commissions, and Trading Fees
     other:
       status: unknown
       evidence: not_stated
-      text: 'the list''s subtitle reads "Includes Contract Specifications, Commissions, and Trading Fees" and its Total Cost Round Trip column states no split, so neither exchange, clearing, NFA nor other can be assigned to it'
+      text: the list's subtitle names only "Commissions, and Trading Fees", so no other per-side charge
+        is named and none can be assigned to the Total Cost Round Trip column
   per_side_usd:
     ES: '2.34'
     NQ: '2.34'
@@ -102,10 +126,17 @@ commissions:
     retrieved_at: '2026-11-22T01:59:33Z'
     section: 'Futures Instrument List, Total Cost Round Trip column: ES/NQ/RTY $4.68, YM $5.76, NKD $6.22,
       MES/MNQ/MYM/M2K $1.90 per contract for one round trip. Per side = that figure / 2. The column is
-      the firm''s all-in cost (commission plus exchange and NFA fees), and the subtitle names only Commissions and Trading Fees as a group: the list''s subtitle reads "Includes
-      Contract Specifications, Commissions, and Trading Fees" and no MFFU page publishes a
-      commission-only number; MFFU publishes no platform-specific schedule either, so the all-in cost
-      is what a round trip costs and it is the same on every platform.'
+      the firm''s all-in cost (commission plus exchange and NFA fees), and the subtitle names only Commissions
+      and Trading Fees as a group: the list''s subtitle reads "Includes Contract Specifications, Commissions,
+      and Trading Fees" and no MFFU page publishes a commission-only number; MFFU publishes no platform-specific
+      schedule either, so the all-in cost is what a round trip costs and it is the same on every platform.
+      Owner decision (assumption_kind: owner_decision, delegated to the coordinator 2026-11-24, packet
+      F.1-F.5): the subtitle''s "Trading Fees" is read as the exchange fee and the NFA assessment, so
+      components.exchange and components.nfa are declared included with that subtitle as their text and
+      the column stays the whole per-side figure a round trip costs; components.clearing and components.other
+      stay unknown because the subtitle does not name them. Under rulesets/prop/cost_assumptions/upper_bound_v1.yaml
+      the bound therefore fills only clearing and other, so one ES side is 2.34 + 0.50 + 0.50 = 3.34 USD
+      (not 5.36).'
     synthetic: false
 conflicts:
 - conflict_id: builder_150k_payout_cap
@@ -168,6 +199,13 @@ phases:
       section: Plan Parameters (Evaluation Stage)
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/8348565-end-of-day-eod-drawdown-explained
+      quote: Also to be noted the Max EOD trailing locks in at $100 plus the initial starting balance.
+      snapshot_sha256: ea42e089d571722bde2bde6bde12cf3d85e6d4f6c82ce9c3cc8e00626bdbbbfd
+      retrieved_at: '2026-11-22T05:46:47Z'
+      section: End-of-Day (EOD) Drawdown Explained, the lock
+      synthetic: false
   - kind: daily_loss
     rule_id: daily_loss_soft_pause
     description: '$2,500 soft-pause Daily Loss Limit: when the session is that far down, trading stops
@@ -194,13 +232,22 @@ phases:
     evidence: assumption
     assumption:
       name: daily_loss_basis_and_reference_are_not_published
-      assumption_kind: section7_default
+      assumption_kind: provisional_conservative
       rationale: The pages state the Daily Loss Limit amount, that hitting it is a soft pause and not
         a breach, and (Rapid EOD) that it resets daily at 6:00 PM ET. They state neither the reference
         balance nor the basis. Modeled on the rule-day's opening balance and on equity (open losses counted),
         the stricter combination, consistent with the firm's EOD drawdown article that counts open equity
         losses. Where no page states the reset clock (Builder) the rule-day boundary is the Globex open
         the firm states, 6:00 PM ET.
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/17035331-builder-plan-150k-comprehensive-guide
+      quote: Soft DLL does not breach your account. Hitting the $2,500 Soft DLL soft‑pauses trading for
+        the rest of the trading session. The account remains open and the evaluation continues the next
+        trading session.
+      snapshot_sha256: 4f20f4d6d27d8c8f8b0d750d23b9338881c63e987289ba8dd7ddbf90c7a975fd
+      retrieved_at: '2026-11-22T01:55:24Z'
+      section: the soft Daily Loss Limit's own paragraph
+      synthetic: false
   - kind: max_contracts
     rule_id: eval_max_contracts
     description: 9 minis or 90 micros in total, weighted 1 per mini and 0.1 per micro; a larger target
@@ -220,12 +267,14 @@ phases:
     evidence: official_quote
   - kind: flat_by
     rule_id: eval_flat_by_ny_close
-    description: Every position is closed 50 minutes before the scheduled session close. The firm states
+    description: 'Every position is closed 50 minutes before the scheduled session close. The firm states
       its trading day as the 6:00 PM EST Globex open to "the New York session closes at 4:10 PM EST" and
-      the CME session this engine reads closes at 5:00 PM ET, so 4:10 PM ET is 50 minutes before the
-      session end. Declared session-relative so the clock moves with the calendar, so on a half day whose
-      close is 13:15 ET the flat is 12:25 ET instead of a 4:10 PM clock that the session has already
-      passed. The page writes EST; modeled as US Eastern time (DST included).
+      the CME session this engine reads closes at 5:00 PM ET, so 4:10 PM ET is 50 minutes before the session
+      end. Declared session-relative so the clock moves with the calendar, so on a half day whose close
+      is 13:15 ET the flat is 12:25 ET instead of a 4:10 PM clock that the session has already passed.
+      The page writes EST; modeled as US Eastern time (DST included). The session-relative reading is
+      the owner''s decision of 2026-11-24 (assumption_kind: owner_decision, delegated to the coordinator,
+      packet F.31) and the half-day inequality is the material not_modeled entry holiday_early_close_is_the_traders_job.'
     minutes_before_session_end: 50
     comparison: '>='
     action: auto_liquidate
@@ -238,11 +287,39 @@ phases:
       section: Permitted Times to Trade
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
+      quote: During holiday trading hours, auto-liquidation will not occur at the half-time market close,
+        and the trader is responsible for closing the positions.
+      snapshot_sha256: 7a945cf52a94820af413c95e6fcdb381fe51b4e8039bae4f7d46e63bc13e2b98
+      retrieved_at: '2026-11-22T01:38:12Z'
+      section: Permitted Times to Trade, holiday trading hours
+      synthetic: false
+    - url: https://help.myfundedfutures.com/en/articles/9735811-futures-instrument-list
+      quote: 'E-mini S&P 500 ES Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT'
+      snapshot_sha256: 61a15116c3e36c1daead0587c59d2a558f34a74f42172f40728eac85aae60901
+      retrieved_at: '2026-11-22T01:59:33Z'
+      section: 'Futures Instrument List, Trading Hours column: the CME session runs 17:00-16:00 CT, so
+        it closes at 16:00 CT = 17:00 ET, the instant the 50 minutes are counted back from'
+      synthetic: false
+    assumptions:
+    - name: session_relative_flat_follows_the_cme_early_close
+      rationale: 'The firm states a fixed 4:10 PM ET clock ("can remain open until the New York session
+        closes at 4:10 PM EST") and the model keeps the 50 minutes fixed against the CME session close
+        (17:00-16:00 CT, i.e. 5:00 PM ET), so a 13:15 ET half day closes positions at 12:25 ET instead
+        of 4:10 PM. Reading the clock as session-relative is the owner''s decision of 2026-11-24 (assumption_kind:
+        owner_decision, delegated to the coordinator, packet F.31): it closes EARLIER on a half day, which
+        is the stricter direction, and the untraded half of the rule is the material not_modeled entry
+        holiday_early_close_is_the_traders_job.'
+      assumption_kind: owner_decision
   - kind: inactivity
     rule_id: eval_inactivity_7_calendar_days
-    description: An account with no trade for 7 consecutive calendar days may be closed, and on a Sim
+    description: 'An account with no trade for 7 consecutive calendar days may be closed, and on a Sim
       Funded account the breach forfeits all profits. Counted in calendar days in a rolling window from
-      the last trading day.
+      the last trading day. Action fail is the owner''s provisional conservative reading of "could be
+      closed" (packet F.27, assumption_kind: provisional_conservative): the page''s purchase-date condition
+      (the one-time payment model effective 2026-08-25) is met by the new account this review simulates,
+      and the forfeiture of profits on a Sim Funded breach makes a closure the pessimistic reading.'
     max_gap: 7
     unit: calendar_days
     rolling_window: true
@@ -258,6 +335,24 @@ phases:
       section: Inactivity Rule Changes (Effective August 25th)
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/16596524-inactivity-rule-one-time-payment-model
+      quote: Effective August 25, 2026, MyFundedFutures will transition to a one-time payment model for
+        all new evaluation purchases.
+      snapshot_sha256: c6d23e74eb62033bfdd8cd6508458aac8b5c9a8ae771e27318fdb6e881f91598
+      retrieved_at: '2026-11-22T01:38:13Z'
+      section: Inactivity Rule - One-Time Payment Model, the purchase-date condition
+      synthetic: false
+    assumptions:
+    - name: inactivity_closure_is_a_fail
+      rationale: 'The page says the account "could be closed", not that it is closed automatically, and
+        its policy applies only to accounts bought under the one-time payment model effective 2026-08-25
+        ("If you''re a current subscriber, nothing changes"). The account this review simulates is a new
+        one-time-payment purchase made after that date, so the policy applies to it and a closure is modelled
+        as the hard end of the account (action: fail) rather than as a warning. The pessimistic reading
+        is the owner''s decision of 2026-11-24 (assumption_kind: provisional_conservative, delegated to
+        the coordinator, packet F.27).'
+      assumption_kind: provisional_conservative
   - kind: compliance
     rule_id: compliance_no_high_frequency_trading
     description: 'Material. High-frequency trading is prohibited outright. It is not decidable from OHLC
@@ -327,10 +422,15 @@ phases:
     evidence: official_quote
   - kind: compliance
     rule_id: compliance_no_copy_trading_or_account_sharing
-    description: Material. Copy trading between traders, using another trader's device and collaborating
+    description: 'Material. Copy trading between traders, using another trader''s device and collaborating
       across unconnected accounts to run identical or opposite strategies are prohibited. A single simulated
       attempt is one trader on one account, so this cannot change its mechanics; it decides practical
-      eligibility for a submission that is a copy of someone else's trades.
+      eligibility for a submission that is a copy of someone else''s trades. The firm''s copy-trading
+      article bounds this ban: it permits copy trading across all account types and names a trade copier,
+      so what is prohibited here is copying ANOTHER trader, never a copier across the trader''s own accounts
+      (packet F.30, the article is a supporting source). A copier across one''s own accounts that holds
+      opposite exposure on the same underlying is what the immaterial not_modeled entry cross_account_hedging
+      turns on.'
     restriction: Copy trading another trader, sharing a device or collaborating across unconnected accounts
       is prohibited
     applies_to_execution:
@@ -348,6 +448,13 @@ phases:
       section: 'Section 4: Device Sharing & Copy-Trading other Traders'
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/10771500-copy-trading-at-myfundedfutures
+      quote: MyFunded Futures allows copy trading across all account types.
+      snapshot_sha256: b3c301571dc5d129f243e4102bf3e07109586c08f9fffd11ae115a5b1871f77c
+      retrieved_at: '2026-11-24T05:34:34Z'
+      section: Copy Trading at MyFundedFutures, the opening sentence
+      synthetic: false
   - kind: compliance
     rule_id: compliance_no_hedging
     description: 'Material. Hedging is prohibited: holding buy and sell exposure on the same underlying
@@ -446,6 +553,40 @@ phases:
       section: Builder plan page, product price
       synthetic: false
     evidence: official_quote
+    promotions:
+    - id: club_40_off_any_plan
+      field: amount_usd
+      multiplier: '0.6'
+      starts_on: '2026-11-22'
+      ends_on: unknown
+      purchase_on_or_after: '2026-11-22'
+      requires:
+        account_purchase: new
+        coupon_applied: CLUB
+        discount_taken: club_40_off
+      source:
+        url: https://myfundedfutures.com/plans/builder
+        quote: Save 40% On Any Plan With Code CLUB.
+        snapshot_sha256: 72fa484fecb11be45b25da987df47d45ec77780c07c282a54f2697f94263aa75
+        retrieved_at: '2026-11-22T01:55:06Z'
+        section: site header, the CLUB coupon banner
+        synthetic: false
+    - id: new_trader_50_off_first_evaluation
+      field: amount_usd
+      multiplier: '0.5'
+      starts_on: '2026-11-22'
+      ends_on: unknown
+      purchase_on_or_after: '2026-11-22'
+      requires:
+        account_purchase: new
+        discount_taken: first_evaluation_50_off
+      source:
+        url: https://myfundedfutures.com/plans/builder
+        quote: New to MFFU? Get 50% off your first eval.
+        snapshot_sha256: 72fa484fecb11be45b25da987df47d45ec77780c07c282a54f2697f94263aa75
+        retrieved_at: '2026-11-22T01:55:06Z'
+        section: site header, the first-evaluation offer banner
+        synthetic: false
   - kind: fee
     rule_id: activation_fee
     description: 'Zero activation fee: the firm states every plan carries none, so the funded stage starts
@@ -486,13 +627,22 @@ phases:
       - first_payout
       locked_offset_usd: '100'
     source:
-      url: https://help.myfundedfutures.com/en/articles/13745661-payout-policy-overview-best-and-fastest-prop-firm-payouts
-      quote: After your first payout, the Max Loss Limit resets to $100
-      snapshot_sha256: 3a5efb0be5289b1cea751ee3dc0e5b7dabe103236e14c34a868f0396f4d8b037
-      retrieved_at: '2026-11-22T05:46:48Z'
-      section: Builder Plan Payouts
+      url: https://help.myfundedfutures.com/en/articles/17035331-builder-plan-150k-comprehensive-guide
+      quote: Builder 150K Starting Balance $0 Max EOD Drawdown (MLL) $4,500 Soft Daily Loss Limit (Soft
+        Pause) $2,500 Max Contracts 9 Minis / 90 Micros Buffer Required $4,600 Inactivity Rule 7 Calendar
+        Days
+      snapshot_sha256: 4f20f4d6d27d8c8f8b0d750d23b9338881c63e987289ba8dd7ddbf90c7a975fd
+      retrieved_at: '2026-11-22T01:55:24Z'
+      section: Sim Funded Stage parameters (the funded column's own Maximum Loss Limit and Max Contracts)
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/8348565-end-of-day-eod-drawdown-explained
+      quote: Also to be noted the Max EOD trailing locks in at $100 plus the initial starting balance.
+      snapshot_sha256: ea42e089d571722bde2bde6bde12cf3d85e6d4f6c82ce9c3cc8e00626bdbbbfd
+      retrieved_at: '2026-11-22T05:46:47Z'
+      section: End-of-Day (EOD) Drawdown Explained, the lock
+      synthetic: false
   - kind: daily_loss
     rule_id: daily_loss_soft_pause
     description: '$2,500 soft-pause Daily Loss Limit: when the session is that far down, trading stops
@@ -519,13 +669,22 @@ phases:
     evidence: assumption
     assumption:
       name: daily_loss_basis_and_reference_are_not_published
-      assumption_kind: section7_default
+      assumption_kind: provisional_conservative
       rationale: The pages state the Daily Loss Limit amount, that hitting it is a soft pause and not
         a breach, and (Rapid EOD) that it resets daily at 6:00 PM ET. They state neither the reference
         balance nor the basis. Modeled on the rule-day's opening balance and on equity (open losses counted),
         the stricter combination, consistent with the firm's EOD drawdown article that counts open equity
         losses. Where no page states the reset clock (Builder) the rule-day boundary is the Globex open
         the firm states, 6:00 PM ET.
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/17035331-builder-plan-150k-comprehensive-guide
+      quote: Soft DLL does not breach your account. Hitting the $2,500 Soft DLL soft‑pauses trading for
+        the rest of the trading session. The account remains open and the evaluation continues the next
+        trading session.
+      snapshot_sha256: 4f20f4d6d27d8c8f8b0d750d23b9338881c63e987289ba8dd7ddbf90c7a975fd
+      retrieved_at: '2026-11-22T01:55:24Z'
+      section: the soft Daily Loss Limit's own paragraph
+      synthetic: false
   - kind: max_contracts
     rule_id: funded_max_contracts
     description: 9 minis or 90 micros in total, weighted 1 per mini and 0.1 per micro; a larger target
@@ -536,20 +695,23 @@ phases:
     source:
       url: https://help.myfundedfutures.com/en/articles/17035331-builder-plan-150k-comprehensive-guide
       quote: Builder 150K Starting Balance $0 Max EOD Drawdown (MLL) $4,500 Soft Daily Loss Limit (Soft
-        Pause) $2,500
+        Pause) $2,500 Max Contracts 9 Minis / 90 Micros Buffer Required $4,600 Inactivity Rule 7 Calendar
+        Days
       snapshot_sha256: 4f20f4d6d27d8c8f8b0d750d23b9338881c63e987289ba8dd7ddbf90c7a975fd
       retrieved_at: '2026-11-22T01:55:24Z'
-      section: Sim Funded stage parameters
+      section: Sim Funded Stage parameters (the funded column's own Maximum Loss Limit and Max Contracts)
       synthetic: false
     evidence: official_quote
   - kind: flat_by
     rule_id: funded_flat_by_ny_close
-    description: Every position is closed 50 minutes before the scheduled session close. The firm states
+    description: 'Every position is closed 50 minutes before the scheduled session close. The firm states
       its trading day as the 6:00 PM EST Globex open to "the New York session closes at 4:10 PM EST" and
-      the CME session this engine reads closes at 5:00 PM ET, so 4:10 PM ET is 50 minutes before the
-      session end. Declared session-relative so the clock moves with the calendar, so on a half day whose
-      close is 13:15 ET the flat is 12:25 ET instead of a 4:10 PM clock that the session has already
-      passed. The page writes EST; modeled as US Eastern time (DST included).
+      the CME session this engine reads closes at 5:00 PM ET, so 4:10 PM ET is 50 minutes before the session
+      end. Declared session-relative so the clock moves with the calendar, so on a half day whose close
+      is 13:15 ET the flat is 12:25 ET instead of a 4:10 PM clock that the session has already passed.
+      The page writes EST; modeled as US Eastern time (DST included). The session-relative reading is
+      the owner''s decision of 2026-11-24 (assumption_kind: owner_decision, delegated to the coordinator,
+      packet F.31) and the half-day inequality is the material not_modeled entry holiday_early_close_is_the_traders_job.'
     minutes_before_session_end: 50
     comparison: '>='
     action: auto_liquidate
@@ -562,11 +724,39 @@ phases:
       section: Permitted Times to Trade
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
+      quote: During holiday trading hours, auto-liquidation will not occur at the half-time market close,
+        and the trader is responsible for closing the positions.
+      snapshot_sha256: 7a945cf52a94820af413c95e6fcdb381fe51b4e8039bae4f7d46e63bc13e2b98
+      retrieved_at: '2026-11-22T01:38:12Z'
+      section: Permitted Times to Trade, holiday trading hours
+      synthetic: false
+    - url: https://help.myfundedfutures.com/en/articles/9735811-futures-instrument-list
+      quote: 'E-mini S&P 500 ES Sunday - Friday 17:00 - 16:00 CT Daily Break: 16:00 - 17:00 CT'
+      snapshot_sha256: 61a15116c3e36c1daead0587c59d2a558f34a74f42172f40728eac85aae60901
+      retrieved_at: '2026-11-22T01:59:33Z'
+      section: 'Futures Instrument List, Trading Hours column: the CME session runs 17:00-16:00 CT, so
+        it closes at 16:00 CT = 17:00 ET, the instant the 50 minutes are counted back from'
+      synthetic: false
+    assumptions:
+    - name: session_relative_flat_follows_the_cme_early_close
+      rationale: 'The firm states a fixed 4:10 PM ET clock ("can remain open until the New York session
+        closes at 4:10 PM EST") and the model keeps the 50 minutes fixed against the CME session close
+        (17:00-16:00 CT, i.e. 5:00 PM ET), so a 13:15 ET half day closes positions at 12:25 ET instead
+        of 4:10 PM. Reading the clock as session-relative is the owner''s decision of 2026-11-24 (assumption_kind:
+        owner_decision, delegated to the coordinator, packet F.31): it closes EARLIER on a half day, which
+        is the stricter direction, and the untraded half of the rule is the material not_modeled entry
+        holiday_early_close_is_the_traders_job.'
+      assumption_kind: owner_decision
   - kind: inactivity
     rule_id: funded_inactivity_7_calendar_days
-    description: An account with no trade for 7 consecutive calendar days may be closed, and on a Sim
+    description: 'An account with no trade for 7 consecutive calendar days may be closed, and on a Sim
       Funded account the breach forfeits all profits. Counted in calendar days in a rolling window from
-      the last trading day.
+      the last trading day. Action fail is the owner''s provisional conservative reading of "could be
+      closed" (packet F.27, assumption_kind: provisional_conservative): the page''s purchase-date condition
+      (the one-time payment model effective 2026-08-25) is met by the new account this review simulates,
+      and the forfeiture of profits on a Sim Funded breach makes a closure the pessimistic reading.'
     max_gap: 7
     unit: calendar_days
     rolling_window: true
@@ -582,13 +772,34 @@ phases:
       section: Inactivity Rule Changes (Effective August 25th)
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://help.myfundedfutures.com/en/articles/16596524-inactivity-rule-one-time-payment-model
+      quote: Effective August 25, 2026, MyFundedFutures will transition to a one-time payment model for
+        all new evaluation purchases.
+      snapshot_sha256: c6d23e74eb62033bfdd8cd6508458aac8b5c9a8ae771e27318fdb6e881f91598
+      retrieved_at: '2026-11-22T01:38:13Z'
+      section: Inactivity Rule - One-Time Payment Model, the purchase-date condition
+      synthetic: false
+    assumptions:
+    - name: inactivity_closure_is_a_fail
+      rationale: 'The page says the account "could be closed", not that it is closed automatically, and
+        its policy applies only to accounts bought under the one-time payment model effective 2026-08-25
+        ("If you''re a current subscriber, nothing changes"). The account this review simulates is a new
+        one-time-payment purchase made after that date, so the policy applies to it and a closure is modelled
+        as the hard end of the account (action: fail) rather than as a warning. The pessimistic reading
+        is the owner''s decision of 2026-11-24 (assumption_kind: provisional_conservative, delegated to
+        the coordinator, packet F.27).'
+      assumption_kind: provisional_conservative
   - kind: consistency
     rule_id: funded_consistency
     description: 'The best single day''s profit may be at most 0.5 of the total profit: a best_day_profit/total_profit
-      measure, applied to a payout request. The numerator (the best day) and the denominator (the
-      profit it is shared with) are declared separately because the firm states both in cycle terms:
-      "your single largest profit day cannot represent more than 50% of your total profits in the
-      cycle. This calculation resets after each approved payout."'
+      measure, applied to a payout request. The numerator (the best day) and the denominator (the profit
+      it is shared with) are declared separately because the firm states both in cycle terms: "your single
+      largest profit day cannot represent more than 50% of your total profits in the cycle. This calculation
+      resets after each approved payout." The share measure is the primary rule (packet F.28, delegated
+      to the coordinator 2026-11-24). The page''s worked example states a stricter reading, the profit
+      target divided by two, which no field of this vocabulary expresses: it is the material not_modeled
+      entry consistency_target_over_two_max_daily_profit.'
     max_day_share: '0.5'
     measure: best_day_profit/total_profit
     applies_to: payout
@@ -629,13 +840,17 @@ phases:
     first_payout_after_calendar_days: 2
     threshold_after_payout: lock_on_first_payout
     source:
-      url: https://help.myfundedfutures.com/en/articles/17035331-builder-plan-150k-comprehensive-guide
-      quote: Builder 150K Profit Split 80/20 - 80% to the Trader Consistency Rule 50% Minimum Qualifying
-        Days / Cycle 2 Days Minimum Payout Amount $1,500 Maximum Payout Per Cycle $4,500 Buffer (Must
-        Be Cleared to Request) $4,600
-      snapshot_sha256: 4f20f4d6d27d8c8f8b0d750d23b9338881c63e987289ba8dd7ddbf90c7a975fd
-      retrieved_at: '2026-11-22T01:55:24Z'
-      section: Payout Policy
+      url: https://myfundedfutures.com/plans/builder
+      quote: Profit Split 80/20 80/20 80/20 80/20 Consistency Rule 50% 50% 50% 50% Minimum Qualifying
+        Days / Cycle 2 Days 2 Days 2 Days 2 Days Net Profit Required (First Payout) $250 above buffer
+        $500 above buffer $1,000 above buffer $1,500 above buffer Net Profit Required (Subsequent Payouts)
+        $250 since last payout $500 since last payout $1,000 since last payout $1,500 since last payout
+        Minimum Payout Amount $250 $500 $1,000 $1,500 Maximum Payout Per Cycle $1,000 $2,000 $3,000 $3,500
+        Buffer (Must Be Cleared to Request) $1,100 $2,100 ($1,600 with add-on) $3,100 $4,600
+      snapshot_sha256: 72fa484fecb11be45b25da987df47d45ec77780c07c282a54f2697f94263aa75
+      retrieved_at: '2026-11-22T01:55:06Z'
+      section: 'Builder plan page, full rules table: Profit Split, Minimum Payout Amount, Maximum Payout
+        Per Cycle and Buffer for the 25K / 50K / 50K Add-On / 150K columns'
       synthetic: false
     evidence: official_quote
     comparison: '>='
@@ -660,10 +875,13 @@ not_modeled:
     section: 'Section 1: Automated Trading Protocols'
     synthetic: false
 - rule: price_limit_2pct_prohibition
-  description: Material. Trading is prohibited while a product trades within 2% of its CME price limit,
+  description: 'Material. Trading is prohibited while a product trades within 2% of its CME price limit,
     on Sim Funded and Live accounts (the firm says equity index price limits are suspended for it in that
     band). The ruleset holds no price-limit bands, so a bar in a limit move stays tradable here and a
-    strategy that trades a limit day would differ.
+    strategy that trades a limit day would differ. The 2024 ES audit in the review''s reference run (ES
+    never traded at its CME price limit in 2024) is not the firm''s band test: the rule is about trading
+    while the product is within 2% of the limit, which an audit of limit hits does not measure. The entry
+    therefore stays material (packet F.20, delegated to the coordinator 2026-11-24).'
   materiality: material
   source:
     url: https://help.myfundedfutures.com/en/articles/9698984-2-price-limit-rule
@@ -685,12 +903,16 @@ not_modeled:
     retrieved_at: '2026-11-22T01:38:58Z'
     section: Hedging - What You Should Know
     synthetic: false
+  becomes_immaterial_if: 'becomes material if several accounts, copy trading or coordinated strategies
+    are simulated: a trade copier that mirrors one of the trader''s own accounts onto another can hold
+    opposite exposure on the same underlying across the two, which is exactly the cross-account hedge
+    this entry does not model (packet F.9 and F.30, delegated to the coordinator 2026-11-24)'
 - rule: holiday_early_close_is_the_traders_job
   description: Material. The flat clock now follows the CME calendar's own early close, but the firm does
-    not liquidate anyone at the half-day close - the trader is responsible for being flat and holding past
-    it breaches the account - while flat_by liquidates for the trader. So where a real account that held
-    into a half-day close would be breached, this model closes the position 50 minutes before it and the
-    attempt can survive.
+    not liquidate anyone at the half-day close - the trader is responsible for being flat and holding
+    past it breaches the account - while flat_by liquidates for the trader. So where a real account that
+    held into a half-day close would be breached, this model closes the position 50 minutes before it
+    and the attempt can survive.
   materiality: material
   source:
     url: https://help.myfundedfutures.com/en/articles/9558251-permitted-times-to-trade
@@ -726,4 +948,22 @@ not_modeled:
     snapshot_sha256: 4f20f4d6d27d8c8f8b0d750d23b9338881c63e987289ba8dd7ddbf90c7a975fd
     retrieved_at: '2026-11-22T01:55:24Z'
     section: Transition to Live
+    synthetic: false
+- rule: consistency_target_over_two_max_daily_profit
+  description: 'Material. The consistency page states the share measure this file models (no single day''s
+    profit should exceed 30% or 50% of the total profit made) and, in its worked example, a second and
+    stricter reading: the maximum profit a trader should achieve is the profit target divided by two.
+    The share measure stays primary (packet F.28, delegated to the coordinator 2026-11-24). The target/2
+    cap binds whenever total profit exceeds the target, and no field of this vocabulary expresses it exactly
+    (consistency.measure is fixed to best_day_profit/total_profit and no rule kind compares one day''s
+    profit with the profit target), so it is declared here instead of modelled and it produces no sensitivity
+    scenario.'
+  materiality: material
+  source:
+    url: https://help.myfundedfutures.com/en/articles/11994562-consistency-rule-at-my-fundedfutures
+    quote: 'Total Profit Target on a 50k account: $3,000 Max Profit a Trader should achieve: $1,500 Calculation
+      is: Total profit target / 2 = Max Daily Profit'
+    snapshot_sha256: 50d6e06b972c6766aeb0814d41e488c30c6fca6132b49957bf8a4ee48eca6d40
+    retrieved_at: '2026-11-22T01:35:59Z'
+    section: Example on how the 50% consistency rule works
     synthetic: false

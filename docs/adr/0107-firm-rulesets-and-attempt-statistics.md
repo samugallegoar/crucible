@@ -958,6 +958,57 @@ it changes no ruleset BYTE: the Lucid files are edited by the review's decisions
 firms' files are untouched (their label changes follow from the engine, not from an edit).
 `schema_version` stays 2 and `rulesets/prop/INDEX.json` changes only for the 44 Lucid files.
 
+## Amendment (2026-11-24, MFFU review round): a group phrase can state inclusion, and where a decision lives when no field carries it
+
+The MyFundedFutures owner review (packet `internal/reviews/mffu.md`, F.1-F.35) settled 35 questions
+over the 20 MFFU files. Two of them decide something a later firm will meet again; the rest are
+declarations this ADR's vocabulary already carries. One of them needed an ENGINE change: F.6 (the
+automation condition) is landed by the Lucid amendment above, and the MFFU files therefore carry no
+`effect: condition` of their own - their five material bans condition the eligibility by the
+engine's reading (four of them for `manual`).
+
+**1. A group phrase in a firm's own subtitle is a statement of inclusion (F.1-F.5).**
+
+MFFU publishes one number per contract, `Total Cost Round Trip`, and its subtitle says the column
+"Includes Contract Specifications, Commissions, and Trading Fees". Section 10 asks an `included`
+component for "a quote that says so", and that sentence is one. The owner read "Trading Fees" as the
+exchange fee and the NFA assessment it standardly denotes, so `exchange` and `nfa` are `included`
+with the subtitle as their `text`, while `clearing` and `other` stay `unknown` because the subtitle
+does not name them: inclusion is never inferred by association. The result is the treatment Topstep
+already had, and under `upper_bound_v1.yaml` one ES side is `2.34 + 0.50 + 0.50 = 3.34` USD instead
+of `5.36`. `tests/unit/test_prop_mffu_rulesets.py` pins that number against the committed bound
+file, so the double count the packet measured (its section E.4) cannot come back silently.
+
+**2. Where a decision lives when no field carries it.**
+
+Three of the round's decisions have no per-rule field and are recorded outside the rulesets on
+purpose, so the next reader knows where to look:
+
+- a cost component's inclusion is the OWNER's call and `CostComponentDeclaration` has no
+  `assumption_kind`: the decision and its arithmetic are the `commissions.source.section` prose, the
+  YAML comment, `RESEARCH.md` and this amendment;
+- the pessimistic breach-after-costs (F.32) is the ENGINE's reading of a firm whose page is silent
+  (ADR-0106, `docs/TIMING.md`), so it is declared once for every firm here, not 20 times in a file;
+- the automation condition (F.6) was a vocabulary change, and the Lucid amendment above landed it
+  (a `material` + `block` rule conditions the eligibility of every mode it lists). This round adds no
+  `effect: condition`, so the MFFU files needed no edit for it, and the reference run of `RESEARCH.md`
+  section 12.1 reports the labels the engine now gives.
+
+**3. What a re-quote is, and is not.**
+
+Where an attribution quoted a sentence that does not contain the rule's own number (25 of them,
+plus the Pro 100K/150K post-payout lock), the span is replaced by one that carries the number, in the
+same page and the same snapshot; where no single span can carry every number of the rule, the missing
+one becomes a `supporting_source`. No VALUE changes. The content hash does, because these files are
+unverified and unreleased, so `rulesets/prop/INDEX.json` is regenerated: no version disappears or is
+reused, and no VERIFIED hash changes.
+
+**Mechanically.** The 20 files are re-hashed in place; the self-check now covers 866 attributions
+(608 before) with 0 mismatches; `docs/modules/prop.md` states the group-phrase reading;
+`docs/COMPATIBILITY.md` records the data (not vocabulary) change and the 5.36 -> 3.34 move; the three
+Studio files keep every value because their only source page answers HTTP 404 (F.10), and drafting
+the Signature successors is a recorded follow-up rather than part of this round.
+
 ## Amendment (2026-11-24, FundedNext review round): a gap the assumption leaves is never a bound (F6)
 
 The FundedNext owner review (packet `internal/reviews/fundednext.md`, F6) exposed a contradiction
@@ -1017,7 +1068,6 @@ components priced: `unavailable`, reason names `commission`),
 `test_a_bound_that_leaves_a_cost_gap_makes_every_surface_say_unavailable` (summary, parquet rows,
 CLI text, CLI `--json` and the MCP tool's document all say `unavailable`, and none of them says
 `lower_bound`).
-
 
 ## Alternatives considered
 
