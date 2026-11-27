@@ -245,6 +245,27 @@ def test_the_window_ends_at_the_scheduled_close_not_at_the_flat_instant() -> Non
     assert overlay.admit(1, after, 1) == 1
 
 
+def test_the_entry_block_note_states_the_reopen_in_the_rules_own_clock() -> None:
+    """Cosmetic, and it invites a misreading if it is not done: the note is in the firm's zone.
+
+    A fixed-clock ``flat_by`` already renders its reopen in its own zone (``until 13:00 CT``). The
+    session-relative form has no ``tz`` of its own -- its instant comes from the CME calendar -- so
+    it borrows the ruleset's rule-day zone (``reset.tz``, America/Chicago here). The 2024-11-29
+    session closes at 18:15 UTC, so a 60-minute offset blocks until that close, and the note must
+    read ``until 12:15 CT``: a bare ``until 18:15`` next to the fixed rule's ``until 12:15 CT`` in
+    the same attempt reads as two different reopen times for one session (Lucid review F31).
+    """
+    close = _instant(EARLY_CLOSE_DAY, 18, 15)
+    overlay = _overlay(close, 1)
+    assert overlay.ruleset.reset.tz == "America/Chicago"
+    marks = _marks(close - 2 * MINUTE, close - MINUTE, bar=0)
+    assert overlay.begin_bar(0, marks) is None
+    assert overlay.admit(0, marks, 1) == 0
+    (blocked,) = overlay.events
+    assert blocked.kind == "session_entry_block"
+    assert blocked.note == "entry blocked: flat until 12:15 CT"
+
+
 def test_an_absolute_clock_reopen_still_wins_when_the_firm_states_one() -> None:
     """A ``flat_by`` with a clock and a reopen keeps the stated reopen, not the session close.
 

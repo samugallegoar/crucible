@@ -547,6 +547,55 @@ def test_a_ratcheting_daily_loss_follows_peak_profit_and_never_decreases() -> No
 # -------------------------------------------------------------- other vocabulary
 
 
+def test_a_profit_cap_on_the_last_phase_ends_the_attempt_as_a_pass_never_a_fail() -> None:
+    """No next phase exists, so ``promote_phase`` must END the attempt, as a non-failure outcome.
+
+    LucidDaily's funded cap says "you are automatically moved live", and every Lucid ruleset stops
+    at the funded phase: there is no live account to promote to. The overlay sets the phase's
+    outcome to ``pass`` and transitions to ``passed_terminal``, so the attempt is a pass (a
+    non-failure terminal class) and the account is closed at that bar: it never continues past the
+    cap and it is never reported as a fail. The first rule-day closes at 50,000.00; after the
+    17:00 Chicago reset the next one starts there and closes at 56,000.00, which is 6,000.00 above
+    its own start and exactly 1,000.00 over the 5,000.00 cap (Lucid review F24).
+    """
+    ruleset = _ruleset(
+        [
+            {
+                "kind": "daily_profit_cap",
+                "rule_id": "cap",
+                "amount_usd": "5000",
+                "action": "promote_phase",
+                "basis": "balance",
+                "evaluated": "eod",
+            }
+        ]
+    )
+    first = 1_704_758_400 * _NS  # 11:00 Chicago, inside the rule-day that opens at 17:00
+    day_one_close = first + _MIN
+    # the next bar opens past the 17:00 Chicago reset, so it is a new rule-day
+    day_two_open = first + 6 * 60 * _MIN
+    day_two_close = day_two_open + _MIN
+    overlay = PropAccountOverlay(
+        ruleset=ruleset,
+        phase=ruleset.phases[0],
+        root="ES",
+        tick_micro=TICK,
+        session_close_ns=np.array([day_one_close, day_two_close], dtype=np.int64),
+        start_day=dt.date(2024, 1, 8),
+    )
+    day_one = _marks(0, "50000", open_ns=first, close_ns=day_one_close)
+    assert overlay.begin_bar(0, day_one) is None
+    assert overlay.end_bar(0, day_one) is None
+    assert overlay.outcome == "running"  # 50,000.00 of profit is 0.00 above the start
+    day_two = _marks(1, "56000", open_ns=day_two_open, close_ns=day_two_close)
+    assert overlay.begin_bar(1, day_two) is None
+    assert overlay.end_bar(1, day_two) is None  # nothing open, nothing to flatten
+    assert overlay.outcome == "pass"
+    assert overlay.closed is True
+    assert overlay.breached_rule is None
+    assert overlay.lifecycle.state == "passed_terminal"
+
+
 def test_a_daily_profit_cap_reports_the_excess_over_the_days_start() -> None:
     ruleset = _ruleset(
         [
@@ -842,6 +891,122 @@ def test_conditions_are_listed_once_and_sorted() -> None:
         "Automated trading runs through the firm's API",
         "High-frequency trading is prohibited",
     )
+
+
+def test_a_material_block_conditions_the_mode_it_applies_to_and_never_blocks_it() -> None:
+    """A ``material`` + ``action: block`` rule is an obligation, listed under its own id.
+
+    Lucid's HFT ban is exactly this shape: it applies to ``automated``, the firm treats it as
+    material and not as a critical blocker, and no page states a threshold the engine could test.
+    Reading it as plain ``eligible`` claimed the simulation had checked a rule it never looks at, so
+    the automated mode becomes ``eligible_conditional`` and the condition is the rule's own id plus
+    the firm's words. ``manual`` does not carry it (the rule applies to ``automated`` only), and the
+    rule is NOT a blocker: ``blocker`` stays None and the account may be traded this way.
+    """
+    hft = {
+        "kind": "compliance",
+        "rule_id": "hft_prohibited",
+        "restriction": "High-frequency trading is strictly prohibited",
+        "applies_to_execution": ["automated"],
+        "materiality": "material",
+        "action": "block",
+    }
+    ruleset = _ruleset([hft])
+    automated = practical_eligibility(ruleset, "automated")
+    assert automated.status == "eligible_conditional"
+    assert automated.conditions == (
+        "hft_prohibited: High-frequency trading is strictly prohibited",
+    )
+    assert automated.blocker is None
+    manual = practical_eligibility(ruleset, "manual")
+    assert manual.status == "eligible"
+    assert manual.conditions == ()
+
+
+def test_a_material_block_conditions_every_execution_mode_it_lists() -> None:
+    """Both modes, ``manual`` only, ``automated`` only: the reading follows the declaration.
+
+    A firm whose copy/group-trading ban applies to both modes makes BOTH modes
+    ``eligible_conditional``; a rule that names only ``manual`` leaves an automated run plainly
+    ``eligible`` (and the other way round). Nothing here is automated-specific: the condition is
+    the execution mode's own list of applicable rules, which is what a reader compares against.
+    """
+
+    def block(applies: list[str], rule_id: str) -> dict[str, object]:
+        return {
+            "kind": "compliance",
+            "rule_id": rule_id,
+            "restriction": f"{rule_id} is prohibited",
+            "applies_to_execution": applies,
+            "materiality": "material",
+            "action": "block",
+        }
+
+    both = _ruleset([block(["automated", "manual"], "no_copy_trading")])
+    assert practical_eligibility(both, "automated").conditions == (
+        "no_copy_trading: no_copy_trading is prohibited",
+    )
+    assert practical_eligibility(both, "manual").status == "eligible_conditional"
+
+    manual_only = _ruleset([block(["manual"], "no_phone_orders")])
+    assert practical_eligibility(manual_only, "manual").status == "eligible_conditional"
+    assert practical_eligibility(manual_only, "automated").status == "eligible"
+    assert practical_eligibility(manual_only, "automated").conditions == ()
+
+    automated_only = _ruleset([block(["automated"], "no_hft")])
+    assert practical_eligibility(automated_only, "automated").conditions == (
+        "no_hft: no_hft is prohibited",
+    )
+    assert practical_eligibility(automated_only, "manual").status == "eligible"
+
+
+def test_a_critical_block_wins_over_every_condition_and_an_immaterial_block_is_silent() -> None:
+    """Hand-computed over three rules and both modes.
+
+    ``critical_block`` and ``material_hft`` both apply to ``automated``, so the critical one wins:
+    ``blocked_by_compliance`` with NO conditions listed (a block is a stronger statement than "you
+    must also meet this", ADR-0107 amendment of 2026-11-23). Under ``manual`` only the material HFT
+    ban and the immaterial conduct rule apply, and an ``immaterial`` block contributes nothing: the
+    answer is ``eligible_conditional`` with exactly one condition, and dropping the material rule
+    would make it plainly ``eligible``.
+    """
+    shared = {
+        "kind": "compliance",
+        "applies_to_execution": ["automated"],
+        "action": "block",
+    }
+    ruleset = _ruleset(
+        [
+            {
+                **shared,
+                "rule_id": "critical_block",
+                "restriction": "Automated trading is not permitted",
+                "materiality": "critical",
+            },
+            {
+                **shared,
+                "rule_id": "material_hft",
+                "restriction": "High-frequency trading is strictly prohibited",
+                "materiality": "material",
+                "applies_to_execution": ["automated", "manual"],
+            },
+            {
+                **shared,
+                "rule_id": "conduct",
+                "restriction": "Exploiting platform errors is prohibited",
+                "materiality": "immaterial",
+                "applies_to_execution": ["automated", "manual"],
+            },
+        ]
+    )
+    automated = practical_eligibility(ruleset, "automated")
+    assert automated.status == "blocked_by_compliance"
+    assert automated.conditions == ()
+    assert automated.blocker == "critical_block"
+    manual = practical_eligibility(ruleset, "manual")
+    assert manual.status == "eligible_conditional"
+    assert manual.conditions == ("material_hft: High-frequency trading is strictly prohibited",)
+    assert manual.blocker is None
 
 
 def test_a_condition_without_its_text_shape_is_refused() -> None:

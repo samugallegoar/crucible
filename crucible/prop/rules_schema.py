@@ -47,6 +47,10 @@ The owner-review round 2 adds, additively (ADR-0107, amendment of 2026-11-23):
 - ``compliance.effect: condition`` with a REQUIRED ``condition`` text: an obligation the simulation
   cannot prove and the trader must meet. Practical eligibility becomes ``eligible_conditional`` and
   every condition is listed; a mechanical pass is then a CONDITIONAL valid pass.
+- a compliance rule with ``action: block`` and ``materiality: material`` is ALSO a condition
+  (ADR-0107, amendment of 2026-11-24): the ban holds and the simulation cannot check it, so it
+  makes an automated run ``eligible_conditional`` with the rule listed as
+  ``<rule_id>: <restriction>``. Only a ``critical`` block refuses the mode outright.
 - ``not_modeled.becomes_immaterial_if``: the audited fact that would change an entry's materiality.
   The declared materiality is unchanged by it.
 
@@ -1273,6 +1277,11 @@ class ComplianceRule(_Rule):
     from the trader's own device, no VPS/VPN order entry, high-frequency trading prohibited). A
     ``condition`` rule carries the ``condition`` text, which is listed verbatim in the report, and
     it never blocks: the ruleset's practical eligibility becomes ``eligible_conditional``.
+
+    ``action: block`` with ``materiality: material`` is the same kind of obligation: the ban holds,
+    the firm does not call it critical, and the simulation cannot check it, so
+    ``practical_eligibility`` lists it as a condition under ``<rule_id>: <restriction>``. Only a
+    ``critical`` block refuses the execution mode outright (ADR-0107 amendment of 2026-11-24).
     """
 
     kind: Literal["compliance"] = "compliance"

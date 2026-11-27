@@ -79,7 +79,7 @@ from crucible.prop.news import (
 )
 from crucible.prop.overlay import Outcome, PropAccountOverlay
 from crucible.prop.promotions import resolve_promotions
-from crucible.prop.rules_schema import ExecutionMode
+from crucible.prop.rules_schema import ComplianceRule, ExecutionMode
 from crucible.prop.ruleset import PropRuleset
 
 if TYPE_CHECKING:
@@ -541,14 +541,33 @@ class PracticalEligibility:
     """Whether the execution mode may trade the plan, and what the trader must still meet.
 
     ``status`` is ``eligible``, ``eligible_conditional`` (no critical blocker, but at least one
-    ``effect: condition`` obligation the simulation cannot prove) or ``blocked_by_compliance`` (a
-    critical compliance rule with ``action: block`` applies). ``conditions`` lists every applicable
-    condition once, sorted; ``blocker`` names the rule that blocked, when one did.
+    obligation the simulation cannot prove) or ``blocked_by_compliance`` (a critical compliance rule
+    with ``action: block`` applies). ``conditions`` lists every applicable condition once, sorted;
+    ``blocker`` names the rule that blocked, when one did.
     """
 
     status: str
     conditions: tuple[str, ...]
     blocker: str | None
+
+
+def blocks_conditionally(rule: ComplianceRule) -> bool:
+    """Whether a compliance rule bans this execution mode without being a critical blocker.
+
+    ``material`` + ``action: block``: the firm states the ban, does not call it critical, and the
+    simulation cannot check it. It is an obligation, so it conditions the eligibility instead of
+    passing unmentioned (ADR-0107 amendment of 2026-11-24).
+    """
+    return rule.action == "block" and rule.materiality == "material" and rule.effect != "condition"
+
+
+def blocking_condition(rule: ComplianceRule) -> str:
+    """The condition text a ``material`` + ``action: block`` rule contributes, by its own id.
+
+    ``<rule_id>: <restriction>``: the id is what a reader can look up in the ruleset and the
+    restriction is the firm's own words, so a report never paraphrases the ban it lists.
+    """
+    return f"{rule.rule_id}: {rule.restriction.strip()}"
 
 
 def practical_eligibility(
@@ -557,11 +576,20 @@ def practical_eligibility(
     """``eligible|eligible_conditional|blocked_by_compliance`` for the execution mode (s11).
 
     A critical compliance rule with ``action: block`` that applies to ``execution_mode`` wins over
-    everything: the account may not be traded that way at all. Otherwise every ``effect: condition``
-    rule that applies is an obligation the SIMULATION cannot prove, so the status is
-    ``eligible_conditional`` and the conditions are listed (sorted, de-duplicated) rather than
-    silently dropped: a mechanical pass under a condition is a CONDITIONAL valid pass, never a
-    practically valid one.
+    everything: the account may not be traded that way at all. Otherwise every rule that applies and
+    states an obligation of the trader makes the status ``eligible_conditional``, and the conditions
+    are listed (sorted, de-duplicated) rather than silently dropped: a mechanical pass under a
+    condition is a CONDITIONAL valid pass, never a practically valid one.
+
+    Two declarations state such an obligation, and neither blocks on its own:
+
+    - ``effect: condition`` with its ``condition`` text (an obligation the firm states and the
+      simulation cannot check);
+    - a ``material`` rule with ``action: block``. A ban the firm treats as material is not a
+      critical blocker, but it is not nothing either: the trader may trade this way only while the
+      ban holds, so the rule is listed as a condition under its own id and the restriction it
+      states (a high-frequency-trading ban, a rule against a high-risk strategy). Reading it as
+      plain ``eligible`` claimed the simulation had cleared a rule it never looked at.
     """
     rules = ruleset.compliance_rules()
     relevant = [rule for rule in rules if execution_mode in rule.applies_to_execution]
@@ -575,9 +603,9 @@ def practical_eligibility(
             conditions=(),
             blocker=blocker.rule_id,
         )
-    conditions = tuple(
-        sorted({str(rule.condition).strip() for rule in relevant if rule.effect == "condition"})
-    )
+    stated = {str(rule.condition).strip() for rule in relevant if rule.effect == "condition"}
+    stated.update(blocking_condition(rule) for rule in relevant if blocks_conditionally(rule))
+    conditions = tuple(sorted(stated))
     return PracticalEligibility(
         status="eligible_conditional" if conditions else "eligible",
         conditions=conditions,

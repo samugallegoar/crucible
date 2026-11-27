@@ -135,10 +135,12 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
-      assumption_kind: section7_default
-      rationale: The firm states the max-loss amount and the mark it trails from, and never says whether
-        open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified
-        observation frequency of a failure threshold as intraday, which is the stricter reading.
+      assumption_kind: owner_decision
+      rationale: The firm states the max-loss amount and the mark it trails from, and never says
+        whether open equity is tested against the threshold between closes. The test is taken on
+        equity intrabar, the stricter reading. The owner review of 2026-11-24 (F5, delegated to the
+        coordinator 2026-11-24) accepted the intraday test as the more restrictive reading and
+        recorded it as an owner decision rather than a section 7 default.
     amount_usd: '1000'
     mode: eod
     evaluated: intraday
@@ -180,12 +182,29 @@ phases:
       retrieved_at: '2026-11-22T01:53:35Z'
       section: LucidPro, LucidFlex and LucidDirect Accounts
     evidence: assumption
+    supporting_sources:
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Any open positions will be automatically closed by Lucid Trading at 4:45 PM EST
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Holding a position past this time does not result in a failed account
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Trading resumes at 6:00 PM EST, Sunday through Thursday
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: Market Reopen Times
     assumption:
       name: session_close_taken_from_firm_wide_page
-      assumption_kind: section7_default
-      rationale: 'taken from Allowed Trading Times (section ''LucidPro, LucidFlex and LucidDirect Accounts'')
-        for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET
-        reopen is the only session clock the firm publishes.'
+      assumption_kind: owner_decision
+      rationale: 'LucidDaily is not named on Allowed Trading Times, so its close and reopen are
+        taken from the firm-wide section: the 4:45 PM ET close with the 6:00 PM ET reopen is the
+        only session clock the firm publishes. The owner review of 2026-11-24 (F8, delegated to the
+        coordinator 2026-11-24) accepted it rather than inventing a product-specific clock.'
     time: '16:45:00'
     tz: America/New_York
     reopen: '18:00:00'
@@ -212,6 +231,33 @@ phases:
     minutes_before_session_end: 15
     comparison: <=
     action: auto_liquidate
+  - kind: inactivity
+    rule_id: eval_inactivity
+    description: 'An account with no trade for more than 30 calendar days is deemed abandoned and
+      permanently deleted. The page says it outright: ''Accounts that have not been traded resulting
+      in at least a net profit or loss of 1$ within 30 calendar days will be deemed abandoned and
+      will be permanently deleted from our systems''. It is modelled as a hard fail at the start of
+      the 31st calendar day after the last EXECUTED trade, the pessimistic reading of a rule whose
+      page says the account is deleted. The page also asks for at least $1 of net profit or loss on
+      the trade, which the engine cannot separate from an executed trade at a zero result: a day
+      counts on an executed trade, as for Topstep. The owner review of 2026-11-24 (F22, delegated to
+      the coordinator 2026-11-24) added the rule; it was declared as modelled in RESEARCH.md section
+      1 before any file carried it.'
+    max_gap: 30
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>'
+    action: fail
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404632-inactivity-policy
+      quote: Accounts that have not been traded resulting in at least a net profit or loss of 1$
+        within 30 calendar days will be deemed abandoned and will be permanently deleted from our
+        systems.
+      snapshot_sha256: 4c693383bf9ed3e9c5407819abe0fff958d8d6ed4411438426102e2a8871833a
+      retrieved_at: '2026-11-24T15:56:33Z'
+      section: Active Status Policy
+    evidence: official_quote
   pass_conditions:
   - kind: profit_target
     rule_id: eval_profit_target
@@ -280,10 +326,12 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_failure_frequency_is_intraday
-      assumption_kind: section7_default
-      rationale: The firm states the max-loss amount and the mark it trails from, and never says whether
-        open equity is tested against the threshold between closes. ADR-0107 section 7 reads an unspecified
-        observation frequency of a failure threshold as intraday, which is the stricter reading.
+      assumption_kind: owner_decision
+      rationale: The firm states the max-loss amount and the mark it trails from, and never says
+        whether open equity is tested against the threshold between closes. The test is taken on
+        equity intrabar, the stricter reading. The owner review of 2026-11-24 (F5, delegated to the
+        coordinator 2026-11-24) accepted the intraday test as the more restrictive reading and
+        recorded it as an owner decision rather than a section 7 default.
     amount_usd: '1000'
     mode: eod
     evaluated: intraday
@@ -325,12 +373,29 @@ phases:
       retrieved_at: '2026-11-22T01:53:35Z'
       section: LucidPro, LucidFlex and LucidDirect Accounts
     evidence: assumption
+    supporting_sources:
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Any open positions will be automatically closed by Lucid Trading at 4:45 PM EST
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Holding a position past this time does not result in a failed account
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: LucidPro, LucidFlex and LucidDirect Accounts
+    - url: https://support.lucidtrading.com/en/articles/11404729-allowed-trading-times
+      quote: Trading resumes at 6:00 PM EST, Sunday through Thursday
+      snapshot_sha256: 9f536c25e65e1f5bd5a622ce2f3d54cb9b3187f303f4f724dea856344f2b84db
+      retrieved_at: '2026-11-22T01:53:35Z'
+      section: Market Reopen Times
     assumption:
       name: session_close_taken_from_firm_wide_page
-      assumption_kind: section7_default
-      rationale: 'taken from Allowed Trading Times (section ''LucidPro, LucidFlex and LucidDirect Accounts'')
-        for LucidDaily, which that page does not name: the firm-wide 4:45 PM ET close with a 6:00 PM ET
-        reopen is the only session clock the firm publishes.'
+      assumption_kind: owner_decision
+      rationale: 'LucidDaily is not named on Allowed Trading Times, so its close and reopen are
+        taken from the firm-wide section: the 4:45 PM ET close with the 6:00 PM ET reopen is the
+        only session clock the firm publishes. The owner review of 2026-11-24 (F8, delegated to the
+        coordinator 2026-11-24) accepted it rather than inventing a product-specific clock.'
     time: '16:45:00'
     tz: America/New_York
     reopen: '18:00:00'
@@ -438,10 +503,12 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
-      assumption_kind: section7_default
-      rationale: 'The firm states the profit target amount and never says when it is measured. A target
-        tested no earlier than the end of the trade date on closed balance is the conservative reading:
-        the trader passes no earlier, and a later same-day breach still counts.'
+      assumption_kind: provisional_conservative
+      rationale: 'The firm states the maximum daily profit and never says when it is measured. A cap
+        tested no earlier than the end of the trade date on closed balance is the conservative
+        reading. The owner review of 2026-11-24 (F6, delegated to the coordinator 2026-11-24) kept
+        the EOD reading for this cap exactly as for the profit targets, provisionally: the page
+        states the amount and no moment.'
     amount_usd: '6000'
     basis: balance
     evaluated: eod
@@ -487,6 +554,33 @@ phases:
     materiality: material
     comparison: <=
     action: block
+  - kind: inactivity
+    rule_id: funded_inactivity
+    description: 'An account with no trade for more than 30 calendar days is deemed abandoned and
+      permanently deleted. The page says it outright: ''Accounts that have not been traded resulting
+      in at least a net profit or loss of 1$ within 30 calendar days will be deemed abandoned and
+      will be permanently deleted from our systems''. It is modelled as a hard fail at the start of
+      the 31st calendar day after the last EXECUTED trade, the pessimistic reading of a rule whose
+      page says the account is deleted. The page also asks for at least $1 of net profit or loss on
+      the trade, which the engine cannot separate from an executed trade at a zero result: a day
+      counts on an executed trade, as for Topstep. The owner review of 2026-11-24 (F22, delegated to
+      the coordinator 2026-11-24) added the rule; it was declared as modelled in RESEARCH.md section
+      1 before any file carried it.'
+    max_gap: 30
+    unit: calendar_days
+    rolling_window: true
+    observed: eod
+    comparison: '>'
+    action: fail
+    source:
+      url: https://support.lucidtrading.com/en/articles/11404632-inactivity-policy
+      quote: Accounts that have not been traded resulting in at least a net profit or loss of 1$
+        within 30 calendar days will be deemed abandoned and will be permanently deleted from our
+        systems.
+      snapshot_sha256: 4c693383bf9ed3e9c5407819abe0fff958d8d6ed4411438426102e2a8871833a
+      retrieved_at: '2026-11-24T15:56:33Z'
+      section: Active Status Policy
+    evidence: official_quote
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null
@@ -504,12 +598,16 @@ not_modeled:
     retrieved_at: '2026-11-22T01:53:35Z'
     section: What Happens If I Microscalp?
 - rule: cross_account_hedging
-  description: 'Opposing positions on the same contract in separate accounts, and opposing positions on
-    correlated contracts across accounts, are prohibited: the accounts are reset to a prior day''s balance,
-    lose on-demand payout eligibility, and repeat offences breach every account. The attempt model simulates
-    one account with a one-sided book, so a cross-account hedge can neither arise nor be detected (ADR-0107
-    section 13).'
-  materiality: material
+  description: 'Immaterial. Opposing positions on the same contract in separate accounts, and
+    opposing positions on correlated contracts across accounts, are prohibited: the accounts are
+    reset to a prior day''s balance, lose on-demand payout eligibility, and repeat offences breach
+    every account. The attempt model simulates one account with a one-sided book, so a cross-account
+    hedge can neither arise nor be detected (ADR-0107 section 13). The owner review of 2026-11-24
+    (F16, delegated to the coordinator 2026-11-24) lowered the entry to immaterial, as the Apex
+    round did (Apex F10), and recorded the fact that would make it bind.'
+  materiality: immaterial
+  becomes_immaterial_if: becomes material if several accounts, copy trading or coordinated
+    strategies are simulated
   source:
     url: https://support.lucidtrading.com/en/articles/11404734-prohibited-hedging
     quote: Lucid Trading strictly prohibits all forms of hedging
