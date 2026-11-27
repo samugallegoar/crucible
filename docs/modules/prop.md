@@ -442,8 +442,11 @@ that states its own reopen clock keeps it (the C7a form). Hand test:
 `simulate_attempt` reports `days_to_pass_trading` / `days_to_pass_calendar` from the attempt's OWN
 first bar (the phase's bars are numbered from zero inside the simulation, so the offset is added
 before the day counts and the pass date are read), and `PhaseOutcome.first_bar`/`last_bar` are in the
-attempt's coordinates. Hand test: `tests/integration/test_prop_pass_frequency.py` and the 06-05
-assertions of `tests/integration/test_futures_prop.py`.
+attempt's coordinates. `PhaseOutcome.trading_days` counts the trade dates the phase actually lived
+through, from its first bar to the bar of its terminal event (a first-session failure reports 1,
+never the horizon's H). Hand test: `tests/integration/test_prop_pass_frequency.py`, the 06-05
+assertions of `tests/integration/test_futures_prop.py` and
+`tests/integration/test_prop_attempt_accounting.py`.
 
 ## Interfaces
 

@@ -1138,6 +1138,38 @@ the coverage line and keep their other reasons; no column, key or `schema_versio
 `test_a_requested_event_type_without_coverage_still_reports_the_gap` (a ``news_restriction`` rule
 over an uncovered period still lists it).
 
+## Amendment (2026-11-27, FTMO review round, F16): `trading_days` counts the days the phase lived
+
+The FTMO owner review (packet `internal/reviews/ftmo.md`, F16, delegated to the coordinator on
+2026-11-27) found the second reporting bug of the round. `simulate_attempt` built each
+`PhaseOutcome.trading_days` from `dates[first : last + 1]`, where `last` is the analyst's window
+end and never moves: an attempt that failed 76 fills into its first session reported one trading
+day per trade date of the H-day horizon (20 for the packet's H = 20), so the count described the
+window, not the attempt.
+
+**The decision: `trading_days` is the number of trading days actually elapsed in that phase, up
+to its terminal event.** The loop reads the phase's terminal bar from the same `_terminal_bar` the
+F14 fee window uses (a pass records `passed_at`, a hard failure or a timeout is the overlay's last
+recorded event, a censored or still-running phase ends at the window's last bar) and counts the
+distinct trade dates of `dates[first : terminal + 1]`. An attempt that fails on its first session
+reports 1; one that fails on the second of three sessions reports 2.
+
+`PhaseOutcome.last_bar` and `min_buffer_usd` are UNCHANGED: the review asked only for the count
+(the buffer's post-liquidation shortfall is a separate, declared reading). `days_to_pass_trading`
+was already measured to the pass and is unchanged.
+
+**What changes in the artifacts.** `trading_days` is an in-memory field of `PhaseOutcome`
+(`crucible.prop.attempt`); no artifact column, key or `schema_version` moves, and no golden fixture
+is affected. Every caller of `simulate_attempt` (the CLI, the MCP tool and the reference runs) now
+reports the elapsed day count.
+
+**Tests (hand-computed, not engine-derived).**
+`test_a_first_session_failure_reports_one_trading_day` (a failure on 2024-06-12 with the data
+running to 2024-07-15: 1, not the window's days) and
+`test_the_count_is_the_days_elapsed_up_to_the_terminal_event` (a failure on the second of three
+sessions: 2), plus the assertion on the 2024-01-09 failure in
+`test_a_month_without_a_terminal_event_is_not_charged`.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

@@ -265,9 +265,9 @@ def _terminal_bar(overlay: PropAccountOverlay, first: int, last: int) -> int:
     A pass records the bar it happened at (``passed_at`` on the phase's own slice), and a hard
     failure or a timeout records it as the last event the overlay appended before it closed: a
     closed overlay appends nothing more, so that event is the terminal one. A phase whose data
-    ends first (``censored``) or that is still running ends at the window's last bar. The fee
-    window reads this bar, never the analyst's H-day window end (ADR-0107, amendment of 2026-11-27,
-    F14).
+    ends first (``censored``) or that is still running ends at the window's last bar. The phases'
+    trading-day count and the fee window read this bar, never the analyst's H-day window end
+    (ADR-0107, amendment of 2026-11-27, F14 and F16).
     """
     if overlay.passed_at is not None:
         return first + overlay.passed_at
@@ -831,7 +831,7 @@ def simulate_attempt(
             )
             for index, (when, gross, net, rule) in enumerate(overlay.payouts)
         )
-        trading_days = len({day for day in dates[first : last + 1] if day is not None})
+        trading_days = len({day for day in dates[first : terminal + 1] if day is not None})
         phase_outcomes.append(
             PhaseOutcome(
                 phase_id=phase.phase_id,

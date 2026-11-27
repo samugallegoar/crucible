@@ -1,7 +1,7 @@
 """What an attempt pays (ADR-0107, amendment of 2026-11-27).
 
-Two FTMO review findings (F14, F15) were accounting bugs, not rule values, and each is pinned
-here by hand on synthetic bars:
+Three FTMO review findings (F14, F15, F16) were accounting bugs, not rule values, and each is
+pinned here by hand on synthetic bars:
 
 - **F14.** A monthly subscription is charged for every calendar month STARTED while the attempt is
   alive, from the purchase month up to and including the month of its terminal event. An attempt
@@ -11,6 +11,9 @@ here by hand on synthetic bars:
 - **F15.** "The economic calendar does not cover the attempt period" may only be listed when a
   ``news_restriction`` rule REQUESTED an event type the calendar does not cover. A ruleset with no
   news rule never says it, even when a ``not_modeled`` entry's id contains the word "news".
+- **F16.** ``phase_outcomes[*].trading_days`` is the number of trading days actually elapsed in
+  that phase up to its terminal event: an attempt failing in its first session reports 1, not the
+  horizon's 20.
 
 The bars are the scheduled 60-minute ES sessions of real trade dates, every bar flat except the
 breach bar; one ES contract at $50 a point on a $50,000 account, no commission, no spread and no
@@ -241,6 +244,37 @@ def test_a_month_without_a_terminal_event_is_not_charged() -> None:
     result = _attempt(rows, _ruleset(fees=[_monthly("119")]), start=dt.date(2024, 1, 8), horizon=70)
     assert result.outcome == "fail"
     assert result.fees.monthly_usd == Decimal("119")
+
+
+# ------------------------------------------------------------------- F16: the trading-day count
+
+
+def test_a_first_session_failure_reports_one_trading_day() -> None:
+    """F16: the attempt dies on 2024-06-12 with the data running to 2024-07-15, so it reports 1 day.
+
+    Before F16 the count ran to the analyst's window end, so the same attempt reported every
+    trading day of the window (the packet measured 20 on a 20-trading-day horizon).
+    """
+    rows = (
+        _session(FIRST, breach_bar=10, low=4788.0)
+        + _session(dt.date(2024, 6, 13), breach_bar=None, low=ENTRY)
+        + _session(LATER, breach_bar=None, low=ENTRY)
+    )
+    result = _attempt(rows, _ruleset(), start=FIRST, horizon=40)
+    assert result.outcome == "fail"
+    assert result.phase_outcomes[0].trading_days == 1
+
+
+def test_the_count_is_the_days_elapsed_up_to_the_terminal_event() -> None:
+    """F16: a failure on the SECOND of three sessions reports 2 trading days, not 3."""
+    rows = (
+        _session(dt.date(2024, 1, 8), breach_bar=None, low=ENTRY)
+        + _session(dt.date(2024, 1, 9), breach_bar=10, low=4788.0)
+        + _session(dt.date(2024, 1, 10), breach_bar=None, low=ENTRY)
+    )
+    result = _attempt(rows, _ruleset(), start=dt.date(2024, 1, 8), horizon=30)
+    assert result.outcome == "fail"
+    assert result.phase_outcomes[0].trading_days == 2
 
 
 # ------------------------------------------------------------------- F15: the estimate reason

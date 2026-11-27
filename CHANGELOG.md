@@ -8,6 +8,19 @@ kind of change is recorded).
 
 ## Unreleased
 
+### `trading_days` counts the days the phase lived, not the analyst's window (ADR-0107 amendment, 2026-11-27, FTMO F16)
+- `PhaseOutcome.trading_days` was built from `dates[first : last + 1]`, where `last` is the analyst's
+  H-day window end and never moves, so an attempt that failed in its first session reported one
+  trading day per trade date of the horizon (20 on the packet's H = 20).
+- The count now runs to the phase's terminal bar, read from `_terminal_bar` (the same helper the F14
+  fee window uses): a pass records `passed_at`, a hard failure or timeout is the overlay's last
+  event, a censored or still-running phase ends at the window's last bar. A first-session failure
+  reports 1; a failure on the second of three sessions reports 2.
+- `last_bar` and `min_buffer_usd` are unchanged, no artifact column, key or `schema_version` moves.
+- Hand tests: `test_a_first_session_failure_reports_one_trading_day` and
+  `test_the_count_is_the_days_elapsed_up_to_the_terminal_event` in
+  `tests/integration/test_prop_attempt_accounting.py`.
+
 ### A news-coverage reason needs a news rule (ADR-0107 amendment, 2026-11-27, FTMO F15)
 - `estimate_status` listed "the economic calendar does not cover the attempt period" whenever
   `news_covered` was not `True` and any unmodeled coverage row's id contained "news". No FTMO file
