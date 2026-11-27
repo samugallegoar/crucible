@@ -24,6 +24,21 @@
     verbatim and asserts the `sha256` of that snapshot file (165 attributions over the six files,
     0 failures).
 
+## Owner review round (2026-11-27, delegated to the coordinator)
+
+The owner reviewed the packet `internal/reviews/ftmo.md` (F1-F22) and delegated the decisions to the
+coordinator on 2026-11-27. Section 16 records every decision and where it landed; this round changed
+**declarations, never a rule value**: three readings became `provisional_conservative` assumptions
+(the session-relative flat on both phases, the 60-day inactivity close, and the payout's absent
+minimum-net-profit gate as an `owner_decision`), the four payout sentences the cap/split/minimum/share
+rest on became `supporting_sources`, the unfair-advantage automation sentence became a `material` +
+`block` compliance rule for automated execution (so automated runs carry a SECOND condition), the
+cross-account hedging entry took the cross-firm id `cross_account_hedging` and a
+`becomes_immaterial_if`, the other immaterial entries state what would make them bind, and the 30-day
+inactivity warning is declared `not_modeled` (immaterial). Every file still passes `prop validate`
+with every quote and hash verified (33 attributions on a Growth file, 34 on a Pro file, 0 synthetic)
+and stays `unverified`: no `prop confirm` was run and no sidecar was written.
+
 ## Round 2 changes (the C7b vocabulary update, 2026-11-22)
 
 Round 2 (ADR-0107 sections 7-13: the nine additions in the schema docstring, plus the session
@@ -49,11 +64,22 @@ entries listed above), the compliance rules and the verification status are unch
 
 ## 1. Evidence, and the defaults this firm did and did not need
 
-Every rule is `evidence: official_quote`: 16 rules on each Growth file and 17 on each Pro file (Pro
-carries the evaluation `daily_loss` rule), plus the `commissions` block and the ten `not_modeled`
-entries, which is 27 attributions on a Growth file and 28 on a Pro file. **No `assumption` block is
-needed on any of the six files**, and no `conflict_resolution` either (section 9). The reason is
-that FTMO states, on the page, each thing the ADR-0107 section 7 defaults exist to cover:
+After the owner review round of 2026-11-27 (section 16) every rule's VALUE is still
+`evidence: official_quote` for its number; what the round added are named assumptions around three
+readings and one absent gate, and `supporting_sources` for four payout sentences and the absolute
+flat clock. The files now carry, identically, 33 attributions on a Growth file and 34 on a Pro file
+(the commission block, the ten `not_modeled` entries, 16/17 rule values, six supporting sources and
+five named assumptions), no `conflict_resolution` (section 9), and these assumptions:
+
+| assumption | kind | rule(s) | why |
+|---|---|---|---|
+| `eval_flat_by_session_relative_is_the_conservative_reading` | `provisional_conservative` | `eval_flat_by` | the page states an absolute 4:10 pm ET clock; reading the 50 minutes session-relative flattens EARLIER on an early close (F4) |
+| `funded_flat_by_session_relative_is_the_conservative_reading` | `provisional_conservative` | `funded_flat_by` | the same reading, with the absolute clock carried as a supporting source (F4) |
+| `inactivity_closes_on_the_sixtieth_calendar_day` | `provisional_conservative` | `funded_inactivity` | "a warning after 30 ... a further 30 days" is read as a hard close at 60, checked at the rule-day close (F5) |
+| `no_minimum_net_profit_since_the_last_payout` | `owner_decision` | `funded_payout` | the page states no positive net-profit gate for a request, so `min_profit_since_last_usd` is 0 (F17) |
+| `unfair_advantage_automation_ban_is_a_material_condition` | `owner_decision` | `compliance_no_unfair_advantage_automation` | a ban with no threshold conditions automated eligibility instead of clearing or blocking it (F18) |
+
+Every real-firm default that ADR-0107 section 7 exists to cover is still stated by FTMO itself:
 
 | Default (ADR-0107 section 7) | What FTMO states instead | Where |
 |---|---|---|
@@ -201,7 +227,8 @@ commissions and fees?":
   ES 0.50, NQ 0.50, YM 0.50, RTY 0.50, NKD 0.50, MES 0.20, MNQ 0.20, MYM 0.20, M2K 0.20 USD per side.
   Minis and micros are the only split FTMO publishes; there is no per-root table, so every mini
   root carries the mini figure and every micro root the micro figure.
-- **`commissions.components: false`, on all six files.** The same answer
+- **`commissions.components` (the C7b per-component block), on all six files.** The same
+  answer
   says the total cost has three parts - exchange fees, NFA fees and FTMO's commission - and that
   exchange and NFA fees "are set by the exchanges and regulators, not by FTMO"; it then recommends
   "adding our fixed commission on top". So $0.50/$0.20 per side is the firm's own commission and
@@ -209,7 +236,8 @@ commissions and fees?":
   of that answer (it starts at "$0.50 per side" and ends at "not by FTMO."), so a single
   attribution supports both the amounts and the exclusion; the three-part sentence immediately before
   it is the page's own wording for the same fact.
-- What happens at attempt time: with the flag `false` the engine adds the per-side amount of the run's
+- What happens at attempt time: with `exchange`/`nfa` declared `excluded` (and `clearing`/`other`
+  `unknown`) the engine adds the per-side amount of the run's
   `ComponentFeeSource` (an `ComponentFeeTable`, or the stored `exchange_fees_v1` dataset through
   `store_component_fees`) to each fill's commission, for the run's participant profile (`--participant-profile`). The
   stored
@@ -320,13 +348,23 @@ mechanical account):
 
 | rule_id | restriction | execution modes | materiality | action |
 |---|---|---|---|---|
-| `compliance_automated_trading_permitted` | automated systems that manipulate, abuse or give an unfair advantage (HFT, latency arbitrage) | `automated` | immaterial | `none` |
+| `compliance_no_unfair_advantage_automation` | automation that manipulates, abuses or gives an unfair advantage (HFT, latency arbitrage); "Automated trading is permitted." stays the context | `automated` | material | `block` |
 | `compliance_no_copy_or_third_party_trading` | replicating/following a third party's decisions, signal services, trade copiers, third-party access | `automated`, `manual` | material | `block` |
 | `compliance_exchange_conduct` | CME-prohibited conduct: spoofing, layering, wash trading, manipulation | `automated`, `manual` | immaterial | `none` |
 
-- `Automated trading is permitted.` (first sentence of Prohibited Practice 5) is the opposite of
-  Apex's automation ban: an automated strategy at FTMO is **not** blocked, and
-  `practical_eligibility` stays `eligible` for `execution_mode: automated`.
+- **`practical_eligibility` is `eligible_conditional` in BOTH execution modes** (F12). The
+  copy-trading rule is `material` + `action: block` on `[automated, manual]`, so the merged engine
+  lists it as a condition for both modes; after F18 an automated run carries a SECOND condition
+  (`compliance_no_unfair_advantage_automation`) and a manual run carries one. Nothing is
+  `blocked_by_compliance`, because neither rule is `critical`, and the copy-trading condition stays
+  deliberately: the ban is a real obligation (do not incorporate a third party's decisions) and it
+  is consistent across the five firms.
+- `Automated trading is permitted.` (first sentence of Prohibited Practice 5) is still the context,
+  not a clearance: F18 turned the second sentence into a `material` + `block` compliance rule for
+  `automated` only, the same reading as Lucid's HFT ban and Topstep's obligations. The sentence
+  states no threshold a bar-based simulation could test, so it conditions the mode instead of
+  blocking it, and the old `not_modeled:hft_and_latency_arbitrage_ban` entry is removed because the
+  rule now carries the clause.
 - The copy-trading ban would block a strategy that follows someone else's decisions; it is
   `material`, not `critical`, because a self-contained strategy does not fall under it and marking
   it critical would block every automated attempt for no reason. The rule's `restriction` and
@@ -345,16 +383,23 @@ mechanical account):
 | `inconsistent_position_sizing` | sizing that differs from the trader's wider activity across accounts; one attempt has no wider activity | Risk Management Standards |
 | `news_event_concentration` | the discretionary news rule (section 6) | Risk Management Standards |
 
-**Immaterial (6)** - declared, warned about, but they do not change any simulated outcome:
+**Immaterial (6, unchanged in count) - declared, warned about, but they do not change any
+simulated outcome.** Each one that has a real condition now carries a `becomes_immaterial_if` naming
+the fact that would make it bind (F10):
 
-| id | why it is not modeled | source |
-|---|---|---|
-| `live_funded_account` | invitation-only third stage; per-size capital not published; own buffer, uncapped daily payouts, market data fee; not a pass transition | how-it-works |
-| `hedging_and_netting_across_accounts` | the cross-account hedging rule; one simulated account cannot express netting across accounts, and an opposite position inside one account is not netting | Forbidden Practices 3 |
-| `evaluation_vs_funded_mismatch` | trading differently in the evaluation than on a funded account; the simulation applies one strategy to both phases | Risk Management Standards |
-| `exploit_simulation_artifacts` | exploiting platform errors or quote delays; the engine simulates neither | Forbidden Practices 1 |
-| `hft_and_latency_arbitrage_ban` | a bar-based simulation has no order latency to arbitrage | Forbidden Practices 5 |
-| `max_concurrent_accounts_3` | three concurrent Sim-Funded accounts; a per-account attempt is not a portfolio | TOR, Max Concurrent Accounts |
+| id | why it is not modeled | source | `becomes_immaterial_if` |
+|---|---|---|---|
+| `inactivity_warning_30_days` | a warning after 30 days changes no outcome (the 60-day close is `funded_inactivity`) | Forbidden, Account Access | none: a warning never binds |
+| `live_funded_account` | invitation-only third stage; per-size capital not published; own buffer, uncapped daily payouts, market data fee; not a pass transition | how-it-works | simulated as a third phase, with its payouts and data fee |
+| `cross_account_hedging` | the cross-account hedging rule (the cross-firm id); one simulated account cannot express netting across accounts, and an opposite position inside one account is not netting | Forbidden Practices 3 | several accounts, copy trading or coordinated strategies are simulated |
+| `evaluation_vs_funded_mismatch` | trading differently in the evaluation than on a funded account; the simulation applies one strategy to both phases | Risk Management Standards | a run compares one strategy's evaluation parameters with another strategy's funded parameters |
+| `exploit_simulation_artifacts` | exploiting platform errors or quote delays; the engine simulates neither | Forbidden Practices 1 | the simulation models platform errors or delayed price updates |
+| `max_concurrent_accounts_3` | three concurrent Sim-Funded accounts; a per-account attempt is not a portfolio | TOR, Max Concurrent Accounts | several accounts are simulated at the same time for one trader |
+
+**Removed in the review round (1 immaterial entry):** `hft_and_latency_arbitrage_ban` - F18 turned
+its sentence into the `material` + `block` compliance rule `compliance_no_unfair_advantage_automation`
+(section 7), so the clause is now carried by a rule that gates automated eligibility instead of by a
+declared gap.
 
 **Removed in round 2 (2 material entries, previously 6 material + 6 immaterial):**
 
@@ -450,21 +495,28 @@ Pairs that **look** contradictory and are not, with the reason:
 | `compliance_exchange_conduct` | forbidden | Exchange Compliance | "Practices prohibited by CME rules, including spoofing, layering, wash trading, and all other forms of market manipulation, are strictly prohibited under these terms, whether or not specifically named here." |
 | `not_modeled` ids | forbidden, TOR | see section 8 | each entry's full quote is in its `source` (the ruleset is the authority; this table is the index) |
 
+**Supporting sources (added in the review round, F3 and F4).** Four sentences the `funded_payout`
+values rest on are now attributions of that rule, so the self-check covers them: "The Payout Cap is
+$2,500 per request." ($3,000 / $4,000 Growth, $5,000 / $6,000 / $8,000 Pro; section
+`sim-funded-payout-cap`), "FTMO Futures operates on a 90/10 ratio . You may withdraw 90% of the
+amount you requested for withdrawal after applying the other applicable Payout conditions such as the
+Payout Cap." (`sim-funded-payout-ratio`), "The minimum amount available for payout is $20 ."
+(`sim-funded-withdrawable-amount`) and "You may request to withdraw up to 50% of your Profit above
+the Initial Simulated Capital." (100% on Pro; same section). Each carries the TOR url and sha256
+above. The absolute-clock sentence of the instruments FAQ ("The trading day closes at 4:10 pm US
+Eastern Time (ET) ...") is a supporting source on `funded_flat_by`, and the overnight FAQ's
+"whichever is sooner" sentence is a supporting source on `eval_flat_by`.
+
 Facts quoted in this document but not attached to a rule (one attribution per rule, ADR-0106
 section 2): "For the purposes of Trading Objectives and other rules and conditions, a trading day is
 defined as the period beginning at 6:00 p.m. ET and ending at 4:10 p.m. ET on the following calendar
 day." (top-level `reset`), "Accounts are assessed for eligibility to pass after the end of the
-trading day." (`evaluated: eod` on the profit target), "FTMO Futures operates on a 90/10 ratio . You
-may withdraw 90% of the amount you requested for withdrawal after applying the other applicable
-Payout conditions such as the Payout Cap." (`split: 0.9`), "The minimum amount available for payout
-is $20 ." (`min_usd`), "The Payout Cap is $3,000 per request." (`max_usd`), "You may request to
-withdraw up to 50% of your Profit above the Initial Simulated Capital." (`max_share_of_withdrawable`),
-"You may request to withdraw up to 100% of your Profit above the Initial Simulated Capital." (Pro),
-"No Consistency Rule" on the Sim-Funded phase (no consistency rule on the funded phase), "To submit a
-payout request, at least 50% of the requested amount must represent new profit generated during the
-current payout cycle, not carried-over profit from prior cycles." (`min_new_profit_share_of_request`,
-the `sim-funded-min-new-profit-for-request` panel: the payout rule's one attribution is the
-eligibility panel, section 8's removed entry held this quote before round 2), "The total profit is
+trading day." (`evaluated: eod` on the profit target), "No Consistency Rule" on the Sim-Funded phase
+(no consistency rule on the funded phase), "To submit a payout request, at least 50% of the requested
+amount must represent new profit generated during the current payout cycle, not carried-over profit
+from prior cycles." (`min_new_profit_share_of_request`, the
+`sim-funded-min-new-profit-for-request` panel: the payout rule's own attribution is the eligibility
+panel, section 8's removed entry held this quote before round 2), "The total profit is
 the cumulative sum of closed profits and losses across all trading days in the Evaluation phase.
 The Best Day is defined as the single day on which the highest closed profit was achieved, measured
 at the end of the trading day." (`window: all_time` on both sides of the consistency rule), "One
@@ -481,11 +533,12 @@ Rule: your best day counts for max 50% of total profit on Pro, 40% on Growth." (
 Six files, one section each. Every list that is identical across the six is stated once (section 8
 for `not_modeled`, section 9 for conflicts). `ruleset_sha256` is the content hash of the file
 without its (absent) verification block - the number the owner types the first 12 characters of.
-Every hash changed in round 2; these are the current ones.
+Every hash changed in round 2 and again in the review round of 2026-11-27; these are the
+current ones, regenerated from `crucible prop validate` (F11).
 
 ### `ftmo-futures-growth-50k`
 
-- `ruleset_sha256`: `58f720d4945987c37caa36642965710a95cb6f6d77718facec08ec650a83a1ce`
+- `ruleset_sha256`: `c104df794d3431adaabe3f91c873adc70cdff9fda0780a14aa9bb5b82adb0b60`
 - evaluation: `eval_max_drawdown` 2,000 / `eval_max_contracts` 5 / `eval_flat_by` 50 minutes before
   the scheduled close (16:10 ET on a regular day) / three compliance rules / `eval_profit_target`
   3,000 on closed balance at the close / `eval_consistency` 0.40; fees monthly 119, reset 109.
@@ -493,7 +546,8 @@ Every hash changed in round 2; these are the current ones.
   0->2, 1,000->3, 2,000->5, 3,000->5, 4,500->5 / `funded_flat_by` 50 minutes before the scheduled
   close / `funded_payout` 4 days of 150+, cap 2,500, share 0.5, min new profit 0.5, split 0.9,
   min 20, `threshold_after_payout: unchanged` / `funded_inactivity` 60 calendar days.
-- conflicts: none. assumptions: none. `not_modeled`: 4 material + 6 immaterial (section 8).
+- conflicts: none. assumptions: the five named ones of section 1. `not_modeled`: 4 material + 6
+  immaterial, each immaterial entry with a real condition carrying `becomes_immaterial_if` (section 8).
 - **OWNER REVIEW CHECKLIST**
   - account/thresholds: target 3,000; max drawdown 2,000 with the lock at the initial capital and
     the mark on the closing balance (not equity); contract limit 5; consistency 40%;
@@ -509,11 +563,12 @@ Every hash changed in round 2; these are the current ones.
   - news/compliance: no news restriction (news trading allowed), so no `news_restriction` rule and
     no `effect`; automation permitted; copy trading and third-party access prohibited; CME conduct
     rules.
-  - assumptions: none - every value above is quoted. conflicts: none.
+  - assumptions: the five named ones of section 1 (two flat readings, the inactivity close, the
+    absent minimum-net-profit gate, the automation ban); every rule VALUE is still quoted. conflicts: none.
 
 ### `ftmo-futures-growth-100k`
 
-- `ruleset_sha256`: `6391a7dbd336afed7d6c57044853b017c26a5db856d015b1c92d69ab00be8d2d`
+- `ruleset_sha256`: `969de13c9535f476669d2bcf64f3e82a1d6b1bba755f2a821e3cd622a4c86776`
 - evaluation: `eval_max_drawdown` 3,000 / `eval_max_contracts` 10 / `eval_flat_by` 16:10 ET / three
   compliance rules / `eval_profit_target` 6,000 (balance 106,000, flat) / `eval_consistency` 0.40;
   fees monthly 169, reset 159.
@@ -521,7 +576,7 @@ Every hash changed in round 2; these are the current ones.
   0->4, 1,000->5, 2,000->8, 3,000->10, 4,500->10 / `funded_flat_by` 16:10 ET / `funded_payout` 4 days
   of 300+, cap 3,000, share 0.5, min new profit 0.5, split 0.9, min 20 / `funded_inactivity` 60
   calendar days.
-- conflicts: none. assumptions: none. `not_modeled`: 4 material + 6 immaterial.
+- conflicts: none. assumptions: section 1. `not_modeled`: 4 material + 6 immaterial (section 8).
 - **OWNER REVIEW CHECKLIST**
   - account/thresholds: target 6,000; max drawdown 3,000; contract limit 10; consistency 40%;
     `flat_by` 16:10 ET on a regular day (session-relative); reset 18:00 ET; no evaluation daily
@@ -531,34 +586,35 @@ Every hash changed in round 2; these are the current ones.
   - fees/commissions: monthly 169; reset 159; commission 0.50 mini / 0.20 micro excluding exchange
     and NFA fees.
   - news/compliance: as above.
-  - assumptions: none. conflicts: none.
+  - assumptions: as section 1. conflicts: none.
 
 ### `ftmo-futures-growth-150k`
 
-- `ruleset_sha256`: `174dd14cbbe77329f175a52e38e4d772acd5e3e20c6888e9040dfccab6e5c6ff`
+- `ruleset_sha256`: `ca4180675071c30cddeff4e3bf2b8fcf897adfe8eeca90c8524bd3849628c217`
 - evaluation: `eval_max_drawdown` 4,500 / `eval_max_contracts` 15 / `eval_flat_by` 16:10 ET / three
   compliance rules / `eval_profit_target` 9,000 / `eval_consistency` 0.40; monthly 229, reset 219.
 - sim_funded: `funded_max_drawdown` 4,500 / `funded_daily_loss` 3,000 soft / `funded_scaling_plan`
   0->6, 1,000->8, 2,000->10, 3,000->12, 4,500->15 / `funded_flat_by` 16:10 ET / `funded_payout` 4 days
   of 450+, cap 4,000, share 0.5, min new profit 0.5 / `funded_inactivity`.
-- conflicts: none. assumptions: none. `not_modeled`: 4 material + 6 immaterial.
+- conflicts: none. assumptions: section 1. `not_modeled`: 4 material + 6 immaterial (section 8).
 - **OWNER REVIEW CHECKLIST**
   - account/thresholds: target 9,000; max drawdown 4,500; contract limit 15; consistency 40%.
   - payouts: 4 days of 450+; cap 4,000; share 50%; at least half the request must be new profit;
     90/10; min 20; funded daily loss 3,000 soft; scaling 6 -> 15.
   - fees/commissions: monthly 229; reset 219; commission as above, excluding exchange and NFA fees.
-  - news/compliance: as above. assumptions: none. conflicts: none.
+  - news/compliance: as above; `eligible_conditional` in both modes (section 7). assumptions: as
+    section 1. conflicts: none.
 
 ### `ftmo-futures-pro-50k`
 
-- `ruleset_sha256`: `da29ef5ebcee7c1ba87a6bd2e7e1660945dd25066f4d9d3958b5cd4a5c7164ac`
+- `ruleset_sha256`: `3e9fdfe66b2f164b0630bd02732949f62b7553711329f208db1b37a46d181f09`
 - evaluation: `eval_max_drawdown` 3,000 / `eval_daily_loss` 1,000 hard / `eval_max_contracts` 5 /
   `eval_flat_by` / three compliance rules / `eval_profit_target` 3,000 / `eval_consistency` 0.50;
   monthly 139, reset 129.
 - sim_funded: `funded_max_drawdown` 3,000 / `funded_daily_loss` 1,000 hard / `funded_scaling_plan`
   0->2, 1,000->3, 2,000->5, 3,000->5, 4,500->5 / `funded_flat_by` / `funded_payout` 5 days of 200+,
   cap 5,000, share 1.0 (no share constraint), min new profit 0.5 / `funded_inactivity`.
-- conflicts: none. assumptions: none. `not_modeled`: 4 material + 6 immaterial.
+- conflicts: none. assumptions: section 1. `not_modeled`: 4 material + 6 immaterial (section 8).
 - **OWNER REVIEW CHECKLIST**
   - account/thresholds: target 3,000; max drawdown 3,000; **daily loss 1,000 hard in the
     evaluation and hard on the Sim-Funded account**; contract limit 5; consistency 50%.
@@ -567,43 +623,46 @@ Every hash changed in round 2; these are the current ones.
     twice the new profit as well; 90/10; min 20.
   - fees/commissions: monthly 139; reset 129; commission 0.50 mini / 0.20 micro excluding exchange
     and NFA fees.
-  - news/compliance: as above. assumptions: none. conflicts: none.
+  - news/compliance: as above; `eligible_conditional` in both modes (section 7). assumptions: as
+    section 1. conflicts: none.
 
 ### `ftmo-futures-pro-100k`
 
-- `ruleset_sha256`: `f7689cec4db9adfaa6a1b54f7aad9e6abd5c16371944afb43ec1263469a79003`
+- `ruleset_sha256`: `db2e0e005178a4a9fe0e4ba44b460f8a353c8416d6755d004caba7a8ecc959fb`
 - evaluation: `eval_max_drawdown` 4,500 / `eval_daily_loss` 1,500 hard / `eval_max_contracts` 10 /
   `eval_flat_by` / three compliance rules / `eval_profit_target` 6,000 / `eval_consistency` 0.50;
   monthly 199, reset 189.
 - sim_funded: `funded_max_drawdown` 4,500 / `funded_daily_loss` 1,500 hard / `funded_scaling_plan`
   0->4, 1,000->5, 2,000->8, 3,000->10, 4,500->10 / `funded_flat_by` / `funded_payout` 5 days of 300+,
   cap 6,000, share 1.0, min new profit 0.5 / `funded_inactivity`.
-- conflicts: none. assumptions: none. `not_modeled`: 4 material + 6 immaterial.
+- conflicts: none. assumptions: section 1. `not_modeled`: 4 material + 6 immaterial (section 8).
 - **OWNER REVIEW CHECKLIST**
   - account/thresholds: target 6,000; max drawdown 4,500; daily loss 1,500 hard (both phases);
     contract limit 10; consistency 50%.
   - payouts: 5 days of 300+; cap 6,000; withdrawable 100%; at least half the request must be new
     profit; 90/10; min 20; scaling 4 -> 10.
   - fees/commissions: monthly 199; reset 189; commission excluding exchange and NFA fees.
-  - news/compliance: as above. assumptions: none. conflicts: none.
+  - news/compliance: as above; `eligible_conditional` in both modes (section 7). assumptions: as
+    section 1. conflicts: none.
 
 ### `ftmo-futures-pro-150k`
 
-- `ruleset_sha256`: `e9be0846e41c255ca7a402e225bf0764effc1ac6ea0d5009699940cf0c2ef1a9`
+- `ruleset_sha256`: `ab1f68200adc9f1622a125c37ab135cb507dd7b0c76d32c5056e56b51ed19d59`
 - evaluation: `eval_max_drawdown` 6,000 / `eval_daily_loss` 2,000 hard / `eval_max_contracts` 15 /
   `eval_flat_by` / three compliance rules / `eval_profit_target` 9,000 / `eval_consistency` 0.50;
   monthly 269, reset 259.
 - sim_funded: `funded_max_drawdown` 6,000 / `funded_daily_loss` 2,000 hard / `funded_scaling_plan`
   0->6, 1,000->8, 2,000->10, 3,000->12, 4,500->15 / `funded_flat_by` / `funded_payout` 5 days of 500+,
   cap 8,000, share 1.0, min new profit 0.5 / `funded_inactivity`.
-- conflicts: none. assumptions: none. `not_modeled`: 4 material + 6 immaterial.
+- conflicts: none. assumptions: section 1. `not_modeled`: 4 material + 6 immaterial (section 8).
 - **OWNER REVIEW CHECKLIST**
   - account/thresholds: target 9,000; max drawdown 6,000; daily loss 2,000 hard (both phases);
     contract limit 15; consistency 50%.
   - payouts: 5 days of 500+; cap 8,000; withdrawable 100%; at least half the request must be new
     profit; 90/10; min 20; scaling 6 -> 15.
   - fees/commissions: monthly 269; reset 259; commission excluding exchange and NFA fees.
-  - news/compliance: as above. assumptions: none. conflicts: none.
+  - news/compliance: as above; `eligible_conditional` in both modes (section 7). assumptions: as
+    section 1. conflicts: none.
 
 ## 12. What the pages do NOT state (and what was done about it)
 
@@ -614,7 +673,9 @@ Every hash changed in round 2; these are the current ones.
   are null and there is no `time_limit` rule.
 - **Effective date**: no page states when these rules took effect. `effective_from` is the retrieval
   date, 2026-11-22, and `as_of` is the same; the rule page's `dateModified` is a modification time,
-  not an effective date.
+  not an effective date. `as_of` STAYS 2026-11-22 after the 2026-11-27 re-fetch (F22): the ten pages
+  changed only by a site-wide promotional banner and a coupon box on the landing page, no cited
+  sentence moved and no rule value differs, so the banner is not a rule change and no v2 file is cut.
 - **Add-ons**: none exist (no add-on step in the funnel), so `addons: []`.
 - **Jurisdiction**: FTMO Futures is offered globally to natural persons with exceptions the page
   does not enumerate, so `jurisdiction` stays null rather than guessing.
@@ -626,11 +687,12 @@ Every hash changed in round 2; these are the current ones.
   now, not a `not_modeled` entry.
 - **Live Funded capital per size**: only a worked example ("Initial Capital = $3,000") appears, and
   it is an example, not a specification, so the stage is not modeled.
-- **Symbol universe**: the instrument FAQ lists 19 mini and 11 micro contracts (metals, energy, FX,
-  crypto and the equity indices). The nine equity-index roots (ES, NQ, YM, RTY, NKD and their
-  micros) are the ones this ruleset declares, because they are the roots the futures runs and their
-  tick data cover; the rest of the universe is allowed by FTMO but not tradable in the simulated
-  run, and no rule value changes because of that.
+- **Symbol universe (confirmed, F19)**: the instrument FAQ lists 19 mini and 11 micro contracts
+  (metals, energy, FX, crypto and the equity indices). The nine equity-index roots (ES, NQ, YM, RTY,
+  NKD and their micros) are the confirmed scope of these six files - the same call as Topstep's
+  no-metals decision - because they are the roots the futures runs and their tick data cover; the
+  rest of the universe is allowed by FTMO but not tradable in the simulated run, and no rule value
+  changes because of that.
 
 ## 13. Vocabulary: what C7b now models, and what is still missing
 
@@ -658,8 +720,11 @@ Still missing, and therefore still `not_modeled`: an entry ban near a price limi
 limit series would be needed as well) and a discretionary-clause representation (none exists by
 design). Those are two of the four material entries; the other two are the discretionary news rule
 and the cross-account sizing comparison (`inconsistent_position_sizing`). The six immaterial ones
-are stages and behaviours the simulation does not reach at all (Live Funded, cross-account hedging,
-evaluation-vs-funded mismatch, simulation artefacts, HFT detection, concurrent accounts).
+are stages and behaviours the simulation does not reach at all (the 30-day warning, Live Funded,
+cross-account hedging, evaluation-vs-funded mismatch, simulation artefacts, concurrent accounts);
+the HFT/latency-arbitrage clause is no longer among them because the review round made it a
+`material` + `block` compliance rule (section 7, F18). Every immaterial entry with a real condition
+now names it in `becomes_immaterial_if` (F10).
 
 ## 14. Open questions for the owner
 
@@ -726,8 +791,100 @@ evaluation status; it writes nothing. `rulesets/prop/INDEX.json` is generated se
 `uv run python -m tools.docgen --write` and a test compares it with the files, so a ruleset that
 is not in INDEX.json is not a ruleset the repository has recorded.
 
-The quote/hash self-check used during this migration and again for round 2 normalises each snapshot,
-asserts every attribution's `quote` occurs in it verbatim and asserts the `sha256` of that snapshot
-file (165 attributions over the six rulesets, 0 failures; it was 177 before the two removed
-`not_modeled` entries). It is a local script, not part of the repository; the attributions and
-hashes it verified are the ones above.
+The quote/hash self-check is now the engine's own: `uv run crucible prop validate <file>
+--snapshots-root D:/proyectos/crucible-notes/internal/prop_snapshots/ftmo` reports **33
+attributions on a Growth file and 34 on a Pro file (0 synthetic, 0 images), every quote and every
+hash verified** - 198 over the six files, up from 165 before the review round (six
+`supporting_sources` and the new `not_modeled` warning were added, the removed HFT entry's
+attribution went).
+
+## 16. Owner review round (2026-11-27, delegated to the coordinator)
+
+Every question of the packet `internal/reviews/ftmo.md` (F1-F22) was answered by the coordinator on
+the owner's delegation of 2026-11-27. Nothing was verified: no `crucible prop confirm` was run, no
+verification sidecar was written, and all six files stay `verification.status: unverified` (version
+1, corrected in place because they were never released). Each decision is recorded as
+`assumption_kind: owner_decision` with the text "delegated to the coordinator 2026-11-27", or
+re-sourced to a verbatim quote; where a decision has no per-rule field, the row says where it lives.
+
+| F | question | decision taken | where it landed |
+|---|---|---|---|
+| F1 | `commissions.components.clearing` is `unknown` | **accept `unknown`**: FTMO names three cost parts and no clearing fee, so the component is not inferred and the preliminary analysis uses `upper_bound_v1.yaml`'s ceiling | `commissions.components.clearing` (unchanged), section 5, `docs/data/cme-exchange-fees.md` |
+| F2 | `commissions.components.other` is `unknown` | **accept `unknown`**, the same decision as F1; under the bound it is priced, without one the cash is `unavailable` | `commissions.components.other` (unchanged), section 5 |
+| F3 | the payout cap/split/minimum/share rest on sentences no rule carries | **add them as `supporting_sources`** on `funded_payout`: the per-size cap, the 90/10 ratio, the $20 minimum and the 50%/100% withdrawable share, each verbatim with url and sha256 | `funded_payout.supporting_sources` (4 attributions), section 10 |
+| F4 | the 50-minute session-relative flat is arithmetic, not a page number | **`provisional_conservative` on BOTH phases**: on an early close it flattens EARLIER than the absolute 4:10 pm ET clock, the more restrictive reading; the absolute-clock sentence is a supporting source | `eval_flat_by` and `funded_flat_by` (`evidence: assumption`), section 1 |
+| F5 | the 60-day inactivity close vs the page's 30 + 30 days | **the 60-day hard close is `provisional_conservative`**; the **30-day warning is `not_modeled` immaterial** because a warning changes no outcome | `funded_inactivity`, `not_modeled: inactivity_warning_30_days`, section 8 |
+| F6 | the 2% CME price-limit entry ban cannot be modeled | **stays `material`** | `not_modeled: cme_price_limit_2pct_entry_ban` |
+| F7 | the discretionary risk-management clause cannot be simulated | **stays `material`** | `not_modeled: discretionary_risk_management_clause` |
+| F8 | inconsistent position sizing needs the trader's wider activity | **stays `material`** | `not_modeled: inconsistent_position_sizing` |
+| F9 | the discretionary news rule names no event type, window or instrument | **stays `material`** | `not_modeled: news_event_concentration` |
+| F10 | cross-account hedging had no `becomes_immaterial_if` and a firm-specific id | **rename to `cross_account_hedging`** (the cross-firm id) with `becomes_immaterial_if` "becomes material if several accounts, copy trading or coordinated strategies are simulated"; the other immaterial entries that have a real condition state it too | `not_modeled` (section 8) |
+| F11 | section 11's six `ruleset_sha256` values were stale | **regenerate from `crucible prop validate`** (the hash the confirm prompt asks for) | section 11 |
+| F12 | section 7 said `eligible` while both runs report `eligible_conditional` | **correct section 7**: `eligible_conditional` in both modes because of the copy-trading ban, and keep the copy-trading condition (a real obligation, consistent across firms) | section 7, `docs/modules/prop.md` |
+| F13 | every page now carries a "Black Friday: Up to 30% Off" offer with no terms or dates | **no promotion**: the offer states no terms or dates, so the list prices stay the base and the offer is an open item | this section, section 12 |
+| F14 | the monthly subscription was charged for the horizon's months | **engine fix**: charged for every calendar month started from the purchase through the attempt's terminal event, never after it | `crucible/prop/attempt.py` (`_terminal_bar`, `_fees`), ADR-0107 amendment 2026-11-27 F14 |
+| F15 | the estimate listed a news-calendar gap although no file has a news rule | **engine fix**: the reason is listed only when a requested event type has no coverage | `crucible/prop/attempt.py` (`estimate_status`), ADR-0107 amendment 2026-11-27 F15 |
+| F16 | `phase_outcomes[*].trading_days` read 20 for a first-session failure | **engine fix**: the count runs to the phase's terminal event; `min_buffer_usd` stays as it is | `crucible/prop/attempt.py` (`_terminal_bar`), ADR-0107 amendment 2026-11-27 F16 |
+| F17 | `funded_payout.min_profit_since_last_usd` is `0` | **confirm 0** as an `owner_decision`: FTMO states no positive net-profit gate for a request | `funded_payout.assumptions`, section 1 |
+| F18 | automation: permitted, with an unfair-advantage/HFT ban | **the ban becomes a compliance rule** (`action: block`, `materiality: material`, `applies_to_execution: [automated]`), so automated runs carry a SECOND condition; "Automated trading is permitted." stays the context and the old `not_modeled` HFT entry is removed | `compliance_no_unfair_advantage_automation`, section 7 |
+| F19 | the nine equity-index roots vs the 19 mini / 11 micro universe | **confirm the nine equity-index roots as the scope**, the same call as Topstep's no-metals decision | section 12 |
+| F20 | `eval_consistency` reads `<=` on "not more than 40%" | **confirm `<=`**: "does not represent more than 40% of your total profit" admits exactly 40% | `eval_consistency` (unchanged), the span in section 10 |
+| F21 | the two modes are identical and nothing passes, so is a condition worth listing? | **yes, list the conditions even when nothing passes**: an obligation the run cannot check is not a clearance just because the account failed | engine reading (ADR-0107, 2026-11-24 amendment), the reference run below |
+| F22 | `as_of` stays 2026-11-22 although the pages changed on 2026-11-27 | **accept 2026-11-22**: the change is a promotional banner and a coupon box, not a rule change, so no v2 file is cut | section 12 |
+
+**Open items recorded, not resolved.** (1) The "Black Friday: Up to 30% Off" offer (coupon
+`FTMO26` on the landing page) still states no dates, no eligibility and no terms, so it cannot be
+declared as a `promotion`: the list prices are the base, and a later pass that finds the terms adds
+the promotion. (2) The Live Funded Account stays `not_modeled` (its per-size capital is not
+published). (3) `clearing` and `other` stay `unknown` until a source states them.
+
+### 16.1 The reference runs, both modes, after the engine fixes
+
+The same file as the packet's section E: `ftmo-futures-growth-50k`, ES, the shipped
+`examples/futures/es_sma_cross.yaml` (1 contract, 30-bar SMA cross, 16-tick stop / 32-tick target),
+window widened to **2024-01-02 .. 2024-12-31**, `session.flat_by_close: false`,
+`session.allow_unverified_sessions: true`, `warmup_trade_dates: 0`, **H = 20**,
+`--cost-assumption rulesets/prop/cost_assumptions/upper_bound_v1.yaml`, the participant profile
+`{cme_membership_status: non_member, nfa_assessment_eligibility: fcm_member}`,
+`--store D:/proyectos/crucible/data/processed`, and a temporary home and artifacts root under
+`D:/tmp/ftmo_work/run/` for each mode (nothing was written to the user's Crucible home).
+
+| mode | evaluation | artifact | outcomes | probability | eligible |
+|---|---|---|---|---|---|
+| `automated` | `PRP-2325c93301ac6232` | `ART-801c0dd43384b961` | 253 starts (234 complete), **253 fail / 0 pass** on `eval_max_drawdown` | 0.0 [0.0 .. 0.0] | `eligible_conditional`, **2 conditions** |
+| `manual` | `PRP-5876bf20048585d1` | `ART-108847bd6ed2e794` | identical | identical | `eligible_conditional`, **1 condition** |
+
+The conditions, per mode: `automated` lists `compliance_no_copy_or_third_party_trading` AND
+`compliance_no_unfair_advantage_automation` (F18's new second condition); `manual` lists the
+copy-trading rule only, because the unfair-advantage ban names `automated`. Neither mode is
+`blocked_by_compliance`, and nothing passes, so both counts of valid passes are 0 - the conditions
+are listed anyway (F21).
+
+Estimate `partial` in both modes, with the same reasons: the four material unmodeled rules, the
+unverified ruleset, the cost assumption, the upper-bound cost (cash `lower_bound`), the unsourced
+session-calendar window 2024-01-14..2024-01-15 and the counterfactual application. **No
+news-coverage reason is listed** (F15): no file declares a `news_restriction` rule.
+
+**Monthly fees, before and after F14** (`fees_monthly_usd` per attempt over the 253 starts):
+
+| | 119.00 (one month) | 238.00 (two months) | total | mean per complete attempt |
+|---|---|---|---|---|
+| before F14 (data-window last trade date) | 25 | 228 | 57,239.00 | 225.286325 |
+| after F14 (terminal event) | 252 | 1 | 30,226.00 | 119.508547 |
+
+The one attempt that still pays two months is the start on **2024-06-28**, whose terminal event is
+in July (it fails on 2024-07-01), so June + July is correct. Before the fix an attempt that died on
+its first session still paid for the months of its horizon: the 234 complete attempts' mean net cash
+moves from **-225.286325** to **-119.508547** USD, a rise of 105.777778 USD per attempt. (The packet
+recorded the same -225.286325 for the pre-fix run; its "44 / 209" fee split does not sum to that net
+cash, while the reconstruction here reproduces it exactly.)
+
+**`trading_days` for a first-session failure** (F16): the 2024-01-02 start fails on
+`eval_max_drawdown` at 2024-01-02T08:48:00Z, 76 fills into its first session, and
+`phase_outcomes[0].trading_days` is **1** (it read 20 before the fix). `min_buffer_usd` is unchanged
+at **-30.02** (the post-liquidation shortfall), and the monthly fee for that start is **119.00**
+(one month; the pre-fix engine charged 119.00 too, because that start's horizon end fell in
+January).
+
+The Pro product line and the other sizes were not re-run: no decision changes a value that differs
+across sizes or plans, and the packet's open questions were about declarations.

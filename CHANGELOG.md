@@ -8,6 +8,48 @@ kind of change is recorded).
 
 ## Unreleased
 
+### FTMO rulesets: the owner review's decisions applied (ADR-0107 amendment, 2026-11-27)
+- **The six files are corrected in place** (all still `verification.status: unverified`, no
+  `prop confirm`, no sidecar, version 1) and every question of `internal/reviews/ftmo.md`
+  (F1-F22) is answered in `rulesets/prop/ftmo/RESEARCH.md` section 16 with where each decision
+  landed. No rule VALUE moved; the round is declarations.
+- **The four payout sentences are `supporting_sources` (F3)**: the per-size cap (2,500 / 3,000 /
+  4,000 Growth, 5,000 / 6,000 / 8,000 Pro), the 90/10 ratio, the $20 minimum and the 50% / 100%
+  withdrawable share, each verbatim with url and sha256, and `min_profit_since_last_usd: 0` is an
+  `owner_decision` assumption (F17).
+- **Both session-relative `flat_by` rules are `provisional_conservative` (F4)** with the absolute
+  4:10 pm ET clock as a supporting source (on an early close it flattens earlier, the more
+  restrictive reading, on BOTH phases); **`funded_inactivity`'s 60-day close is one too and the
+  30-day warning is an immaterial `not_modeled` entry** (F5).
+- **The automation ban is a second condition for automated runs (F18).** The unfair-advantage /
+  HFT sentence is now `compliance_no_unfair_advantage_automation` (`action: block`, `materiality:
+  material`, `automated` only), with "Automated trading is permitted." kept as the context; the old
+  `not_modeled:hft_and_latency_arbitrage_ban` entry is removed. `practical_eligibility` is
+  `eligible_conditional` in BOTH modes (F12): automated lists the copy-trading rule AND this ban,
+  manual lists the copy-trading rule.
+- **`cross_account_hedging` takes the cross-firm id and its condition (F10)** ("becomes material
+  if several accounts, copy trading or coordinated strategies are simulated"), and the other four
+  immaterial entries with a real condition state what would make them bind.
+- **The material rules stay material (F6-F9)**; `clearing` and `other` stay `unknown` (F1, F2); the
+  nine equity-index roots are the confirmed scope (F19); `eval_consistency`'s `<=` is confirmed on
+  "does not represent more than 40%" (F20); `as_of` stays 2026-11-22 because the 2026-11-27 pages
+  changed only a promotional banner (F22), and the offer is an open item, not a promotion (F13).
+- **A test pins the declarations**: `tests/unit/test_prop_ftmo_rulesets.py` (13 tests over the six
+  files: attribution counts, ids, kinds, assumptions, `becomes_immaterial_if`, the two conditions
+  per mode, the consistency boundary and the instrument scope). `rulesets/prop/INDEX.json` is
+  regenerated with the six new content hashes.
+- **Engine findings F14-F16** are the three entries below; they change the reference run's fees,
+  one estimate reason and `trading_days`, never a rule value.
+- **Reference run (ES, 2024-01-02 .. 2024-12-31, H = 20, `upper_bound_v1`, both modes):** 253 starts
+  (234 complete), 253 fail / 0 pass on `eval_max_drawdown`, `conditional_pass_probability` 0.0,
+  estimate `partial` with no news-coverage reason, cost `upper` / cash `lower_bound`, mean net cash
+  **-119.508547 USD** per complete attempt (from -225.286325 before F14), practical eligibility
+  `eligible_conditional` with two conditions automated and one manual. The 2024-01-02
+  first-session failure reports `trading_days` **1** (was 20) and a monthly fee of **119.00**
+  (`rulesets/prop/ftmo/RESEARCH.md` section 16.1).
+- **Docs:** `docs/modules/prop.md` (the fee window, the news-coverage reason, `trading_days`), ADR-0107
+  (three amendments of 2026-11-27) and `docs/SCHEMAS.md` (the `fees_monthly_usd` comment).
+
 ### `trading_days` counts the days the phase lived, not the analyst's window (ADR-0107 amendment, 2026-11-27, FTMO F16)
 - `PhaseOutcome.trading_days` was built from `dates[first : last + 1]`, where `last` is the analyst's
   H-day window end and never moves, so an attempt that failed in its first session reported one

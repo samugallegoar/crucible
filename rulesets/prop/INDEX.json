@@ -731,7 +731,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-growth-100k.v1.yaml",
       "ruleset_id": "ftmo-futures-growth-100k",
-      "ruleset_sha256": "160315925a6cea4a637d8102b3c1a8bf000d3a13f6319f6aa33b0ba34b0aab41",
+      "ruleset_sha256": "969de13c9535f476669d2bcf64f3e82a1d6b1bba755f2a821e3cd622a4c86776",
       "verification": "unverified",
       "version": 1
     },
@@ -739,7 +739,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-growth-150k.v1.yaml",
       "ruleset_id": "ftmo-futures-growth-150k",
-      "ruleset_sha256": "e7970b1ff23ba50fb57db1e04bb57c3d38e95d3574b62b3e79c27f4f1f6e9699",
+      "ruleset_sha256": "ca4180675071c30cddeff4e3bf2b8fcf897adfe8eeca90c8524bd3849628c217",
       "verification": "unverified",
       "version": 1
     },
@@ -747,7 +747,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-growth-50k.v1.yaml",
       "ruleset_id": "ftmo-futures-growth-50k",
-      "ruleset_sha256": "4e6c11b9201955fabb9087cd446812a3c44878b41c27b5fb6b13d91d17bfb9a1",
+      "ruleset_sha256": "c104df794d3431adaabe3f91c873adc70cdff9fda0780a14aa9bb5b82adb0b60",
       "verification": "unverified",
       "version": 1
     },
@@ -755,7 +755,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-pro-100k.v1.yaml",
       "ruleset_id": "ftmo-futures-pro-100k",
-      "ruleset_sha256": "ce06ac3b9a6a2e8bb37fd2bb592b08ca1767574bb0d9c662bd8f24e4eda510b6",
+      "ruleset_sha256": "db2e0e005178a4a9fe0e4ba44b460f8a353c8416d6755d004caba7a8ecc959fb",
       "verification": "unverified",
       "version": 1
     },
@@ -763,7 +763,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-pro-150k.v1.yaml",
       "ruleset_id": "ftmo-futures-pro-150k",
-      "ruleset_sha256": "12d5103b7f36ea16b8764a477965ac61e9da0a054050345dbf83605c0fa03bba",
+      "ruleset_sha256": "ab1f68200adc9f1622a125c37ab135cb507dd7b0c76d32c5056e56b51ed19d59",
       "verification": "unverified",
       "version": 1
     },
@@ -771,7 +771,7 @@
       "firm": "ftmo",
       "path": "rulesets/prop/ftmo/ftmo-futures-pro-50k.v1.yaml",
       "ruleset_id": "ftmo-futures-pro-50k",
-      "ruleset_sha256": "7e9dc06fec8beb60728b412b2b460f2103ed4f9bb855d752b98cc55b5e4be690",
+      "ruleset_sha256": "3e9fdfe66b2f164b0630bd02732949f62b7553711329f208db1b37a46d181f09",
       "verification": "unverified",
       "version": 1
     },
