@@ -200,7 +200,11 @@ FundedNext Rapid Pro and Rapid Daily `threshold_after_payout: lock_on_first_payo
   fee the commission excludes) are unknown without a named `cost_assumption`; `partial` when a
   material rule is unmodeled, a news window is uncovered, a payout cap is `unknown`, or the attempt
   trades through an unsourced CME session-calendar window; `conditional` when the ruleset is
-  unverified or a cost assumption was used; otherwise `complete`. Every reason is reported.
+  unverified or a cost assumption was used; otherwise `complete`. Every reason is reported. A
+  news-coverage reason ("the economic calendar does not cover the attempt period") is listed only
+  when a `news_restriction` rule REQUESTED an event type the calendar does not cover: a ruleset with
+  no news rule is never gapped, and a `not_modeled` entry whose id mentions news (FTMO's
+  discretionary rule) is a conduct note, not a calendar gap.
 - **Session-calendar coverage.** A rule measured against the session schedule — a session-relative
   `flat_by`, the rule-day boundary, the end-of-day test — is only as good as that schedule. The CME
   table flags the sessions it could not source (`verified: False`: the 2023 holidays other than

@@ -1107,6 +1107,37 @@ running to 2024-07-15: 119.00, not 238.00),
 119.00) and `test_the_fee_window_ends_with_the_terminal_event_not_the_horizon` (censored on
 2024-03-08 after a 2024-01-08 purchase: 3 x 119.00 = 357.00, the horizon end it lived through).
 
+## Amendment (2026-11-27, FTMO review round, F15): a news-coverage reason needs a news rule
+
+The FTMO owner review (packet `internal/reviews/ftmo.md`, F15, delegated to the coordinator on
+2026-11-27) found a wording bug in the estimate. None of the six FTMO files declares a
+``news_restriction`` rule (the firm states news trading is allowed), yet every attempt listed
+"the economic calendar does not cover the attempt period". `estimate_status` added the reason when
+``news_covered is not True`` AND some unmodeled coverage row's id contained "news" - and FTMO's
+discretionary ``not_modeled: news_event_concentration`` entry matched, while ``news_covered`` is
+``None`` when no news rule exists. A reader could only read that as a news gap the run had.
+
+**The decision: the reason is listed only when a requested event type has no coverage.**
+`estimate_status` now requires ``news_covered is False``, which `simulate_attempt` sets ONLY
+inside its news-rule branch (a rule exists and the calendar does not cover the attempt, or carries
+no event at all). A ruleset with no news rule is never gapped, and a ``not_modeled`` entry whose
+id merely mentions news is a discretionary conduct rule with no window, not calendar coverage.
+
+The second reason, ``news_coverage_gaps`` ("the release time is unknown for events ..."), is
+unchanged: it names events whose time is unknown, which is a different and real gap. Nothing about
+``rule_coverage`` or the ``partial`` status changes: FTMO's attempt stays ``partial`` because its
+four material ``not_modeled`` rules are unmodeled, and a news rule without coverage still makes an
+attempt ``partial`` with the reason.
+
+**What changes in the artifacts.** The FTMO reference run's `summary.json` estimate reasons lose
+the coverage line and keep their other reasons; no column, key or `schema_version` moves.
+
+**Tests (hand-computed, not engine-derived).**
+`test_a_ruleset_with_no_news_rule_never_reports_a_calendar_gap` (a material unmodeled
+``news_event_concentration`` entry: the reason names the rule and NOT the calendar) and
+`test_a_requested_event_type_without_coverage_still_reports_the_gap` (a ``news_restriction`` rule
+over an uncovered period still lists it).
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

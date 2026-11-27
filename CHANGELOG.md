@@ -8,6 +8,20 @@ kind of change is recorded).
 
 ## Unreleased
 
+### A news-coverage reason needs a news rule (ADR-0107 amendment, 2026-11-27, FTMO F15)
+- `estimate_status` listed "the economic calendar does not cover the attempt period" whenever
+  `news_covered` was not `True` and any unmodeled coverage row's id contained "news". No FTMO file
+  declares a `news_restriction` rule (the firm allows news trading), but its discretionary
+  `not_modeled: news_event_concentration` entry matched, so every attempt looked like a news gap.
+- The reason is now listed only when `news_covered is False`, which `simulate_attempt` sets only
+  when a news rule requested an event type the calendar does not cover. A ruleset with no news rule
+  is never gapped; the `news_coverage_gaps` reason (an event with no release time) is unchanged.
+- The FTMO reference run's `summary.json` estimate reasons lose the line and keep the four material
+  unmodeled rules; no column, key or `schema_version` moves.
+- Hand tests: `test_a_ruleset_with_no_news_rule_never_reports_a_calendar_gap` and
+  `test_a_requested_event_type_without_coverage_still_reports_the_gap` (both in
+  `tests/integration/test_prop_attempt_accounting.py`).
+
 ### The monthly subscription is charged to the attempt's terminal event (ADR-0107 amendment, 2026-11-27, FTMO F14)
 - `simulate_attempt` passed the DATA window's last trade date to `_fees`, so a monthly subscription
   was charged for every calendar month of the analyst's H-day horizon: the FTMO reference run had

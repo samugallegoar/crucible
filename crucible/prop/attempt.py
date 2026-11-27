@@ -484,7 +484,12 @@ def estimate_status(
         reasons.append(PAYOUT_CAP_UNKNOWN)
     if (
         coverage
-        and news_covered is not True
+        # a news gap is a fact about a news RULE the ruleset requested: ``news_covered`` is False
+        # only when a ``news_restriction`` rule exists and the calendar does not cover the attempt.
+        # A ruleset with no news rule is never gapped, and a ``not_modeled`` entry whose id
+        # merely mentions news is a discretionary rule with no window, not calendar coverage
+        # (ADR-0107, amendment of 2026-11-27, F15)
+        and news_covered is False
         and any("news" in row.rule for row in coverage if not row.modeled)
     ):
         reasons.append("the economic calendar does not cover the attempt period")

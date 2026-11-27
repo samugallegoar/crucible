@@ -1,12 +1,16 @@
 """What an attempt pays (ADR-0107, amendment of 2026-11-27).
 
-One FTMO review finding (F14) was an accounting bug, not a rule value, and it is pinned here by
-hand on synthetic bars:
+Two FTMO review findings (F14, F15) were accounting bugs, not rule values, and each is pinned
+here by hand on synthetic bars:
 
 - **F14.** A monthly subscription is charged for every calendar month STARTED while the attempt is
   alive, from the purchase month up to and including the month of its terminal event. An attempt
   that dies on its first session pays ONE month, not one per month of the analyst's horizon, and
   no month after the terminal event is charged.
+
+- **F15.** "The economic calendar does not cover the attempt period" may only be listed when a
+  ``news_restriction`` rule REQUESTED an event type the calendar does not cover. A ruleset with no
+  news rule never says it, even when a ``not_modeled`` entry's id contains the word "news".
 
 The bars are the scheduled 60-minute ES sessions of real trade dates, every bar flat except the
 breach bar; one ES contract at $50 a point on a $50,000 account, no commission, no spread and no
@@ -237,3 +241,66 @@ def test_a_month_without_a_terminal_event_is_not_charged() -> None:
     result = _attempt(rows, _ruleset(fees=[_monthly("119")]), start=dt.date(2024, 1, 8), horizon=70)
     assert result.outcome == "fail"
     assert result.fees.monthly_usd == Decimal("119")
+
+
+# ------------------------------------------------------------------- F15: the estimate reason
+
+
+def _news_not_modeled() -> dict[str, object]:
+    return {
+        "rule": "news_event_concentration",
+        "description": "A discretionary news rule that names no event type, window or instrument.",
+        "materiality": "material",
+    }
+
+
+def test_a_ruleset_with_no_news_rule_never_reports_a_calendar_gap() -> None:
+    """F15: FTMO requests no event type, so the estimate lists no coverage reason.
+
+    The attempt is ``partial`` because the discretionary rule is a material unmodeled rule (the
+    reason names it); it is NOT made to look like an economic-calendar gap.
+    """
+    result = _attempt(
+        _session(FIRST, breach_bar=None, low=ENTRY),
+        _ruleset(not_modeled=[_news_not_modeled()]),
+        start=FIRST,
+        horizon=5,
+    )
+    assert result.estimate_status == "partial"
+    assert any(
+        reason == "unmodeled material rule news_event_concentration"
+        for reason in result.estimate_reasons
+    )
+    assert not any(
+        "does not cover the attempt period" in reason for reason in result.estimate_reasons
+    )
+
+
+def test_a_requested_event_type_without_coverage_still_reports_the_gap() -> None:
+    """F15: a ``news_restriction`` rule whose period the calendar does not cover DOES list it."""
+    ruleset = _ruleset(
+        rules=[
+            {
+                "kind": "news_restriction",
+                "rule_id": "news_fomc",
+                "event_types": ["FOMC_STATEMENT"],
+                "instruments": ["ES"],
+                "pre_minutes": 5,
+                "post_minutes": 5,
+                "scope": "new_entries",
+                "flatten": "none",
+                "effect": "block",
+                "comparison": ">=",
+                "action": "block_entries",
+                "evidence": "official_quote",
+            }
+        ]
+    )
+    result = _attempt(
+        _session(FIRST, breach_bar=None, low=ENTRY),
+        ruleset,
+        start=FIRST,
+        horizon=5,
+    )
+    assert result.news_covered is False
+    assert any("does not cover the attempt period" in reason for reason in result.estimate_reasons)
