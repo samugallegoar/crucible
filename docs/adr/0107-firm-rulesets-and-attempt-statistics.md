@@ -1069,6 +1069,107 @@ components priced: `unavailable`, reason names `commission`),
 CLI text, CLI `--json` and the MCP tool's document all say `unavailable`, and none of them says
 `lower_bound`).
 
+## Amendment (2026-11-27, FTMO review round, F14): a monthly subscription is charged until the attempt's terminal event
+
+The FTMO owner review (packet `internal/reviews/ftmo.md`, F14, delegated to the coordinator on
+2026-11-27) exposed an accounting bug on the fee side. `simulate_attempt` passed the DATA window's
+last trade date to `_fees`, so `fees.monthly_usd` was `amount x every calendar month from the
+purchase to the analyst's H-day horizon end`. The reference run showed the consequence: 209 of 253
+attempts paid `2 x 119 = 238` although they failed on their first session.
+
+**The decision: a monthly subscription is charged for every calendar month STARTED while the
+attempt is alive** - from the purchase month up to and including the month of the attempt's
+terminal event, which is its fail, pass, timeout or horizon end. Nothing is charged after that
+event, and a first-session failure pays one month.
+
+- `simulate_attempt` now reads the terminal bar of the last phase it ran (`_terminal_bar`: a pass
+  records `passed_at`, a hard failure or a timeout is the overlay's last recorded event, and a
+  censored or still-running phase ends at the window's last bar) and passes that bar's trade date
+  to `_fees`. A censored attempt's terminal event is its horizon end, so it still pays for the
+  months it lived through.
+- `_fees` itself keeps its signature (`start`, `end`, `passed`, `resets_purchased`) and its
+  arithmetic `(end.year - start.year) * 12 + (end.month - start.month) + 1`: the bug was the date
+  it was given, never the month count.
+- The reset and activation fees are unchanged: a reset fee is charged per reset purchased and an
+  activation fee only when the attempt passes.
+
+**What changes in the artifacts.** `attempts.parquet`'s `fees_monthly_usd` and `fees_usd` fall for
+every attempt that resolved before the end of its horizon, so `net_cash_usd` rises by the same
+amount; `summary.json`'s mean net cash follows. For the FTMO reference run (H = 20, data
+2024-01-02..2024-12-31) the 209 attempts that paid two months now pay one, so the mean net cash
+moves by `209 x 119 / 253 = 98.30` USD per attempt. No column, key or `schema_version` moves, and
+no golden fixture or blessed reference manifest in the repository carries a monthly fee.
+
+**Tests (hand-computed, not engine-derived).**
+`test_a_first_session_failure_pays_one_monthly_subscription` (fail on 2024-06-12 with the data
+running to 2024-07-15: 119.00, not 238.00),
+`test_a_month_without_a_terminal_event_is_not_charged` (fail on 2024-01-09, data to 2024-03-08:
+119.00) and `test_the_fee_window_ends_with_the_terminal_event_not_the_horizon` (censored on
+2024-03-08 after a 2024-01-08 purchase: 3 x 119.00 = 357.00, the horizon end it lived through).
+
+## Amendment (2026-11-27, FTMO review round, F15): a news-coverage reason needs a news rule
+
+The FTMO owner review (packet `internal/reviews/ftmo.md`, F15, delegated to the coordinator on
+2026-11-27) found a wording bug in the estimate. None of the six FTMO files declares a
+``news_restriction`` rule (the firm states news trading is allowed), yet every attempt listed
+"the economic calendar does not cover the attempt period". `estimate_status` added the reason when
+``news_covered is not True`` AND some unmodeled coverage row's id contained "news" - and FTMO's
+discretionary ``not_modeled: news_event_concentration`` entry matched, while ``news_covered`` is
+``None`` when no news rule exists. A reader could only read that as a news gap the run had.
+
+**The decision: the reason is listed only when a requested event type has no coverage.**
+`estimate_status` now requires ``news_covered is False``, which `simulate_attempt` sets ONLY
+inside its news-rule branch (a rule exists and the calendar does not cover the attempt, or carries
+no event at all). A ruleset with no news rule is never gapped, and a ``not_modeled`` entry whose
+id merely mentions news is a discretionary conduct rule with no window, not calendar coverage.
+
+The second reason, ``news_coverage_gaps`` ("the release time is unknown for events ..."), is
+unchanged: it names events whose time is unknown, which is a different and real gap. Nothing about
+``rule_coverage`` or the ``partial`` status changes: FTMO's attempt stays ``partial`` because its
+four material ``not_modeled`` rules are unmodeled, and a news rule without coverage still makes an
+attempt ``partial`` with the reason.
+
+**What changes in the artifacts.** The FTMO reference run's `summary.json` estimate reasons lose
+the coverage line and keep their other reasons; no column, key or `schema_version` moves.
+
+**Tests (hand-computed, not engine-derived).**
+`test_a_ruleset_with_no_news_rule_never_reports_a_calendar_gap` (a material unmodeled
+``news_event_concentration`` entry: the reason names the rule and NOT the calendar) and
+`test_a_requested_event_type_without_coverage_still_reports_the_gap` (a ``news_restriction`` rule
+over an uncovered period still lists it).
+
+## Amendment (2026-11-27, FTMO review round, F16): `trading_days` counts the days the phase lived
+
+The FTMO owner review (packet `internal/reviews/ftmo.md`, F16, delegated to the coordinator on
+2026-11-27) found the second reporting bug of the round. `simulate_attempt` built each
+`PhaseOutcome.trading_days` from `dates[first : last + 1]`, where `last` is the analyst's window
+end and never moves: an attempt that failed 76 fills into its first session reported one trading
+day per trade date of the H-day horizon (20 for the packet's H = 20), so the count described the
+window, not the attempt.
+
+**The decision: `trading_days` is the number of trading days actually elapsed in that phase, up
+to its terminal event.** The loop reads the phase's terminal bar from the same `_terminal_bar` the
+F14 fee window uses (a pass records `passed_at`, a hard failure or a timeout is the overlay's last
+recorded event, a censored or still-running phase ends at the window's last bar) and counts the
+distinct trade dates of `dates[first : terminal + 1]`. An attempt that fails on its first session
+reports 1; one that fails on the second of three sessions reports 2.
+
+`PhaseOutcome.last_bar` and `min_buffer_usd` are UNCHANGED: the review asked only for the count
+(the buffer's post-liquidation shortfall is a separate, declared reading). `days_to_pass_trading`
+was already measured to the pass and is unchanged.
+
+**What changes in the artifacts.** `trading_days` is an in-memory field of `PhaseOutcome`
+(`crucible.prop.attempt`); no artifact column, key or `schema_version` moves, and no golden fixture
+is affected. Every caller of `simulate_attempt` (the CLI, the MCP tool and the reference runs) now
+reports the elapsed day count.
+
+**Tests (hand-computed, not engine-derived).**
+`test_a_first_session_failure_reports_one_trading_day` (a failure on 2024-06-12 with the data
+running to 2024-07-15: 1, not the window's days) and
+`test_the_count_is_the_days_elapsed_up_to_the_terminal_event` (a failure on the second of three
+sessions: 2), plus the assertion on the 2024-01-09 failure in
+`test_a_month_without_a_terminal_event_is_not_charged`.
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

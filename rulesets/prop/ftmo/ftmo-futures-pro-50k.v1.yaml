@@ -1,3 +1,21 @@
+# FTMO / Futures Pro / $50,000 - schema version 2 (ADR-0107 sections 7-13).
+# verification.status is unverified: only the owner confirms a ruleset (ADR-0106, ADR-0107 s2).
+# C7b owner review round (2026-11-27, delegated to the coordinator; packet internal/reviews/ftmo.md
+# section F, F1-F22). Every decision is applied and recorded; nothing here is verified.
+# Declared in this round: the session-relative 50-minute flat on BOTH phases is
+# `provisional_conservative` with the absolute clock as a supporting source (F4); the 60-day
+# inactivity close is `provisional_conservative` and the 30-day warning is an immaterial
+# `not_modeled` entry (F5); the payout sentences the cap, the 90/10 split, the $20 minimum and the
+# withdrawable share rest on are `supporting_sources` (F3) and `min_profit_since_last_usd: 0` is an
+# `owner_decision` (F17); the unfair-advantage automation sentence is a `material` + `block`
+# compliance rule for automated execution, with "Automated trading is permitted." kept as context
+# (F18); cross-account hedging carries the cross-firm id `cross_account_hedging` and a
+# `becomes_immaterial_if` (F10); the five other immaterial entries state what would make them bind.
+# The cost components `clearing` and `other` stay `unknown` (F1, F2) and `upper_bound_v1.yaml` is the
+# preliminary analysis' ceiling; the four material `not_modeled` rules stay material (F6-F9); the
+# nine equity-index roots are the confirmed scope (F19); `<=` on the 40%/50% consistency is the
+# "not more than" reading (F20); the conditions are listed even when nothing passes (F21); and
+# `as_of` stays 2026-11-22 because the 2026-11-27 pages changed only a promotional banner (F22).
 schema_version: 2
 ruleset_id: ftmo-futures-pro-50k
 version: 1
@@ -173,20 +191,41 @@ phases:
       retrieved_at: '2026-11-22T01:37:40Z'
       section: What are the trading hours?
       synthetic: false
-    evidence: official_quote
+    evidence: assumption
+    supporting_sources:
+    - url: https://ftmo.com/en/futures/faq/ftr-can-i-hold-positions-overnight-or-over-the-weekend
+      quote: FTMO Futures does not allow positions to be held over the market close . All positions
+        must be closed, and all resting orders (including stop-loss orders, limit orders, and bracket
+        orders) must be cancelled before 4:10 p.m. ET or the relevant market close, whichever is
+        sooner, on each trading day.
+      snapshot_sha256: 965825eb9b123a6de03877be02464dc148349d0955b389b2a07dea7cac34b606
+      retrieved_at: '2026-11-22T01:37:43Z'
+      section: Can I hold positions overnight or over the weekend?
+      synthetic: false
+    assumption:
+      name: eval_flat_by_session_relative_is_the_conservative_reading
+      assumption_kind: provisional_conservative
+      rationale: 'The page states an absolute clock (4:10 pm ET) and the 50 minutes is arithmetic
+        over the CME session close, so the deadline is declared session-relative. On a holiday early
+        close that flattens EARLIER than the absolute clock, the more restrictive reading of the
+        overnight FAQ''s "whichever is sooner" sentence, which is carried as a supporting source. The
+        owner review of 2026-11-27 (F4, delegated to the coordinator 2026-11-27) confirmed it applies
+        to BOTH phases.'
   - kind: compliance
-    rule_id: compliance_automated_trading_permitted
-    description: Automated trading is permitted; only automation that manipulates, abuses or gives an
-      unfair advantage over the programme (high-frequency strategies, latency arbitrage) is prohibited.
-      The page says these practices are prohibited across all FTMO Futures accounts, regardless of phase
-      or account type.
-    restriction: automated systems that manipulate, abuse or provide an unfair advantage over the programme,
+    rule_id: compliance_no_unfair_advantage_automation
+    description: 'Automated trading is permitted - the first sentence of the quotation below is the
+      context. The ban covers automation that manipulates, abuses or provides an unfair advantage over
+      the programme, including high-frequency strategies and latency arbitrage. The page says these
+      practices are prohibited across all FTMO Futures accounts, regardless of phase or account type.
+      The clause states no threshold a simulation can test, so it conditions the eligibility of an
+      automated run instead of blocking the account.'
+    restriction: automation that manipulates, abuses or provides an unfair advantage over the programme,
       including high-frequency strategies and latency arbitrage
     applies_to_execution:
     - automated
-    materiality: immaterial
+    materiality: material
     comparison: '>='
-    action: none
+    action: block
     source:
       url: https://ftmo.com/en/futures/forbidden-trading-practices/
       quote: Automated trading is permitted. You must not, however, use software, artificial intelligence,
@@ -197,6 +236,15 @@ phases:
       section: Prohibited Trading Practices 5
       synthetic: false
     evidence: official_quote
+    assumptions:
+    - name: unfair_advantage_automation_ban_is_a_material_condition
+      assumption_kind: owner_decision
+      rationale: 'The sentence states a ban with no numeric threshold and the firm does not call it
+        critical, so the engine lists it as a condition of the execution mode it names instead of
+        clearing or blocking that mode outright. The owner review of 2026-11-27 (F18, delegated to
+        the coordinator 2026-11-27) chose the material block, the same reading as Lucid''s HFT ban,
+        and kept "Automated trading is permitted." as the context. The material not_modeled entry
+        hft_and_latency_arbitrage_ban is removed because this rule now carries the clause.'
   - kind: compliance
     rule_id: compliance_no_copy_or_third_party_trading
     description: A strategy whose decisions originate with another person - signal services, master accounts,
@@ -443,7 +491,26 @@ phases:
       retrieved_at: '2026-11-22T01:37:43Z'
       section: Can I hold positions overnight or over the weekend?
       synthetic: false
-    evidence: official_quote
+    evidence: assumption
+    supporting_sources:
+    - url: https://ftmo.com/en/futures/faq/which-instruments-can-i-trade-with-ftmo-futures
+      quote: FTMO Futures does not allow positions to be held over the market closure. The trading day
+        closes at 4:10 pm US Eastern Time (ET) and reopens at 6:00 pm ET . Any open positions, including
+        pending orders, are automatically liquidated/flattened at the 4:10 pm ET close, so you must close
+        your trades before then.
+      snapshot_sha256: e96ed87290cc5aff5cbc2bf2bb4af0c5bd5ec3028b4b09d02f8c5346c6d716a8
+      retrieved_at: '2026-11-22T01:37:40Z'
+      section: What are the trading hours?
+      synthetic: false
+    assumption:
+      name: funded_flat_by_session_relative_is_the_conservative_reading
+      assumption_kind: provisional_conservative
+      rationale: 'The page states an absolute clock and the 50 minutes is arithmetic over the CME
+        session close, so the deadline is declared session-relative. On a holiday early close that
+        flattens EARLIER than 4:10 pm ET, which is the more restrictive reading of "whichever is
+        sooner"; the instruments FAQ sentence above is the absolute clock it is measured against.
+        The owner review of 2026-11-27 (F4, delegated to the coordinator 2026-11-27) confirmed the
+        reading applies to BOTH phases.'
   - kind: payout
     rule_id: funded_payout
     description: A payout needs 5 qualifying days of at least $200 closed profit in the current payout
@@ -483,6 +550,41 @@ phases:
       section: sim-funded-payout-eligibility
       synthetic: false
     evidence: official_quote
+    assumptions:
+    - name: no_minimum_net_profit_since_the_last_payout
+      assumption_kind: owner_decision
+      rationale: 'The payout page states no positive net-profit gate for a request: it names the
+        qualifying days, the per-day threshold, the cap, the ratio, the minimum and the withdrawable
+        share, and nothing that the cycle must be net positive. The owner review of 2026-11-27 (F17,
+        delegated to the coordinator 2026-11-27) confirmed min_profit_since_last_usd 0, unlike the
+        0.01 some other firms declare.'
+    supporting_sources:
+    - url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: The Payout Cap is $5,000 per request.
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: sim-funded-payout-cap
+      synthetic: false
+    - url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: FTMO Futures operates on a 90/10 ratio . You may withdraw 90% of the amount you requested
+        for withdrawal after applying the other applicable Payout conditions such as the Payout Cap.
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: sim-funded-payout-ratio
+      synthetic: false
+    - url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: The minimum amount available for payout is $20 .
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: sim-funded-withdrawable-amount
+      synthetic: false
+    - url: https://ftmo.com/en/futures/trading-objectives-and-rules/
+      quote: You may request to withdraw up to 100% of your Profit above the Initial Simulated
+        Capital.
+      snapshot_sha256: d18fbddf728f67093605e9b0651c640447417038831ce759732c8e299abddcc2
+      retrieved_at: '2026-11-22T01:35:35Z'
+      section: sim-funded-withdrawable-amount
+      synthetic: false
   - kind: inactivity
     rule_id: funded_inactivity
     description: 'Sixty consecutive calendar days without trading activity close the account: the page
@@ -503,12 +605,34 @@ phases:
       retrieved_at: '2026-11-22T01:35:38Z'
       section: Account Access and Personal Use
       synthetic: false
-    evidence: official_quote
+    evidence: assumption
+    assumption:
+      name: inactivity_closes_on_the_sixtieth_calendar_day
+      assumption_kind: provisional_conservative
+      rationale: 'The page states a warning after 30 consecutive calendar days without activity and
+        closure after "a further 30 days", so a 60-day gap is the hard close, counted at the rule-day
+        close where a gap in trade dates can be measured. A warning changes no outcome, so it is an
+        immaterial not_modeled entry instead of a rule. The owner review of 2026-11-27 (F5, delegated
+        to the coordinator 2026-11-27) confirmed both readings.'
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null
   fees: []
 not_modeled:
+- rule: inactivity_warning_30_days
+  description: A warning is issued after 30 consecutive calendar days without trading activity, and
+    the account is closed after a further 30 days. The warning is not modeled as a rule because it
+    changes no simulated outcome; funded_inactivity at 60 days is the close. Declared here as an
+    immaterial entry so the page's own two-step clock is on record.
+  materiality: immaterial
+  source:
+    url: https://ftmo.com/en/futures/forbidden-trading-practices/
+    quote: Accounts on which no trading activity has been recorded for 30 consecutive calendar days
+      will receive an automated inactivity warning.
+    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
+    retrieved_at: '2026-11-22T01:35:38Z'
+    section: Account Access and Personal Use
+    synthetic: false
 - rule: live_funded_account
   description: The Live Funded Account is a separate, invitation-only account with its own capital (initial
     capital equal to the Maximum Drawdown Amount), a one-time buffer/Safety Net, uncapped daily payouts
@@ -516,6 +640,8 @@ not_modeled:
     page states without an amount. It is not a pass transition the phase chain can enter, and its capital
     is not published per size, so nothing simulated changes.
   materiality: immaterial
+  becomes_immaterial_if: becomes material if the Live Funded Account is simulated as a third phase, with its
+    uncapped payouts and its market data fee
   source:
     url: https://ftmo.com/en/futures/how-it-works/
     quote: 'Not automatic: the Live Funded Account is offered by invitation only, after FTMO validates
@@ -537,11 +663,14 @@ not_modeled:
     retrieved_at: '2026-11-22T01:35:38Z'
     section: Prohibited Trading Practices 6
     synthetic: false
-- rule: hedging_and_netting_across_accounts
-  description: Simultaneously holding opposing positions across FTMO accounts, products or other operators
-    is prohibited (this is the cross-account hedging rule). One simulated account cannot express netting
-    across accounts, and inside one account an opposite position is not netting.
+- rule: cross_account_hedging
+  description: 'Simultaneously holding opposing positions across FTMO accounts, products or other
+    operators is prohibited: the cross-firm id for this rule is cross_account_hedging. One simulated
+    account cannot express netting across accounts, and inside one account an opposite position is
+    not netting.'
+
   materiality: immaterial
+  becomes_immaterial_if: becomes material if several accounts, copy trading or coordinated strategies are simulated
   source:
     url: https://ftmo.com/en/futures/forbidden-trading-practices/
     quote: You must not perform, alone or in concert with other persons, trades or combinations of trades
@@ -597,6 +726,8 @@ not_modeled:
     or using risk parameters in the evaluation that would not be used with real capital, is prohibited.
     The simulation applies one strategy to both phases, so the modelled attempt cannot express the mismatch.
   materiality: immaterial
+  becomes_immaterial_if: becomes material if a run compares one strategy's evaluation parameters with another
+    strategy's funded parameters
   source:
     url: https://ftmo.com/en/futures/forbidden-trading-practices/
     quote: Trading in a materially different manner during the evaluation than you intend to trade on
@@ -611,6 +742,8 @@ not_modeled:
     specific to a simulated environment are prohibited. The engine simulates no platform errors or quote
     delays, so there is nothing to exploit.
   materiality: immaterial
+  becomes_immaterial_if: becomes material if the simulation models platform errors, delayed price updates or other
+    artefacts of a simulated environment
   source:
     url: https://ftmo.com/en/futures/forbidden-trading-practices/
     quote: You must not use any trading strategy intended to exploit, game, or undermine the purpose or
@@ -621,24 +754,11 @@ not_modeled:
     retrieved_at: '2026-11-22T01:35:38Z'
     section: Prohibited Trading Practices 1
     synthetic: false
-- rule: hft_and_latency_arbitrage_ban
-  description: High-frequency strategies and latency arbitrage are prohibited on top of the permitted
-    use of automation. A bar-based simulation has no order latency to arbitrage, and a strategy that the
-    firm would treat as HFT is not detectable from its simulated trades.
-  materiality: immaterial
-  source:
-    url: https://ftmo.com/en/futures/forbidden-trading-practices/
-    quote: Automated trading is permitted. You must not, however, use software, artificial intelligence,
-      or automated systems that manipulate, abuse, or provide an unfair advantage over the programme,
-      including high-frequency strategies and latency arbitrage.
-    snapshot_sha256: de1eb1d68e84f734a53caf23cf673043e869213c0adf5b6eb3a15bc5038dd39b
-    retrieved_at: '2026-11-22T01:35:38Z'
-    section: Prohibited Trading Practices 5
-    synthetic: false
 - rule: max_concurrent_accounts_3
   description: At most 3 concurrent Sim-Funded accounts across sizes and products; a per-account attempt
     cannot model a portfolio of accounts.
   materiality: immaterial
+  becomes_immaterial_if: becomes material if several accounts are simulated at the same time for one trader
   source:
     url: https://ftmo.com/en/futures/trading-objectives-and-rules/
     quote: You may hold a maximum of 3 concurrent Sim-Funded Accounts at any one time, across all account

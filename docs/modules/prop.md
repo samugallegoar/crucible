@@ -200,7 +200,11 @@ FundedNext Rapid Pro and Rapid Daily `threshold_after_payout: lock_on_first_payo
   fee the commission excludes) are unknown without a named `cost_assumption`; `partial` when a
   material rule is unmodeled, a news window is uncovered, a payout cap is `unknown`, or the attempt
   trades through an unsourced CME session-calendar window; `conditional` when the ruleset is
-  unverified or a cost assumption was used; otherwise `complete`. Every reason is reported.
+  unverified or a cost assumption was used; otherwise `complete`. Every reason is reported. A
+  news-coverage reason ("the economic calendar does not cover the attempt period") is listed only
+  when a `news_restriction` rule REQUESTED an event type the calendar does not cover: a ruleset with
+  no news rule is never gapped, and a `not_modeled` entry whose id mentions news (FTMO's
+  discretionary rule) is a conduct note, not a calendar gap.
 - **Session-calendar coverage.** A rule measured against the session schedule — a session-relative
   `flat_by`, the rule-day boundary, the end-of-day test — is only as good as that schedule. The CME
   table flags the sessions it could not source (`verified: False`: the 2023 holidays other than
@@ -298,7 +302,8 @@ least `min_usd` and every gate holds. `min_new_profit_share_of_request` is one o
 request of X needs new profit since the last payout of at least `share * X`, so the policy asks
 for the largest X that satisfies every term. A `payout_group` pays at most one path per close
 (`max_eligible` takes the largest net). `payouts_usd` is the trader's net, `fees` breaks the costs
-into evaluation, activation, monthly (per started calendar month of the attempt) and reset,
+into evaluation, activation, monthly (per started calendar month from the purchase through the
+month of the attempt's terminal event, never a month after it) and reset,
 `net_cash_usd` is the payouts minus the total, and `payouts` lists every payout with its gross,
 net and `exact`/`upper_bound` label.
 
@@ -437,8 +442,11 @@ that states its own reopen clock keeps it (the C7a form). Hand test:
 `simulate_attempt` reports `days_to_pass_trading` / `days_to_pass_calendar` from the attempt's OWN
 first bar (the phase's bars are numbered from zero inside the simulation, so the offset is added
 before the day counts and the pass date are read), and `PhaseOutcome.first_bar`/`last_bar` are in the
-attempt's coordinates. Hand test: `tests/integration/test_prop_pass_frequency.py` and the 06-05
-assertions of `tests/integration/test_futures_prop.py`.
+attempt's coordinates. `PhaseOutcome.trading_days` counts the trade dates the phase actually lived
+through, from its first bar to the bar of its terminal event (a first-session failure reports 1,
+never the horizon's H). Hand test: `tests/integration/test_prop_pass_frequency.py`, the 06-05
+assertions of `tests/integration/test_futures_prop.py` and
+`tests/integration/test_prop_attempt_accounting.py`.
 
 ## Interfaces
 

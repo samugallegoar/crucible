@@ -259,6 +259,23 @@ def _payout_modeled(ruleset: PropRuleset) -> bool:
     )
 
 
+def _terminal_bar(overlay: PropAccountOverlay, first: int, last: int) -> int:
+    """The attempt-coordinate bar at which a phase reached its terminal event.
+
+    A pass records the bar it happened at (``passed_at`` on the phase's own slice), and a hard
+    failure or a timeout records it as the last event the overlay appended before it closed: a
+    closed overlay appends nothing more, so that event is the terminal one. A phase whose data
+    ends first (``censored``) or that is still running ends at the window's last bar. The phases'
+    trading-day count and the fee window read this bar, never the analyst's H-day window end
+    (ADR-0107, amendment of 2026-11-27, F14 and F16).
+    """
+    if overlay.passed_at is not None:
+        return first + overlay.passed_at
+    if overlay.outcome in ("fail", "timeout") and overlay.events:
+        return first + overlay.events[-1].bar
+    return last
+
+
 def _window(
     calendar: SessionCalendar, bars: pl.DataFrame, start_trade_date: dt.date, horizon: int
 ) -> tuple[np.ndarray, list[dt.date | None], list[int], list[TradeDateSession]]:
@@ -394,7 +411,14 @@ def _fees(
     passed: bool,
     resets_purchased: int,
 ) -> FeeBreakdown:
-    """Attempt costs by kind. A monthly fee is charged per STARTED calendar month of the attempt."""
+    """Attempt costs by kind.
+
+    A monthly subscription is charged for every calendar month STARTED while the attempt is
+    alive: from the purchase month up to and including the month of the attempt's terminal event
+    (``end``, the trade date the attempt failed, passed, timed out or reached its horizon), and
+    never for a month after it. An attempt that dies on its first session therefore pays one
+    month, not one per month of the analyst's horizon (ADR-0107, amendment of 2026-11-27, F14).
+    """
     months = max(1, (end.year - start.year) * 12 + (end.month - start.month) + 1)
     evaluation = activation = monthly = reset = Decimal(0)
     for phase in ruleset.phases:
@@ -460,7 +484,12 @@ def estimate_status(
         reasons.append(PAYOUT_CAP_UNKNOWN)
     if (
         coverage
-        and news_covered is not True
+        # a news gap is a fact about a news RULE the ruleset requested: ``news_covered`` is False
+        # only when a ``news_restriction`` rule exists and the calendar does not cover the attempt.
+        # A ruleset with no news rule is never gapped, and a ``not_modeled`` entry whose id
+        # merely mentions news is a discretionary rule with no window, not calendar coverage
+        # (ADR-0107, amendment of 2026-11-27, F15)
+        and news_covered is False
         and any("news" in row.rule for row in coverage if not row.modeled)
     ):
         reasons.append("the economic calendar does not cover the attempt period")
@@ -750,6 +779,7 @@ def simulate_attempt(
     breached_rule: str | None = None
     breach_time_ns: int | None = None
     buffer: tuple[int, int, int, str] | None = None
+    terminal_bar: int | None = None
     payouts: list[PayoutRecord] = []
     passed_bar: int | None = None
     passed_absolute: int | None = None
@@ -787,6 +817,8 @@ def simulate_attempt(
             initial_blocked_target=blocked_target,
         )
         events.extend(overlay.events)
+        terminal = _terminal_bar(overlay, first, last)
+        terminal_bar = terminal
         payouts.extend(
             PayoutRecord(
                 time_ns=when,
@@ -799,7 +831,7 @@ def simulate_attempt(
             )
             for index, (when, gross, net, rule) in enumerate(overlay.payouts)
         )
-        trading_days = len({day for day in dates[first : last + 1] if day is not None})
+        trading_days = len({day for day in dates[first : terminal + 1] if day is not None})
         phase_outcomes.append(
             PhaseOutcome(
                 phase_id=phase.phase_id,
@@ -809,7 +841,7 @@ def simulate_attempt(
                 breach_time_ns=overlay.breach_time_ns,
                 first_bar=first,
                 # the overlay numbers bars from the phase's first bar; the artifact reports the
-                # attempt's own coordinates, so the pass offset is added to the phase's first bar
+                # attempt's own coordinates, so the attempt offset is added
                 last_bar=(first + overlay.passed_at if overlay.passed_at is not None else last),
                 trading_days=trading_days,
             )
@@ -857,6 +889,9 @@ def simulate_attempt(
         days_calendar = (passed_date - start_trade_date).days
     data_first = dates[window_first] or start_trade_date
     data_last = dates[window_last] or start_trade_date
+    # the fee window ends with the attempt's terminal event (F14), never with the horizon: a start
+    # that dies on its first session pays one monthly subscription, not one per month of H
+    fee_end = data_last if terminal_bar is None else (dates[terminal_bar] or data_last)
     schedule_gaps = session_calendar_gaps(calendar, touched_sessions)
     unverified = not ruleset.verified
     warnings = list(coverage_warnings(coverage, ruleset))
@@ -907,7 +942,7 @@ def simulate_attempt(
     fee_breakdown = _fees(
         ruleset,
         start_trade_date,
-        data_last,
+        fee_end,
         passed=passed,
         resets_purchased=resets_purchased,
     )

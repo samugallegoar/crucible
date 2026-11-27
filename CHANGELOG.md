@@ -8,6 +8,90 @@ kind of change is recorded).
 
 ## Unreleased
 
+### FTMO rulesets: the owner review's decisions applied (ADR-0107 amendment, 2026-11-27)
+- **The six files are corrected in place** (all still `verification.status: unverified`, no
+  `prop confirm`, no sidecar, version 1) and every question of `internal/reviews/ftmo.md`
+  (F1-F22) is answered in `rulesets/prop/ftmo/RESEARCH.md` section 16 with where each decision
+  landed. No rule VALUE moved; the round is declarations.
+- **The four payout sentences are `supporting_sources` (F3)**: the per-size cap (2,500 / 3,000 /
+  4,000 Growth, 5,000 / 6,000 / 8,000 Pro), the 90/10 ratio, the $20 minimum and the 50% / 100%
+  withdrawable share, each verbatim with url and sha256, and `min_profit_since_last_usd: 0` is an
+  `owner_decision` assumption (F17).
+- **Both session-relative `flat_by` rules are `provisional_conservative` (F4)** with the absolute
+  4:10 pm ET clock as a supporting source (on an early close it flattens earlier, the more
+  restrictive reading, on BOTH phases); **`funded_inactivity`'s 60-day close is one too and the
+  30-day warning is an immaterial `not_modeled` entry** (F5).
+- **The automation ban is a second condition for automated runs (F18).** The unfair-advantage /
+  HFT sentence is now `compliance_no_unfair_advantage_automation` (`action: block`, `materiality:
+  material`, `automated` only), with "Automated trading is permitted." kept as the context; the old
+  `not_modeled:hft_and_latency_arbitrage_ban` entry is removed. `practical_eligibility` is
+  `eligible_conditional` in BOTH modes (F12): automated lists the copy-trading rule AND this ban,
+  manual lists the copy-trading rule.
+- **`cross_account_hedging` takes the cross-firm id and its condition (F10)** ("becomes material
+  if several accounts, copy trading or coordinated strategies are simulated"), and the other four
+  immaterial entries with a real condition state what would make them bind.
+- **The material rules stay material (F6-F9)**; `clearing` and `other` stay `unknown` (F1, F2); the
+  nine equity-index roots are the confirmed scope (F19); `eval_consistency`'s `<=` is confirmed on
+  "does not represent more than 40%" (F20); `as_of` stays 2026-11-22 because the 2026-11-27 pages
+  changed only a promotional banner (F22), and the offer is an open item, not a promotion (F13).
+- **A test pins the declarations**: `tests/unit/test_prop_ftmo_rulesets.py` (13 tests over the six
+  files: attribution counts, ids, kinds, assumptions, `becomes_immaterial_if`, the two conditions
+  per mode, the consistency boundary and the instrument scope). `rulesets/prop/INDEX.json` is
+  regenerated with the six new content hashes.
+- **Engine findings F14-F16** are the three entries below; they change the reference run's fees,
+  one estimate reason and `trading_days`, never a rule value.
+- **Reference run (ES, 2024-01-02 .. 2024-12-31, H = 20, `upper_bound_v1`, both modes):** 253 starts
+  (234 complete), 253 fail / 0 pass on `eval_max_drawdown`, `conditional_pass_probability` 0.0,
+  estimate `partial` with no news-coverage reason, cost `upper` / cash `lower_bound`, mean net cash
+  **-119.508547 USD** per complete attempt (from -225.286325 before F14), practical eligibility
+  `eligible_conditional` with two conditions automated and one manual. The 2024-01-02
+  first-session failure reports `trading_days` **1** (was 20) and a monthly fee of **119.00**
+  (`rulesets/prop/ftmo/RESEARCH.md` section 16.1).
+- **Docs:** `docs/modules/prop.md` (the fee window, the news-coverage reason, `trading_days`), ADR-0107
+  (three amendments of 2026-11-27) and `docs/SCHEMAS.md` (the `fees_monthly_usd` comment).
+
+### `trading_days` counts the days the phase lived, not the analyst's window (ADR-0107 amendment, 2026-11-27, FTMO F16)
+- `PhaseOutcome.trading_days` was built from `dates[first : last + 1]`, where `last` is the analyst's
+  H-day window end and never moves, so an attempt that failed in its first session reported one
+  trading day per trade date of the horizon (20 on the packet's H = 20).
+- The count now runs to the phase's terminal bar, read from `_terminal_bar` (the same helper the F14
+  fee window uses): a pass records `passed_at`, a hard failure or timeout is the overlay's last
+  event, a censored or still-running phase ends at the window's last bar. A first-session failure
+  reports 1; a failure on the second of three sessions reports 2.
+- `last_bar` and `min_buffer_usd` are unchanged, no artifact column, key or `schema_version` moves.
+- Hand tests: `test_a_first_session_failure_reports_one_trading_day` and
+  `test_the_count_is_the_days_elapsed_up_to_the_terminal_event` in
+  `tests/integration/test_prop_attempt_accounting.py`.
+
+### A news-coverage reason needs a news rule (ADR-0107 amendment, 2026-11-27, FTMO F15)
+- `estimate_status` listed "the economic calendar does not cover the attempt period" whenever
+  `news_covered` was not `True` and any unmodeled coverage row's id contained "news". No FTMO file
+  declares a `news_restriction` rule (the firm allows news trading), but its discretionary
+  `not_modeled: news_event_concentration` entry matched, so every attempt looked like a news gap.
+- The reason is now listed only when `news_covered is False`, which `simulate_attempt` sets only
+  when a news rule requested an event type the calendar does not cover. A ruleset with no news rule
+  is never gapped; the `news_coverage_gaps` reason (an event with no release time) is unchanged.
+- The FTMO reference run's `summary.json` estimate reasons lose the line and keep the four material
+  unmodeled rules; no column, key or `schema_version` moves.
+- Hand tests: `test_a_ruleset_with_no_news_rule_never_reports_a_calendar_gap` and
+  `test_a_requested_event_type_without_coverage_still_reports_the_gap` (both in
+  `tests/integration/test_prop_attempt_accounting.py`).
+
+### The monthly subscription is charged to the attempt's terminal event (ADR-0107 amendment, 2026-11-27, FTMO F14)
+- `simulate_attempt` passed the DATA window's last trade date to `_fees`, so a monthly subscription
+  was charged for every calendar month of the analyst's H-day horizon: the FTMO reference run had
+  209 of 253 attempts paying `2 x 119 = 238` although they failed on their first session.
+- A monthly fee is now charged for every calendar month STARTED from the purchase up to and
+  including the month of the attempt's terminal event (fail, pass, timeout or horizon end), and no
+  month after it. A first-session failure pays one month; a censored attempt pays for the months it
+  lived through. The reset and activation fees are unchanged.
+- No column, key or `schema_version` moves. `fees_monthly_usd`, `fees_usd` and `net_cash_usd` fall
+  (net cash rises) for every attempt that resolved before its horizon, by `119` per dropped month in
+  the FTMO run (`209 x 119 / 253 = 98.30` USD per attempt on average).
+- Hand tests: `tests/integration/test_prop_attempt_accounting.py` (first-session failure 119.00 not
+  238.00; a failure on 2024-01-09 with the data running to 2024-03-08 pays 119.00; a censored start
+  on 2024-01-08 ending 2024-03-08 pays 3 x 119.00 = 357.00).
+
 ### FundedNext rulesets: the owner review's decisions applied (ADR-0107 amendment, 2026-11-24)
 - **The fifteen files are corrected in place** (all still `verification.status: unverified`, no
   `prop confirm`, no sidecar, version 1). Every question of `internal/reviews/fundednext.md` (F1-F25)
