@@ -940,6 +940,17 @@ BAN_AUTOMATION: dict[str, object] = {
 }
 """A critical compliance rule: an automated strategy is practically ineligible."""
 
+COMPLIANCE_MATERIAL_HFT: dict[str, object] = {
+    "kind": "compliance",
+    "rule_id": "hft_prohibited",
+    "restriction": "High-frequency trading is strictly prohibited",
+    "applies_to_execution": ["automated"],
+    "materiality": "material",
+    "comparison": ">=",
+    "action": "block",
+}
+"""A material ban on the mode: a CONDITION, never a blocker (ADR-0107 amendment 2026-11-24)."""
+
 
 def test_a_mechanical_pass_under_a_compliance_blocker_is_never_a_practically_valid_pass(
     store: Path, artifacts: Path
@@ -1106,6 +1117,61 @@ def test_a_critical_compliance_blocker_beats_a_condition(store: Path, artifacts:
     assert eligibility["mechanical_passes"] == 5
     assert eligibility["practically_valid_passes"] == 0
     assert eligibility["conditionally_valid_passes"] == 0
+
+
+def test_a_material_block_conditions_an_automated_run_in_the_summary_and_the_parquet(
+    store: Path, artifacts: Path
+) -> None:
+    """A ``material`` + ``action: block`` rule: five mechanical passes, none PRACTICALLY valid.
+
+    The rule does not refuse the mode (that is a ``critical`` block), and it is not nothing: it is
+    a ban the simulation cannot check, so the automated run is ``eligible_conditional`` with the
+    rule listed under its own id and the firm's words, the five passes count as
+    ``conditionally_valid_passes`` and ``practically_valid_passes`` is 0. The same ruleset under
+    ``manual`` has no condition (the rule applies to ``automated`` only) and keeps five practically
+    valid passes.
+    """
+    ruleset_file = write_ruleset(
+        artifacts / "ruleset.yaml",
+        ruleset([DRAWDOWN, COMPLIANCE_MATERIAL_HFT], [TARGET]),
+    )
+    automated = run_prop_evaluation(
+        config(),
+        ruleset_path=ruleset_file,
+        horizon_trading_days=5,
+        execution_mode="automated",
+        store_root=store,
+        artifacts_root=artifacts / "automated",
+        overwrite=True,
+    )
+    eligibility = automated.summary["scenarios"][0]["practical_eligibility"]
+    assert eligibility["status"] == "eligible_conditional"
+    assert eligibility["conditions"] == [
+        "hft_prohibited: High-frequency trading is strictly prohibited"
+    ]
+    assert eligibility["mechanical_passes"] == 5
+    assert eligibility["practically_valid_passes"] == 0
+    assert eligibility["conditionally_valid_passes"] == 5
+    frame = pl.read_parquet(automated.evaluation_dir / "attempts.parquet")
+    assert set(frame["practical_eligibility"].to_list()) == {"eligible_conditional"}
+    assert set(frame["practical_eligibility_conditions"].to_list()) == {
+        "hft_prohibited: High-frequency trading is strictly prohibited"
+    }
+
+    manual = run_prop_evaluation(
+        config(),
+        ruleset_path=ruleset_file,
+        horizon_trading_days=5,
+        execution_mode="manual",
+        store_root=store,
+        artifacts_root=artifacts / "manual",
+        overwrite=True,
+    )
+    plain = manual.summary["scenarios"][0]["practical_eligibility"]
+    assert plain["status"] == "eligible"
+    assert plain["conditions"] == []
+    assert plain["practically_valid_passes"] == 5
+    assert plain["conditionally_valid_passes"] == 0
 
 
 def test_an_unmodeled_rule_carries_its_condition_while_the_materiality_stays_material(

@@ -899,7 +899,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-100k-dlloff-evaleod-fundedeod-cons30.v1.yaml",
       "ruleset_id": "lucid-luciddaily-100k-dlloff-evaleod-fundedeod-cons30",
-      "ruleset_sha256": "559d4bf884537246e6ad500398009da457bc8b1070a3fba80a5ec688374d2297",
+      "ruleset_sha256": "703783c689b3f9d425f18d33f6afc778aa81a4fdf8b1801d62086f22fc1b66f0",
       "verification": "unverified",
       "version": 1
     },
@@ -907,7 +907,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-100k-dlloff-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-100k-dlloff-evalintraday-cons40",
-      "ruleset_sha256": "4f21eacf7d7c72962c7fc3edcf704ff62c68efd951a1848019d42f70598d8bcb",
+      "ruleset_sha256": "16d2ef45f53dffea4a395e2ef573ae384214c8597a2dacea386fd956bfbc2573",
       "verification": "unverified",
       "version": 1
     },
@@ -915,7 +915,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-100k-dllon-evaleod-fundedintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-100k-dllon-evaleod-fundedintraday-cons40",
-      "ruleset_sha256": "9f9cb50187674f5568b5bc8f3391b640ae9e09813f3ffba522187fdb24d122f4",
+      "ruleset_sha256": "db26aa0f892d080ea18301268eaca69a0bace84fbfbbfb283fb9c59de68a8f67",
       "verification": "unverified",
       "version": 1
     },
@@ -923,7 +923,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-100k-dllon-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-100k-dllon-evalintraday-cons40",
-      "ruleset_sha256": "63b3e94e46e572e7a142502e29e1fac49cb80ff5eb7167cee372514c7fc471c8",
+      "ruleset_sha256": "af5dd8a9aac8b02615115a92b38cbe16bcfb5c685800afe3e7909230759e97da",
       "verification": "unverified",
       "version": 1
     },
@@ -931,7 +931,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-150k-dlloff-evaleod-fundedeod-cons30.v1.yaml",
       "ruleset_id": "lucid-luciddaily-150k-dlloff-evaleod-fundedeod-cons30",
-      "ruleset_sha256": "64dbd8a2ee8836e6ab491b73507a08b2ebebb43327f1a3ddda80ee42d2b5794e",
+      "ruleset_sha256": "1cda0b7dba04b47808786b7912a561fb9c9e9ca43cbf9942e89cccf8c54af339",
       "verification": "unverified",
       "version": 1
     },
@@ -939,7 +939,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-150k-dlloff-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-150k-dlloff-evalintraday-cons40",
-      "ruleset_sha256": "9307c30adee6de084cf5a09b2e3b09aec9ba4aecd5c1f253e4748933723fc6a8",
+      "ruleset_sha256": "5a734b81382182501c4ae8bb2e250f0d2a36d21bda9c367666c3dea2d98af3d1",
       "verification": "unverified",
       "version": 1
     },
@@ -947,7 +947,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-150k-dllon-evaleod-fundedintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-150k-dllon-evaleod-fundedintraday-cons40",
-      "ruleset_sha256": "b314fb667d6afbe4b6e8daea03c0b22a6d778cb14a9c2ff663601417e87ffdb5",
+      "ruleset_sha256": "998f86464f88062f41adf5a2fa861e44928960cc10cb351cc761d018f8039a7b",
       "verification": "unverified",
       "version": 1
     },
@@ -955,7 +955,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-150k-dllon-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-150k-dllon-evalintraday-cons40",
-      "ruleset_sha256": "ceafde46e0dcce101b2b786ed7b6b63d20b6498efc678c0936076ca6a4e3791c",
+      "ruleset_sha256": "b60ce0127ae76bb01792c6cf5ca015a8ab7f7b9553dc9dfffe2500e54d93184b",
       "verification": "unverified",
       "version": 1
     },
@@ -963,7 +963,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-25k-dlloff-evaleod-fundedeod-cons30.v1.yaml",
       "ruleset_id": "lucid-luciddaily-25k-dlloff-evaleod-fundedeod-cons30",
-      "ruleset_sha256": "1cdf07465b6bad82d06eb8e8f0543e38cf68c5da331df77b12cf6bf6c6c891ee",
+      "ruleset_sha256": "e785ec5917c67c3a7fecb4f6d02beda05d46dec91ca0065fcce571ba13a05ad4",
       "verification": "unverified",
       "version": 1
     },
@@ -971,7 +971,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-25k-dlloff-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-25k-dlloff-evalintraday-cons40",
-      "ruleset_sha256": "be711b05c7123a1024acce589de3692e27529a05faaacc313cf95b8484dba719",
+      "ruleset_sha256": "39005696a862fd78261221c978b12f10b6a6ca0661cbb4acf5d2e8bde3efee88",
       "verification": "unverified",
       "version": 1
     },
@@ -979,7 +979,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-25k-dllon-evaleod-fundedintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-25k-dllon-evaleod-fundedintraday-cons40",
-      "ruleset_sha256": "f49f484996008fdbb814f6a4c5eb5b5afe0e4bb79ae2a95ec652b84af03cb47a",
+      "ruleset_sha256": "0de4838539a974af674f990cabe9717ee92ebad0392f7c81d324687b02a1d656",
       "verification": "unverified",
       "version": 1
     },
@@ -987,7 +987,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-25k-dllon-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-25k-dllon-evalintraday-cons40",
-      "ruleset_sha256": "d9cdd4a3f6842e0c3e000bf1d86c1662cb45fe30b8dafc30f3e197e4cf8d3c77",
+      "ruleset_sha256": "049c45482032d208bd4d0fb25ffd75042f651bebab8ffe938b5f5e536734cb29",
       "verification": "unverified",
       "version": 1
     },
@@ -995,7 +995,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-50k-dlloff-evaleod-fundedeod-cons30.v1.yaml",
       "ruleset_id": "lucid-luciddaily-50k-dlloff-evaleod-fundedeod-cons30",
-      "ruleset_sha256": "23223760ebe1dbdd7580b28208ba7acff79f1d62c42d3e6bd4d6d05b980a518b",
+      "ruleset_sha256": "8385927baa038f8788eeff9e01a2a61cdc6b64237c0622a20995ee953f4abb0b",
       "verification": "unverified",
       "version": 1
     },
@@ -1003,7 +1003,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-50k-dlloff-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-50k-dlloff-evalintraday-cons40",
-      "ruleset_sha256": "b1f78aa91412007eb9ddebba0f20b0a0b37588582349fe5f3e2d6a012a7b7147",
+      "ruleset_sha256": "7b652d309448485e8e639d9b3560b1ef44dccfe0b621a30441a506131f022eae",
       "verification": "unverified",
       "version": 1
     },
@@ -1011,7 +1011,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-50k-dllon-evaleod-fundedintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-50k-dllon-evaleod-fundedintraday-cons40",
-      "ruleset_sha256": "3709284123a05e79bb5bf066a6bc3422fe6a211896df0358bf6b31d156de3f9b",
+      "ruleset_sha256": "733a9b84acee049611efc9d8e52446841f90d0ebbedcc52d1c9ef4bf5f9d5113",
       "verification": "unverified",
       "version": 1
     },
@@ -1019,7 +1019,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddaily-50k-dllon-evalintraday-cons40.v1.yaml",
       "ruleset_id": "lucid-luciddaily-50k-dllon-evalintraday-cons40",
-      "ruleset_sha256": "fd35d00e6e3842c45872da683df06ec4b6961f224f17053b88e0914f5a975454",
+      "ruleset_sha256": "41dfaa438dfbe398b264423c54cfc775dcd6d3b7de9c7908a96b600aa49308ae",
       "verification": "unverified",
       "version": 1
     },
@@ -1027,7 +1027,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddirect-100k.v1.yaml",
       "ruleset_id": "lucid-luciddirect-100k",
-      "ruleset_sha256": "11bf015dec867f4ad7acbe6ad2de1f48d1aa88cacc8b8e1e6401fd21bd777389",
+      "ruleset_sha256": "1c10f45d9eb9fc21afda3813133ad4f3728ee73fa260877fb2534db6c8f6ef05",
       "verification": "unverified",
       "version": 1
     },
@@ -1035,7 +1035,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddirect-150k.v1.yaml",
       "ruleset_id": "lucid-luciddirect-150k",
-      "ruleset_sha256": "ae5fc5e7693f6b0daef80a8e5fc840355e988ac2624afc272295e4362c014056",
+      "ruleset_sha256": "33deecd7720890839230ace94833e4ae96b8c6349da6bb87dfaeaf7264e9aad7",
       "verification": "unverified",
       "version": 1
     },
@@ -1043,7 +1043,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddirect-25k.v1.yaml",
       "ruleset_id": "lucid-luciddirect-25k",
-      "ruleset_sha256": "72fc5c15321c03e6683854d57b0d28d1721bd75508f8d818a85ccda822f3beb0",
+      "ruleset_sha256": "138d2701767f966120b22cf2eabcedd2ab0c4c4be0c601f6acb0ffeb746c182e",
       "verification": "unverified",
       "version": 1
     },
@@ -1051,7 +1051,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-luciddirect-50k.v1.yaml",
       "ruleset_id": "lucid-luciddirect-50k",
-      "ruleset_sha256": "bd1c83f157b661c1016827dce4de121535e9e6dfccd84975c9d8b5c45b905d90",
+      "ruleset_sha256": "6920de81bf286968ac499c6b5b7566e7280ada958cee7bab6bbd5815b3ea04c2",
       "verification": "unverified",
       "version": 1
     },
@@ -1059,7 +1059,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-100k-dll-off-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-100k-dll-off-cons40",
-      "ruleset_sha256": "f38dd70421537c4bb5490bccbafd379432ac5341d046bf49429e434b81e680a3",
+      "ruleset_sha256": "c0de3fadf1ac85acda90eac4addd5f4ba081213f8d41931bc848902355e32940",
       "verification": "unverified",
       "version": 1
     },
@@ -1067,7 +1067,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-100k-dll-off-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-100k-dll-off-cons50",
-      "ruleset_sha256": "0c39ea4d3bdfc6d75b7a83388da3a7f83086a71e4eddca05b6b23deff00b6e08",
+      "ruleset_sha256": "18adeb59a062eac2af5d7fd1fb7fb8787b73ecd1f86e48baaaf70a23814dea62",
       "verification": "unverified",
       "version": 1
     },
@@ -1075,7 +1075,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-100k-dll-on-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-100k-dll-on-cons40",
-      "ruleset_sha256": "848e05b5a9523dc91a750cde5e818e749e304dec5af0f52ae95ca0ca21a5d8e6",
+      "ruleset_sha256": "ab3b9007e67cd79dda35a88ae868c94886bea4abf4e90dda117a409ee24a634a",
       "verification": "unverified",
       "version": 1
     },
@@ -1083,7 +1083,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-100k-dll-on-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-100k-dll-on-cons50",
-      "ruleset_sha256": "4fcd758b067f094a61a6121031fba414f0d3a1c831d91d36def4260e51f3abea",
+      "ruleset_sha256": "20f01ec421886186cb76744e80843a56fafed792f7f11fc5ebb61de9aadc7b41",
       "verification": "unverified",
       "version": 1
     },
@@ -1091,7 +1091,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-150k-dll-off-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-150k-dll-off-cons40",
-      "ruleset_sha256": "2110220848099a21595d8ab6563a0b2182c94407f10796aeea4c728770a30df4",
+      "ruleset_sha256": "d8a545d31bf594fa5af502f13a3624d0daad4677034b078087deb64b32e9e59c",
       "verification": "unverified",
       "version": 1
     },
@@ -1099,7 +1099,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-150k-dll-off-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-150k-dll-off-cons50",
-      "ruleset_sha256": "3091796843b74d44b829845ba38c0a96dbccb90c44b293edfbad1989034bd6cc",
+      "ruleset_sha256": "d4cc133d337341771b65445de4c2caa47fbdbda20e56c80949956f5b820477bc",
       "verification": "unverified",
       "version": 1
     },
@@ -1107,7 +1107,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-150k-dll-on-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-150k-dll-on-cons40",
-      "ruleset_sha256": "e0e9232ea7da00c99c744cb9530a2258ff633bfa3b3041b81e896ff51ea543c0",
+      "ruleset_sha256": "daef0039ec0889993aff98d7629a73d31defa25ad588ac68afe85524e11528ec",
       "verification": "unverified",
       "version": 1
     },
@@ -1115,7 +1115,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-150k-dll-on-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-150k-dll-on-cons50",
-      "ruleset_sha256": "4d3dd7c386ce6a932602ccbe5eddef10adfcd4ffe6ac02d9397f0e5003c2ebf2",
+      "ruleset_sha256": "98145cc180631391e59ad82245ecd187e1e9e86dd16ae54499d5098673906baa",
       "verification": "unverified",
       "version": 1
     },
@@ -1123,7 +1123,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-25k-dll-off-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-25k-dll-off-cons40",
-      "ruleset_sha256": "44eb7a0dd47facf3534d16d9caa5ebdee8aa13cc3f8865f5a80bb20baf512f50",
+      "ruleset_sha256": "c886b242e2ac810628eda5ba1faea5ea65ec27b776dd707f7a3a07da3e7d908d",
       "verification": "unverified",
       "version": 1
     },
@@ -1131,7 +1131,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-25k-dll-off-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-25k-dll-off-cons50",
-      "ruleset_sha256": "2f779033a59e5aa47b8c260466ddc89dd2b438186b1f2ed8c18f39729b915bb1",
+      "ruleset_sha256": "fa713f5673543f94b8f25a3d82904850c8771c041389577ddeea8641ce1412d0",
       "verification": "unverified",
       "version": 1
     },
@@ -1139,7 +1139,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-25k-dll-on-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-25k-dll-on-cons40",
-      "ruleset_sha256": "80a59b3dc686ec6aab713c97aff374cf52676e844d628d48d48b220c4164c1ff",
+      "ruleset_sha256": "0a7adfccddaf9d27ac8e8cee5ce18a63f4ca3870394337be16232e7ca85f6a70",
       "verification": "unverified",
       "version": 1
     },
@@ -1147,7 +1147,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-25k-dll-on-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-25k-dll-on-cons50",
-      "ruleset_sha256": "d1509eb90839bbf643d12e3215178e3ec29e973e52e5fb0ebbfa6131dc99c4c0",
+      "ruleset_sha256": "51d2f760dc36d5c8ba783d500804dfe437bdea7e9bb91eaf199d9a55ffba5f2f",
       "verification": "unverified",
       "version": 1
     },
@@ -1155,7 +1155,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-50k-dll-off-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-50k-dll-off-cons40",
-      "ruleset_sha256": "4ae10dbc8007967b000fe6d6cff4dd2bfda7e83f5a98c0affb411463e5b3dfb7",
+      "ruleset_sha256": "ca17320d43d4d2efdf08988a073ffe8b363ef42024b8437638f752c93524bec9",
       "verification": "unverified",
       "version": 1
     },
@@ -1163,7 +1163,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-50k-dll-off-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-50k-dll-off-cons50",
-      "ruleset_sha256": "122ecd3f148ed191d5194564e2a16ee04ba300aa41515d1a51c561950394adff",
+      "ruleset_sha256": "3051d058ebd857061979ad34fec683b5e15b6637a7732765887372f5ef367a8e",
       "verification": "unverified",
       "version": 1
     },
@@ -1171,7 +1171,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-50k-dll-on-cons40.v1.yaml",
       "ruleset_id": "lucid-lucidflex-50k-dll-on-cons40",
-      "ruleset_sha256": "431032ab5770463b1064c638fc70596f3e48605b1ffc45be495f1556e5c51696",
+      "ruleset_sha256": "64ad4ca169aae6f638571bf0c0e52f7837b0871ae8cb51a794306e3b900edf0a",
       "verification": "unverified",
       "version": 1
     },
@@ -1179,7 +1179,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidflex-50k-dll-on-cons50.v1.yaml",
       "ruleset_id": "lucid-lucidflex-50k-dll-on-cons50",
-      "ruleset_sha256": "2e36f2ada2f118826140a6235da50c67a9b84590a98a77dc9584e41051ebf63e",
+      "ruleset_sha256": "ffaed0e81e02484403d9b99ac8ccfa7a7596aec10e66907a2e98e9e29733525a",
       "verification": "unverified",
       "version": 1
     },
@@ -1187,7 +1187,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-100k-dll-off.v1.yaml",
       "ruleset_id": "lucid-lucidpro-100k-dll-off",
-      "ruleset_sha256": "10d20eb75463a30143b7290183e0cad001ddd35d77e50629bdb8a78d1ac4e388",
+      "ruleset_sha256": "9674cdbac1693be3a55af8686f515dfd6de801c62a49047099f3e90fed2a1837",
       "verification": "unverified",
       "version": 1
     },
@@ -1195,7 +1195,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-100k-dll-on.v1.yaml",
       "ruleset_id": "lucid-lucidpro-100k-dll-on",
-      "ruleset_sha256": "e58be35ccd731ebd4e8e94b9773889d664c5aabf55ddb7d5ff583621a60313dc",
+      "ruleset_sha256": "e019f36d4e0f67a3851ede987d473dafbbd9f858cbe7e931477f2bc0ae139b0d",
       "verification": "unverified",
       "version": 1
     },
@@ -1203,7 +1203,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-150k-dll-off.v1.yaml",
       "ruleset_id": "lucid-lucidpro-150k-dll-off",
-      "ruleset_sha256": "0cf31990c5a80ef91fb98dbf9ab811e4ef1dc9abeeb8a1a5c5cd966f264596f5",
+      "ruleset_sha256": "496d24a1d1d968d3368946d1477b52b15b10e936f7416713488b022946906420",
       "verification": "unverified",
       "version": 1
     },
@@ -1211,7 +1211,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-150k-dll-on.v1.yaml",
       "ruleset_id": "lucid-lucidpro-150k-dll-on",
-      "ruleset_sha256": "4a55d159642b68904e08e8f5b05cea0a438add9453981ec9e71e6a05281710f0",
+      "ruleset_sha256": "8fdc84fd93ece4c47a6dfa2b56deb5d3f2623eae7ee49c028b07045058a47d76",
       "verification": "unverified",
       "version": 1
     },
@@ -1219,7 +1219,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-25k-dll-off.v1.yaml",
       "ruleset_id": "lucid-lucidpro-25k-dll-off",
-      "ruleset_sha256": "48ddd9919c419b228023104ce25538664f60c1b3b51ea4f463b9686bffca4244",
+      "ruleset_sha256": "119e4d71dbcb444441ae5b818dd6ec27bf1d8876c77c9b3a5bef898dc331a52f",
       "verification": "unverified",
       "version": 1
     },
@@ -1227,7 +1227,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-25k-dll-on.v1.yaml",
       "ruleset_id": "lucid-lucidpro-25k-dll-on",
-      "ruleset_sha256": "57c53ba3da7e1b495588f5f9f2f891a02d76a9d96315a1a7409ca24951510f9f",
+      "ruleset_sha256": "caa2b5e9628571e612de23ea0dd40fbe26b69219f44919fb7e6152a4ce28bb37",
       "verification": "unverified",
       "version": 1
     },
@@ -1235,7 +1235,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-50k-dll-off.v1.yaml",
       "ruleset_id": "lucid-lucidpro-50k-dll-off",
-      "ruleset_sha256": "79e6f194dfd4a6c35f693b3aca1402d26c52d7b799cd926c643442f8739448bc",
+      "ruleset_sha256": "17e9a9b855b6b9df6caf0d304bad405fa987b0a2fdc5b989b7a293e8bd9ea75c",
       "verification": "unverified",
       "version": 1
     },
@@ -1243,7 +1243,7 @@
       "firm": "lucid",
       "path": "rulesets/prop/lucid/lucid-lucidpro-50k-dll-on.v1.yaml",
       "ruleset_id": "lucid-lucidpro-50k-dll-on",
-      "ruleset_sha256": "6893a2a155986aac4a0117973f7d6c2366962a602d27e0e12e569fe9217e1bff",
+      "ruleset_sha256": "4982b15e5689d3ba7c887763f2c8008b69c81cc606e84003b075e1413074c06e",
       "verification": "unverified",
       "version": 1
     },

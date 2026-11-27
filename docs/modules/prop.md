@@ -173,6 +173,12 @@ end-of-day order is fixed:
 6. Post-payout transitions: threshold reset, lock on the first payout, cycle counters reset.
 7. Cap and consistency windows reopen.
 
+A `promote_phase` action on the LAST phase has no next account to open: the phase outcome is
+`pass`, the lifecycle moves to `passed_terminal` and the attempt ends there as a non-failure
+terminal outcome (a `daily_profit_cap` that fires flattens a position still open at that close).
+A firm whose cap "automatically moves you live" when the ruleset stops at the funded phase is
+therefore modelled as a pass of the last phase, never as a fail and never as a continuation.
+
 ## Scenarios (ADR-0107 section 7)
 
 A conflict keeps both sources. `scenarios(ruleset)` returns the primary (`scenario_id: primary`,
@@ -206,13 +212,22 @@ FundedNext Rapid Pro and Rapid Daily `threshold_after_payout: lock_on_first_payo
 - `practical_eligibility` is `blocked_by_compliance` when a critical compliance rule with
   `action: block` applies to the exact `execution_mode` (`automated` or `manual`); the block wins
   over everything, because it says the account may not be traded that way at all. Otherwise, when
-  at least one `effect: condition` compliance rule applies, it is `eligible_conditional` and every
-  condition is listed (sorted, de-duplicated) in the result, `summary.json` and
-  `attempts.parquet`: a condition is an obligation the SIMULATION cannot prove (orders only through
-  the firm's API, only from the trader's own device, no HFT), so a mechanically successful attempt
-  under one is a CONDITIONALLY valid pass, never a practically valid one. With no blocker and no
-  condition it is `eligible`. `PracticalEligibility` (`status`, `conditions`, `blocker`) is what
-  `practical_eligibility(ruleset, execution_mode)` returns.
+  at least one applicable rule states an obligation the SIMULATION cannot prove, it is
+  `eligible_conditional` and every condition is listed (sorted, de-duplicated) in the result,
+  `summary.json` and `attempts.parquet`. Two declarations state such an obligation:
+
+  - `effect: condition` with its `condition` text (orders only through the firm's API, only from the
+    trader's own device, no HFT);
+  - a `material` rule with `action: block`, listed as `<rule_id>: <restriction>` (Lucid's HFT ban,
+    Apex's high-risk-strategy rule, MFFU's conduct list). A ban the firm does not call critical is
+    not a clearance: before ADR-0107's 2026-11-24 amendment the engine reported such a plan as
+    plainly `eligible` and listed nothing.
+
+  A mechanically successful attempt under a condition is a CONDITIONALLY valid pass, never a
+  practically valid one. With no blocker and no condition it is `eligible`. An `immaterial` block
+  contributes no condition. `PracticalEligibility` (`status`, `conditions`, `blocker`) is what
+  `practical_eligibility(ruleset, execution_mode)` returns, and `blocks_conditionally` /
+  `blocking_condition` are the two pure functions that build the material-block entry.
 
 ## The per-bar order (ADR-0106 section 3)
 
@@ -507,6 +522,16 @@ assertions of `tests/integration/test_futures_prop.py`.
   (`min_balance_usd`) takes its boundary from that field, and it refuses `<=` / `<` by name. Making
   the profit form honour it would silently change 112 shipped rulesets, so it is declared here
   instead: `>` on a balance ladder is the boundary-in-the-lower-rung reading, `>=` the upper one.
+  A firm whose ladder is keyed on PROFIT (LucidFlex: "based on the simulated profits in your
+  account", printed as `$0-$999`, `$1,000-$1,999`, ...) has no separate basis to declare: `basis`
+  is `balance`/`equity` only, the steps declare `min_profit_usd`, and the profit ladder reads the
+  closing balance MINUS the starting balance. That is exactly equivalent while a phase takes no
+  deposit and a payout only lowers the balance (which is what makes a tier fall after a payout), so
+  no number is approximated; the band is inclusive on its lower end, so `>=` is the printed reading.
+- The entry-block note names the instant in the rule's own clock: a fixed clock uses its `tz`, and
+  a session-relative clock (which has none, the instant comes from the CME calendar) borrows the
+  ruleset's rule-day zone (`reset.tz`), so the two rules of one session never print two different
+  reopen times. Cosmetic, and on the artifact's event `note` only.
 - The tier a scaling plan reads at a close is the BALANCE (realized plus commissions), never equity:
   an open position that has doubled the account moves no tier until it is closed and the close is
   marked, which is the pessimistic direction (a firm grows the size on the balance, and the balance

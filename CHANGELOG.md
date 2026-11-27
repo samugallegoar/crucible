@@ -1205,6 +1205,56 @@ kind of change is recorded).
 - **Apex `RESEARCH.md`** gains section 15 (the review round, every disposition and the reference
   run under the upper-bound cost file), and sections 7, 8, 9 and 12 record the same decisions.
 
+### Lucid review decisions (owner delegation of 2026-11-24, ADR-0107 amendment)
+- **A `material` + `action: block` compliance rule is a CONDITION, not a clearance.**
+  `practical_eligibility` listed only `effect: condition` rules, so Lucid's HFT ban (a material ban
+  on `automated`, with no numeric threshold any simulation could test) reported an automated run as
+  plainly `eligible` with zero conditions — a clearance the engine had never checked. Each applicable
+  material block is now listed as `<rule_id>: <restriction>`, the status becomes
+  `eligible_conditional`, and a mechanical pass under it counts as a `conditionally_valid_pass`.
+  A `critical` block still wins with no conditions and an `immaterial` block adds none. 175 rulesets
+  on `main` change one or both modes' label (Lucid 44 `automated`; Apex 90 `manual`; FTMO 6, FundedNext
+  15 and MyFundedFutures 20 in both modes; Topstep none), and no label moves to
+  `blocked_by_compliance`. Unit and integration tests are hand-computed
+  (`test_a_material_block_conditions_every_execution_mode_it_lists`, `test_a_critical_block_wins_...`,
+  `test_a_material_block_conditions_an_automated_run_in_the_summary_and_the_parquet`).
+- **The entry-block note is rendered in the rule's own clock.** A session-relative `flat_by` printed
+  its reopen in UTC (`until 21:00`) beside a fixed clock's `until 18:00 ET`; it now borrows the
+  ruleset's rule-day zone and prints `until 17:00 ET`. Cosmetic, with
+  `test_the_entry_block_note_states_the_reopen_in_the_rules_own_clock`.
+- **Lucid rulesets (44, re-hashed in place, all still unverified; `RESEARCH.md` gains section 17).**
+  The owner's delegated decisions:
+  - the max loss stays tested intrabar on equity, now an `owner_decision` (F5), and the profit
+    target and the LucidDaily daily profit cap both stay EOD as `provisional_conservative` (F6);
+  - "EST" is `America/New_York` with daylight saving, `owner_decision`, with the fixed-UTC-5
+    arithmetic in the rationale (F7); LucidDaily's close and reopen come from the firm-wide page
+    (F8) and the DLL resets at the 6:00 PM ET reopen (F9), both `owner_decision`, now with the
+    reopen sentence as a `supporting_source`;
+  - the 84 flat-by-close rules carry the automatic-close and no-failure sentences, and the 26
+    daily-loss rules carry the 6 PM ET reopen sentence, as `supporting_sources` (F19, F33);
+  - `cross_account_hedging` becomes `immaterial` with `becomes_immaterial_if` (F16);
+  - an `inactivity` rule (30 calendar days, executed trades, as for Topstep) is added to both
+    phases of all 44 files, sourced to the Inactivity Policy page (F22, previously declared as
+    modelled but carried by no file);
+  - the 12 LucidPro/LucidDirect payout-consistency rules compare strictly (`<`, from "until your
+    largest day is below 40%"), with the sentence as a `supporting_source` and a
+    `provisional_conservative` reading; every "or less"/"up to" rule keeps `<=` (F18);
+  - the LucidFlex ladder declares that it is keyed on simulated profit and takes the printed,
+    inclusive band, with the page's two sentences as `supporting_sources` (F23); `max_payouts: 5`
+    is a lifetime count per account (F25); the Direct first-cycle goal stays primary, with the
+    missing `$1` scenario recorded (F26); the Flex payout's dollar floor is per day, quoted (F30);
+  - the Flex DLL amount stays OPEN, the entry stays `material` and its reason now says the 8
+    dll-on files are OPTIMISTIC and must not be confirmed until the amount is sourced (F14);
+  - the evaluation and reset prices stay OPEN (F13), the stricter consistency tier and the $600
+    25K funded DLL stay primary (F10, F11), `microscalping_ban` stays `material` (F12), the six
+    news event types stay enforced with other high-impact releases declared (F15), the `partial`
+    estimate stays (F29), the price-limit audit is recorded (F21) and "no expiry" is confirmed as
+    a sourced absence (F28);
+  - `commissions.evidence` stays `owner_provided` (F17): the official page quotes the same nine
+    numbers and section C of the packet checked them against its sha256, and the owner moves the
+    label to `official_quote` at confirmation.
+  Every file stays `unverified`; `crucible prop confirm` was never run.
+
 ## 0.1.0 - 2026-10-09
 
 First release.

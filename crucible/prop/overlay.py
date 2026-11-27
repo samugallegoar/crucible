@@ -32,6 +32,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 import numpy as np
 
@@ -382,12 +383,14 @@ class PropAccountOverlay:
             if int(marks.open_time_ns) >= reopen or int(marks.close_time_ns) < flat:
                 continue
             rule = evaluator.rule
-            zone = _ZONE_LABEL.get(rule.tz or "", (rule.tz or "").rsplit("/", 1)[-1])
-            until = dt.datetime.fromtimestamp(reopen / _NS_PER_S, dt.UTC)
-            if rule.tz is not None:
-                from zoneinfo import ZoneInfo
-
-                until = until.astimezone(ZoneInfo(rule.tz))
+            # the note states the reopen in the rule's OWN clock, exactly as an absolute clock
+            # does: a session-relative rule has no tz of its own, so it borrows the ruleset's
+            # rule-day zone (`reset.tz`), which is where the firm states its session times. A bare
+            # UTC clock beside a `until 18:00 ET` from the next rule reads as two different
+            # reopen times for one session (ADR-0107, amendment of 2026-11-24).
+            tz = rule.tz if rule.tz is not None else self.ruleset.reset.tz
+            zone = _ZONE_LABEL.get(tz, tz.rsplit("/", 1)[-1])
+            until = dt.datetime.fromtimestamp(reopen / _NS_PER_S, dt.UTC).astimezone(ZoneInfo(tz))
             blocks.append(
                 _EntryBlock(
                     "session_entry_block",
