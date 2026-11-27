@@ -1069,6 +1069,44 @@ components priced: `unavailable`, reason names `commission`),
 CLI text, CLI `--json` and the MCP tool's document all say `unavailable`, and none of them says
 `lower_bound`).
 
+## Amendment (2026-11-27, FTMO review round, F14): a monthly subscription is charged until the attempt's terminal event
+
+The FTMO owner review (packet `internal/reviews/ftmo.md`, F14, delegated to the coordinator on
+2026-11-27) exposed an accounting bug on the fee side. `simulate_attempt` passed the DATA window's
+last trade date to `_fees`, so `fees.monthly_usd` was `amount x every calendar month from the
+purchase to the analyst's H-day horizon end`. The reference run showed the consequence: 209 of 253
+attempts paid `2 x 119 = 238` although they failed on their first session.
+
+**The decision: a monthly subscription is charged for every calendar month STARTED while the
+attempt is alive** - from the purchase month up to and including the month of the attempt's
+terminal event, which is its fail, pass, timeout or horizon end. Nothing is charged after that
+event, and a first-session failure pays one month.
+
+- `simulate_attempt` now reads the terminal bar of the last phase it ran (`_terminal_bar`: a pass
+  records `passed_at`, a hard failure or a timeout is the overlay's last recorded event, and a
+  censored or still-running phase ends at the window's last bar) and passes that bar's trade date
+  to `_fees`. A censored attempt's terminal event is its horizon end, so it still pays for the
+  months it lived through.
+- `_fees` itself keeps its signature (`start`, `end`, `passed`, `resets_purchased`) and its
+  arithmetic `(end.year - start.year) * 12 + (end.month - start.month) + 1`: the bug was the date
+  it was given, never the month count.
+- The reset and activation fees are unchanged: a reset fee is charged per reset purchased and an
+  activation fee only when the attempt passes.
+
+**What changes in the artifacts.** `attempts.parquet`'s `fees_monthly_usd` and `fees_usd` fall for
+every attempt that resolved before the end of its horizon, so `net_cash_usd` rises by the same
+amount; `summary.json`'s mean net cash follows. For the FTMO reference run (H = 20, data
+2024-01-02..2024-12-31) the 209 attempts that paid two months now pay one, so the mean net cash
+moves by `209 x 119 / 253 = 98.30` USD per attempt. No column, key or `schema_version` moves, and
+no golden fixture or blessed reference manifest in the repository carries a monthly fee.
+
+**Tests (hand-computed, not engine-derived).**
+`test_a_first_session_failure_pays_one_monthly_subscription` (fail on 2024-06-12 with the data
+running to 2024-07-15: 119.00, not 238.00),
+`test_a_month_without_a_terminal_event_is_not_charged` (fail on 2024-01-09, data to 2024-03-08:
+119.00) and `test_the_fee_window_ends_with_the_terminal_event_not_the_horizon` (censored on
+2024-03-08 after a 2024-01-08 purchase: 3 x 119.00 = 357.00, the horizon end it lived through).
+
 ## Alternatives considered
 
 - **Verification inside the content hash.** Rejected. Confirming a ruleset would change its

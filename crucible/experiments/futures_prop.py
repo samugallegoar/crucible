@@ -238,7 +238,7 @@ PROP_ATTEMPTS_SCHEMA: dict[str, pl.DataType] = {
     "payout_bound": pl.String(),  # exact | upper_bound | exact+upper_bound | '' (none paid)
     "fees_evaluation_usd": pl.Decimal(38, 6),  # USD; evaluation-kind fees of the attempt
     "fees_activation_usd": pl.Decimal(38, 6),  # USD; activation fees (charged only on a pass)
-    "fees_monthly_usd": pl.Decimal(38, 6),  # USD; monthly fees, per started calendar month
+    "fees_monthly_usd": pl.Decimal(38, 6),  # USD; monthly fees to the terminal month
     "fees_reset_usd": pl.Decimal(38, 6),  # USD; reset fees bought by the attempt policy
     "fees_usd": pl.Decimal(38, 6),  # USD; every fee of the attempt, the four kinds above
     "net_cash_usd": pl.Decimal(38, 6),  # USD; payouts_usd - fees_usd (see cash_estimate_status)

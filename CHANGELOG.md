@@ -8,6 +8,21 @@ kind of change is recorded).
 
 ## Unreleased
 
+### The monthly subscription is charged to the attempt's terminal event (ADR-0107 amendment, 2026-11-27, FTMO F14)
+- `simulate_attempt` passed the DATA window's last trade date to `_fees`, so a monthly subscription
+  was charged for every calendar month of the analyst's H-day horizon: the FTMO reference run had
+  209 of 253 attempts paying `2 x 119 = 238` although they failed on their first session.
+- A monthly fee is now charged for every calendar month STARTED from the purchase up to and
+  including the month of the attempt's terminal event (fail, pass, timeout or horizon end), and no
+  month after it. A first-session failure pays one month; a censored attempt pays for the months it
+  lived through. The reset and activation fees are unchanged.
+- No column, key or `schema_version` moves. `fees_monthly_usd`, `fees_usd` and `net_cash_usd` fall
+  (net cash rises) for every attempt that resolved before its horizon, by `119` per dropped month in
+  the FTMO run (`209 x 119 / 253 = 98.30` USD per attempt on average).
+- Hand tests: `tests/integration/test_prop_attempt_accounting.py` (first-session failure 119.00 not
+  238.00; a failure on 2024-01-09 with the data running to 2024-03-08 pays 119.00; a censored start
+  on 2024-01-08 ending 2024-03-08 pays 3 x 119.00 = 357.00).
+
 ### FundedNext rulesets: the owner review's decisions applied (ADR-0107 amendment, 2026-11-24)
 - **The fifteen files are corrected in place** (all still `verification.status: unverified`, no
   `prop confirm`, no sidecar, version 1). Every question of `internal/reviews/fundednext.md` (F1-F25)

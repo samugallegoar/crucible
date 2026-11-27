@@ -1689,7 +1689,7 @@ the manifest records `trial_recorded: false` and no trial registry row is writte
 | `payout_bound` | `String` | no | exact \| upper_bound \| exact+upper_bound \| '' (none paid) |
 | `fees_evaluation_usd` | `Decimal(precision=38, scale=6)` | no | USD; evaluation-kind fees of the attempt |
 | `fees_activation_usd` | `Decimal(precision=38, scale=6)` | no | USD; activation fees (charged only on a pass) |
-| `fees_monthly_usd` | `Decimal(precision=38, scale=6)` | no | USD; monthly fees, per started calendar month |
+| `fees_monthly_usd` | `Decimal(precision=38, scale=6)` | no | USD; monthly fees to the terminal month |
 | `fees_reset_usd` | `Decimal(precision=38, scale=6)` | no | USD; reset fees bought by the attempt policy |
 | `fees_usd` | `Decimal(precision=38, scale=6)` | no | USD; every fee of the attempt, the four kinds above |
 | `net_cash_usd` | `Decimal(precision=38, scale=6)` | no | USD; payouts_usd - fees_usd (see cash_estimate_status) |

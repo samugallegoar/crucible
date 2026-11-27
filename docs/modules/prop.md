@@ -298,7 +298,8 @@ least `min_usd` and every gate holds. `min_new_profit_share_of_request` is one o
 request of X needs new profit since the last payout of at least `share * X`, so the policy asks
 for the largest X that satisfies every term. A `payout_group` pays at most one path per close
 (`max_eligible` takes the largest net). `payouts_usd` is the trader's net, `fees` breaks the costs
-into evaluation, activation, monthly (per started calendar month of the attempt) and reset,
+into evaluation, activation, monthly (per started calendar month from the purchase through the
+month of the attempt's terminal event, never a month after it) and reset,
 `net_cash_usd` is the payouts minus the total, and `payouts` lists every payout with its gross,
 net and `exact`/`upper_bound` label.
 
