@@ -108,7 +108,7 @@ Modeled as `news_restriction` in the funded phase of the 12 Rapid, Rapid EOD and
 
 Every file carries five `compliance` rules from the fair play / prohibited practices article (`https://help.myfundedfutures.com/en/articles/8444599-...`, snapshot `20261122_art_fairplay.html`, sha256 `29dac8bf2f268f5a1959ae5d612a9c17aeb51c0fb2d11074d22f3d92c8c8e9d9`) and the hedging article: no high-frequency trading, automation only where it does not exploit the simulated fills, no fill/quote exploitation, no copy trading or account sharing, no hedging. **Automation is PERMITTED at MFFU**, so no compliance rule is `critical` and an automated strategy is `practical_eligibility: eligible` today - the opposite of Apex. The materiality is `material` on all five because a real submission has to survive them.
 
-**Automation eligibility (F.6).** The automation rule is `material` with `action: block` on `[automated]` and **no `effect: condition`**, so `practical_eligibility(automated)` returns plain `eligible` and an automated run is indistinguishable from a manual one. The cross-firm Lucid decision (a `material` + `block` rule on automated execution makes automated eligibility `eligible_conditional`) is an ENGINE change that lands in a separate PR; until it merges, every MFFU automated run reports `eligible` and this round adds no `effect: condition` of its own (section 12, F.6).
+**Automation eligibility (F.6).** The automation rule is `material` with `action: block` on `[automated]` and carries **no `effect: condition`**; the cross-firm Lucid decision landed the reading in the ENGINE instead (PR #36, ADR-0107 amendment of 2026-11-24): a `material` + `block` compliance rule conditions the eligibility of every execution mode it lists, listed as `<rule_id>: <restriction>`. So `practical_eligibility` is `eligible_conditional` for both modes and the conditions are the conduct bans the firm states and no simulation can check: five for `automated` (the automation rule plus the four bans that also apply to manual) and four for `manual`, listed in section 12.1. No MFFU file needed an edit for that, and a mechanical pass under a condition is a `conditionally_valid_pass`, never a practically valid one.
 
 **Copy trading (F.30).** The copy-trading article (`https://help.myfundedfutures.com/en/articles/10771500-copy-trading-at-myfundedfutures`, snapshot `20261124_copy-trading-at-myfundedfutures.html`, sha256 `b3c301571dc5d129f243e4102bf3e07109586c08f9fffd11ae115a5b1871f77c`) permits "copy trading across all account types" and names Tradesyncer and a group copier. It is a `supporting_source` on `compliance_no_copy_trading_or_account_sharing` in all 20 files, and it is what tells the two pages apart: copying ANOTHER trader is banned, a copier across the trader's own accounts is not, and that is what the `becomes_immaterial_if` of `cross_account_hedging` turns on.
 
@@ -1455,7 +1455,7 @@ and still waits for the owner's own confirmation.
 | # | question | decision (delegated 2026-11-24) | what the files now declare |
 |---|---|---|---|
 | F.1-F.5 | the all-in Total Cost Round Trip, and the four components | the subtitle "Includes Contract Specifications, Commissions, and Trading Fees" is an explicit firm statement of inclusion; "Trading Fees" standardly denotes the exchange fee and the NFA assessment, so those two are `included` and `clearing` and `other` stay `unknown` because the subtitle does not name them | `exchange` and `nfa` are `status: included` with `evidence: official_quote` and the subtitle as their `text`, plus the owner decision and the arithmetic in each file's `commissions.source.section` and comment; `clearing` and `other` stay `unknown` with a note naming what was checked. One ES side under `upper_bound_v1` is 2.34 + 0.50 + 0.50 = **3.34 USD** |
-| F.6 | automation is `block` but never a condition | NOT applied here: `practical_eligibility` reads only `effect: condition`, and adding it is an ENGINE change owned by the separate "Lucid rulesets: apply review decisions" PR (branch pushed, PR open, not merged on 2026-11-24) | unchanged (no `effect: condition`): an automated run still reports plain `eligible`, and the reference run of 12.1 says so. Under that PR's rule - a `material` + `block` compliance rule conditions the eligibility - MFFU's five material bans would become the conditions (four for `manual`), because all five declare `action: block` |
+| F.6 | automation is `block` but never a condition | landed in the ENGINE by the Lucid review (PR #36 merged as `03bbe60`, ADR-0107 amendment of 2026-11-24): a `material` + `action: block` compliance rule conditions the eligibility of every execution mode it lists. The MFFU files needed no edit and add no `effect: condition` | `eligible_conditional` in both modes: **5 conditions** for `automated` (the automation rule plus the four conduct bans that also apply to manual) and **4** for `manual`, listed by `practical_eligibility` and in 12.1 |
 | F.7, F.29 | no `supporting_sources` in any file | every rule whose action or timing rests on a sentence outside its own quote carries that sentence as a `supporting_source` | `eval_/funded_flat_by_ny_close` gain the auto-liquidation sentence and the instrument list's own `17:00 - 16:00 CT` session row; the funded drawdown rules gain the "$100 lock" (for Builder, the EOD article's lock sentence together with the funded table); `funded_t1_news_blackout` gains the "8:28:00 / 8:32:00" flatten example; the soft-pause `daily_loss` rules gain the page's soft-pause sentence; the inactivity rules gain the purchase-date sentence; the copy-trading rule gains the copy-trading article (F.30) |
 | F.8 | no `promotions` although the firm publishes discounts | every published discount becomes a `promotion` on the fee it discounts, and the list price stays the base | 17 files (all but the 3 Studio ones): `club_40_off_any_plan` (`multiplier: '0.6'`, `requires {account_purchase: new, coupon_applied: CLUB}`, `ends_on: unknown`) and `new_trader_50_off_first_evaluation` (`multiplier: '0.5'`, `requires {account_purchase: new}`), each quoting the file's own plan page; `mffu-builder-50k` and `mffu-builder-50k-addon` also carry `builder_guide_30_off` (107 / 87) and `builder_guide_40_off_two_uses_only` (92 / 75) as the printed VALUES of the guide's pricing rows |
 | F.9 | `becomes_immaterial_if` is absent from every entry | the field is declared where the packet requires it; the material entries' audit fact is left to the audit pass | `cross_account_hedging` (20 files) carries "becomes material if several accounts, copy trading or coordinated strategies are simulated", including the copier across the trader's own accounts (F.30); the new `active_account_count_limit` of the 4 Pro files carries its own condition |
@@ -1510,7 +1510,7 @@ phase declares a time limit). The file is `mffu-rapid-50k.v1.yaml`, content hash
 | **cost per side (ES)** | **2.34 + 0.50 + 0.50 = 3.34 USD**, `cost_status: conditional`, no gaps, `cost_bound: upper` | identical |
 | cash | mean net cash `-209.000000` USD, status `lower_bound`, interval [-209.00 .. -209.00] | identical |
 | funded phase | 0 starts reached it (breached 0, survived 0, unresolved 0, payouts 0) | identical |
-| **practical eligibility** | **`eligible`**, 0 conditions, 0 blocker | **`eligible`**, 0 conditions |
+| **practical eligibility** | **`eligible_conditional`**, 5 conditions, 0 blocker | **`eligible_conditional`**, 4 conditions, 0 blocker |
 
 **Against the packet's run (section E).** The start count, the completeness, every outcome class,
 the single breached rule, the 0.0 probability and the -209.00 cash (the evaluation fee alone: no
@@ -1529,11 +1529,21 @@ include `consistency_target_over_two_max_daily_profit`), and `coverage_gap_start
 `new_trader_50_off_first_evaluation`: a run that does not declare the discount it bought keeps the
 list price, which is the pessimistic direction and the one this review's arithmetic uses.
 
-**Automation (F.6).** `practical_eligibility` reads `eligible` in BOTH modes: the automation rule is
-`material` + `block` with no `effect: condition`, and adding it is the engine change owned by the
-separate Lucid round. This run therefore says nothing about automated eligibility beyond what the
-packet already recorded: the two frames are identical in every column except the `execution_mode`
-label inside the eligibility block.
+**Automation (F.6) - the one column that moved.** Since PR #36 merged, a `material` + `block`
+compliance rule conditions the eligibility of every mode it lists, so both frames now read
+`eligible_conditional` and the conditions are the conduct bans the firm states and no simulation can
+check, listed by rule id and in the firm's own words:
+
+- `automated`, 5 conditions: `compliance_automation_must_not_exploit_simulated_fills` (automation
+  only where it does not aim to exploit the simulated fills), `compliance_no_copy_trading_or_account_sharing`,
+  `compliance_no_fill_or_quote_exploitation`, `compliance_no_hedging`,
+  `compliance_no_high_frequency_trading`;
+- `manual`, 4 conditions: the same list without the automation rule.
+
+`mechanical_passes` stays 0 and `conditionally_valid_passes` stays 0 (no attempt passed at all), and
+the two frames remain identical in every other column. Nothing else moved against the pre-merge run of
+this round: the same 253 starts / 234 complete / 253 failures, the same 0.0 probability, the same
+-209.00 cash and the same 3.34 per side.
 
 **What the run does not exercise.** Exactly as in the packet (its section E.5): 253 breaches on the
 evaluation MLL, nothing else. The profit target, the two minimum trading days, the 50% consistency

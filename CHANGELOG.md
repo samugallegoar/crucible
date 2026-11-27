@@ -8,41 +8,6 @@ kind of change is recorded).
 
 ## Unreleased
 
-### MFFU review round: the cost page's inclusion, promotions, supporting sources and re-quotes (ADR-0107 amendment)
-- **Costs (F.1-F.5).** The instrument list's subtitle "Includes Contract Specifications,
-  Commissions, and Trading Fees" is a firm statement of what its Total Cost Round Trip column
-  contains, so `exchange` and `nfa` are `included` in all 20 MFFU files and `clearing` and `other`
-  stay `unknown`.
-  - Under `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` one ES side moves from 5.36 to
-    **3.34 USD** (2.34 + 0.50 + 0.50), and MES from 2.74 to 1.45.
-  - `tests/unit/test_prop_mffu_rulesets.py` pins the arithmetic and the declarations.
-- **Promotions (F.8).** Every published discount is a `promotion` on the evaluation fee it
-  discounts, with the list price as the base:
-  - CLUB 40% off any plan and 50% off the first evaluation, each quoting the file's own plan page;
-  - the Builder 50K 30% and 40% pricing rows as their printed values.
-  - `ends_on: unknown` where no end is stated; the 3 Studio files carry none because their fee's
-    source page is gone.
-- **Supporting sources (F.7, F.27, F.29, F.30).** The sentence a rule's action or timing rests on
-  is now a `supporting_source`: the flat clock's auto-liquidation sentence and the CME session row,
-  the drawdown locks, the news flatten example, the soft-pause DLL, the inactivity purchase date,
-  and the copy-trading article.
-- **Readings (F.9-F.12, F.20, F.24-F.28, F.31).**
-  - `cross_account_hedging` states the fact that would make it material, including a copier across
-    the trader's own accounts.
-  - The two firm-specific assumptions are `provisional_conservative`; the session-relative flat and
-    the inactivity `fail` are declared as `owner_decision` and `provisional_conservative`.
-  - The Pro files carry the current "Excess profits beyond $100,000 Sim cap will be placed in
-    Reserve Program, up to $5,000 per account" wording, the 60% in-buffer withdrawal and the dated
-    active-account rule as `not_modeled` entries.
-  - The consistency share stays primary; the page's `target / 2` example is declared `not_modeled`
-    material because no field expresses it.
-- **Re-quotes (F.34, F.35).** 25 attributions now quote a span that contains their own number, and
-  the Pro 100K/150K post-payout locks quote their own cells. No value changed.
-- **Not done here.** The automation condition (F.6) needs the engine change owned by the Lucid
-  round, so an MFFU automated run still reports `eligible`; the Studio files stay `unverified` with
-  a "do NOT confirm" decision because their only source answers 404, and the Signature successors
-  are a recorded follow-up.
-
 ### Fathom C7b.1: participant profile, breach on fill, promotions, Topstep review decisions (ADR-0106, ADR-0107 amendments)
 - **Participant profile.**
   - A run declares an immutable participant profile (dimension to value); its sha256 is in the
@@ -1140,6 +1105,93 @@ kind of change is recorded).
   an opt-in fast test tier (`-m "not slow"`, `tests/slow_modules.txt`, `python -m tools.slow_report`);
   a test that every `__main__.py` guards its call. `docs/DEPENDENCIES.md` states the `yfinance` and
   `mcp` exceptions to the network-client rule.
+
+### MFFU review round: the cost page's inclusion, promotions, supporting sources and re-quotes (ADR-0107 amendment)
+- **Costs (F.1-F.5).** The instrument list's subtitle "Includes Contract Specifications,
+  Commissions, and Trading Fees" is a firm statement of what its Total Cost Round Trip column
+  contains, so `exchange` and `nfa` are `included` in all 20 MFFU files and `clearing` and `other`
+  stay `unknown`.
+  - Under `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` one ES side moves from 5.36 to
+    **3.34 USD** (2.34 + 0.50 + 0.50), and MES from 2.74 to 1.45.
+  - `tests/unit/test_prop_mffu_rulesets.py` pins the arithmetic and the declarations.
+- **Promotions (F.8).** Every published discount is a `promotion` on the evaluation fee it
+  discounts, with the list price as the base:
+  - CLUB 40% off any plan and 50% off the first evaluation, each quoting the file's own plan page;
+  - the Builder 50K 30% and 40% pricing rows as their printed values.
+  - `ends_on: unknown` where no end is stated; the 3 Studio files carry none because their fee's
+    source page is gone.
+- **Supporting sources (F.7, F.27, F.29, F.30).** The sentence a rule's action or timing rests on
+  is now a `supporting_source`: the flat clock's auto-liquidation sentence and the CME session row,
+  the drawdown locks, the news flatten example, the soft-pause DLL, the inactivity purchase date,
+  and the copy-trading article.
+- **Readings (F.9-F.12, F.20, F.24-F.28, F.31).**
+  - `cross_account_hedging` states the fact that would make it material, including a copier across
+    the trader's own accounts.
+  - The two firm-specific assumptions are `provisional_conservative`; the session-relative flat and
+    the inactivity `fail` are declared as `owner_decision` and `provisional_conservative`.
+  - The Pro files carry the current "Excess profits beyond $100,000 Sim cap will be placed in
+    Reserve Program, up to $5,000 per account" wording, the 60% in-buffer withdrawal and the dated
+    active-account rule as `not_modeled` entries.
+  - The consistency share stays primary; the page's `target / 2` example is declared `not_modeled`
+    material because no field expresses it.
+- **Re-quotes (F.34, F.35).** 25 attributions now quote a span that contains their own number, and
+  the Pro 100K/150K post-payout locks quote their own cells. No value changed.
+- **Automation (F.6) is the engine's, not the files'.** The change that landed with PR #36 makes a
+  `material` + `block` compliance rule condition the eligibility of every mode it lists, so an MFFU
+  run now reports `eligible_conditional` - 5 conditions for `automated`, 4 for `manual` - and no
+  MFFU file needed an `effect: condition`. The Studio files stay `unverified` with a "do NOT
+  confirm" decision because their only source answers 404, and the Signature successors are a
+  recorded follow-up.
+
+### Lucid review decisions (owner delegation of 2026-11-24, ADR-0107 amendment)
+- **A `material` + `action: block` compliance rule is a CONDITION, not a clearance.**
+  `practical_eligibility` listed only `effect: condition` rules, so Lucid's HFT ban (a material ban
+  on `automated`, with no numeric threshold any simulation could test) reported an automated run as
+  plainly `eligible` with zero conditions — a clearance the engine had never checked. Each applicable
+  material block is now listed as `<rule_id>: <restriction>`, the status becomes
+  `eligible_conditional`, and a mechanical pass under it counts as a `conditionally_valid_pass`.
+  A `critical` block still wins with no conditions and an `immaterial` block adds none. 175 rulesets
+  on `main` change one or both modes' label (Lucid 44 `automated`; Apex 90 `manual`; FTMO 6, FundedNext
+  15 and MyFundedFutures 20 in both modes; Topstep none), and no label moves to
+  `blocked_by_compliance`. Unit and integration tests are hand-computed
+  (`test_a_material_block_conditions_every_execution_mode_it_lists`, `test_a_critical_block_wins_...`,
+  `test_a_material_block_conditions_an_automated_run_in_the_summary_and_the_parquet`).
+- **The entry-block note is rendered in the rule's own clock.** A session-relative `flat_by` printed
+  its reopen in UTC (`until 21:00`) beside a fixed clock's `until 18:00 ET`; it now borrows the
+  ruleset's rule-day zone and prints `until 17:00 ET`. Cosmetic, with
+  `test_the_entry_block_note_states_the_reopen_in_the_rules_own_clock`.
+- **Lucid rulesets (44, re-hashed in place, all still unverified; `RESEARCH.md` gains section 17).**
+  The owner's delegated decisions:
+  - the max loss stays tested intrabar on equity, now an `owner_decision` (F5), and the profit
+    target and the LucidDaily daily profit cap both stay EOD as `provisional_conservative` (F6);
+  - "EST" is `America/New_York` with daylight saving, `owner_decision`, with the fixed-UTC-5
+    arithmetic in the rationale (F7); LucidDaily's close and reopen come from the firm-wide page
+    (F8) and the DLL resets at the 6:00 PM ET reopen (F9), both `owner_decision`, now with the
+    reopen sentence as a `supporting_source`;
+  - the 84 flat-by-close rules carry the automatic-close and no-failure sentences, and the 26
+    daily-loss rules carry the 6 PM ET reopen sentence, as `supporting_sources` (F19, F33);
+  - `cross_account_hedging` becomes `immaterial` with `becomes_immaterial_if` (F16);
+  - an `inactivity` rule (30 calendar days, executed trades, as for Topstep) is added to both
+    phases of all 44 files, sourced to the Inactivity Policy page (F22, previously declared as
+    modelled but carried by no file);
+  - the 12 LucidPro/LucidDirect payout-consistency rules compare strictly (`<`, from "until your
+    largest day is below 40%"), with the sentence as a `supporting_source` and a
+    `provisional_conservative` reading; every "or less"/"up to" rule keeps `<=` (F18);
+  - the LucidFlex ladder declares that it is keyed on simulated profit and takes the printed,
+    inclusive band, with the page's two sentences as `supporting_sources` (F23); `max_payouts: 5`
+    is a lifetime count per account (F25); the Direct first-cycle goal stays primary, with the
+    missing `$1` scenario recorded (F26); the Flex payout's dollar floor is per day, quoted (F30);
+  - the Flex DLL amount stays OPEN, the entry stays `material` and its reason now says the 8
+    dll-on files are OPTIMISTIC and must not be confirmed until the amount is sourced (F14);
+  - the evaluation and reset prices stay OPEN (F13), the stricter consistency tier and the $600
+    25K funded DLL stay primary (F10, F11), `microscalping_ban` stays `material` (F12), the six
+    news event types stay enforced with other high-impact releases declared (F15), the `partial`
+    estimate stays (F29), the price-limit audit is recorded (F21) and "no expiry" is confirmed as
+    a sourced absence (F28);
+  - `commissions.evidence` stays `owner_provided` (F17): the official page quotes the same nine
+    numbers and section C of the packet checked them against its sha256, and the owner moves the
+    label to `official_quote` at confirmation.
+  Every file stays `unverified`; `crucible prop confirm` was never run.
 
 ### Apex review decisions (owner delegation of 2026-11-23, ADR-0107 amendment)
 - **`consistency.comparison` is read.** The evaluator computed `share <= max_day_share` and ignored

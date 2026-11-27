@@ -517,10 +517,11 @@ declare `since_last_payout` count only rule-days after the previous withdrawal; 
 starts at the phase's start (ADR-0107 section 9).
 
 **Practical eligibility** — whether the exact plan may be traded by the exact execution mode:
-`eligible`, `eligible_conditional` (no critical blocker, but at least one `effect: condition`
-compliance obligation the simulation cannot prove, e.g. orders only through the firm's API, each
-listed) or `blocked_by_compliance` (a critical compliance rule such as a ban on automated trading
-applies to this ruleset and this `execution_mode`). A mechanically successful attempt under a
+`eligible`, `eligible_conditional` (no critical blocker, but at least one compliance obligation the
+simulation cannot prove, each listed: an `effect: condition` rule such as "orders only through the
+firm's API", or a `material` rule with `action: block` such as a ban on HFT) or
+`blocked_by_compliance` (a critical compliance rule such as a ban on automated trading applies to
+this ruleset and this `execution_mode`). A mechanically successful attempt under a
 blocker is never a practically valid pass, and under a condition it is a `conditionally_valid_passes`
 (ADR-0107 section 11).
 

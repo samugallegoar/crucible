@@ -830,3 +830,176 @@ cloudflare.html`, `20261122_blocked_pricing_cloudflare.html`), as did `sitemap.x
 fees are unmodelled. The help centre `support.lucidtrading.com` was fully readable, including the
 commission table.
 
+
+## 17. Owner review round (2026-11-24) and the reference run under the upper bound
+
+The owner delegated questions F1-F33 of the review packet (`internal/reviews/lucid.md`) to the
+coordinator on **2026-11-24**, and this round applied every decision to the 44 files. The files stay
+`unverified`: no `crucible prop confirm` was run, no `*.verification.yaml` exists, no
+`verification.status` was touched, and every decision line in the packet carries the coordinator's
+recommendation and still waits for the owner. Nothing was re-sourced from a new page except the
+Inactivity Policy snapshot of section 17.2, which the round fetched because a rule was added.
+
+Every `assumption_kind: owner_decision` in the files names its question and the delegation ("The
+owner review of 2026-11-24 (F<n>, delegated to the coordinator 2026-11-24)"), so a reviewer can check
+one claim at a time.
+
+| # | question | decision (delegated 2026-11-24) | what the files now declare |
+|---|---|---|---|
+| F1-F4 | `exchange`, `clearing`, `nfa`, `other` costs | stay `unknown`; the preliminary cross-firm analysis uses `rulesets/prop/cost_assumptions/upper_bound_v1.yaml` | unchanged: four `unknown` components with `evidence: not_stated` in 44/44 files |
+| F5 | is the max loss tested intrabar? | yes, the more restrictive reading, as an owner decision | `assumption_kind: owner_decision` on the 64 `unspecified_failure_frequency_is_intraday` assumptions |
+| F6 | EOD for the targets, and for the LucidDaily cap? | EOD stays `provisional_conservative` for both | the 16 `funded_daily_profit_cap` assumptions move from `section7_default` to `provisional_conservative`; the 40 profit targets already were |
+| F7 | does "EST" mean a fixed UTC-5 clock? | no: `America/New_York` with daylight saving, owner decision | `est_means_america_new_york` is `owner_decision` in 52 rules, the rationale carrying the arithmetic of 17.1 |
+| F8 | LucidDaily's close and reopen | the firm-wide 4:45 PM ET close and 6:00 PM ET reopen, owner decision | `session_close_taken_from_firm_wide_page` is `owner_decision` in 32 rules |
+| F9 | when does the DLL reset? | at the 18:00 ET session reopen, owner decision, now sourced | `dll_reset_at_6pm_et_session_reopen` is `owner_decision` in 26 rules, each with the reopen sentence as a `supporting_source` |
+| F10 | the LucidDaily consistency tier | the stricter tier stays primary, the existing scenarios unchanged | unchanged (`0.30` primary, `daily_eval_consistency_tier#0/#1`) |
+| F11 | the 25K funded DLL (600 vs `None`) | 600 stays primary, the `None` scenario stays | unchanged (`pro_25k_funded_dll_alternative#0`) |
+| F12 | `microscalping_ban` materiality | stays `material` | unchanged |
+| F13 | evaluation and reset prices | stay OPEN: the owner question stands and net cash stays a `lower_bound` | unchanged (no `fee` rule; the question is repeated below) |
+| F14 | the Flex DLL amount | stays OPEN; the 8 dll-on files say they are OPTIMISTIC and must NOT be confirmed until it is sourced | `flex_dll_amount` stays `material`, its description now leads with OPTIMISTIC and names the delegation |
+| F15 | the six enforced news types | kept; every other U.S. high-impact release stays a declared material gap | unchanged: six `event_types` on 16 rules, `other_us_high_impact_events` (material) in 16 files |
+| F16 | `cross_account_hedging` | `immaterial`, with the fact that would make it bind (Apex F10, O17) | `materiality: immaterial` plus `becomes_immaterial_if` in 44 files |
+| F17 | the commission evidence label | stays `owner_provided`; the owner moves it to `official_quote` at confirmation | unchanged, with this note: section C of the packet checked the page's nine numbers against its sha256 and they agree line for line |
+| F18 | the consistency boundary | "or less" / "at most" / "up to" -> `<=`; wording with no boundary -> strict `<` as `provisional_conservative`, quoting the words that decided it | the 12 LucidPro/LucidDirect payout rules move to `<` with the "below 40%/20%" sentence as a `supporting_source`; the 32 "or less"/"up to" rules keep `<=` |
+| F19 | the two unattributed flat-by sentences | add both as `supporting_sources` | the automatic-close and no-failure sentences on the 84 flat-by-close rules |
+| F20 | a material HFT ban that is not a condition | ENGINE CHANGE: a `material` + `action: block` rule on `automated` makes an automated run `eligible_conditional` and is listed among the conditions; a `critical` rule still blocks | no file change (the rule itself is unchanged); automated runs on all 44 files now report `eligible_conditional` with one condition |
+| F21 | is the price-limit search the audit? | yes; the search terms and its result are recorded and no `not_modeled` entry is added | unchanged (no price-limit rule anywhere) |
+| F22 | the 30-calendar-day inactivity rule | the page states it verbatim, so the rule is ADDED (30 calendar days, executed trades only, as for Topstep) | `eval_inactivity` / `funded_inactivity` in both phases of all 44 files, sourced to the Inactivity Policy page |
+| F23 | is the Flex ladder keyed on profit? | yes; the basis is declared and a value on a rung follows the printed band | `funded_scaling_plan` gains the `flex_scaling_ladder_is_read_on_simulated_profit` `owner_decision` assumption and two `supporting_sources` |
+| F24 | `promote_phase` with no next phase | it ENDS the attempt as a non-failure terminal outcome; checked in the engine and pinned by a test | no file change; documented in `docs/modules/prop.md` |
+| F25 | `max_payouts: 5` | a lifetime count per account, the more restrictive reading | `max_payouts_is_a_lifetime_count_per_account` (`owner_decision`) on the 28 payout rules that carry it |
+| F26 | the Direct first-cycle goal | the full goal stays primary; a "$1 net profit" scenario is not expressible (no source states $1 for Direct) | `direct_first_payout_needs_the_full_cycle_goal` (`owner_decision`) on the 4 Direct payout rules |
+| F27 | the unused round-5 vocabulary | no action beyond F16, F19 and F20 | reported, not edited |
+| F28 | do Lucid evaluations expire? | no: a sourced absence, and H stays the analyst's horizon | unchanged (`max_calendar_days: null`, `max_trading_days: null`), see 17.1 |
+| F29 | `partial` versus excluding dates | `partial` is right; never exclude dates | unchanged |
+| F30 | is the Flex payout floor per day? | per day, and the words that show it are quoted | `flex_payout_day_floor_is_per_day` (`owner_decision`) plus the "5 separate days" sentence as a `supporting_source` on 16 rules |
+| F31 | the entry-block note's clock | render it in the rule's own timezone, with a test | engine fix (`until 17:00 ET`, not `until 21:00`); no file change |
+| F32 | the rules the run never reaches | no action (C7c) | reported, not edited |
+| F33 | the three unattributed bases | (a) and (b) become `supporting_sources`; (c) the 15-minute offset stays an explicit derivation note | the reopen sentence on the 26 DLL rules and the 84 flat-by-close rules; the offset is stated in the early-close rule's description and in section 4, unchanged |
+
+### 17.1 What the round answered that was not a file edit
+
+- **F7, the arithmetic.** "4:45 PM EST" read as a fixed UTC-5 offset is 21:45 UTC all year. The CME
+  equity-index session closes at 17:00 ET, which is 22:00 UTC in winter and 21:00 UTC in summer, so
+  the fixed offset is 15 minutes before the close in winter and **45 minutes after it** in summer:
+  the firm would be flattening accounts whose session had already ended. The cutoff is therefore read
+  as `America/New_York`, 4:45 PM local all year. A sensitivity scenario for the fixed clock is NOT
+  expressible: `scenarios()` builds one scenario per `conflicts` alternative and switches ONE field on
+  ONE rule, while the alternative is a different `time` **and** `tz` on 52 rules at once. It stays an
+  owner question, not a modelled scenario.
+- **F21, the price-limit audit.** The search accepted as the audit: every saved page under
+  `internal/prop_snapshots/lucid/` (94 `.html`/`.txt` files: the 2026-11-22 set, the 2026-11-24
+  re-fetch of the 34 cited URLs and the new inactivity page) was searched case-insensitively for
+  `price limit`, `2%`, `2 %`, `percent price`, `price band` and `volatility`. **Result:
+  `price limit`, `2 %`, `percent price`, `price band` and `volatility` do not occur at all, and
+  every `2%` hit (7 per page, 630 in all) is a CSS colour value — `hsl(221, 49%, 62%)` in the
+  page's own stylesheet — never rule text.** No page states a price limit or a volatility
+  restriction, so no `not_modeled` entry is added: a declared gap would assert the firm has one.
+- **F24, `promote_phase` with no next phase.** Checked in the engine: `PropAccountOverlay` sets the
+  phase's outcome to `pass`, records the event, transitions the lifecycle to `passed_terminal` and
+  reports the account closed, so `simulate_attempt` ends the attempt there and never enters a phase
+  that does not exist. A position still open is flattened at that close. Reaching the LucidDaily cap
+  is therefore a PASS (a non-failure terminal class), never a fail, and the attempt never continues
+  past it. Documented in `docs/modules/prop.md` and pinned by
+  `test_a_profit_cap_on_the_last_phase_ends_the_attempt_as_a_pass_never_a_fail`. No fix was needed.
+- **F28, no expiry.** The absence is sourced by what the pages say and do not say: the LucidPro,
+  LucidFlex and LucidDaily evaluation pages state the target, the max loss, the DLL and the size and
+  name **no access period**, no end date and no timer. The only dated limit on any cited page is the
+  LucidPro consistency change (an effective date, not an expiry), and the one 30-day clock is the
+  inactivity rule now modelled. Every evaluation phase therefore keeps `max_calendar_days: null` and
+  `max_trading_days: null`, and the reference run uses the analyst's **H = 20** trade dates.
+- **F29, `partial`.** Accepted as the right answer for a cross-firm comparison: excluding the dates
+  whose news coverage is incomplete would silently narrow the window and bias the estimate, while
+  `partial` states what is unmodelled and leaves the number honest. No date is excluded.
+- **F26, the "$1 net profit" scenario.** Not expressible for the same reason as F7: a sensitivity
+  scenario is a `conflicts` alternative with its own `source`, and no LucidDirect page states "$1"
+  (that wording is LucidFlex's positive-net-profit gate). Declaring one would invent a citation, so
+  the full first-cycle goal stays primary and the reading sits in the rule's own `owner_decision`
+  assumption.
+- **F14, the estimate status.** Checked, not assumed: a LucidFlex dll-on file reports
+  `estimate_status: partial`, because the material `flex_dll_amount` gap is declared and does reach
+  the label a reader sees. Such a file is therefore never `complete` or plain `conditional`, and the
+  8 dll-on files must not be confirmed until the amount is sourced.
+- **F17, the commission label.** The blocked host is why the label cannot move on its own: the
+  evaluation and reset prices live on the Cloudflare-blocked `lucidtrading.com`, and the label is the
+  owner's statement about the whole commission block. Section C of the packet checked the nine
+  per-side numbers against the official page's sha256 and found them identical, so the only thing
+  missing is the owner's own `crucible prop confirm`, at which point the label moves to
+  `official_quote` and no number changes.
+- **F33c, the 15-minute offset.** It stays a DERIVATION, never a quote: 4:45 PM ET is the firm's own
+  fifteen minutes before the scheduled 5:00 PM ET (16:00 Chicago) equity-index close, and the same
+  fifteen minutes is applied to an earlier holiday close. It is stated in the early-close rule's
+  description and in section 4, and it is the owner's to change (one number).
+
+### 17.2 A new snapshot, and the self-check after the round
+
+The Inactivity Policy page was cited by no file before this round, so it had no snapshot in the
+2026-11-22 set. The round fetched it once from the public help centre with `curl`, a descriptive user
+agent and the crawl delay honoured:
+
+| url | snapshot | sha256 | retrieved_at | http |
+|---|---|---|---|---|
+| `https://support.lucidtrading.com/en/articles/11404632-inactivity-policy` | `20261124_art_11404632-inactivity-policy.html` | `4c693383bf9ed3e9c5407819abe0fff958d8d6ed4411438426102e2a8871833a` | 2026-11-24T15:56:33Z | 200 |
+
+The self-check after the round, run the way section 12 describes:
+
+- `uv run crucible prop validate <file> --json` for every one of the 44 files: **44/44 pass**.
+- The sweep of section 12 (`crucible.prop.sources.check_sources`, snapshot root
+  `D:\proyectos\crucible-notes\internal\prop_snapshots\lucid`): **44 files, 1469 attributions (1047
+  before the round), 1469/1469 snapshot hashes matched, 1469/1469 quotes found verbatim, 0 synthetic,
+  RESULT: PASS**.
+- `uv run crucible prop list --firm lucid --json`: 44 rulesets, every one `unverified`, schema
+  version 2, version 1, 44 distinct content hashes, every one
+  `evaluation_status: conditional_on_modeled_rules` (the material entries of section 5 remain).
+
+### 17.3 The ES 2024 reference run under the upper bound (H = 20), both modes
+
+`crucible futures prop` on `examples/futures/es_sma_cross.yaml`, prepared exactly as section E.1 of
+the packet prepared it (window 2024-01-02 .. 2024-12-31, warmup 5 trade dates, `flat_by_close: false`,
+`allow_unverified_sessions: true`), with `--cost-assumption
+rulesets/prop/cost_assumptions/upper_bound_v1.yaml`, `payout_policy: max_eligible`,
+`CRUCIBLE_DATA_STORE=D:/proyectos/crucible/data/processed`, a temporary `CRUCIBLE_HOME` and a
+temporary artifacts root per mode. Nothing was written to the user's Crucible home.
+
+The ruleset is the packet's own file, `lucid-luciddaily-50k-dlloff-evaleod-fundedeod-cons30`, whose
+content hash is now `8385927baa038f8788eeff9e01a2a61cdc6b64237c0622a20995ee953f4abb0b` (the packet ran
+`23223760ebe1dbdd7580b28208ba7acff79f1d62c42d3e6bd4d6d05b980a518b`, the file before this round).
+
+| measure | `automated` | `manual` |
+|---|---|---|
+| artifact / evaluation id | `PRP-704ce7f71358c2b5` | `PRP-3d2790d639bc0a88` |
+| starts / complete | 253 / 234 | 253 / 234 |
+| outcomes | fail 253, pass 0, timeout 0, horizon 0, censored 0 | identical |
+| `breached_rule` | `eval_trailing_drawdown` 253 | identical |
+| probability field | `conditional_pass_probability`, `definitive: false` | identical |
+| value (bounds) | 0.0 (0.0 .. 0.0) | identical |
+| interval | `available`, 0.0 .. 0.0 (block bootstrap, 1000 resamples, 95%, block 20, 234 observations) | identical |
+| effective independent attempts | 11.7 | identical |
+| estimate status | `partial` | identical |
+| `cost_bound` / `cost_status` | `upper` / `conditional`, no gaps | identical |
+| commission / bound per side | 1.75 + 3.02 (exchange 2.00, clearing 0.50, NFA 0.02, other 0.50) = 4.77 | identical |
+| cash status / mean net cash | `lower_bound` / 0.000000 USD | identical |
+| `min_buffer_usd` over the 253 starts | -35.88 .. -0.02 | identical |
+| coverage gaps | `coverage_gap_starts` 183 of 253 starts | identical |
+| **practical eligibility** | **`eligible_conditional`**, 1 condition, 0 mechanical passes | **`eligible`**, 0 conditions |
+
+**The only column that differs between the two modes is `practical_eligibility`, and the only column
+that differs from the packet is its value for `automated`.** The packet reported `eligible` with zero
+conditions in both modes; the material HFT ban is now listed as the condition
+`compliance_hft_prohibited: High-frequency trading (a high volume of orders submitted and executed
+within extremely short time frames) is prohibited: ...`, which is the engine change of F20. Every other
+number reproduces the packet's run: 253 starts, 234 complete, 253 failures on the evaluation's
+trailing max loss, a pass probability of 0.0 under the upper-bound cost file, the `partial` and
+`lower_bound` labels, and 0.000000 USD of net cash because no fee is modelled. Neither mode produced a
+pass, so `conditionally_valid_passes` and `practically_valid_passes` are both 0 (F32: this run says
+nothing about the pass path).
+
+The two runs differ in exactly one column of `attempts.parquet`
+(`practical_eligibility`/`practical_eligibility_conditions`), which is the difference the engine
+change was meant to produce, and in nothing else.
+
+One label also moved because of the round's DECLARATIONS rather than the engine: the estimate
+reasons no longer list `cross_account_hedging` among the material unmodeled rules. F16 made it
+`immaterial`, so it is still reported with its `becomes_immaterial_if`, but it no longer weakens the
+estimate and is no longer one of the material rules named in the reason sentence. The packet's
+material list for this file therefore loses one name and gains none.
