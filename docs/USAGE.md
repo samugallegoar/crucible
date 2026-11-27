@@ -732,10 +732,13 @@ Read the labels it puts on the artifact:
 
 - `summary.json` carries `cost_bound: upper` (top level and in every scenario) and the
   `comparability_note`; every `attempts.parquet` row carries the same `cost_bound` column;
-- the cash statistic is `lower_bound` (`cash.status`, `cash_estimate_status` per attempt): the cost
-  is a ceiling, so the real net cash can only be higher, never lower;
-- the pass probability's reasons include `costs are an upper bound: the probability and the net cash
-  are pessimistic (lower bounds) under it`, so the field is `conditional_pass_probability`;
+- the cash statistic is `lower_bound` (`cash.status`, `cash_estimate_status` per attempt) WHEN the
+  file priced every remaining gap: the cost is a ceiling, so the real net cash can only be higher,
+  never lower. A gap it did not price (a commission the firm states for one root only, say) keeps
+  the cash `unavailable` with that component named: a ceiling on some components is not a ceiling
+  on the cost;
+- the pass probability's reasons include `costs are an upper bound: the probability is pessimistic
+  and any net cash under it is a lower bound`, so the field is `conditional_pass_probability`;
 - the comparability note says it out loud: *firms with fewer sourced cost components receive more of
   the bound, so cross-firm comparisons under it are pessimistic for the less documented firms*. Two
   firms' probabilities under this file are not a like-for-like ranking;

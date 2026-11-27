@@ -180,6 +180,22 @@ phases:
       synthetic: false
       section: What is the Maximum Loss Limit in the Flex Challenge?
     evidence: conflict_resolution
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17230292-daily-loss-limit-and-maximum-loss-limit-at-fundednext-futures
+      quote: 'It updates once per day at the end of the trading day (05:00 PM CT) — not in real time. Once it reaches your initial balance , it locks and no longer increases. (For Flex, Rapid Pro & Daily, and Direct Account it locks at initial balance + $100.)'
+      snapshot_sha256: dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Part 2 — The Maximum Loss Limit (MLL)
+      synthetic: false
+    assumptions:
+    - name: mll_lock_level_is_initial_plus_100
+      assumption_kind: owner_decision
+      rationale: >-
+        The conflict keeps the table column 'MLL Locks At' (the lock point, the initial balance
+        + $100) as the primary reading and the page's 'balance reaches the lock point' note as
+        the sensitivity scenario. The owner review of 2026-11-24 confirmed the level reading
+        (F12), delegated to the coordinator 2026-11-24; the firm-wide loss-limit article states
+        the same level in words, and that sentence is now a supporting source.
   - kind: max_contracts
     rule_id: challenge_contract_limit
     description: 5 e-mini or 50 micro e-mini contracts, fixed at account creation, with the firm's 1:10
@@ -278,6 +294,21 @@ phases:
       section: How is the inactivity counted?
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17228935-is-there-any-inactivity-period-in-fundednext-futures
+      quote: 'Inactivity count starts if no trade is placed by 04:01:00 PM CT after purchase on the same day, It counts calendar days including weekends , and the timer resets when at least one trade is placed .'
+      snapshot_sha256: 116be1418da5d4d2d3a27793abd32e5c38bcc4b4b4bd36916442d52273302c8f
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: TL;DR
+      synthetic: false
+    assumptions:
+    - name: deactivation_is_modelled_as_a_fail
+      assumption_kind: owner_decision
+      rationale: >-
+        The page distinguishes a Challenge account 'marked as breached' from a FundedNext
+        account 'marked as inactive and deactivated'. Both end the account, so both are modelled
+        as action: fail; the owner review of 2026-11-24 confirmed it (F17), delegated to the
+        coordinator 2026-11-24.
   pass_conditions:
   - kind: profit_target
     rule_id: challenge_profit_target
@@ -302,13 +333,15 @@ phases:
     evidence: assumption
     assumption:
       name: unspecified_target_frequency_is_eod
-      assumption_kind: provisional_conservative
+      assumption_kind: owner_decision
       rationale: The profit target is quoted on closed-position P&L, but no page says when it is tested.
         The intraday default belongs to failure thresholds, where it makes enforcement stricter; for a
         pass condition the conservative reading is the end of the trade date on the closed balance, because
         the trader then passes no earlier than the close and a later same-day breach still counts against
         the attempt. The same silence covers require_flat, which stays false because the target is defined
         on closed positions.
+        The owner review of 2026-11-24 confirmed the end-of-day observation of the quoted target
+        (F13), delegated to the coordinator 2026-11-24.
   - kind: consistency
     rule_id: challenge_consistency
     description: No single rule-day's profit may exceed 40% of the profit target, and a day above it raises
@@ -351,6 +384,44 @@ phases:
       synthetic: false
       section: Reset Fees for FundedNext Futures Challenge
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17228852-what-are-the-reset-conditions-and-fees-at-fundednext-futures
+      quote: 'Reset Fees for FundedNext Futures Challenge Reset fees vary by Challenge type and size. Model Current Price Reset Price Flex 50K $141.99 $82.99 Flex 100K $273.99 $157.99 Flex 150K $490.99 $284.99 Rapid Pro 25K $125.99 $72.99 Rapid Pro 50K $299.99 $172.99 Rapid Pro 100K $483.99 $287.99 Rapid Pro with Add-On 25K $105.99 $52.99 Rapid Pro with Add-On 50K $259.99 $132.99 Rapid Pro with Add-On 100K $433.99 $237.99 Rapid Daily 25K $125.99 $72.99 Rapid Daily 50K $299.99 $177.99 Rapid Daily 100K $483.99 $287.99'
+      snapshot_sha256: ca596516c69b9006049a476fbb45526fbff36c169c8eb5ab42291ef7000f2d97
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: Reset Fees for FundedNext Futures Challenge
+      synthetic: false
+    promotions:
+    - id: flex_100k_first_purchase_discount
+      field: amount_usd
+      value: '144.99'
+      starts_on: '2026-11-22'
+      ends_on: unknown
+      requires:
+        account_purchase: 'new'
+        purchase_ordinal: '1'
+      source:
+        url: https://helpfutures.fundednext.com/en/articles/17228899-what-are-the-available-account-sizes-and-their-prices-in-fundednext-futures
+        quote: 'How does Flex offer work? Here''s how Flex pricing works. The first two purchases made with the coupon get the best pricing: $74.99 at 50K, $144.99 at 100K, and $259.99 at 150K. From the third purchase onward, the same coupon applies a different discount, bringing the price to $84.99, $159.99, and $289.99.'
+        snapshot_sha256: 1aa81226bb6688c4d58fc8b263e3676aa5a883676236916aecf05437f2f7297f
+        retrieved_at: '2026-11-22T01:41:16Z'
+        section: 3. Flex Challenge
+        synthetic: false
+    - id: flex_100k_second_purchase_discount
+      field: amount_usd
+      value: '144.99'
+      starts_on: '2026-11-22'
+      ends_on: unknown
+      requires:
+        account_purchase: 'new'
+        purchase_ordinal: '2'
+      source:
+        url: https://helpfutures.fundednext.com/en/articles/17228899-what-are-the-available-account-sizes-and-their-prices-in-fundednext-futures
+        quote: 'How does Flex offer work? Here''s how Flex pricing works. The first two purchases made with the coupon get the best pricing: $74.99 at 50K, $144.99 at 100K, and $259.99 at 150K. From the third purchase onward, the same coupon applies a different discount, bringing the price to $84.99, $159.99, and $289.99.'
+        snapshot_sha256: 1aa81226bb6688c4d58fc8b263e3676aa5a883676236916aecf05437f2f7297f
+        retrieved_at: '2026-11-22T01:41:16Z'
+        section: 3. Flex Challenge
+        synthetic: false
   - kind: fee
     rule_id: challenge_reset_fee
     description: Resetting the Challenge costs 157.99 USD and restarts the account from the initial balance;
@@ -364,7 +435,7 @@ phases:
       url: https://helpfutures.fundednext.com/en/articles/17228852-what-are-the-reset-conditions-and-fees-at-fundednext-futures
       quote: 'Reset fees vary by Challenge type and size. What happens when I reset my account? When you
         reset your Challenge, you will receive a new Challenge with everything starting from the beginning
-        , as if you are beginning fresh: Your balance returns to the initial amount. Your trading metrics
+        , as if you are beginning fresh: Your balance returns to the initial amount.​ Your trading metrics
         are reset. Your loss limit is refreshed. Note: If you had your previous Challenge connected to
         a trade copier or trading journal, that connection will no longer be active. You will need to
         reconnect using your New Account Name before you resume trading. This applies to any third-party
@@ -409,6 +480,22 @@ phases:
       section: What is the Maximum Loss Limit on the Flex FundedNext Account?
       synthetic: false
     evidence: conflict_resolution
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17230292-daily-loss-limit-and-maximum-loss-limit-at-fundednext-futures
+      quote: 'It updates once per day at the end of the trading day (05:00 PM CT) — not in real time. Once it reaches your initial balance , it locks and no longer increases. (For Flex, Rapid Pro & Daily, and Direct Account it locks at initial balance + $100.)'
+      snapshot_sha256: dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934
+      retrieved_at: '2026-11-22T01:40:48Z'
+      section: Part 2 — The Maximum Loss Limit (MLL)
+      synthetic: false
+    assumptions:
+    - name: mll_lock_level_is_initial_plus_100
+      assumption_kind: owner_decision
+      rationale: >-
+        The conflict keeps the table column 'MLL Locks At' (the lock point, the initial balance
+        + $100) as the primary reading and the page's 'balance reaches the lock point' note as
+        the sensitivity scenario. The owner review of 2026-11-24 confirmed the level reading
+        (F12), delegated to the coordinator 2026-11-24; the firm-wide loss-limit article states
+        the same level in words, and that sentence is now a supporting source.
   - kind: max_contracts
     rule_id: funded_contract_limit
     description: 5 e-mini or 50 micro e-mini contracts, fixed at account creation, with the firm's 1:10
@@ -488,6 +575,14 @@ phases:
       section: What are the Performance Reward eligibility criteria for the Flex FundedNext Account?
       synthetic: false
     evidence: official_quote
+    assumptions:
+    - name: both_payout_caps_bind
+      assumption_kind: owner_decision
+      rationale: >-
+        The page states two caps at once -- 'Up to 50% (max $1,500)' -- so both bind (max_usd
+        1,500/2,500/4,000 AND max_share_of_withdrawable 0.5), and a Benchmark Day is a rule day
+        whose executed trades earn at least the stated amount (F23), delegated to the
+        coordinator 2026-11-24.
   - kind: compliance
     rule_id: funded_compliance_copy_and_group_trading
     description: Unauthorized copying and coordinated group trading are prohibited in both phases; copying
@@ -549,6 +644,21 @@ phases:
       section: How is the inactivity counted?
       synthetic: false
     evidence: official_quote
+    supporting_sources:
+    - url: https://helpfutures.fundednext.com/en/articles/17228935-is-there-any-inactivity-period-in-fundednext-futures
+      quote: 'Inactivity count starts if no trade is placed by 04:01:00 PM CT after purchase on the same day, It counts calendar days including weekends , and the timer resets when at least one trade is placed .'
+      snapshot_sha256: 116be1418da5d4d2d3a27793abd32e5c38bcc4b4b4bd36916442d52273302c8f
+      retrieved_at: '2026-11-22T01:42:18Z'
+      section: TL;DR
+      synthetic: false
+    assumptions:
+    - name: deactivation_is_modelled_as_a_fail
+      assumption_kind: owner_decision
+      rationale: >-
+        The page distinguishes a Challenge account 'marked as breached' from a FundedNext
+        account 'marked as inactive and deactivated'. Both end the account, so both are modelled
+        as action: fail; the owner review of 2026-11-24 confirmed it (F17), delegated to the
+        coordinator 2026-11-24.
   pass_conditions: []
   max_calendar_days: null
   max_trading_days: null
@@ -586,7 +696,11 @@ not_modeled:
     in both phases. A single simulated account cannot show a cross-account or a correlated hedge, and
     no rule kind screens for one, so a hedged strategy is reported as practically eligible when the firm
     would refuse it.
-  materiality: material
+    No single simulated account can show one, so the entry is immaterial here and names the fact
+    that would make it bind (F5); the owner review of 2026-11-24 ruled the materiality
+    immaterial, delegated to the coordinator 2026-11-24.
+  materiality: immaterial
+  becomes_immaterial_if: becomes material if several accounts, copy trading or coordinated strategies are simulated
   source:
     url: https://fundednext.com/general-rules/futures/what-is-forbidden
     quote: Reverse Hedge Opposite positions across accounts to guarantee a win. Hedging with Correlated
@@ -633,7 +747,9 @@ not_modeled:
 - rule: excess_contract_penalty
   description: 'Above the contract limit only the excess contracts are violations: their profit is deducted
     while their losses still count; max_contracts clips the order at admission instead, which keeps the
-    excess contracts out of the book entirely.'
+    excess contracts out of the book entirely.
+    The owner review of 2026-11-24 confirmed the materiality stays immaterial (F24), delegated
+    to the coordinator 2026-11-24.'
   materiality: immaterial
   source:
     url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules
@@ -647,6 +763,8 @@ not_modeled:
   description: A trade placed on the same day removes the transfer-to-wallet option for that day, so a
     request must be made on a day with no new trade; the payout rule evaluates at every rule-day close
     regardless of that day's trading, so a payout can be taken a day earlier than the firm would allow.
+    The owner review of 2026-11-24 confirmed the materiality stays immaterial (F24), delegated
+    to the coordinator 2026-11-24.
   materiality: immaterial
   source:
     url: https://helpfutures.fundednext.com/en/articles/17229848-fundednext-futures-flex-fundednext-account-all-rules

@@ -1524,6 +1524,14 @@ its shape (cost assumption used, payout cap unknown, the unsourced CME session 2
 `FOMC_MINUTES-20241126` without a known time, unverified, and the material unmodeled rules, which now
 include `consistency_target_over_two_max_daily_profit`), and `coverage_gap_starts` stays 33.
 
+**The cost-label fix (#38) does not move this run's cash label.** The cash statistic follows the
+attempt's remaining cost GAPS, and these files leave none: `exchange` and `nfa` are `included`
+and the bound prices `clearing` and `other`, so `cost_gaps` is empty and the label stays
+`lower_bound` at -209.00, as before the fix. Only the reason's wording changed, to "costs are an
+upper bound: the probability is pessimistic and any net cash under it is a lower bound". A firm
+that keeps a gap after the bound is applied (FundedNext's commission, for one) is the case the
+fix moves to `unavailable`.
+
 **The promotions are recorded, not applied.** The manifest's `promotions_not_applied` says
 `promotion club_40_off_any_plan not applied: no participant profile was declared` and the same for
 `new_trader_50_off_first_evaluation`: a run that does not declare the discount it bought keeps the

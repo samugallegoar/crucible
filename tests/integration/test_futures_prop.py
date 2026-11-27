@@ -1379,6 +1379,94 @@ def test_an_upper_bound_assumption_labels_the_cost_and_the_cash_as_bounds(
     assert scenario["counts"]["pass"] == 5
 
 
+def test_a_bound_that_leaves_a_cost_gap_makes_every_surface_say_unavailable(
+    store: Path, artifacts: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ceiling on some components is not a ceiling on the cost: no surface says lower_bound (F6).
+
+    The ruleset states a commission for NQ only, so ES's ``commission`` is a gap, and an
+    ``upper_bound`` file prices the four components the firm includes (amounts that land on a cost
+    the firm already has are never charged). Nothing is missing but the commission, and the run
+    must say so on every surface at once -- ``summary.json``, the ``attempts.parquet`` rows, the
+    CLI's text and the MCP tool's JSON document (which IS the CLI's ``--json``, ADR-0066) -- and
+    none of them may label the cash ``lower_bound`` or ``conditional``.
+    """
+    from crucible.cli.main import _prop_scenario_lines, main
+    from crucible.mcp_server.invoke import invoke
+
+    assumption = write_cost_assumption(
+        artifacts / "upper" / "assumption.yaml",
+        covers=("exchange", "clearing", "nfa", "other"),
+        kind="upper_bound",
+    )
+    nq_only = {
+        "status": "known",
+        "components": _COMPONENTS_ALL_IN,
+        "per_side_usd": {"NQ": "2.88"},
+        "platform": None,
+        "source": _source(),
+    }
+    result = evaluate(store, artifacts / "upper", commissions=nq_only, cost_assumption=assumption)
+    summary = result.summary
+    scenario = summary["scenarios"][0]
+    # 1. summary.json: the statistic is absent, and the reason names the gap left behind
+    assert summary["cost_bound"] == "upper"
+    assert scenario["cash"]["status"] == "unavailable"
+    assert scenario["cash"]["mean_net_cash_usd"] is None
+    assert scenario["cash"]["interval"]["status"] == "unavailable"
+    assert any("does not price commission" in reason for reason in scenario["cash"]["reasons"])
+    # 2. the parquet rows: one label per start, never a bound the cost cannot support
+    frame = pl.read_parquet(result.evaluation_dir / "attempts.parquet")
+    assert set(frame["cash_estimate_status"].to_list()) == {"unavailable"}
+    assert set(frame["cost_status"].to_list()) == {"unavailable"}
+    assert set(frame["cost_gaps"].to_list()) == {"commission"}
+    assert set(frame["cost_bound"].to_list()) == {"upper"}
+    # 3. the CLI's text rendering of that same document
+    lines = _prop_scenario_lines(scenario)
+    plain = "\n".join(lines)
+    cost_line = next(line for line in lines if "cost bound:" in line)
+    assert "never a bound of that cost" in cost_line
+    assert "the net cash is a lower bound" not in cost_line
+    assert "net cash:   - USD per attempt (unavailable)" in plain
+    # the STATUS token never appears: the prose about a cost ceiling is not a cash label
+    assert "lower_bound" not in plain
+    # 4. the CLI end to end, and the MCP tool, which returns that exact JSON document
+    config_file = artifacts / "upper" / "config.yaml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        yaml.safe_dump(mapping(), sort_keys=True), encoding="utf-8", newline="\n"
+    )
+    ruleset_file = artifacts / "upper" / "ruleset.yaml"
+    assert ruleset_file.is_file()
+    argv = [
+        "futures",
+        "prop",
+        "--config",
+        str(config_file),
+        "--ruleset",
+        str(ruleset_file),
+        "--horizon",
+        "5",
+        "--execution-mode",
+        "manual",
+        "--cost-assumption",
+        str(assumption),
+        "--store",
+        str(store),
+        "--artifacts",
+        str(artifacts / "cli"),
+        "--overwrite",
+    ]
+    assert main([*argv, "--json"]) == 0
+    document = json.loads(capsys.readouterr().out)
+    assert document["scenarios"][0]["cash"]["status"] == "unavailable"
+    assert document["scenarios"][0]["cash"] == scenario["cash"]
+    assert (
+        invoke([*argv, "--json"], cwd=Path(__file__).resolve().parent)["scenarios"][0]["cash"]
+        == scenario["cash"]
+    )
+
+
 def test_a_commission_that_excludes_exchange_fees_needs_the_table(tmp_path: Path) -> None:
     """A commission that excludes the exchange and regulatory fees is priced from the dataset.
 

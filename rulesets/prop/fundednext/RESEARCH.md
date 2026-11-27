@@ -14,11 +14,188 @@
 - Quote normalisation: UTF-8 decode, unescape unicode-escaped tags, drop
   `<script>/<style>/<noscript>/<svg>`, replace each tag with one space, unescape HTML entities,
   collapse whitespace. The page's own spaces before punctuation and its invisible directional
-  isolates (U+2066/U+2069) are kept verbatim. A self-check re-reads every quote against its snapshot
-  after unescaping and whitespace normalisation: 411 attributions, 411 hashes match, 0 quotes
-  missing (69 found in the raw bytes, 342 after tag stripping of a table row or list item). The
-  count fell from 417 because nine `not_modeled` entries were lifted out of the files by the
-  round-2 vocabulary and three rules were added (section 5b).
+  isolates (U+2066/U+2069) are kept verbatim, and a zero-width space inside a quote is kept too
+  (section 0, F20). `crucible prop validate <file> --snapshots-root
+  D:/proyectos/crucible-notes/internal/prop_snapshots/fundednext` runs the engine's own self-check:
+  **534 attributions across the fifteen files, every snapshot hash resolves, 0 quotes missing**.
+  That count is after the 2026-11-24 review round (section 0), which added the review's supporting
+  sources and promotions; before it the fifteen files carried 411, of which the engine refused 12
+  (one quote, `challenge_reset_fee`, which dropped the zero-width space the page prints).
+
+## 0. Review round (2026-11-24) - the owner decisions F1-F25
+
+The owner delegated the review questions of `internal/reviews/fundednext.md` (section F, F1-F25) to
+the coordinator on 2026-11-24. Every decision is applied to the fifteen files in place (each file is
+`verification.status: unverified`, so the INDEX lock rule allows a correction in place; the version
+stays 1, `prop confirm` was never run and no sidecar was written). Each decision is recorded as a
+named `assumption_kind: owner_decision` assumption whose rationale says "delegated to the
+coordinator 2026-11-24", or as a verbatim quote from an official page.
+
+### 0.1 The decisions
+
+| # | question | decision taken | where it lives |
+|---|---|---|---|
+| F1 | automation should be `eligible_conditional` | **not a ruleset change: the engine now reads it.** The obligation belongs to the engine, and the Lucid review round's amendment of ADR-0107 (2026-11-24) supplies it: `practical_eligibility` lists one condition per applicable `material` + `action: block` rule, as `<rule_id>: <restriction>`, and reports `eligible_conditional`. These files still carry no `effect: condition` (an obligation the file had to invent would not be the firm's words), and the label moved by itself: both executions modes now read `eligible_conditional` with `challenge_compliance_copy_and_group_trading: copy_and_group_trading` and `funded_compliance_copy_and_group_trading: copy_and_group_trading` (section 0.7). | `crucible.prop.attempt.practical_eligibility`; no file changed |
+| F2 | timing sentences were not `supporting_sources` | added. `challenge_inactivity` and `funded_inactivity` cite the page's own clock ("Inactivity count starts if no trade is placed by 04:01:00 PM CT after purchase on the same day") from `20261122_fn_a_inactivity.html`; the six Rapid Pro funded files cite the payout criteria table, whose column is literally "Minimum Profit (current cycle)". | every file's inactivity rules; `funded_consistency` in the 6 Rapid Pro files |
+| F3 | `RESEARCH.md` did not match the files | corrected: section 5's component claim, section 4's "in every file", the attribution count above and section 2's Legacy sentence. This section is the record of the round. | this page |
+| F4 | the discount ladder was missing | the discounts are `promotions` on the fee that they discount, with the LIST price as the base: Flex gets one promotion for the 1st purchase and one for the 2nd ($74.99 / $144.99 / $259.99), Rapid Pro, Rapid Daily and Rapid Pro + Add-On one for the 1st purchase ($64.99 / $149.99 / $249.99 and $44.99 / $109.99 / $199.99), Direct one for the 1st purchase ($144.99 / $309.99 / $399.99). `requires` names `account_purchase: new` plus `purchase_ordinal` (see 0.4). | the fee rule of all 15 files |
+| F5 | cross-account hedging was `material` | now `immaterial` with `becomes_immaterial_if: becomes material if several accounts, copy trading or coordinated strategies are simulated` | `not_modeled` in all 15 files |
+| F6 | the cash label contradicted the cost gap | fixed in the engine (ADR-0107, 2026-11-24 amendment): a gap the assumption file leaves makes the cash `unavailable` and names the component. The reference runs below carry it. | engine + module page |
+| F7 | commission for ES, MES, MNQ | **read, and kept a gap.** See 0.3: the platform pages publish three plan tiers per market class and say the amounts EXCLUDE the exchange, clearing and NFA fees, so no single per-root value holds; the rulesets are not split and `commission` stays a material `not_modeled` gap on every root but NQ. | `not_modeled`, section 5 |
+| F8 | `other` is `unknown` | kept `unknown` (`not_stated`): the article names three components and no fifth charge. No page states one, so the preliminary upper-bound file stays the only price for it. | `commissions.components.other` |
+| F9 | no quote for the 17:00 CT rule-day reset | **found one.** The loss-limit article says "It updates once per day at the end of the trading day (05:00 PM CT) - not in real time", and the objectives page says of the daily loss limit "Resets daily at 5:00 PM CT." Both are now `supporting_sources` on the rules whose timing they set (the two drawdowns, and the daily-loss rules). The old unsourced "Resets daily" line in section 10 is now a real attribution in the files. | all 15 files |
+| F10 | `min_days_since_last: 3` counts trading days | confirmed as **trading days** and declared `provisional_conservative` (`reward_cadence_days_are_trading_days`): a span of 3 trading days is at least 3 calendar days, so it is the more restrictive reading, and the page states no unit. | `funded_performance_reward` in the 9 Rapid Pro / Rapid Daily files |
+| F11 | `threshold_after_payout: unchanged` was a silent default | the stricter reading is primary: the first payout locks the Maximum Loss Limit at initial + $100 (the Flex and Direct pages' own words), via `lock.on: [hwm, first_payout]` on the funded drawdown and `threshold_after_payout: lock_on_first_payout` on the payout, declared `provisional_conservative` (`mll_resets_to_initial_plus_100_after_a_payout`). `unchanged` is NOT a scenario: the vocabulary's sensitivity scenario is a `conflict`, which needs two passages of the same plan and phase, and this plan's page has only one (it names the single trigger and is silent about payouts). It is recorded here instead. | the 9 Rapid Pro / Rapid Daily files |
+| F12 | the two MLL lock conflicts | confirmed as declared: the "MLL Locks At" level (initial + $100) is primary, the "balance reaches the lock point" note is the `#0` sensitivity scenario. `owner_decision` (`mll_lock_level_is_initial_plus_100`). | the 12 Challenge files |
+| F13 | the profit target's observation frequency | confirmed: the amount is quoted, the moment (`evaluated: eod`, closed balance, `require_flat: false`) is an assumption, now `owner_decision`. | `challenge_profit_target` in the 12 Challenge files |
+| F14 | `cme_price_limit_2pct_entry_ban` | stays `material` (no entry-distance rule kind, no price-limit series). | `not_modeled` |
+| F15 | `sub_minute_holding_and_micro_scalping` | stays `material` (no rule kind measures holding time). | `not_modeled` |
+| F16 | `prohibited_strategy_clauses` | stays `material` (qualitative clauses; no rule kind). | `not_modeled` |
+| F17 | a deactivation was modelled as a failure | confirmed: `funded_inactivity` keeps `action: fail` for both "marked as breached" and "marked as inactive and deactivated". `owner_decision` (`deactivation_is_modelled_as_a_fail`). | the inactivity rules |
+| F18 | the instrument set is four roots | confirmed deliberate: ES, NQ, MES, MNQ, the four roots the firm's symbols page names; YM, RTY, NKD, MYM and M2K are never named and carry no commission. | `instruments` in all 15 files, section 11 |
+| F19 | Legacy | omitted, and the discontinuation IS stated on six saved help-centre pages (0.5). | section 2 |
+| F20 | the reset-fee quote was missing a U+200B | fixed in place to the page's exact string (the zero-width space after "Your balance returns to the initial amount."). All fifteen files now pass `crucible prop validate`. | `challenge_reset_fee` in the 12 Challenge files |
+| F21 | three different "base prices" for one account | the base is the HIGHEST published original or current price for that account, which is the conservative direction for net cash; the promotions bring it down. Four files moved (Rapid Pro and Rapid Daily 25K: 125.99 -> 159.98; 100K: 483.99 -> 499.98). Every published figure is in 0.2. | the entry / purchase fee of all 15 files |
+| F22 | Direct's perpetual consistency | confirmed: best day all-time over the current cycle's profit on the closed balance, and the 20% test is `<=` - the page says both "may not exceed 20%" and "must stay at 20% or less of what you've earned in your active cycle", and the quote carries the second span. `owner_decision` (`cycle_balance_denominator_is_confirmed`). | `funded_perpetual_consistency` in the 3 Direct files |
+| F23 | Flex's payout has two caps at once | confirmed: `max_usd` (1,500 / 2,500 / 4,000) AND `max_share_of_withdrawable: 0.5` both bind, a Benchmark Day is a rule day whose executed trades earn at least $200 / $250, plus the $500 cycle floor, the 95% split and 5 rewards. `owner_decision` (`both_payout_caps_bind`). | `funded_performance_reward` in the 3 Flex files |
+| F24 | the two immaterial entries | confirmed immaterial: `excess_contract_penalty` (clipping at admission instead of deducting excess profit) and `reward_request_same_day_trade_rule` (a payout one day earlier than the firm allows). | `not_modeled`, sections 13 |
+| F25 | the DLL plan mapping | confirmed: Rapid Daily has the limit by default in both phases, Direct has a permanent one, Rapid Pro has none without the add-on, and the add-on variants' limit is `soft_lock_until_reset` in BOTH phases. The firm-wide article's own table is now a `supporting_source` ("The daily loss limit applies equally to the Challenge Account and the FundedNext Account"). `owner_decision` (`dll_plan_mapping_is_per_plan`). | the 9 files that carry a daily-loss rule |
+
+### 0.2 Every published price (F21, F4)
+
+Three pages price the same account and they disagree. The ruleset's base is the HIGHEST of them
+(conservative: a higher fee can only lower the net cash), and each discount is a `promotion`.
+
+| account | reset article "Current Price" | challenge page "Original Price" | account-prices "Base Price" | first purchase | recurring | base in the file |
+|---|---|---|---|---|---|---|
+| Direct 50K | - | - | 284.99 | 144.99 | 169.99 | **284.99** |
+| Direct 100K | - | - | 584.99 | 309.99 | 349.99 | **584.99** |
+| Direct 150K | - | - | 754.99 | 399.99 | 449.99 | **754.99** |
+| Flex 50K | 141.99 | - | 141.99 | 74.99 (first 2) | 84.99 (3rd+) | **141.99** |
+| Flex 100K | 273.99 | - | 273.99 | 144.99 (first 2) | 159.99 (3rd+) | **273.99** |
+| Flex 150K | 490.99 | - | 490.99 | 259.99 (first 2) | 289.99 (3rd+) | **490.99** |
+| Rapid Pro 25K | 125.99 | 125.99 | 159.98 | 64.99 | 74.99 | **159.98** (was 125.99) |
+| Rapid Pro 50K | 299.99 | 299.99 | 299.98 | 149.99 | 174.99 | **299.99** |
+| Rapid Pro 100K | 483.99 | 483.99 | 499.98 | 249.99 | 289.99 | **499.98** (was 483.99) |
+| Rapid Daily 25K | 125.99 | 125.99 | 159.98 | 64.99 | 74.99 | **159.98** (was 125.99) |
+| Rapid Daily 50K | 299.99 | 299.99 | 299.98 | 149.99 | 179.99 | **299.99** |
+| Rapid Daily 100K | 483.99 | 483.99 | 499.98 | 249.99 | 289.99 | **499.98** (was 483.99) |
+| Rapid Pro + Add-On 25K | 105.99 | - | add-on 44.99 first / 54.99 recurring | 44.99 | 54.99 | **105.99** |
+| Rapid Pro + Add-On 50K | 259.99 | - | add-on 109.99 first / 134.99 recurring | 109.99 | 134.99 | **259.99** |
+| Rapid Pro + Add-On 100K | 433.99 | - | add-on 199.99 first / 239.99 recurring | 199.99 | 239.99 | **433.99** |
+
+Sources: `20261122_fn_a_account_prices.html` ("Base Price / First Purchase / Recurring Purchase"
+per model), `20261122_fn_a_rapidpro_challenge.html` and `20261122_fn_a_rapiddaily_challenge.html`
+("Original Price / Discounted Price (47% Off)" and the recurring "(40% Off)" table),
+`20261122_fn_a_reset_fees.html` ("Current Price / Reset Price") and
+`20261122_fn_a_direct_rules.html`. The add-on prices ($44.99 / $109.99 / $199.99 first and $54.99 /
+$134.99 / $239.99 recurring) do not divide back to the add-on models' current prices at 47% or 40%:
+the pages are internally inconsistent, which is exactly why the base is the highest of them and the
+discount is a promotion rather than a multiplication.
+
+### 0.3 The platform commissions (F7), read on 2026-11-24
+
+The commission article defers every root but NQ to "your platform's pricing page". Both platforms
+that publish one were read (public pages, no login, one request each):
+
+| page | quote | figures |
+|---|---|---|
+| <https://ninjatrader.com/pricing/> | "Exchange, clearing, and NFA fees apply. ... Free $0.39 / Micro & e-Nano $1.29 / Standard Commissions per side ... Monthly $0.29 / Micro & e-Nano $0.99 / Standard ... Lifetime $0.09 / Micro & e-Nano $0.59 / Standard" | three plan tiers; ES is "Standard", MES and MNQ are "Micro" |
+| <https://www.tradovate.com/pricing/> | "Exchange, clearing, and NFA fees apply. ... Free ... $0.39 / Micros & CME E-nano Index Futures $1.29 / Standard ... Commission per side ... Monthly ... $0.29 / ... $0.99 ... Lifetime ... $0.09 / ... $0.59" | the same three tiers and the same figures |
+| <https://www.tradingview.com/brokers/> | no Tradovate per-instrument commission table on the page | nothing to quote: a TradingView account trades through the broker, so the broker's schedule is the one that applies |
+
+So: the figures agree ACROSS the two platforms that publish them, but they are not ONE value per
+root - they depend on the trader's plan tier (three values for ES, three for MES/MNQ) - and both
+pages state the amounts EXCLUDE the exchange, clearing and NFA fees, which contradicts the firm's
+all-in framing and the files' `included` declaration for those three components. A per-platform or
+per-tier split would change every `ruleset_id` and add a value the firm never quotes, so the
+rulesets are NOT split: `commission` stays a named gap on ES, MES and MNQ (material `not_modeled`
+`commission_table_not_published_per_root`, now with these values recorded here), and an attempt on
+a non-NQ root reports the cash statistic as `unavailable` (ADR-0107, 2026-11-24 amendment).
+
+### 0.4 The vocabulary gap F4 exposed
+
+`promotions[].requires` is a map of profile dimension -> the EXACT string the run must declare
+(`crucible.prop.promotions.promotion_reason`), and the only keys used before this round were
+`account_purchase` and `coupon_applied` (Apex's coupon). There is no `purchase_ordinal` and no range
+operator, so "first 2 purchases" cannot be written as `purchase_ordinal: '<= 2'`: an equality test
+against the literal string `<= 2` would never match. Flex therefore carries TWO promotions, one
+requiring `purchase_ordinal: '1'` and one requiring `purchase_ordinal: '2'`, both at the first-two
+price; every other plan carries one requiring `'1'`. `purchase_ordinal` is a profile dimension a run
+declares (an identifier the profile validator accepts), so the promotions resolve exactly when the
+run says which purchase this was and never otherwise - and a run that does not declare it keeps the
+list price, which is the conservative direction. Flex's "3rd purchase onwards" tier
+($84.99 / $159.99 / $289.99) is NOT expressible as an equality on one ordinal; it is recorded here
+and left unpromoted, so such a run pays the list price (higher than the firm's, therefore
+conservative for net cash).
+
+### 0.5 Legacy, in the pages' own words (F19)
+
+Six saved help-centre pages carry the notice, for example
+`20261122_fn_a_legacy_what.html` and `20261122_fn_a_dll_mll.html`:
+
+> "As of October 11, Legacy Accounts are no longer available for purchase. Existing Legacy Accounts
+> are also not eligible for resets."
+
+**The notice prints no year** (the word "October 11" stands alone, while the same pages are
+otherwise dated 2026), so no year is recorded and none is inferred. Legacy stays undrafted: three
+sizes are still documented ($25K/$50K/$100K, targets $1,250/$3,000/$6,000, MLLs
+$1,000/$2,000/$3,000, reset fees $79.99/$199.99/$239.99) but no purchase path offers them, and the
+review of 2026-11-24 confirmed the omission (F19).
+
+### 0.6 What the round added, per file
+
+Every file carries the review's `supporting_sources` and named assumptions; no value that was
+`official_quote` before became an assumption except the profit target's observation frequency
+(F13), which was already one.
+
+| file | promotions (fee = value, ordinal) | supporting sources | named assumptions |
+|---|---|---|---|
+| `fundednext-futures-direct-50k` | account_purchase_fee = 144.99 (1) | 5 | mll_lock_level_is_initial_plus_100; dll_plan_mapping_is_per_plan; cycle_balance_denominator_is_confirmed; deactivation_is_modelled_as_a_fail |
+| `fundednext-futures-direct-100k` | account_purchase_fee = 309.99 (1) | 5 | as the 50K |
+| `fundednext-futures-direct-150k` | account_purchase_fee = 399.99 (1) | 5 | as the 50K |
+| `fundednext-futures-flex-50k` | challenge_entry_fee = 74.99 (1 and 2) | 5 | mll_lock_level_is_initial_plus_100 (x2, both drawdowns); deactivation_is_modelled_as_a_fail (x2); unspecified_target_frequency_is_eod; both_payout_caps_bind |
+| `fundednext-futures-flex-100k` | challenge_entry_fee = 144.99 (1 and 2) | 5 | as the Flex 50K |
+| `fundednext-futures-flex-150k` | challenge_entry_fee = 259.99 (1 and 2) | 5 | as the Flex 50K |
+| `fundednext-futures-rapiddaily-25k` | challenge_entry_fee = 64.99 (1) | 9 | dll_plan_mapping_is_per_plan (x2); mll_lock_level_is_initial_plus_100 (x2); deactivation_is_modelled_as_a_fail (x2); unspecified_target_frequency_is_eod; reward_cadence_days_are_trading_days; mll_resets_to_initial_plus_100_after_a_payout |
+| `fundednext-futures-rapiddaily-50k` | challenge_entry_fee = 149.99 (1) | 9 | as the Rapid Daily 25K |
+| `fundednext-futures-rapiddaily-100k` | challenge_entry_fee = 249.99 (1) | 9 | as the Rapid Daily 25K |
+| `fundednext-futures-rapidpro-25k` | challenge_entry_fee = 64.99 (1) | 6 | mll_lock_level_is_initial_plus_100 (x2); deactivation_is_modelled_as_a_fail (x2); unspecified_target_frequency_is_eod; reward_cadence_days_are_trading_days; mll_resets_to_initial_plus_100_after_a_payout |
+| `fundednext-futures-rapidpro-50k` | challenge_entry_fee = 149.99 (1) | 6 | as the Rapid Pro 25K |
+| `fundednext-futures-rapidpro-100k` | challenge_entry_fee = 249.99 (1) | 6 | as the Rapid Pro 25K |
+| `fundednext-futures-rapidpro-25k-dlladdon` | challenge_entry_fee = 44.99 (1) | 10 | as the Rapid Daily 25K |
+| `fundednext-futures-rapidpro-50k-dlladdon` | challenge_entry_fee = 109.99 (1) | 10 | as the Rapid Daily 25K |
+| `fundednext-futures-rapidpro-100k-dlladdon` | challenge_entry_fee = 199.99 (1) | 10 | as the Rapid Daily 25K |
+
+All 534 attributions of the fifteen files resolve against their snapshots, none is `synthetic` and
+none is an image transcription.
+
+### 0.7 The section E reference run, on the merged tree
+
+`examples/futures/es_sma_cross.yaml` (ES, one contract, 30-bar SMA cross, one tick of spread and
+one of slippage per side), window **2024-01-17 .. 2024-12-31** (the store has no final scheduled bar
+for 2024-01-15 and the 2024-01-16 session is unsourced, and the run refuses both), **H = 20 trade
+dates**, `payout_policy: max_eligible`, `cost_assumption:
+ rulesets/prop/cost_assumptions/upper_bound_v1.yaml`, a temporary `CRUCIBLE_HOME`, a temporary
+artifacts root and `CRUCIBLE_DATA_STORE=D:/proyectos/crucible/data/processed`:
+
+| measure | automated | manual |
+|---|---|---|
+| starts / complete | 242 / 223 | 242 / 223 |
+| outcomes | fail 242, pass 0 | identical |
+| `conditional_pass_probability` | 0.0 (0.0 .. 0.0) | identical |
+| net cash | `unavailable`, no mean | identical |
+| cost bound / estimate | `upper` / `partial` | identical |
+| every attempt's `cost_status` / `cost_gaps` | `unavailable` / `commission` | identical |
+| practical eligibility | **`eligible_conditional`** | **`eligible_conditional`** |
+| conditions | `challenge_compliance_copy_and_group_trading: copy_and_group_trading`, `funded_compliance_copy_and_group_trading: copy_and_group_trading` | the same two |
+
+The cash label is the ADR-0107 amendment of 2026-11-24 (F6): before it, the same run reported
+`lower_bound` with a mean while every attempt said `unavailable` with `cost_gaps: [commission]`.
+The eligibility label is the Lucid round's amendment (F1): the two `material` + `block` copy-and-
+group-trading rules now condition BOTH modes, so the report no longer claims a clearance the
+simulation never checked. Every attempt fails on `challenge_max_loss_limit`, and the fee charged is
+the Challenge price only (299.99; no reset purchased).
 
 ## 1. Does FundedNext offer a futures program?
 
@@ -50,12 +227,15 @@ Challenges"), `https://fundednext.com/futures/legacy` serves the same generic fu
 `/futures` (byte-identical content: no Legacy card, no Legacy price), and the account-prices
 article has pricing sections for Direct, Rapid and Flex but none for Legacy. Legacy documents
 remain in the help centre and its values still appear in the general-rules tables (MLL, Benchmark
-Days), so it may still serve existing owners. **No official page states a discontinuation date**, so
-none is recorded; the values seen for it ($25K/$50K/$100K, target $1,250/$3,000/$6,000, MLL
-$1,000/$2,000/$3,000) were read but not drafted. The general loss-limit article also distinguishes
-Legacy from Flex/Rapid/Direct on the MLL lock point ("for Flex, Rapid Pro & Daily, and Direct
-Account it locks at initial balance + $100"), which is the only place Legacy's different lock level
-matters.
+Days), and **the discontinuation IS stated**: six saved pages (for example
+`20261122_fn_a_legacy_what.html`) carry "As of October 11, Legacy Accounts are no longer available
+for purchase. Existing Legacy Accounts are also not eligible for resets." - with **no year**, so
+none is recorded (section 0.5). The values seen for it ($25K/$50K/$100K, target
+$1,250/$3,000/$6,000, MLL $1,000/$2,000/$3,000, reset fees $79.99/$199.99/$239.99) were read but
+not drafted, and the review of 2026-11-24 confirmed the omission (F19). The general loss-limit
+article also distinguishes Legacy from Flex/Rapid/Direct on the MLL lock point ("For Flex, Rapid
+Pro & Daily, and Direct Account it locks at initial balance + $100"), which is the only place
+Legacy's different lock level matters.
 
 ## 3. Product matrix (generated from the YAML)
 
@@ -101,7 +281,9 @@ fresh from an official page. Nothing was inferred.
   on the closed balance, so the trader passes no earlier than the close and a later same-day breach
   still counts. A target is never treated as intraday unless the firm states it.
 - `inactivity`: 30 consecutive calendar days for the Challenge and FundedNext accounts, 7 for
-  Direct. This replaced a v1 `not_modeled` entry.
+  Direct. This replaced a v1 `not_modeled` entry. The three Direct files carry ONE phase, so their
+  only inactivity rule is `funded_inactivity` at 7 days; the twelve Challenge-bearing files carry
+  both.
 - `compliance` rules for copy/group trading and account sharing (section 7).
 - `challenge_reset_fee` (`fee_kind: reset`, `when: on_reset`) in every plan that can be reset. This
   replaced a v1 `not_modeled` entry; Direct cannot be reset, so it carries no reset fee.
@@ -166,14 +348,18 @@ gives one worked example:
   field names three platforms, which a single per-side table cannot separate. Reading the
   Tradovate/NinjaTrader/TradingView pricing pages per platform is an open owner decision
   (section 9, item 2), not a value guessed here.
-- **all four components `included`** (round 2, `Commissions` now REQUIRES the field).
-  The article's own definition is the evidence: the all-in rate "includes the broker commission,
-  exchange & NFA fees, and the clearing fee", the three components it then lists. So the 2.88 USD
-  per side is a complete per-side cost: an attempt charges the ruleset's commission and adds no
-  `ComponentFeeSource`, and the cost statistics are `exact` on NQ (still `unavailable` on a root
-  with no published rate). The `commissions.source` attribution's quote is the "What makes up the
-  all-in rate?" passage read through the worked NQ example, so one verbatim quote carries both the
-  flag and the amount; the section label is that passage's heading.
+- **Three of the four components are `included`; `other` is `unknown`** (`Commissions` now REQUIRES
+  the field). The article's own definition is the evidence: the all-in rate "includes the broker
+  commission, exchange & NFA fees, and the clearing fee", the three components it then lists, so
+  those three are `included` (`official_quote`) and are not charged on top of the 2.88 USD per side.
+  The fourth key, `other`, is `unknown` (`evidence: not_stated`, text "the all-in rate names three
+  components ... and no other per-side charge"): the article names no fifth charge, so nothing is
+  inferred and no amount is invented. An attempt therefore charges the ruleset's commission and
+  leaves `other` a gap, which the preliminary upper-bound file fills for a reference run; the cost
+  statistic is `conditional` (or `unavailable` when another gap remains, ADR-0107's 2026-11-24
+  amendment). The `commissions.source` attribution's quote is the "What makes up the all-in rate?"
+  passage read through the worked NQ example, so one verbatim quote carries both the component
+  declarations and the amount; the section label is that passage's heading.
 
 ## 5b. Round 2 changes (the second C7b pass)
 
@@ -323,6 +509,18 @@ must not read as "practically valid" for a strategy that grids, scalps sub-minut
 
 ## 9. Open questions for the owner
 
+**The 2026-11-24 review round answered these (section 0).** Item 1 and 3 -> F12 (the lock-level
+reading confirmed, the note stays the sensitivity scenario); item 2 -> F7 (the two platform pages
+that publish a schedule were read: three plan tiers, excluding the exchange/clearing/NFA fees, so
+the rulesets are not split and the commission stays a gap on every root but NQ); item 4 -> F10
+(trading days, declared `provisional_conservative`); item 5 -> F2 (the current-cycle window, the
+more restrictive reading, now supported by the payout criteria's "current cycle" column); item 8 ->
+F13 (the end-of-day observation confirmed); item 9 -> F19 (Legacy stays undrafted, the notice is
+quoted in section 2); item 10 -> F21 and F4 (the base is the highest published original or current
+price, and every discount is a promotion); item 11 -> F22 (the balance reading confirmed, `<=`);
+item 12 -> F24 (confirmed immaterial); the `other` component question -> F8 (kept `unknown`). Items
+6 and 7 were not part of the round and stay open as written.
+
 ### Per-component costs (C7b fix, 2026-11-22)
 
 `commissions.includes_exchange_and_regulatory_fees` is gone. The ruleset now declares, for each of the four components, whether the firm's per-side commission CONTAINS it (`included`), EXCLUDES it (`excluded`, so the run adds the dataset's amount for its participant type) or does not say (`unknown`, which is never a zero cost). All four keys are required, and no component may be inferred from another firm's page, another product or another participant type (ADR-0107 section 10 as amended).
@@ -415,6 +613,14 @@ declared payout value. The pages that support values quoted in more than one rul
 - sha256: `e903fbb58fe67481c98c1924bdd160f23662bd0d9ebdbf2c5aecb576a86e8845`
 - quote: "On Rapid and Direct, breaching the DLL is a soft breach — trading pauses for the rest of
   the session and resumes the next day. Resets daily at ⁦⁦5:00⁩ PM CT.."
+- and, for the end-of-day mark itself, the loss-limit article
+  (`20261122_fn_a_dll_mll.html`, sha256
+  `dc9d21025105fca4b3465b8ad62dcd5be662696ffd24f8d488ac15b9ec75b934`): "It updates once per day at the
+  end of the trading day (05:00 PM CT) — not in real time."
+- both sentences are `supporting_sources` in the files since the 2026-11-24 review round: the first
+  on every `daily_loss` rule (whose `reset` is `17:00:00 America/Chicago`), the second (with the
+  lock-level sentence) on the two trailing drawdowns. Before the round the clock had no attribution
+  at all and this entry was a claim with nothing behind it (F9).
 
 #### `all models: profit target on closed-position P&L`
 - url: https://fundednext.com/general-rules/futures/trading-objectives
@@ -461,6 +667,11 @@ JS-only widget. One page was fetched for this migration (the commission article,
 `20261122_fn_a_commissions.html`); its sha256 is in section 5 and in every file.
 
 ## 13. Every file in detail (generated from the YAML)
+
+The tables below were generated from the files before the 2026-11-24 review round and list each
+file's rules, values, evidence and sources. They do NOT show the round's `promotions`,
+`supporting_sources` or named assumptions: section 0.6 lists those per file, and
+`crucible prop validate` (or the YAML itself) is the authority for any total.
 
 ### `fundednext-futures-direct-100k`
 
