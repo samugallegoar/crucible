@@ -35,7 +35,7 @@ coordinator 2026-11-24", or as a verbatim quote from an official page.
 
 | # | question | decision taken | where it lives |
 |---|---|---|---|
-| F1 | automation should be `eligible_conditional` | **not applied here.** It is an engine change in a separate PR ("Lucid rulesets: apply review decisions": a `material` + `block` compliance rule makes eligibility `eligible_conditional` for every execution mode it lists). These files keep no `effect: condition`, because the obligation would be invented before the engine can carry it. | open; expected from the Lucid change |
+| F1 | automation should be `eligible_conditional` | **not a ruleset change: the engine now reads it.** The obligation belongs to the engine, and the Lucid review round's amendment of ADR-0107 (2026-11-24) supplies it: `practical_eligibility` lists one condition per applicable `material` + `action: block` rule, as `<rule_id>: <restriction>`, and reports `eligible_conditional`. These files still carry no `effect: condition` (an obligation the file had to invent would not be the firm's words), and the label moved by itself: both executions modes now read `eligible_conditional` with `challenge_compliance_copy_and_group_trading: copy_and_group_trading` and `funded_compliance_copy_and_group_trading: copy_and_group_trading` (section 0.7). | `crucible.prop.attempt.practical_eligibility`; no file changed |
 | F2 | timing sentences were not `supporting_sources` | added. `challenge_inactivity` and `funded_inactivity` cite the page's own clock ("Inactivity count starts if no trade is placed by 04:01:00 PM CT after purchase on the same day") from `20261122_fn_a_inactivity.html`; the six Rapid Pro funded files cite the payout criteria table, whose column is literally "Minimum Profit (current cycle)". | every file's inactivity rules; `funded_consistency` in the 6 Rapid Pro files |
 | F3 | `RESEARCH.md` did not match the files | corrected: section 5's component claim, section 4's "in every file", the attribution count above and section 2's Legacy sentence. This section is the record of the round. | this page |
 | F4 | the discount ladder was missing | the discounts are `promotions` on the fee that they discount, with the LIST price as the base: Flex gets one promotion for the 1st purchase and one for the 2nd ($74.99 / $144.99 / $259.99), Rapid Pro, Rapid Daily and Rapid Pro + Add-On one for the 1st purchase ($64.99 / $149.99 / $249.99 and $44.99 / $109.99 / $199.99), Direct one for the 1st purchase ($144.99 / $309.99 / $399.99). `requires` names `account_purchase: new` plus `purchase_ordinal` (see 0.4). | the fee rule of all 15 files |
@@ -169,6 +169,33 @@ Every file carries the review's `supporting_sources` and named assumptions; no v
 
 All 534 attributions of the fifteen files resolve against their snapshots, none is `synthetic` and
 none is an image transcription.
+
+### 0.7 The section E reference run, on the merged tree
+
+`examples/futures/es_sma_cross.yaml` (ES, one contract, 30-bar SMA cross, one tick of spread and
+one of slippage per side), window **2024-01-17 .. 2024-12-31** (the store has no final scheduled bar
+for 2024-01-15 and the 2024-01-16 session is unsourced, and the run refuses both), **H = 20 trade
+dates**, `payout_policy: max_eligible`, `cost_assumption:
+ rulesets/prop/cost_assumptions/upper_bound_v1.yaml`, a temporary `CRUCIBLE_HOME`, a temporary
+artifacts root and `CRUCIBLE_DATA_STORE=D:/proyectos/crucible/data/processed`:
+
+| measure | automated | manual |
+|---|---|---|
+| starts / complete | 242 / 223 | 242 / 223 |
+| outcomes | fail 242, pass 0 | identical |
+| `conditional_pass_probability` | 0.0 (0.0 .. 0.0) | identical |
+| net cash | `unavailable`, no mean | identical |
+| cost bound / estimate | `upper` / `partial` | identical |
+| every attempt's `cost_status` / `cost_gaps` | `unavailable` / `commission` | identical |
+| practical eligibility | **`eligible_conditional`** | **`eligible_conditional`** |
+| conditions | `challenge_compliance_copy_and_group_trading: copy_and_group_trading`, `funded_compliance_copy_and_group_trading: copy_and_group_trading` | the same two |
+
+The cash label is the ADR-0107 amendment of 2026-11-24 (F6): before it, the same run reported
+`lower_bound` with a mean while every attempt said `unavailable` with `cost_gaps: [commission]`.
+The eligibility label is the Lucid round's amendment (F1): the two `material` + `block` copy-and-
+group-trading rules now condition BOTH modes, so the report no longer claims a clearance the
+simulation never checked. Every attempt fails on `challenge_max_loss_limit`, and the fee charged is
+the Challenge price only (299.99; no reset purchased).
 
 ## 1. Does FundedNext offer a futures program?
 

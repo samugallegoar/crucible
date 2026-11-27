@@ -46,7 +46,17 @@ kind of change is recorded).
 - **`other` stays `unknown` (F8), the four-root universe is confirmed (F18), Legacy stays undrafted
   with the firm's discontinuation notice quoted (F19), and F14/F15/F16 stay `material`.** F1 (a
   `material` + `block` compliance rule making automated eligibility `eligible_conditional`) is an
-  engine change in a separate PR and is NOT applied here.
+  engine change, not a ruleset one: these files still carry no `effect: condition`, and with the
+  Lucid round's amendment of ADR-0107 (2026-11-24) merged, `practical_eligibility` now lists one
+  condition per applicable material block, so both execution modes of the reference run below
+  report `eligible_conditional` (`challenge_compliance_copy_and_group_trading:
+  copy_and_group_trading`, `funded_compliance_copy_and_group_trading: copy_and_group_trading`)
+  instead of `eligible`.
+- **Reference run (ES, 2024-01-17 .. 2024-12-31, H = 20, `upper_bound_v1`, automated and manual):**
+  242 starts, 242 fails on `challenge_max_loss_limit`, 0 passes, `conditional_pass_probability`
+  0.0, cash `unavailable` with the reason naming `commission`, `cost_bound: upper`, estimate
+  `partial`, and practical eligibility `eligible_conditional` in BOTH modes with the two
+  conditions above.
 - **Docs:** `docs/modules/prop.md` (a scenario cannot carry a silent default; a promotion's
   `requires` has no range operator), `rulesets/prop/fundednext/RESEARCH.md` (the whole review round)
   and `rulesets/prop/INDEX.json` (regenerated).
